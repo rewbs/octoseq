@@ -37,9 +37,11 @@
   "devDependencies": {
     "@types/node": "latest",
     "eslint": "latest",
-    "typescript": "latest",
     "tsup": "latest",
+    "typescript": "latest",
     "vitest": "latest"
   },
-  "dependencies": {}
+  "dependencies": {
+    "fft.js": "^4.0.4"
+  }
 }

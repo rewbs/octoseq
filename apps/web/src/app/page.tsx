@@ -10,6 +10,8 @@ import {
   type MirRunRequest,
   normaliseForWaveform,
 } from "@octoseq/mir";
+
+import { prepareHpssSpectrogramForHeatmap, prepareMfccForHeatmap } from "@/lib/mirDisplayTransforms";
 import { runMir } from "@octoseq/mir/runner/runMir";
 
 import { HeatmapPlayheadOverlay } from "@/components/heatmap/HeatmapPlayheadOverlay";
@@ -25,7 +27,7 @@ import { useElementSize } from "@/lib/useElementSize";
 type UiMirResult =
   | { kind: "none" }
   | { kind: "1d"; times: Float32Array; values: Float32Array }
-  | { kind: "2d"; heatmap: TimeAlignedHeatmapData }
+  | { kind: "2d"; fn: MirFunctionId; raw: TimeAlignedHeatmapData }
   | { kind: "events"; times: Float32Array; events: Array<{ time: number; strength: number; index: number }> };
 
 export default function Home() {
@@ -52,6 +54,10 @@ export default function Home() {
   const [hpssTimeMedian, setHpssTimeMedian] = useState(17);
   const [hpssFreqMedian, setHpssFreqMedian] = useState(17);
   const [mfccNCoeffs, setMfccNCoeffs] = useState(13);
+
+  // Display-only toggles (must not trigger re-analysis)
+  const [showDcBin, setShowDcBin] = useState(false);
+  const [showMfccC0, setShowMfccC0] = useState(false);
 
   const [lastTimings, setLastTimings] = useState<{
     workerTotalMs?: number;
@@ -168,9 +174,13 @@ export default function Home() {
       }
 
       // 2d
+      // Store *raw* numeric MIR outputs.
+      // Display transforms are applied separately so toggles can update instantly
+      // without triggering re-analysis.
       setMirResult({
         kind: "2d",
-        heatmap: {
+        fn: selected,
+        raw: {
           data: result.data,
           times: result.times,
         },
@@ -204,6 +214,43 @@ export default function Home() {
     return { startTime: viewport.startTime, endTime: viewport.endTime };
   }, [viewport, audioDuration]);
 
+  const displayedHeatmap = useMemo<TimeAlignedHeatmapData | null>(() => {
+    if (mirResult.kind !== "2d") return null;
+
+    const { raw, fn } = mirResult;
+
+    const displayData =
+      fn === "hpssHarmonic" || fn === "hpssPercussive"
+        ? prepareHpssSpectrogramForHeatmap(raw.data, { showDc: showDcBin, useDb: true, minDb: -80, maxDb: 0 })
+        : fn === "mfcc" || fn === "mfccDelta" || fn === "mfccDeltaDelta"
+          ? prepareMfccForHeatmap(raw.data, { showC0: showMfccC0 })
+          : raw.data;
+
+    return { data: displayData, times: raw.times };
+  }, [mirResult, showDcBin, showMfccC0]);
+
+  const heatmapValueRange = useMemo(() => {
+    if (mirResult.kind !== "2d") return undefined;
+    const fn = mirResult.fn;
+
+    // For HPSS + MFCC we pre-normalise to [0,1], so use a fixed colormap range.
+    if (fn === "hpssHarmonic" || fn === "hpssPercussive" || fn === "mfcc" || fn === "mfccDelta" || fn === "mfccDeltaDelta") {
+      return { min: 0, max: 1 };
+    }
+
+    return undefined;
+  }, [mirResult]);
+
+  const heatmapYAxisLabel = useMemo(() => {
+    if (mirResult.kind !== "2d") return "feature index";
+    const fn = mirResult.fn;
+
+    // MFCC coefficients are DCT basis weights (not frequency bins).
+    if (fn === "mfcc" || fn === "mfccDelta" || fn === "mfccDeltaDelta") return "MFCC index";
+
+    return "frequency bin";
+  }, [mirResult]);
+
   const { ref: heatmapHostRef, size: heatmapHostSize } = useElementSize<HTMLDivElement>();
 
   return (
@@ -228,6 +275,17 @@ export default function Home() {
             <details className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-950">
               <summary className="cursor-pointer select-none text-zinc-700 dark:text-zinc-200">Config</summary>
               <div className="mt-3 grid grid-cols-1 gap-3">
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <label className="inline-flex items-center gap-2">
+                    <input type="checkbox" checked={showDcBin} onChange={(e) => setShowDcBin(e.target.checked)} />
+                    <span className="text-xs text-zinc-600 dark:text-zinc-300">Show DC bin (spectrogram display)</span>
+                  </label>
+
+                  <label className="inline-flex items-center gap-2">
+                    <input type="checkbox" checked={showMfccC0} onChange={(e) => setShowMfccC0(e.target.checked)} />
+                    <span className="text-xs text-zinc-600 dark:text-zinc-300">Show MFCC C0 (display)</span>
+                  </label>
+                </div>
                 <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
                   <span className="text-xs text-zinc-600 dark:text-zinc-300">Onset smoothing (ms)</span>
                   <input
@@ -325,8 +383,17 @@ export default function Home() {
 
                   {mirResult.kind === "2d" && (
                     <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">
-                      shape: <code>{mirResult.heatmap.data.length}</code> frames ×{" "}
-                      <code>{mirResult.heatmap.data[0]?.length ?? 0}</code> bins/coeffs
+                      raw shape: <code>{mirResult.raw.data.length}</code> frames ×{" "}
+                      <code>{mirResult.raw.data[0]?.length ?? 0}</code>
+                      {" "}features
+                      {displayedHeatmap ? (
+                        <>
+                          <br />
+                          display shape: <code>{displayedHeatmap.data.length}</code> frames ×{" "}
+                          <code>{displayedHeatmap.data[0]?.length ?? 0}</code>
+                          {" "}features
+                        </>
+                      ) : null}
                     </div>
                   )}
                 </div>
@@ -373,11 +440,13 @@ export default function Home() {
             <div className="-mt-1" ref={heatmapHostRef}>
               <div className="relative">
                 <TimeAlignedHeatmapPixi
-                  input={mirResult.heatmap}
+                  input={displayedHeatmap}
                   startTime={visibleRange.startTime}
                   endTime={visibleRange.endTime}
                   width={Math.floor(heatmapHostSize.width || 0)}
                   height={240}
+                  valueRange={heatmapValueRange}
+                  yLabel={heatmapYAxisLabel}
                 />
                 <HeatmapPlayheadOverlay viewport={viewport} playheadTimeSec={playheadTimeSec} height={240} />
               </div>

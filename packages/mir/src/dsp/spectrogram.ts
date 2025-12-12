@@ -1,6 +1,7 @@
 import type { MirGPU } from "../gpu/context";
 
-import { fftInPlace, hannWindow, magnitudesFromFft } from "./fft";
+import { hannWindow } from "./fft";
+import { getFftBackend } from "./fftBackend";
 
 // AudioBufferLike is re-exported from the package root.
 // Keeping this local type avoids importing from ../index (which can create circular deps).
@@ -117,8 +118,18 @@ export async function spectrogram(
     const mags: Float32Array[] = new Array(nFrames);
 
     const window = hannWindow(fftSize);
-    const re = new Float32Array(fftSize);
-    const im = new Float32Array(fftSize);
+
+    // Reuse FFT plan and buffers across frames.
+    const fft = getFftBackend(fftSize);
+
+    // Preallocate frame buffer so we don't allocate per frame.
+    const windowedFrame = new Float32Array(fftSize);
+
+    // Minimal timing instrumentation. This is deliberately lightweight and only used
+    // for optional debug logging by callers (e.g. worker). We don't expose this in the public API.
+    let totalFftMs = 0;
+    const nowMs = (): number =>
+        typeof performance !== "undefined" ? performance.now() : Date.now();
 
     for (let frame = 0; frame < nFrames; frame++) {
         if (options.isCancelled?.()) {
@@ -129,15 +140,31 @@ export async function spectrogram(
         // time is the center of the analysis window.
         times[frame] = (start + fftSize / 2) / sr;
 
+        // Apply windowing before FFT (same as previous implementation).
         for (let i = 0; i < fftSize; i++) {
             const s = mono[start + i] ?? 0;
-            re[i] = s * (window[i] ?? 0);
-            im[i] = 0;
+            windowedFrame[i] = s * (window[i] ?? 0);
         }
 
-        fftInPlace(re, im);
-        mags[frame] = magnitudesFromFft(re, im);
+        const t0 = nowMs();
+        const { real, imag } = fft.forwardReal(windowedFrame);
+        totalFftMs += nowMs() - t0;
+
+        // Magnitudes: only keep the real-input half-spectrum [0..N/2] inclusive.
+        const nBins = (fftSize >>> 1) + 1;
+        const out = new Float32Array(nBins);
+        for (let k = 0; k < nBins; k++) {
+            const re = real[k] ?? 0;
+            const im = imag[k] ?? 0;
+            out[k] = Math.hypot(re, im);
+        }
+        mags[frame] = out;
     }
+
+    // Attach as a non-enumerable debug field to avoid API changes.
+    // Consumers can optionally read it for profiling in development.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (mags as any).cpuFftTotalMs = totalFftMs;
 
     return {
         sampleRate: sr,

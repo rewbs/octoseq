@@ -23,6 +23,9 @@ export type TimeAlignedHeatmapProps = {
 
     /** Optional: if provided, clamps to a fixed scale. */
     valueRange?: { min: number; max: number };
+
+    /** Optional display label for the Y axis. */
+    yLabel?: string;
 };
 
 function clamp01(x: number): number {
@@ -73,7 +76,7 @@ function upperBound(times: Float32Array, t: number): number {
  * - We do not interpolate time; each pixel column samples the nearest frame.
  *   (This keeps mapping simple and avoids inventing new time values.)
  */
-export function TimeAlignedHeatmapPixi({ input, startTime, endTime, width, height, valueRange }: TimeAlignedHeatmapProps) {
+export function TimeAlignedHeatmapPixi({ input, startTime, endTime, width, height, valueRange, yLabel }: TimeAlignedHeatmapProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
 
     const appRef = useRef<Application | null>(null);
@@ -344,7 +347,15 @@ export function TimeAlignedHeatmapPixi({ input, startTime, endTime, width, heigh
                     style={{ width, height }}
                 />
             </div>
-            <p className="mt-2 text-xs text-zinc-500">2D heatmap view (PixiJS, time-synchronised)</p>
+            <p className="mt-2 text-xs text-zinc-500">
+                2D heatmap view (PixiJS, time-synchronised)
+                {yLabel ? (
+                    <>
+                        {" "}
+                        <span className="text-zinc-400">— Y axis: {yLabel}</span>
+                    </>
+                ) : null}
+            </p>
         </div>
     );
 }

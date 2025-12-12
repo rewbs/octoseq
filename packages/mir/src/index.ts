@@ -85,6 +85,15 @@ export { melSpectrogram } from "./dsp/mel";
 // ----------------------------
 
 export { normaliseForWaveform } from "./util/normalise";
+export type { Spectrogram2D, SpectrogramToDbOptions } from "./util/display";
+export { spectrogramToDb, clampDb } from "./util/display";
+
+// ----------------------------
+// Utility helpers
+// ----------------------------
+
+export type { MinMax } from "./util/stats";
+export { minMax } from "./util/stats";
 
 /**
  * Backwards-compat placeholder from the initial skeleton.

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 
+import { minMax } from "@octoseq/mir";
+
 import WaveSurfer from "wavesurfer.js";
 
 import type { WaveSurferViewport } from "./types";
@@ -139,11 +141,13 @@ export function SyncedWaveSurferSignal({ data, times, viewport, height = 96 }: S
         const peaks: Array<Float32Array> = [out];
         const dummyBlob = new Blob([], { type: "application/octet-stream" });
 
+        const { min: peaksMin, max: peaksMax } = minMax(out);
+
         console.debug("[MIR-1D] ws.loadBlob(peaks)", {
             duration,
             peaksLength: out.length,
-            peaksMin: Math.min(...Array.from(out)),
-            peaksMax: Math.max(...Array.from(out)),
+            peaksMin,
+            peaksMax,
         });
 
         void ws.loadBlob(dummyBlob, peaks, duration)
