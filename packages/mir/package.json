@@ -1,0 +1,45 @@
+{
+  "name": "@octoseq/mir",
+  "version": "0.1.0",
+  "description": "WebGPU-accelerated Music Information Retrieval (MIR) library (skeleton)",
+  "license": "MIT",
+  "private": false,
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./runner/runMir": {
+      "types": "./src/runner/runMir.ts",
+      "import": "./src/runner/runMir.ts"
+    },
+    "./runner/workerProtocol": {
+      "types": "./src/runner/workerProtocol.ts",
+      "import": "./src/runner/workerProtocol.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint -c eslint.config.mjs .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "eslint": "latest",
+    "typescript": "latest",
+    "tsup": "latest",
+    "vitest": "latest"
+  },
+  "dependencies": {}
+}

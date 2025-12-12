@@ -1,0 +1,33 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+
+  "eslint.useFlatConfig": true,
+  "eslint.workingDirectories": [{ "mode": "auto" }],
+
+  "typescript.tsdk": "node_modules/typescript/lib",
+
+  "files.exclude": {
+    "**/.turbo": true,
+    "**/.next": true,
+    "**/dist": true
+  },
+
+  "search.exclude": {
+    "**/.turbo": true,
+    "**/.next": true,
+    "**/dist": true,
+    "**/node_modules": true
+  },
+
+  "tailwindCSS.experimental.classRegex": [["className=\"([^\"]*)\"", "([^\\s]+)"]],
+
+  "workbench.colorCustomizations": {
+    "window.activeBorder": "#d4af37",
+    "window.inactiveBorder": "#6b5b1e",
+    "titleBar.activeBackground": "#2b2200",
+    "titleBar.activeForeground": "#ffd666",
+    "titleBar.inactiveBackground": "#1e1800",
+    "titleBar.inactiveForeground": "#bfa34a"
+  }
+}

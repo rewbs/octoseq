@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/launch",
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Web: Next.js (dev) - server",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "pnpm --filter web dev",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Web: Chrome (attach to Next dev)",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}/apps/web",
+      "userDataDir": "${workspaceFolder}/.vscode/.chrome"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Web: Debug Next.js",
+      "configurations": ["Web: Next.js (dev) - server", "Web: Chrome (attach to Next dev)"]
+    }
+  ]
+}
