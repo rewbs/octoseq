@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Octagon shape representing "Octo" - filled with dark background -->
+  <polygon
+    points="10,2 22,2 30,10 30,22 22,30 10,30 2,22 2,10"
+    fill="#141414"
+    stroke="#d4af37"
+    stroke-width="1.5"
+  />
+  <!-- Audio waveform/sequence bars representing "seq" - in gold accent -->
+  <rect x="7" y="14" width="2" height="4" fill="#d4af37" rx="0.5"/>
+  <rect x="11" y="10" width="2" height="12" fill="#d4af37" rx="0.5"/>
+  <rect x="15" y="12" width="2" height="8" fill="#d4af37" rx="0.5"/>
+  <rect x="19" y="8" width="2" height="16" fill="#d4af37" rx="0.5"/>
+  <rect x="23" y="13" width="2" height="6" fill="#d4af37" rx="0.5"/>
+</svg>

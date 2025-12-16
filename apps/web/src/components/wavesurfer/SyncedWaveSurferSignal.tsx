@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 
 import { minMax } from "@octoseq/mir";
 
 import WaveSurfer from "wavesurfer.js";
+
+import { HeatmapPlayheadOverlay } from "@/components/heatmap/HeatmapPlayheadOverlay";
 
 import type { WaveSurferViewport } from "./types";
 
@@ -19,6 +22,13 @@ export type SyncedWaveSurferSignalProps = {
     viewport: WaveSurferViewport | null;
 
     height?: number;
+    /** Shared mirrored cursor (hover or playhead) to display. */
+    cursorTimeSec?: number | null;
+    /** Notify parent when this view is hovered so other views can mirror cursor. */
+    onCursorTimeChange?: (timeSec: number | null) => void;
+
+    /** Optional: horizontal threshold in the normalised 0..1 display range. */
+    overlayThreshold?: number | null;
 };
 
 /**
@@ -31,9 +41,21 @@ export type SyncedWaveSurferSignalProps = {
  *
  * We then drive zoom/scroll from the main viewport.
  */
-export function SyncedWaveSurferSignal({ data, times, viewport, height = 96 }: SyncedWaveSurferSignalProps) {
+export function SyncedWaveSurferSignal({
+    data,
+    times,
+    viewport,
+    height = 96,
+    cursorTimeSec,
+    onCursorTimeChange,
+    overlayThreshold,
+}: SyncedWaveSurferSignalProps) {
     const wsRef = useRef<WaveSurfer | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
+
+    // Width is only used for overlay sizing, so track it explicitly to satisfy
+    // the repo's "no ref access during render" lint rule.
+    const [containerWidthPx, setContainerWidthPx] = useState(0);
 
     // Lint rule in this repo discourages setState within effects.
     // This component doesn't need to re-render on readiness, so we track it in a ref.
@@ -74,7 +96,7 @@ export function SyncedWaveSurferSignal({ data, times, viewport, height = 96 }: S
             const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
             if (scrollContainer && vp?.minPxPerSec) {
                 ws.zoom(vp.minPxPerSec);
-                scrollContainer.scrollLeft = vp.startTime * vp.minPxPerSec;
+                scrollContainer.scrollLeft = Math.max(0, vp.startTime * vp.minPxPerSec);
             }
 
             console.debug("[MIR-1D] wavesurfer ready", {
@@ -150,11 +172,29 @@ export function SyncedWaveSurferSignal({ data, times, viewport, height = 96 }: S
             peaksMax,
         });
 
+        // mark not ready until load completes to avoid zoom() errors.
+        readyRef.current = false;
+
         void ws.loadBlob(dummyBlob, peaks, duration)
             .then(() => {
                 console.debug("[MIR-1D] ws.loadBlob(peaks) ready", {
                     decodedDuration: ws.getDuration(),
                 });
+                readyRef.current = true;
+
+                // Re-apply viewport now that data is ready.
+                const vp = viewportRef.current;
+                if (vp) {
+                    try {
+                        if (vp.minPxPerSec > 0) ws.zoom(vp.minPxPerSec);
+                    } catch (e) {
+                        console.warn("[MIR-1D] zoom after load failed", e);
+                    }
+                    const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
+                    if (scrollContainer && vp.minPxPerSec > 0) {
+                        scrollContainer.scrollLeft = Math.max(0, vp.startTime * vp.minPxPerSec);
+                    }
+                }
             })
             .catch((err) => {
                 console.error("[MIR-1D] ws.loadBlob(peaks) failed", err);
@@ -168,7 +208,12 @@ export function SyncedWaveSurferSignal({ data, times, viewport, height = 96 }: S
         if (!readyRef.current) return;
 
         // Keep zoom consistent.
-        ws.zoom(viewport.minPxPerSec);
+        try {
+            ws.zoom(viewport.minPxPerSec);
+        } catch (e) {
+            console.warn("[MIR-1D] zoom skipped (no audio yet)", e);
+            return;
+        }
 
         // Map visible time window -> scrollLeft in pixels.
         // We prefer using the shared minPxPerSec mapping so we don't rely on
@@ -180,21 +225,51 @@ export function SyncedWaveSurferSignal({ data, times, viewport, height = 96 }: S
         if (!scrollContainer) return;
 
         if (viewport.minPxPerSec > 0) {
-            scrollContainer.scrollLeft = viewport.startTime * viewport.minPxPerSec;
+            scrollContainer.scrollLeft = Math.max(0, viewport.startTime * viewport.minPxPerSec);
         } else {
             scrollContainer.scrollLeft = 0;
         }
     }, [viewport]);
 
+    const handleMouseMove = (evt: ReactMouseEvent<HTMLDivElement>) => {
+        if (!onCursorTimeChange || !viewport) return;
+        const rect = evt.currentTarget.getBoundingClientRect();
+        const span = viewport.endTime - viewport.startTime;
+        if (span <= 0) return;
+        const pxPerSec = rect.width > 0 ? rect.width / span : viewport.minPxPerSec;
+        if (!pxPerSec || pxPerSec <= 0) return;
+        const x = Math.max(0, Math.min(rect.width, evt.clientX - rect.left));
+        const t = viewport.startTime + x / pxPerSec;
+        onCursorTimeChange(Math.max(0, t));
+    };
+
+    const handleMouseLeave = () => {
+        onCursorTimeChange?.(null);
+    };
+
+    const overlayTimeSec = cursorTimeSec ?? null;
+    const overlayWidth = containerWidthPx;
+
     return (
         <div className="w-full">
-            <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="relative rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
                 <div
-                    ref={(el) => {
+                    ref={(el: HTMLDivElement | null) => {
                         containerRef.current = el;
+                        setContainerWidthPx(el?.clientWidth ?? 0);
                     }}
                     className="w-full overflow-x-hidden"
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
                 />
+                <HeatmapPlayheadOverlay viewport={viewport} timeSec={overlayTimeSec} height={height} widthPx={overlayWidth} />
+                {overlayThreshold != null && Number.isFinite(overlayThreshold) ? (
+                    <div
+                        className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-emerald-500"
+                        style={{ top: `${(1 - overlayThreshold) * 100}%`, opacity: 0.65 }}
+                        aria-hidden
+                    />
+                ) : null}
             </div>
             <p className="mt-2 text-xs text-zinc-500">1D feature view (time-synchronised)</p>
         </div>

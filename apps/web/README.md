@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Octoseq web is a local-first MIR playground with:
+- WaveSurfer waveform + single-region selection
+- 1D/2D MIR visualisation (mel, onset, HPSS, MFCC, peaks)
+- Deterministic within-track similarity search (fingerprint + sliding window) running in a Web Worker
+- Optional WebGPU acceleration for mel/onset stages
 
-## Getting Started
+All audio stays on-device; drop a file and explore.
+
+## Run locally
 
 First, run the development server:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
 pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Workflow
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1) Load an audio file (local file input).
+2) Pick a MIR function (spectral centroid/flux, onset envelope/peaks, mel/HPSS/MFCC variants) and run analysis.
+3) Select a region on the waveform. Use “Search Controls” to set precision/threshold/weights/softmax, then “Run search”.
+4) Toggle tabs under the waveform:
+   - Similarity (search curve + threshold line)
+   - MIR outputs: one tab per MIR function you’ve run (1D/events/2D heatmaps)
+5) Click candidate markers to jump playback; the search panel shows timing + window/hop stats.
 
-## Learn More
+## Notes
+- All MIR + search runs in a Web Worker; cancellation is supported.
+- WebGPU is optional; disable via the Debug panel if needed.
+- Region selection is single-active; metrics (start/end/duration/samples) are shown below the waveform.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Troubleshooting
+- If similarity or MIR tabs look empty, ensure you’ve run the corresponding analysis; results are cached per MIR function.
+- If WebGPU fails, uncheck “Enable WebGPU” in Debug and rerun.

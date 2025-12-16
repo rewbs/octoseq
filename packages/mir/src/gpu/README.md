@@ -1,11 +1,12 @@
-# WebGPU acceleration (v0.1)
+# WebGPU acceleration
 
-This folder contains a minimal WebGPU compute implementation used to validate GPU execution inside `@octoseq/mir`.
+This folder contains the WebGPU compute implementation that powers optional GPU paths in `@octoseq/mir`.
 
-## What is on GPU?
+## What runs on GPU?
 
-- **Mel filterbank projection** (spectrogram magnitudes → mel bands) runs as a real WebGPU compute shader.
-- FFT/STFT remains on CPU (see `src/dsp/spectrogram.ts`).
+- **Mel filterbank projection** (spectrogram magnitudes → mel bands) — real WGSL compute kernel.
+- **HPSS mask estimation** — WGSL kernels for soft harmonic/percussive masks (see `hpssMasks.wgsl.ts`).
+- FFT/STFT remains on CPU (see `src/dsp/spectrogram.ts`); GPU is used as an acceleration stage rather than a full pipeline.
 
 ## Timing / observability
 
@@ -22,9 +23,12 @@ These differences should be small and not visually significant.
 A reasonable tolerance for comparison is:
 
 - `absDiff <= 1e-4` for individual mel bin values (after log10)
+- HPSS masks are soft probabilities; expect small differences in the 1e-3 range.
 
 ## Files
 
 - `kernels/melProject.wgsl.ts` — WGSL kernel source
+- `kernels/hpssMasks.wgsl.ts` — WGSL kernels for harmonic/percussive mask estimation
 - `helpers.ts` — small buffer/dispatch/readback helpers
 - `melProject.ts` — kernel wrapper that runs the projection and reads back `Float32Array`
+- `hpssMasks.ts` — GPU HPSS mask orchestration + readback

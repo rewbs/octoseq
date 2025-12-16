@@ -95,6 +95,22 @@ export { spectrogramToDb, clampDb } from "./util/display";
 export type { MinMax } from "./util/stats";
 export { minMax } from "./util/stats";
 
+// ----------------------------
+// Search (deterministic within-track similarity)
+// ----------------------------
+
+export type { MirFingerprintV1 } from "./search/fingerprintV1";
+export { fingerprintV1 } from "./search/fingerprintV1";
+
+export type { MirFingerprintVectorWeights } from "./search/similarity";
+export { fingerprintToVectorV1, similarityFingerprintV1 } from "./search/similarity";
+
+export type { MirSearchCandidate, MirSearchOptionsV1, MirSearchResultV1 } from "./search/searchTrackV1";
+export { searchTrackV1 } from "./search/searchTrackV1";
+
+export type { MirRefinementCandidateLabelV1, MirSearchCurveKindV1, MirSearchGuidedOptionsV1, MirSearchResultV1Guided } from "./search/searchTrackV1Guided";
+export { searchTrackV1Guided } from "./search/searchTrackV1Guided";
+
 /**
  * Backwards-compat placeholder from the initial skeleton.
  *

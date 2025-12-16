@@ -34,12 +34,15 @@ export function ViewportOverlayMarkers({ viewport, events, height = 128 }: Viewp
         // Clear.
         host.replaceChildren();
 
-        if (!viewport || viewport.minPxPerSec <= 0 || events.length === 0) return;
+        if (!viewport || events.length === 0) return;
 
+        const span = viewport.endTime - viewport.startTime;
         const width = viewport.containerWidthPx;
+        const pxPerSec = span > 0 && width > 0 ? width / span : viewport.minPxPerSec;
+        if (!pxPerSec || pxPerSec <= 0) return;
 
         for (const e of events) {
-            const x = (e.time - viewport.startTime) * viewport.minPxPerSec;
+            const x = (e.time - viewport.startTime) * pxPerSec;
             if (x < 0 || x > width) continue;
 
             const div = document.createElement("div");

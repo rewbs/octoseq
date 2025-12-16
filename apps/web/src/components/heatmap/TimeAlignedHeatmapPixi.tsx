@@ -11,6 +11,8 @@ export type TimeAlignedHeatmapData = {
     times: Float32Array;
 };
 
+export type HeatmapColorScheme = "grayscale" | "viridis" | "plasma" | "magma";
+
 export type TimeAlignedHeatmapProps = {
     input: TimeAlignedHeatmapData | null;
 
@@ -26,19 +28,73 @@ export type TimeAlignedHeatmapProps = {
 
     /** Optional display label for the Y axis. */
     yLabel?: string;
+
+    colorScheme?: HeatmapColorScheme;
 };
 
 function clamp01(x: number): number {
     return x < 0 ? 0 : x > 1 ? 1 : x;
 }
 
-/**
- * Simple grayscale colour map.
- * (We keep it intentionally basic for diagnostic/introspection usage.)
- */
-function grey(v01: number): [number, number, number, number] {
-    const v = Math.round(clamp01(v01) * 255);
-    return [v, v, v, 255];
+type ColorStop = { t: number; rgb: [number, number, number] };
+
+function lerpColor(stops: ColorStop[], t: number): [number, number, number, number] {
+    if (stops.length === 0) return [0, 0, 0, 255];
+    const v = clamp01(t);
+
+    // find interval
+    let i = 0;
+    while (i + 1 < stops.length && v > stops[i + 1]!.t) i++;
+
+    const a = stops[i];
+    const b = stops[Math.min(i + 1, stops.length - 1)];
+    if (!a || !b) {
+        const c = stops[stops.length - 1]?.rgb ?? [0, 0, 0];
+        return [c[0], c[1], c[2], 255];
+    }
+
+    const span = Math.max(1e-6, b.t - a.t);
+    const f = clamp01((v - a.t) / span);
+
+    const r = Math.round((a.rgb[0] ?? 0) + (b.rgb[0] - (a.rgb[0] ?? 0)) * f);
+    const g = Math.round((a.rgb[1] ?? 0) + (b.rgb[1] - (a.rgb[1] ?? 0)) * f);
+    const bCh = Math.round((a.rgb[2] ?? 0) + (b.rgb[2] - (a.rgb[2] ?? 0)) * f);
+
+    return [r, g, bCh, 255];
+}
+
+function colourMap(scheme: HeatmapColorScheme, v01: number): [number, number, number, number] {
+    // Stops loosely based on matplotlib palettes; kept small for perf.
+    const maps: Record<HeatmapColorScheme, ColorStop[]> = {
+        grayscale: [
+            { t: 0, rgb: [0, 0, 0] },
+            { t: 1, rgb: [255, 255, 255] },
+        ],
+        viridis: [
+            { t: 0, rgb: [68, 1, 84] },
+            { t: 0.25, rgb: [59, 82, 139] },
+            { t: 0.5, rgb: [33, 145, 140] },
+            { t: 0.75, rgb: [94, 201, 98] },
+            { t: 1, rgb: [253, 231, 37] },
+        ],
+        plasma: [
+            { t: 0, rgb: [13, 8, 135] },
+            { t: 0.25, rgb: [75, 3, 161] },
+            { t: 0.5, rgb: [125, 3, 168] },
+            { t: 0.75, rgb: [168, 34, 150] },
+            { t: 1, rgb: [240, 249, 33] },
+        ],
+        magma: [
+            { t: 0, rgb: [0, 0, 4] },
+            { t: 0.25, rgb: [28, 16, 68] },
+            { t: 0.5, rgb: [79, 18, 123] },
+            { t: 0.75, rgb: [150, 33, 109] },
+            { t: 1, rgb: [252, 255, 191] },
+        ],
+    };
+
+    const stops = maps[scheme] ?? maps.grayscale;
+    return lerpColor(stops, v01);
 }
 
 function lowerBound(times: Float32Array, t: number): number {
@@ -76,7 +132,16 @@ function upperBound(times: Float32Array, t: number): number {
  * - We do not interpolate time; each pixel column samples the nearest frame.
  *   (This keeps mapping simple and avoids inventing new time values.)
  */
-export function TimeAlignedHeatmapPixi({ input, startTime, endTime, width, height, valueRange, yLabel }: TimeAlignedHeatmapProps) {
+export function TimeAlignedHeatmapPixi({
+    input,
+    startTime,
+    endTime,
+    width,
+    height,
+    valueRange,
+    yLabel,
+    colorScheme = "grayscale",
+}: TimeAlignedHeatmapProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
 
     const appRef = useRef<Application | null>(null);
@@ -90,6 +155,7 @@ export function TimeAlignedHeatmapPixi({ input, startTime, endTime, width, heigh
     const widthRef = useRef(0);
     const heightRef = useRef(0);
     const rangeRef = useRef<{ min: number; max: number }>({ min: 0, max: 1 });
+    const colorRef = useRef<HeatmapColorScheme>(colorScheme);
 
     // Track unmount to avoid updating Pixi after teardown.
     const aliveRef = useRef(true);
@@ -293,7 +359,7 @@ export function TimeAlignedHeatmapPixi({ input, startTime, endTime, width, heigh
                 const fj = h <= 1 ? 0 : Math.round(((h - 1 - y) / (h - 1)) * (nFeatures - 1));
                 const v = row[fj] ?? 0;
                 const v01 = clamp01((v - range.min) * inv);
-                const [r, g, b, a255] = grey(v01);
+                const [r, g, b, a255] = colourMap(colorRef.current, v01);
 
                 const idx = (y * w + x) * 4;
                 pixels[idx] = r;
@@ -333,9 +399,10 @@ export function TimeAlignedHeatmapPixi({ input, startTime, endTime, width, heigh
         widthRef.current = width;
         heightRef.current = height;
         rangeRef.current = computedRange;
+        colorRef.current = colorScheme;
 
         renderNow();
-    }, [input, startTime, endTime, width, height, computedRange]);
+    }, [input, startTime, endTime, width, height, computedRange, colorScheme]);
 
     return (
         <div className="w-full">

@@ -3,6 +3,7 @@ import { mfcc, delta, deltaDelta } from "../dsp/mfcc";
 import { onsetEnvelopeFromMel, onsetEnvelopeFromMelGpu } from "../dsp/onset";
 import { peakPick } from "../dsp/peakPick";
 import { hpss } from "../dsp/hpss";
+import { hpssGpu } from "../dsp/hpssGpu";
 import { spectralCentroid, spectralFlux } from "../dsp/spectral";
 import { spectrogram, type AudioBufferLike, type Spectrogram, type SpectrogramConfig } from "../dsp/spectrogram";
 import type { MirGPU } from "../gpu/context";
@@ -283,6 +284,42 @@ export async function runMir(
     }
 
     if (request.fn === "hpssHarmonic" || request.fn === "hpssPercussive") {
+        // HPSS is CPU-heavy; we optionally accelerate mask estimation with WebGPU.
+        // CPU path remains the reference implementation and is used as fallback.
+        if (backend === "gpu") {
+            if (!options.gpu) throw new Error("@octoseq/mir: backend='gpu' requested but no MirGPU provided");
+
+            const hpssStart = nowMs();
+            try {
+                const out = await hpssGpu(spec, options.gpu, {
+                    timeMedian: options.hpss?.timeMedian,
+                    freqMedian: options.hpss?.freqMedian,
+                    softMask: true, // preserve CPU default
+                    isCancelled: options.isCancelled,
+                });
+                const end = nowMs();
+
+                const chosen = request.fn === "hpssHarmonic" ? out.harmonic : out.percussive;
+                return {
+                    kind: "2d",
+                    times: chosen.times,
+                    data: chosen.magnitudes,
+                    meta: {
+                        backend: "gpu",
+                        usedGpu: true,
+                        timings: {
+                            totalMs: end - t0,
+                            cpuMs: cpuAfterSpec - cpuStart + ((end - hpssStart) - out.gpuMs),
+                            gpuMs: out.gpuMs,
+                        },
+                    },
+                };
+            } catch (e) {
+                if (options.strictGpu) throw e;
+                // fall back to CPU HPSS
+            }
+        }
+
         const hpssStart = nowMs();
         const { harmonic, percussive } = hpss(spec, {
             timeMedian: options.hpss?.timeMedian,
