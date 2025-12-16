@@ -264,6 +264,7 @@ export default function Home() {
           values: norm,
         };
         setMirResults((prev) => ({ ...prev, [selected]: r }));
+        setVisualTab(selected);
         return;
       }
 
@@ -275,6 +276,7 @@ export default function Home() {
           events: result.events,
         };
         setMirResults((prev) => ({ ...prev, [selected]: r }));
+        setVisualTab(selected);
         return;
       }
 
@@ -291,6 +293,7 @@ export default function Home() {
         },
       };
       setMirResults((prev) => ({ ...prev, [selected]: r }));
+      setVisualTab(selected);
     } catch (e) {
       // If cancelled, do not treat as an error.
       if ((e as Error)?.message === "cancelled") {
@@ -1284,142 +1287,146 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mt-10">
+        <section className="mt-4">
           <div className="space-y-4">
-            <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
-              <SearchControlsPanel
-                value={searchControls}
-                onChange={(next) => setSearchControls(next)}
-                disabled={!audio || !refinement.queryRegion}
-                useRefinement={useRefinementSearch}
-                onUseRefinementChange={(next) => {
-                  userSetUseRefinementRef.current = true;
-                  setUseRefinementSearch(next);
-                }}
-                refinementAvailable={refinementLabelsAvailable}
-                selectionDurationSec={
-                  refinement.queryRegion ? Math.max(0, Math.abs(refinement.queryRegion.endSec - refinement.queryRegion.startSec)) : null
-                }
-              />
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  onClick={() => {
-                    if (refinement.queryRegion)
-                      void runSearch(refinement.queryRegion, searchControls).catch((e) => {
-                        if ((e as Error)?.message === "cancelled") return;
-                        console.error("[SEARCH] failed", e);
-                      });
+            <details className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+              <summary className="cursor-pointer select-none text-zinc-700 dark:text-zinc-200">Search for similar features</summary>
+
+              <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
+                <SearchControlsPanel
+                  value={searchControls}
+                  onChange={(next) => setSearchControls(next)}
+                  disabled={!audio || !refinement.queryRegion}
+                  useRefinement={useRefinementSearch}
+                  onUseRefinementChange={(next) => {
+                    userSetUseRefinementRef.current = true;
+                    setUseRefinementSearch(next);
                   }}
-                  disabled={!audio || !refinement.queryRegion || isSearchRunning}
-                >
-                  Run search
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (refinement.queryRegion)
-                      void runSearch(refinement.queryRegion, searchControls).catch((e) => {
-                        if ((e as Error)?.message === "cancelled") return;
-                        console.error("[SEARCH] failed", e);
-                      });
-                  }}
-                  disabled={!audio || !refinement.queryRegion || isSearchRunning}
-                >
-                  Recompute features &amp; search
-                </Button>
-                {searchDirty && searchResult ? (
-                  <span className="text-xs text-amber-600 dark:text-amber-400">Parameters changed — rerun search</span>
-                ) : null}
-                {isSearchRunning ? (
-                  <span className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                    Running search…
-                  </span>
-                ) : null}
-              </div>
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                Search is manual: adjust selection/controls then click Run search to recompute features and similarity.
-              </p>
-              {searchResult && (
-                <div className="rounded-md border border-zinc-200 bg-white p-2 text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
-                  <div>
-                    <span className="text-zinc-500">Search timings</span>: fp <code>{searchResult.timings.fingerprintMs.toFixed(1)}ms</code>, scan{" "}
-                    <code>{searchResult.timings.scanMs.toFixed(1)}ms</code>
-                    {searchResult.timings.modelMs != null ? (
-                      <>
-                        , model <code>{searchResult.timings.modelMs.toFixed(1)}ms</code>
-                      </>
-                    ) : null}
-                    , total <code>{searchResult.timings.totalMs.toFixed(1)}ms</code>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500">Curve</span>: <code>{searchResult.curveKind}</code> · model{" "}
-                    <code>{searchResult.model.kind}</code> · pos <code>{searchResult.model.positives}</code> · neg{" "}
-                    <code>{searchResult.model.negatives}</code>
-                  </div>
-                  {searchResult.model.weightL2 ? (
-                    <div>
-                      <span className="text-zinc-500">Model weight L2</span>: mel <code>{searchResult.model.weightL2.mel.toFixed(3)}</code> (fg{" "}
-                      <code>{searchResult.model.weightL2.melForeground.toFixed(3)}</code>
-                      {searchResult.model.weightL2.melContrast != null ? (
-                        <>
-                          , ct <code>{searchResult.model.weightL2.melContrast.toFixed(3)}</code>
-                        </>
-                      ) : null}
-                      ), onset <code>{searchResult.model.weightL2.onset.toFixed(3)}</code> (fg{" "}
-                      <code>{searchResult.model.weightL2.onsetForeground.toFixed(3)}</code>
-                      {searchResult.model.weightL2.onsetContrast != null ? (
-                        <>
-                          , ct <code>{searchResult.model.weightL2.onsetContrast.toFixed(3)}</code>
-                        </>
-                      ) : null}
-                      )
-                      {searchResult.model.weightL2.mfcc != null && searchResult.model.weightL2.mfccForeground != null ? (
-                        <>
-                          , mfcc <code>{searchResult.model.weightL2.mfcc.toFixed(3)}</code> (fg{" "}
-                          <code>{searchResult.model.weightL2.mfccForeground.toFixed(3)}</code>
-                          {searchResult.model.weightL2.mfccContrast != null ? (
-                            <>
-                              , ct <code>{searchResult.model.weightL2.mfccContrast.toFixed(3)}</code>
-                            </>
-                          ) : null}
-                          )
-                        </>
-                      ) : null}
-                    </div>
+                  refinementAvailable={refinementLabelsAvailable}
+                  selectionDurationSec={
+                    refinement.queryRegion ? Math.max(0, Math.abs(refinement.queryRegion.endSec - refinement.queryRegion.startSec)) : null
+                  }
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    onClick={() => {
+                      if (refinement.queryRegion)
+                        void runSearch(refinement.queryRegion, searchControls).catch((e) => {
+                          if ((e as Error)?.message === "cancelled") return;
+                          console.error("[SEARCH] failed", e);
+                        });
+                    }}
+                    disabled={!audio || !refinement.queryRegion || isSearchRunning}
+                  >
+                    Run search
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (refinement.queryRegion)
+                        void runSearch(refinement.queryRegion, searchControls).catch((e) => {
+                          if ((e as Error)?.message === "cancelled") return;
+                          console.error("[SEARCH] failed", e);
+                        });
+                    }}
+                    disabled={!audio || !refinement.queryRegion || isSearchRunning}
+                  >
+                    Recompute features &amp; search
+                  </Button>
+                  {searchDirty && searchResult ? (
+                    <span className="text-xs text-amber-600 dark:text-amber-400">Parameters changed — rerun search</span>
                   ) : null}
-                  <div>
-                    <span className="text-zinc-500">Window / hop</span>: <code>{searchResult.meta.windowSec.toFixed(3)}s</code> window,{" "}
-                    <code>{Math.round(searchResult.meta.hopSec * 1000)}ms</code> hop; scanned <code>{searchResult.meta.scannedWindows}</code>, skipped{" "}
-                    <code>{searchResult.meta.skippedWindows}</code>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500">Candidates</span>: <code>{searchResult.candidates.length}</code>
-                  </div>
-                  {refinement.activeCandidateId ? (
-                    <div>
-                      <span className="text-zinc-500">Active</span>:{" "}
-                      <code>{refinement.activeCandidateId}</code>
-                    </div>
-                  ) : null}
-                  {activeCandidateGroupLogit ? (
-                    <div>
-                      <span className="text-zinc-500">Active group logit</span>: total{" "}
-                      <code>{activeCandidateGroupLogit.logit.toFixed(3)}</code> (bias{" "}
-                      <code>{activeCandidateGroupLogit.bias.toFixed(3)}</code>, mel{" "}
-                      <code>{activeCandidateGroupLogit.mel.toFixed(3)}</code>, onset{" "}
-                      <code>{activeCandidateGroupLogit.onset.toFixed(3)}</code>
-                      {activeCandidateGroupLogit.mfcc != null ? (
-                        <>
-                          , mfcc <code>{activeCandidateGroupLogit.mfcc.toFixed(3)}</code>
-                        </>
-                      ) : null}
-                      )
-                    </div>
+                  {isSearchRunning ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                      Running search…
+                    </span>
                   ) : null}
                 </div>
-              )}
-            </div>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  Select a snippet of audio and find similar segments.
+                </p>
+                {searchResult && (
+                  <div className="rounded-md border border-zinc-200 bg-white p-2 text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
+                    <div>
+                      <span className="text-zinc-500">Search timings</span>: fp <code>{searchResult.timings.fingerprintMs.toFixed(1)}ms</code>, scan{" "}
+                      <code>{searchResult.timings.scanMs.toFixed(1)}ms</code>
+                      {searchResult.timings.modelMs != null ? (
+                        <>
+                          , model <code>{searchResult.timings.modelMs.toFixed(1)}ms</code>
+                        </>
+                      ) : null}
+                      , total <code>{searchResult.timings.totalMs.toFixed(1)}ms</code>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500">Curve</span>: <code>{searchResult.curveKind}</code> · model{" "}
+                      <code>{searchResult.model.kind}</code> · pos <code>{searchResult.model.positives}</code> · neg{" "}
+                      <code>{searchResult.model.negatives}</code>
+                    </div>
+                    {searchResult.model.weightL2 ? (
+                      <div>
+                        <span className="text-zinc-500">Model weight L2</span>: mel <code>{searchResult.model.weightL2.mel.toFixed(3)}</code> (fg{" "}
+                        <code>{searchResult.model.weightL2.melForeground.toFixed(3)}</code>
+                        {searchResult.model.weightL2.melContrast != null ? (
+                          <>
+                            , ct <code>{searchResult.model.weightL2.melContrast.toFixed(3)}</code>
+                          </>
+                        ) : null}
+                        ), onset <code>{searchResult.model.weightL2.onset.toFixed(3)}</code> (fg{" "}
+                        <code>{searchResult.model.weightL2.onsetForeground.toFixed(3)}</code>
+                        {searchResult.model.weightL2.onsetContrast != null ? (
+                          <>
+                            , ct <code>{searchResult.model.weightL2.onsetContrast.toFixed(3)}</code>
+                          </>
+                        ) : null}
+                        )
+                        {searchResult.model.weightL2.mfcc != null && searchResult.model.weightL2.mfccForeground != null ? (
+                          <>
+                            , mfcc <code>{searchResult.model.weightL2.mfcc.toFixed(3)}</code> (fg{" "}
+                            <code>{searchResult.model.weightL2.mfccForeground.toFixed(3)}</code>
+                            {searchResult.model.weightL2.mfccContrast != null ? (
+                              <>
+                                , ct <code>{searchResult.model.weightL2.mfccContrast.toFixed(3)}</code>
+                              </>
+                            ) : null}
+                            )
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <div>
+                      <span className="text-zinc-500">Window / hop</span>: <code>{searchResult.meta.windowSec.toFixed(3)}s</code> window,{" "}
+                      <code>{Math.round(searchResult.meta.hopSec * 1000)}ms</code> hop; scanned <code>{searchResult.meta.scannedWindows}</code>, skipped{" "}
+                      <code>{searchResult.meta.skippedWindows}</code>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500">Candidates</span>: <code>{searchResult.candidates.length}</code>
+                    </div>
+                    {refinement.activeCandidateId ? (
+                      <div>
+                        <span className="text-zinc-500">Active</span>:{" "}
+                        <code>{refinement.activeCandidateId}</code>
+                      </div>
+                    ) : null}
+                    {activeCandidateGroupLogit ? (
+                      <div>
+                        <span className="text-zinc-500">Active group logit</span>: total{" "}
+                        <code>{activeCandidateGroupLogit.logit.toFixed(3)}</code> (bias{" "}
+                        <code>{activeCandidateGroupLogit.bias.toFixed(3)}</code>, mel{" "}
+                        <code>{activeCandidateGroupLogit.mel.toFixed(3)}</code>, onset{" "}
+                        <code>{activeCandidateGroupLogit.onset.toFixed(3)}</code>
+                        {activeCandidateGroupLogit.mfcc != null ? (
+                          <>
+                            , mfcc <code>{activeCandidateGroupLogit.mfcc.toFixed(3)}</code>
+                          </>
+                        ) : null}
+                        )
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </details>
 
             {refinement.candidates.length > 0 ? (
               <SearchRefinementPanel
