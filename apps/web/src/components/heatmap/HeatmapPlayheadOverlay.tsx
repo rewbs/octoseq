@@ -33,6 +33,10 @@ export function HeatmapPlayheadOverlay({ viewport, timeSec, height, widthPx }: H
     const x = (timeSec - viewport.startTime) * pxPerSec;
     if (!Number.isFinite(x)) return null;
 
+    // Clip to container bounds
+    const containerWidth = widthPx ?? (viewport.containerWidthPx > 0 ? viewport.containerWidthPx : 0);
+    if (containerWidth > 0 && (x < 0 || x > containerWidth)) return null;
+
     return (
         <div
             className="pointer-events-none absolute top-0"

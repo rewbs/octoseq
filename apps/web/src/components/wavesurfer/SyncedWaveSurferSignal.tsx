@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 import { minMax } from "@octoseq/mir";
 
 import WaveSurfer from "wavesurfer.js";
 
-import { HeatmapPlayheadOverlay } from "@/components/heatmap/HeatmapPlayheadOverlay";
+
 
 import type { WaveSurferViewport } from "./types";
 
@@ -53,9 +53,7 @@ export function SyncedWaveSurferSignal({
     const wsRef = useRef<WaveSurfer | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
 
-    // Width is only used for overlay sizing, so track it explicitly to satisfy
-    // the repo's "no ref access during render" lint rule.
-    const [containerWidthPx, setContainerWidthPx] = useState(0);
+
 
     // Lint rule in this repo discourages setState within effects.
     // This component doesn't need to re-render on readiness, so we track it in a ref.
@@ -247,8 +245,19 @@ export function SyncedWaveSurferSignal({
         onCursorTimeChange?.(null);
     };
 
-    const overlayTimeSec = cursorTimeSec ?? null;
-    const overlayWidth = containerWidthPx;
+    useEffect(() => {
+        const ws = wsRef.current;
+        if (!ws || !readyRef.current || cursorTimeSec == null) return;
+
+        // Use native WaveSurfer playhead/cursor instead of a manual overlay.
+        // This ensures perfect alignment with the waveform rendering.
+        const duration = ws.getDuration();
+        if (duration > 0) {
+            ws.setTime(Math.min(duration, Math.max(0, cursorTimeSec)));
+        }
+    }, [cursorTimeSec]);
+
+
 
     return (
         <div className="w-full">
@@ -256,13 +265,11 @@ export function SyncedWaveSurferSignal({
                 <div
                     ref={(el: HTMLDivElement | null) => {
                         containerRef.current = el;
-                        setContainerWidthPx(el?.clientWidth ?? 0);
                     }}
                     className="w-full overflow-x-hidden"
                     onMouseMove={handleMouseMove}
                     onMouseLeave={handleMouseLeave}
                 />
-                <HeatmapPlayheadOverlay viewport={viewport} timeSec={overlayTimeSec} height={height} widthPx={overlayWidth} />
                 {overlayThreshold != null && Number.isFinite(overlayThreshold) ? (
                     <div
                         className="pointer-events-none absolute left-0 right-0 border-t border-dashed border-emerald-500"

@@ -11,6 +11,7 @@ import {
   normaliseForWaveform,
 } from "@octoseq/mir";
 
+import { Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { prepareHpssSpectrogramForHeatmap, prepareMfccForHeatmap } from "@/lib/mirDisplayTransforms";
 import { runMir } from "@octoseq/mir/runner/runMir";
@@ -70,31 +71,31 @@ export default function Home() {
     applySoftmax: false,
   });
 
-	  const [searchResult, setSearchResult] = useState<{
-	    times: Float32Array;
-	    scores: Float32Array;
-	    curveKind: "similarity" | "confidence";
-	    model: {
-	      kind: "baseline" | "prototype" | "logistic";
-	      positives: number;
-	      negatives: number;
-	      weightL2?: {
-	        mel: number;
-	        melForeground: number;
-	        melContrast?: number;
-	        onset: number;
-	        onsetForeground: number;
-	        onsetContrast?: number;
-	        mfcc?: number;
-	        mfccForeground?: number;
-	        mfccContrast?: number;
-	      };
-	      training?: { iterations: number; finalLoss: number };
-	    };
-	    candidates: SearchCandidateOverlayEvent[];
-	    timings: { fingerprintMs: number; scanMs: number; modelMs?: number; totalMs: number };
-	    meta: { windowSec: number; hopSec: number; skippedWindows: number; scannedWindows: number };
-	  } | null>(null);
+  const [searchResult, setSearchResult] = useState<{
+    times: Float32Array;
+    scores: Float32Array;
+    curveKind: "similarity" | "confidence";
+    model: {
+      kind: "baseline" | "prototype" | "logistic";
+      positives: number;
+      negatives: number;
+      weightL2?: {
+        mel: number;
+        melForeground: number;
+        melContrast?: number;
+        onset: number;
+        onsetForeground: number;
+        onsetContrast?: number;
+        mfcc?: number;
+        mfccForeground?: number;
+        mfccContrast?: number;
+      };
+      training?: { iterations: number; finalLoss: number };
+    };
+    candidates: SearchCandidateOverlayEvent[];
+    timings: { fingerprintMs: number; scanMs: number; modelMs?: number; totalMs: number };
+    meta: { windowSec: number; hopSec: number; skippedWindows: number; scannedWindows: number };
+  } | null>(null);
 
   const [waveformSeekTo, setWaveformSeekTo] = useState<number | null>(null);
   const [searchDirty, setSearchDirty] = useState(false);
@@ -398,91 +399,95 @@ export default function Home() {
 
     activeSearchJobRef.current = job;
 
-	    try {
-	      const res = await job.promise;
-	      setSearchResult(res);
-        setRefinement((prevState) => {
-          const preserved = prevState.candidates.filter((c) => c.source === "manual" || c.status !== "unreviewed");
-          const preservedUpdated = preserved.map((c) => ({ ...c }));
+    try {
+      const res = await job.promise;
+      setSearchResult(res);
+      setRefinement((prevState) => {
+        const preserved = prevState.candidates.filter((c) => c.source === "manual" || c.status !== "unreviewed");
+        const preservedUpdated = preserved.map((c) => ({ ...c }));
 
-          const overlapRatio = (a0: number, a1: number, b0: number, b1: number): number => {
-            const start = Math.max(Math.min(a0, a1), Math.min(b0, b1));
-            const end = Math.min(Math.max(a0, a1), Math.max(b0, b1));
-            const overlap = Math.max(0, end - start);
-            const durA = Math.max(1e-6, Math.abs(a1 - a0));
-            const durB = Math.max(1e-6, Math.abs(b1 - b0));
-            return overlap / Math.min(durA, durB);
-          };
+        const overlapRatio = (a0: number, a1: number, b0: number, b1: number): number => {
+          const start = Math.max(Math.min(a0, a1), Math.min(b0, b1));
+          const end = Math.min(Math.max(a0, a1), Math.max(b0, b1));
+          const overlap = Math.max(0, end - start);
+          const durA = Math.max(1e-6, Math.abs(a1 - a0));
+          const durB = Math.max(1e-6, Math.abs(b1 - b0));
+          return overlap / Math.min(durA, durB);
+        };
 
-          const matchThreshold = 0.9;
-          const usedPreserved = new Set<number>();
+        const matchThreshold = 0.9;
+        const usedPreserved = new Set<number>();
 
-          const newAuto: RefinementCandidate[] = [];
-          const resultCandidates = [...res.candidates].sort((a, b) => a.windowStartSec - b.windowStartSec);
+        const newAuto: RefinementCandidate[] = [];
+        const resultCandidates = [...res.candidates].sort((a, b) => a.windowStartSec - b.windowStartSec);
 
-          for (let idx = 0; idx < resultCandidates.length; idx++) {
-            const c = resultCandidates[idx];
-            if (!c) continue;
+        for (let idx = 0; idx < resultCandidates.length; idx++) {
+          const c = resultCandidates[idx];
+          if (!c) continue;
 
-            const startSec = c.windowStartSec;
-            const endSec = c.windowEndSec;
+          const startSec = c.windowStartSec;
+          const endSec = c.windowEndSec;
 
-            // Preserve any existing manual / accepted / rejected candidate that overlaps strongly.
-            let bestIndex = -1;
-            let bestRatio = 0;
-            for (let i = 0; i < preservedUpdated.length; i++) {
-              if (usedPreserved.has(i)) continue;
-              const p = preservedUpdated[i];
-              if (!p) continue;
-              const ratio = overlapRatio(startSec, endSec, p.startSec, p.endSec);
-              if (ratio > bestRatio) {
-                bestRatio = ratio;
-                bestIndex = i;
-              }
+          // Preserve any existing manual / accepted / rejected candidate that overlaps strongly.
+          let bestIndex = -1;
+          let bestRatio = 0;
+          for (let i = 0; i < preservedUpdated.length; i++) {
+            if (usedPreserved.has(i)) continue;
+            const p = preservedUpdated[i];
+            if (!p) continue;
+            const ratio = overlapRatio(startSec, endSec, p.startSec, p.endSec);
+            if (ratio > bestRatio) {
+              bestRatio = ratio;
+              bestIndex = i;
             }
-
-            if (bestIndex >= 0 && bestRatio >= matchThreshold) {
-              usedPreserved.add(bestIndex);
-              const p = preservedUpdated[bestIndex];
-              if (p && p.source !== "manual") {
-                preservedUpdated[bestIndex] = { ...p, startSec, endSec, score: c.score };
-              }
-              continue;
-            }
-
-            newAuto.push({
-              id: makeAutoCandidateId(startSec, endSec, idx),
-              startSec,
-              endSec,
-              score: c.score,
-              status: "unreviewed",
-              source: "auto",
-            });
           }
 
-          const nextCandidates = [...preservedUpdated, ...newAuto].sort((a, b) => a.startSec - b.startSec);
+          if (bestIndex >= 0 && bestRatio >= matchThreshold) {
+            usedPreserved.add(bestIndex);
+            const p = preservedUpdated[bestIndex];
+            if (p && p.source !== "manual") {
+              preservedUpdated[bestIndex] = { ...p, startSec, endSec, score: c.score };
+            }
+            continue;
+          }
 
-          const stillActive = prevState.activeCandidateId != null && nextCandidates.some((c) => c.id === prevState.activeCandidateId);
-          const nextActive =
-            stillActive
-              ? prevState.activeCandidateId
-              : nextCandidates.find((c) => c.status === "unreviewed")?.id ?? nextCandidates[0]?.id ?? null;
+          newAuto.push({
+            id: makeAutoCandidateId(startSec, endSec, idx),
+            startSec,
+            endSec,
+            score: c.score,
+            status: "unreviewed",
+            source: "auto",
+          });
+        }
 
-          const nextActiveCandidate = nextActive ? nextCandidates.find((c) => c.id === nextActive) ?? null : null;
-          if (nextActiveCandidate) setWaveformSeekTo(nextActiveCandidate.startSec);
+        const nextCandidates = [...preservedUpdated, ...newAuto].sort((a, b) => a.startSec - b.startSec);
 
-          return {
-            ...prevState,
-            candidates: nextCandidates,
-            activeCandidateId: nextActive,
-            refinementStats: computeRefinementStats(nextCandidates),
-          };
-        });
-		      setSearchDirty(false);
-		    } finally {
-	      setIsSearchRunning(false);
-	      if (activeSearchJobRef.current?.id === job.id) activeSearchJobRef.current = null;
-	    }
+        const stillActive = prevState.activeCandidateId != null && nextCandidates.some((c) => c.id === prevState.activeCandidateId);
+        const nextActive =
+          stillActive
+            ? prevState.activeCandidateId
+            : nextCandidates.find((c) => c.status === "unreviewed")?.id ?? nextCandidates[0]?.id ?? null;
+
+        const nextActiveCandidate = nextActive ? nextCandidates.find((c) => c.id === nextActive) ?? null : null;
+        if (nextActiveCandidate) setWaveformSeekTo(nextActiveCandidate.startSec);
+
+        return {
+          ...prevState,
+          candidates: nextCandidates,
+          activeCandidateId: nextActive,
+          refinementStats: computeRefinementStats(nextCandidates),
+        };
+      });
+      setSearchDirty(false);
+
+      // UX improvement: auto-enable "Add missing match" mode so subsequent interactions
+      // add candidates rather than resetting the search.
+      setAddMissingMode(true);
+    } finally {
+      setIsSearchRunning(false);
+      if (activeSearchJobRef.current?.id === job.id) activeSearchJobRef.current = null;
+    }
   };
 
   // Mark search as stale when inputs change; user must click Run Search explicitly.
@@ -567,20 +572,20 @@ export default function Home() {
     return new Map(refinement.candidates.map((c) => [c.id, c]));
   }, [refinement.candidates]);
 
-	  const activeCandidate = useMemo(() => {
-	    if (!refinement.activeCandidateId) return null;
-	    return candidatesById.get(refinement.activeCandidateId) ?? null;
-	  }, [candidatesById, refinement.activeCandidateId]);
+  const activeCandidate = useMemo(() => {
+    if (!refinement.activeCandidateId) return null;
+    return candidatesById.get(refinement.activeCandidateId) ?? null;
+  }, [candidatesById, refinement.activeCandidateId]);
 
-	  const activeCandidateGroupLogit = useMemo(() => {
-	    if (!searchResult || !activeCandidate) return null;
-	    const startMs = Math.round(activeCandidate.startSec * 1000);
-	    const endMs = Math.round(activeCandidate.endSec * 1000);
-	    const match = searchResult.candidates.find(
-	      (c) => Math.round(c.windowStartSec * 1000) === startMs && Math.round(c.windowEndSec * 1000) === endMs
-	    );
-	    return match?.explain?.groupLogit ?? null;
-	  }, [activeCandidate, searchResult]);
+  const activeCandidateGroupLogit = useMemo(() => {
+    if (!searchResult || !activeCandidate) return null;
+    const startMs = Math.round(activeCandidate.startSec * 1000);
+    const endMs = Math.round(activeCandidate.endSec * 1000);
+    const match = searchResult.candidates.find(
+      (c) => Math.round(c.windowStartSec * 1000) === startMs && Math.round(c.windowEndSec * 1000) === endMs
+    );
+    return match?.explain?.groupLogit ?? null;
+  }, [activeCandidate, searchResult]);
 
   const filteredCandidates = useMemo(() => {
     if (candidateFilter === "all") return refinement.candidates;
@@ -603,18 +608,18 @@ export default function Home() {
             : filteredCandidates.length - 1
           : (idx + dir + filteredCandidates.length) % filteredCandidates.length;
       const next = filteredCandidates[nextIndex];
-	      if (!next) return;
+      if (!next) return;
 
-	      setRefinement((prevState) => ({ ...prevState, activeCandidateId: next.id }));
+      setRefinement((prevState) => ({ ...prevState, activeCandidateId: next.id }));
 
-	      if (autoPlayOnNavigate) {
-	        playerRef.current?.playSegment({ startSec: next.startSec, endSec: next.endSec, loop: loopCandidate });
-	      } else {
-	        setWaveformSeekTo(next.startSec);
-	      }
-	    },
-	    [activeFilteredIndex, autoPlayOnNavigate, filteredCandidates, loopCandidate]
-	  );
+      if (autoPlayOnNavigate) {
+        playerRef.current?.playSegment({ startSec: next.startSec, endSec: next.endSec, loop: loopCandidate });
+      } else {
+        setWaveformSeekTo(next.startSec);
+      }
+    },
+    [activeFilteredIndex, autoPlayOnNavigate, filteredCandidates, loopCandidate]
+  );
 
   const onPrevCandidate = useCallback(() => navigateCandidate(-1), [navigateCandidate]);
   const onNextCandidate = useCallback(() => navigateCandidate(1), [navigateCandidate]);
@@ -657,27 +662,27 @@ export default function Home() {
         if (next?.id === current.id) next = null;
       }
 
-	      setRefinement((prevState) => {
-	        const updated = prevState.candidates.map((c) => (c.id === current.id ? { ...c, status } : c));
-	        const nextActive = candidateFilter === "all" ? next?.id ?? current.id : next?.id ?? null;
-	        return {
-	          ...prevState,
-	          candidates: updated,
-	          activeCandidateId: nextActive,
-	          refinementStats: computeRefinementStats(updated),
+      setRefinement((prevState) => {
+        const updated = prevState.candidates.map((c) => (c.id === current.id ? { ...c, status } : c));
+        const nextActive = candidateFilter === "all" ? next?.id ?? current.id : next?.id ?? null;
+        return {
+          ...prevState,
+          candidates: updated,
+          activeCandidateId: nextActive,
+          refinementStats: computeRefinementStats(updated),
         };
       });
 
-	      if (next) {
-	        if (autoPlayOnNavigate) {
-	          playerRef.current?.playSegment({ startSec: next.startSec, endSec: next.endSec, loop: loopCandidate });
-	        } else {
-	          setWaveformSeekTo(next.startSec);
-	        }
-	      }
-	    },
-	    [activeCandidate, autoPlayOnNavigate, candidateFilter, filteredCandidates, loopCandidate]
-	  );
+      if (next) {
+        if (autoPlayOnNavigate) {
+          playerRef.current?.playSegment({ startSec: next.startSec, endSec: next.endSec, loop: loopCandidate });
+        } else {
+          setWaveformSeekTo(next.startSec);
+        }
+      }
+    },
+    [activeCandidate, autoPlayOnNavigate, candidateFilter, filteredCandidates, loopCandidate]
+  );
 
   const acceptActive = useCallback(() => setActiveStatus("accepted"), [setActiveStatus]);
   const rejectActive = useCallback(() => setActiveStatus("rejected"), [setActiveStatus]);
@@ -711,14 +716,14 @@ export default function Home() {
       if (c.score == null) continue;
       if (!best || (best.score ?? -Infinity) < c.score) best = c;
     }
-	    if (!best) return;
-	    setRefinement((prevState) => ({ ...prevState, activeCandidateId: best.id }));
-	    if (autoPlayOnNavigate) {
-	      playerRef.current?.playSegment({ startSec: best.startSec, endSec: best.endSec, loop: loopCandidate });
-	    } else {
-	      setWaveformSeekTo(best.startSec);
-	    }
-	  }, [autoPlayOnNavigate, loopCandidate, refinement.candidates]);
+    if (!best) return;
+    setRefinement((prevState) => ({ ...prevState, activeCandidateId: best.id }));
+    if (autoPlayOnNavigate) {
+      playerRef.current?.playSegment({ startSec: best.startSec, endSec: best.endSec, loop: loopCandidate });
+    } else {
+      setWaveformSeekTo(best.startSec);
+    }
+  }, [autoPlayOnNavigate, loopCandidate, refinement.candidates]);
 
   const handleFilterChange = useCallback(
     (nextFilter: CandidateFilter) => {
@@ -738,17 +743,17 @@ export default function Home() {
 
       setRefinement((prevState) => ({ ...prevState, activeCandidateId: nextActiveId }));
 
-	      const c = nextActiveId ? candidatesById.get(nextActiveId) : null;
-	      if (c) {
-	        if (autoPlayOnNavigate) {
-	          playerRef.current?.playSegment({ startSec: c.startSec, endSec: c.endSec, loop: loopCandidate });
-	        } else {
-	          setWaveformSeekTo(c.startSec);
-	        }
-	      }
-	    },
-	    [autoPlayOnNavigate, candidatesById, loopCandidate, refinement.activeCandidateId, refinement.candidates]
-	  );
+      const c = nextActiveId ? candidatesById.get(nextActiveId) : null;
+      if (c) {
+        if (autoPlayOnNavigate) {
+          playerRef.current?.playSegment({ startSec: c.startSec, endSec: c.endSec, loop: loopCandidate });
+        } else {
+          setWaveformSeekTo(c.startSec);
+        }
+      }
+    },
+    [autoPlayOnNavigate, candidatesById, loopCandidate, refinement.activeCandidateId, refinement.candidates]
+  );
 
   const copyRefinementJson = useCallback(async () => {
     const q = refinement.queryRegion;
@@ -980,7 +985,7 @@ export default function Home() {
   const { ref: eventsHostRef, size: eventsHostSize } = useElementSize<HTMLDivElement>();
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
+    <div className="flex flex-col min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
       <main className="w-full max-w-[1600px] rounded-2xl bg-white p-10 shadow-sm dark:bg-black">
         <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">Octoseq</h1>
 
@@ -1281,47 +1286,47 @@ export default function Home() {
 
         <section className="mt-10">
           <div className="space-y-4">
-	            <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
-	              <SearchControlsPanel
-	                value={searchControls}
-	                onChange={(next) => setSearchControls(next)}
-	                disabled={!audio || !refinement.queryRegion}
-                  useRefinement={useRefinementSearch}
-                  onUseRefinementChange={(next) => {
-                    userSetUseRefinementRef.current = true;
-                    setUseRefinementSearch(next);
+            <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
+              <SearchControlsPanel
+                value={searchControls}
+                onChange={(next) => setSearchControls(next)}
+                disabled={!audio || !refinement.queryRegion}
+                useRefinement={useRefinementSearch}
+                onUseRefinementChange={(next) => {
+                  userSetUseRefinementRef.current = true;
+                  setUseRefinementSearch(next);
+                }}
+                refinementAvailable={refinementLabelsAvailable}
+                selectionDurationSec={
+                  refinement.queryRegion ? Math.max(0, Math.abs(refinement.queryRegion.endSec - refinement.queryRegion.startSec)) : null
+                }
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  onClick={() => {
+                    if (refinement.queryRegion)
+                      void runSearch(refinement.queryRegion, searchControls).catch((e) => {
+                        if ((e as Error)?.message === "cancelled") return;
+                        console.error("[SEARCH] failed", e);
+                      });
                   }}
-                  refinementAvailable={refinementLabelsAvailable}
-	                selectionDurationSec={
-	                  refinement.queryRegion ? Math.max(0, Math.abs(refinement.queryRegion.endSec - refinement.queryRegion.startSec)) : null
-	                }
-	              />
-	              <div className="flex flex-wrap items-center gap-2">
-	                <Button
-	                  onClick={() => {
-	                    if (refinement.queryRegion)
-	                      void runSearch(refinement.queryRegion, searchControls).catch((e) => {
-	                        if ((e as Error)?.message === "cancelled") return;
-	                        console.error("[SEARCH] failed", e);
-	                      });
-	                  }}
-	                  disabled={!audio || !refinement.queryRegion || isSearchRunning}
-	                >
-	                  Run search
-	                </Button>
-	                <Button
-	                  variant="outline"
-	                  onClick={() => {
-	                    if (refinement.queryRegion)
-	                      void runSearch(refinement.queryRegion, searchControls).catch((e) => {
-	                        if ((e as Error)?.message === "cancelled") return;
-	                        console.error("[SEARCH] failed", e);
-	                      });
-	                  }}
-	                  disabled={!audio || !refinement.queryRegion || isSearchRunning}
-	                >
-	                  Recompute features &amp; search
-	                </Button>
+                  disabled={!audio || !refinement.queryRegion || isSearchRunning}
+                >
+                  Run search
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (refinement.queryRegion)
+                      void runSearch(refinement.queryRegion, searchControls).catch((e) => {
+                        if ((e as Error)?.message === "cancelled") return;
+                        console.error("[SEARCH] failed", e);
+                      });
+                  }}
+                  disabled={!audio || !refinement.queryRegion || isSearchRunning}
+                >
+                  Recompute features &amp; search
+                </Button>
                 {searchDirty && searchResult ? (
                   <span className="text-xs text-amber-600 dark:text-amber-400">Parameters changed — rerun search</span>
                 ) : null}
@@ -1351,191 +1356,191 @@ export default function Home() {
                     <span className="text-zinc-500">Curve</span>: <code>{searchResult.curveKind}</code> · model{" "}
                     <code>{searchResult.model.kind}</code> · pos <code>{searchResult.model.positives}</code> · neg{" "}
                     <code>{searchResult.model.negatives}</code>
-	                  </div>
-	                  {searchResult.model.weightL2 ? (
-	                    <div>
-	                      <span className="text-zinc-500">Model weight L2</span>: mel <code>{searchResult.model.weightL2.mel.toFixed(3)}</code> (fg{" "}
-	                      <code>{searchResult.model.weightL2.melForeground.toFixed(3)}</code>
-	                      {searchResult.model.weightL2.melContrast != null ? (
-	                        <>
-	                          , ct <code>{searchResult.model.weightL2.melContrast.toFixed(3)}</code>
-	                        </>
-	                      ) : null}
-	                      ), onset <code>{searchResult.model.weightL2.onset.toFixed(3)}</code> (fg{" "}
-	                      <code>{searchResult.model.weightL2.onsetForeground.toFixed(3)}</code>
-	                      {searchResult.model.weightL2.onsetContrast != null ? (
-	                        <>
-	                          , ct <code>{searchResult.model.weightL2.onsetContrast.toFixed(3)}</code>
-	                        </>
-	                      ) : null}
-	                      )
-	                      {searchResult.model.weightL2.mfcc != null && searchResult.model.weightL2.mfccForeground != null ? (
-	                        <>
-	                          , mfcc <code>{searchResult.model.weightL2.mfcc.toFixed(3)}</code> (fg{" "}
-	                          <code>{searchResult.model.weightL2.mfccForeground.toFixed(3)}</code>
-	                          {searchResult.model.weightL2.mfccContrast != null ? (
-	                            <>
-	                              , ct <code>{searchResult.model.weightL2.mfccContrast.toFixed(3)}</code>
-	                            </>
-	                          ) : null}
-	                          )
-	                        </>
-	                      ) : null}
-	                    </div>
-	                  ) : null}
-	                  <div>
-	                    <span className="text-zinc-500">Window / hop</span>: <code>{searchResult.meta.windowSec.toFixed(3)}s</code> window,{" "}
-	                    <code>{Math.round(searchResult.meta.hopSec * 1000)}ms</code> hop; scanned <code>{searchResult.meta.scannedWindows}</code>, skipped{" "}
+                  </div>
+                  {searchResult.model.weightL2 ? (
+                    <div>
+                      <span className="text-zinc-500">Model weight L2</span>: mel <code>{searchResult.model.weightL2.mel.toFixed(3)}</code> (fg{" "}
+                      <code>{searchResult.model.weightL2.melForeground.toFixed(3)}</code>
+                      {searchResult.model.weightL2.melContrast != null ? (
+                        <>
+                          , ct <code>{searchResult.model.weightL2.melContrast.toFixed(3)}</code>
+                        </>
+                      ) : null}
+                      ), onset <code>{searchResult.model.weightL2.onset.toFixed(3)}</code> (fg{" "}
+                      <code>{searchResult.model.weightL2.onsetForeground.toFixed(3)}</code>
+                      {searchResult.model.weightL2.onsetContrast != null ? (
+                        <>
+                          , ct <code>{searchResult.model.weightL2.onsetContrast.toFixed(3)}</code>
+                        </>
+                      ) : null}
+                      )
+                      {searchResult.model.weightL2.mfcc != null && searchResult.model.weightL2.mfccForeground != null ? (
+                        <>
+                          , mfcc <code>{searchResult.model.weightL2.mfcc.toFixed(3)}</code> (fg{" "}
+                          <code>{searchResult.model.weightL2.mfccForeground.toFixed(3)}</code>
+                          {searchResult.model.weightL2.mfccContrast != null ? (
+                            <>
+                              , ct <code>{searchResult.model.weightL2.mfccContrast.toFixed(3)}</code>
+                            </>
+                          ) : null}
+                          )
+                        </>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <div>
+                    <span className="text-zinc-500">Window / hop</span>: <code>{searchResult.meta.windowSec.toFixed(3)}s</code> window,{" "}
+                    <code>{Math.round(searchResult.meta.hopSec * 1000)}ms</code> hop; scanned <code>{searchResult.meta.scannedWindows}</code>, skipped{" "}
                     <code>{searchResult.meta.skippedWindows}</code>
                   </div>
-	                  <div>
-	                    <span className="text-zinc-500">Candidates</span>: <code>{searchResult.candidates.length}</code>
-	                  </div>
-		                  {refinement.activeCandidateId ? (
-		                    <div>
-		                      <span className="text-zinc-500">Active</span>:{" "}
-		                      <code>{refinement.activeCandidateId}</code>
-		                    </div>
-		                  ) : null}
-		                  {activeCandidateGroupLogit ? (
-		                    <div>
-		                      <span className="text-zinc-500">Active group logit</span>: total{" "}
-		                      <code>{activeCandidateGroupLogit.logit.toFixed(3)}</code> (bias{" "}
-		                      <code>{activeCandidateGroupLogit.bias.toFixed(3)}</code>, mel{" "}
-		                      <code>{activeCandidateGroupLogit.mel.toFixed(3)}</code>, onset{" "}
-		                      <code>{activeCandidateGroupLogit.onset.toFixed(3)}</code>
-		                      {activeCandidateGroupLogit.mfcc != null ? (
-		                        <>
-		                          , mfcc <code>{activeCandidateGroupLogit.mfcc.toFixed(3)}</code>
-		                        </>
-		                      ) : null}
-		                      )
-		                    </div>
-		                  ) : null}
-		                </div>
-			              )}
-			            </div>
+                  <div>
+                    <span className="text-zinc-500">Candidates</span>: <code>{searchResult.candidates.length}</code>
+                  </div>
+                  {refinement.activeCandidateId ? (
+                    <div>
+                      <span className="text-zinc-500">Active</span>:{" "}
+                      <code>{refinement.activeCandidateId}</code>
+                    </div>
+                  ) : null}
+                  {activeCandidateGroupLogit ? (
+                    <div>
+                      <span className="text-zinc-500">Active group logit</span>: total{" "}
+                      <code>{activeCandidateGroupLogit.logit.toFixed(3)}</code> (bias{" "}
+                      <code>{activeCandidateGroupLogit.bias.toFixed(3)}</code>, mel{" "}
+                      <code>{activeCandidateGroupLogit.mel.toFixed(3)}</code>, onset{" "}
+                      <code>{activeCandidateGroupLogit.onset.toFixed(3)}</code>
+                      {activeCandidateGroupLogit.mfcc != null ? (
+                        <>
+                          , mfcc <code>{activeCandidateGroupLogit.mfcc.toFixed(3)}</code>
+                        </>
+                      ) : null}
+                      )
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
 
-		            {refinement.candidates.length > 0 ? (
-		              <SearchRefinementPanel
-		                filter={candidateFilter}
-		                onFilterChange={handleFilterChange}
-		                candidatesTotal={refinement.candidates.length}
-		                filteredTotal={filteredCandidates.length}
-		                activeFilteredIndex={activeFilteredIndex}
-		                activeCandidate={activeCandidate}
-		                stats={refinement.refinementStats}
-		                onPrev={onPrevCandidate}
-		                onNext={onNextCandidate}
-		                onAccept={acceptActive}
-		                onReject={rejectActive}
-		                onPlayCandidate={playActiveCandidate}
-		                onPlayQuery={playQueryRegion}
-		                loopCandidate={loopCandidate}
-		                onLoopCandidateChange={setLoopCandidate}
-		                autoPlayOnNavigate={autoPlayOnNavigate}
-		                onAutoPlayOnNavigateChange={setAutoPlayOnNavigate}
-		                addMissingMode={addMissingMode}
-		                onToggleAddMissingMode={() => setAddMissingMode((v) => !v)}
-		                canDeleteManual={activeCandidate?.source === "manual"}
-		                onDeleteManual={deleteActiveManual}
-		                onJumpToBestUnreviewed={refinement.refinementStats.unreviewed > 0 ? jumpToBestUnreviewed : undefined}
-		                onCopyJson={copyRefinementJson}
-		                disabled={!audio}
-		              />
-		            ) : null}
+            {refinement.candidates.length > 0 ? (
+              <SearchRefinementPanel
+                filter={candidateFilter}
+                onFilterChange={handleFilterChange}
+                candidatesTotal={refinement.candidates.length}
+                filteredTotal={filteredCandidates.length}
+                activeFilteredIndex={activeFilteredIndex}
+                activeCandidate={activeCandidate}
+                stats={refinement.refinementStats}
+                onPrev={onPrevCandidate}
+                onNext={onNextCandidate}
+                onAccept={acceptActive}
+                onReject={rejectActive}
+                onPlayCandidate={playActiveCandidate}
+                onPlayQuery={playQueryRegion}
+                loopCandidate={loopCandidate}
+                onLoopCandidateChange={setLoopCandidate}
+                autoPlayOnNavigate={autoPlayOnNavigate}
+                onAutoPlayOnNavigateChange={setAutoPlayOnNavigate}
+                addMissingMode={addMissingMode}
+                onToggleAddMissingMode={() => setAddMissingMode((v) => !v)}
+                canDeleteManual={activeCandidate?.source === "manual"}
+                onDeleteManual={deleteActiveManual}
+                onJumpToBestUnreviewed={refinement.refinementStats.unreviewed > 0 ? jumpToBestUnreviewed : undefined}
+                onCopyJson={copyRefinementJson}
+                disabled={!audio}
+              />
+            ) : null}
 
-		            <WaveSurferPlayer
-		              ref={playerRef}
-		              fileInputRef={fileInputRef}
-		              cursorTimeSec={mirroredCursorTimeSec}
-		              onCursorTimeChange={setCursorTimeSec}
-		              viewport={viewport}
-		              seekToTimeSec={waveformSeekTo}
-                  candidateCurveKind={searchResult?.curveKind}
-		              queryRegion={
-		                refinement.queryRegion ? { startSec: refinement.queryRegion.startSec, endSec: refinement.queryRegion.endSec } : null
-		              }
-		              candidates={refinement.candidates}
-		              activeCandidateId={refinement.activeCandidateId}
-		              addMissingMode={addMissingMode}
-		              onSelectCandidateId={(candidateId) => {
-		                setRefinement((prevState) => ({ ...prevState, activeCandidateId: candidateId }));
-		                const c = candidateId ? candidatesById.get(candidateId) : null;
-		                if (c) setWaveformSeekTo(c.startSec);
-		              }}
-		              onManualCandidateCreate={(c) => {
-		                setRefinement((prevState) => {
-		                  if (prevState.candidates.some((x) => x.id === c.id)) return prevState;
-		                  const manualCandidate = {
-		                    id: c.id,
-		                    startSec: c.startSec,
-		                    endSec: c.endSec,
-		                    score: 1.0,
-		                    status: "accepted",
-		                    source: "manual",
-		                  } satisfies RefinementCandidate;
-		                  const nextCandidates = [...prevState.candidates, manualCandidate].sort((a, b) => a.startSec - b.startSec);
-		                  return {
-		                    ...prevState,
-		                    candidates: nextCandidates,
-		                    activeCandidateId: c.id,
-		                    refinementStats: computeRefinementStats(nextCandidates),
-		                  };
-		                });
-		                setWaveformSeekTo(c.startSec);
-		              }}
-		              onManualCandidateUpdate={(u) => {
-		                setRefinement((prevState) => {
-		                  const startSec = Math.min(u.startSec, u.endSec);
-		                  const endSec = Math.max(u.startSec, u.endSec);
-		                  const nextCandidates = prevState.candidates
-		                    .map((c) => {
-		                    if (c.id !== u.id) return c;
-		                    if (c.source !== "manual") return c;
-		                    return { ...c, startSec, endSec };
-		                  })
-		                    .sort((a, b) => a.startSec - b.startSec);
-		                  return { ...prevState, candidates: nextCandidates, refinementStats: computeRefinementStats(nextCandidates) };
-		                });
-		              }}
-		              onAudioDecoded={(a) => {
-		                setAudio(a);
-		                setAudioFileName(fileInputRef.current?.files?.[0]?.name ?? null);
-		                const ch0 = a.getChannelData(0);
-		                setAudioDuration(ch0.length / a.sampleRate);
-		                setAudioSampleRate(a.sampleRate);
-		                setAudioTotalSamples(ch0.length);
-		                setMirResults({});
-		                setSearchResult(null);
-		                setWaveformSeekTo(null);
-		                setCandidateFilter("all");
-		                setAddMissingMode(false);
-		                setLoopCandidate(false);
-		                setAutoPlayOnNavigate(false);
-                    userSetUseRefinementRef.current = false;
-                    setUseRefinementSearch(false);
-		                setRefinement(makeInitialRefinementState());
-		              }}
-	              onViewportChange={(vp) => setViewport(normaliseViewport(vp))}
-	              onPlaybackTime={(t) => setPlayheadTimeSec(t)}
-	              onRegionChange={(r) => {
-	                if (!r) {
-	                  setWaveformSeekTo(null);
-	                  setRefinement(makeInitialRefinementState());
-	                  return;
-	                }
-	                if (!audioSampleRate || !audioTotalSamples) return;
-	                const startSec = Math.min(r.startSec, r.endSec);
-	                const endSec = Math.max(r.startSec, r.endSec);
-	                const startSample = Math.max(0, Math.min(audioTotalSamples, Math.floor(startSec * audioSampleRate)));
-	                const endSample = Math.max(startSample, Math.min(audioTotalSamples, Math.floor(endSec * audioSampleRate)));
-	                setRefinement((prevState) => ({
-	                  ...prevState,
-		                  queryRegion: { startSec, endSec, startSample, endSample },
-		                }));
-		              }}
-		            />
+            <WaveSurferPlayer
+              ref={playerRef}
+              fileInputRef={fileInputRef}
+              cursorTimeSec={mirroredCursorTimeSec}
+              onCursorTimeChange={setCursorTimeSec}
+              viewport={viewport}
+              seekToTimeSec={waveformSeekTo}
+              candidateCurveKind={searchResult?.curveKind}
+              queryRegion={
+                refinement.queryRegion ? { startSec: refinement.queryRegion.startSec, endSec: refinement.queryRegion.endSec } : null
+              }
+              candidates={refinement.candidates}
+              activeCandidateId={refinement.activeCandidateId}
+              addMissingMode={addMissingMode}
+              onSelectCandidateId={(candidateId) => {
+                setRefinement((prevState) => ({ ...prevState, activeCandidateId: candidateId }));
+                const c = candidateId ? candidatesById.get(candidateId) : null;
+                if (c) setWaveformSeekTo(c.startSec);
+              }}
+              onManualCandidateCreate={(c) => {
+                setRefinement((prevState) => {
+                  if (prevState.candidates.some((x) => x.id === c.id)) return prevState;
+                  const manualCandidate = {
+                    id: c.id,
+                    startSec: c.startSec,
+                    endSec: c.endSec,
+                    score: 1.0,
+                    status: "accepted",
+                    source: "manual",
+                  } satisfies RefinementCandidate;
+                  const nextCandidates = [...prevState.candidates, manualCandidate].sort((a, b) => a.startSec - b.startSec);
+                  return {
+                    ...prevState,
+                    candidates: nextCandidates,
+                    activeCandidateId: c.id,
+                    refinementStats: computeRefinementStats(nextCandidates),
+                  };
+                });
+                setWaveformSeekTo(c.startSec);
+              }}
+              onManualCandidateUpdate={(u) => {
+                setRefinement((prevState) => {
+                  const startSec = Math.min(u.startSec, u.endSec);
+                  const endSec = Math.max(u.startSec, u.endSec);
+                  const nextCandidates = prevState.candidates
+                    .map((c) => {
+                      if (c.id !== u.id) return c;
+                      if (c.source !== "manual") return c;
+                      return { ...c, startSec, endSec };
+                    })
+                    .sort((a, b) => a.startSec - b.startSec);
+                  return { ...prevState, candidates: nextCandidates, refinementStats: computeRefinementStats(nextCandidates) };
+                });
+              }}
+              onAudioDecoded={(a) => {
+                setAudio(a);
+                setAudioFileName(fileInputRef.current?.files?.[0]?.name ?? null);
+                const ch0 = a.getChannelData(0);
+                setAudioDuration(ch0.length / a.sampleRate);
+                setAudioSampleRate(a.sampleRate);
+                setAudioTotalSamples(ch0.length);
+                setMirResults({});
+                setSearchResult(null);
+                setWaveformSeekTo(null);
+                setCandidateFilter("all");
+                setAddMissingMode(false);
+                setLoopCandidate(false);
+                setAutoPlayOnNavigate(false);
+                userSetUseRefinementRef.current = false;
+                setUseRefinementSearch(false);
+                setRefinement(makeInitialRefinementState());
+              }}
+              onViewportChange={(vp) => setViewport(normaliseViewport(vp))}
+              onPlaybackTime={(t) => setPlayheadTimeSec(t)}
+              onRegionChange={(r) => {
+                if (!r) {
+                  setWaveformSeekTo(null);
+                  setRefinement(makeInitialRefinementState());
+                  return;
+                }
+                if (!audioSampleRate || !audioTotalSamples) return;
+                const startSec = Math.min(r.startSec, r.endSec);
+                const endSec = Math.max(r.startSec, r.endSec);
+                const startSample = Math.max(0, Math.min(audioTotalSamples, Math.floor(startSec * audioSampleRate)));
+                const endSample = Math.max(startSample, Math.min(audioTotalSamples, Math.floor(endSec * audioSampleRate)));
+                setRefinement((prevState) => ({
+                  ...prevState,
+                  queryRegion: { startSec, endSec, startSample, endSample },
+                }));
+              }}
+            />
 
             <div className="mt-2">
               <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -1616,25 +1621,28 @@ export default function Home() {
                   ) : null}
 
                   {visualTab === "melSpectrogram" ||
-                  visualTab === "hpssHarmonic" ||
-                  visualTab === "hpssPercussive" ||
-                  visualTab === "mfcc" ||
-                  visualTab === "mfccDelta" ||
-                  visualTab === "mfccDeltaDelta" ? (
+                    visualTab === "hpssHarmonic" ||
+                    visualTab === "hpssPercussive" ||
+                    visualTab === "mfcc" ||
+                    visualTab === "mfccDelta" ||
+                    visualTab === "mfccDeltaDelta" ? (
                     tabResult?.kind === "2d" && tabResult.fn === visualTab ? (
-                      <div className="-mt-1" ref={heatmapHostRef}>
-                        <div className="relative" onMouseMove={handleCursorHoverFromViewport} onMouseLeave={handleCursorLeave}>
-                          <TimeAlignedHeatmapPixi
-                            input={displayedHeatmap}
-                            startTime={visibleRange.startTime}
-                            endTime={visibleRange.endTime}
-                            width={Math.floor(heatmapHostSize.width || 0)}
-                            height={320}
-                            valueRange={heatmapValueRange}
-                            yLabel={heatmapYAxisLabel}
-                            colorScheme={heatmapScheme}
-                          />
-                          <HeatmapPlayheadOverlay viewport={viewport} timeSec={mirroredCursorTimeSec} height={320} widthPx={heatmapHostSize.width} />
+                      <div className="-mt-1">
+                        <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+
+                          <div ref={heatmapHostRef} className="relative" onMouseMove={handleCursorHoverFromViewport} onMouseLeave={handleCursorLeave}>
+                            <TimeAlignedHeatmapPixi
+                              input={displayedHeatmap}
+                              startTime={visibleRange.startTime}
+                              endTime={visibleRange.endTime}
+                              width={Math.floor(heatmapHostSize.width || 0)}
+                              height={320}
+                              valueRange={heatmapValueRange}
+                              yLabel={heatmapYAxisLabel}
+                              colorScheme={heatmapScheme}
+                            />
+                            <HeatmapPlayheadOverlay viewport={viewport} timeSec={mirroredCursorTimeSec} height={320} widthPx={heatmapHostSize.width} />
+                          </div>
                         </div>
                       </div>
                     ) : (
@@ -1648,6 +1656,19 @@ export default function Home() {
         </section>
 
       </main>
+
+      <footer className="mt-12 flex flex-col items-center justify-center gap-2 pb-8 text-xs text-zinc-500">
+        <p>⚠️ vibecoded with a range of models; use at your own risk.</p>
+        <a
+          href="https://github.com/rewbs/octoseq"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 transition-colors hover:text-zinc-900 dark:hover:text-zinc-200"
+        >
+          <Github className="h-3.5 w-3.5" />
+          <span>github</span>
+        </a>
+      </footer>
     </div>
   );
 }
