@@ -20,7 +20,8 @@
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "tailwind-merge": "^3.4.0",
-    "wavesurfer.js": "^7.12.1"
+    "wavesurfer.js": "^7.12.1",
+    "@octoseq/visualiser": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

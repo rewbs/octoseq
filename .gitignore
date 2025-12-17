@@ -23,3 +23,7 @@ pnpm-debug.log*
 # turbo
 .turbo
 .pnpm-store
+
+#visualiser
+packages/visualiser/frames
+packages/visualiser/target

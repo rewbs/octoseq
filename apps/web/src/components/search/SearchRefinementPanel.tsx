@@ -75,164 +75,129 @@ export function SearchRefinementPanel({
   const hasActive = !!activeCandidate;
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Review</div>
-
-        <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
-          <span className="tabular-nums">
-            accepted <code>{stats.accepted}</code> · rejected <code>{stats.rejected}</code> · unreviewed{" "}
-            <code>{stats.unreviewed}</code>
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <div className="flex flex-wrap items-center gap-1">
-          {filterDefs.map((f) => {
-            const active = filter === f.id;
-            return (
-              <button
-                key={f.id}
-                className={`rounded-md px-2 py-1 text-xs ${
-                  active
-                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black"
-                    : "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100"
+    <div className={`flex items-center gap-3 text-xs ${disabled ? "opacity-30 pointer-events-none" : ""}`}>
+      {/* 1. Filters */}
+      <div className="flex items-center gap-1 rounded bg-zinc-100 p-0.5 dark:bg-zinc-900">
+        {filterDefs.map((f) => {
+          const active = filter === f.id;
+          return (
+            <button
+              key={f.id}
+              className={`rounded px-2 py-0.5 text-xs font-medium transition-colors ${active
+                ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100"
+                : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300"
                 }`}
-                onClick={() => onFilterChange(f.id)}
-                disabled={disabled}
-              >
-                {f.label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button
-            variant={addMissingMode ? "default" : "outline"}
-            onClick={onToggleAddMissingMode}
-            disabled={disabled}
-            className={addMissingMode ? "bg-emerald-600 hover:bg-emerald-600/90" : ""}
-          >
-            {addMissingMode ? "Add mode: ON (M)" : "Add missing match (M)"}
-          </Button>
-          <Button variant="outline" onClick={onCopyJson} disabled={disabled || candidatesTotal === 0}>
-            Copy refinement JSON
-          </Button>
-        </div>
+              onClick={() => onFilterChange(f.id)}
+              disabled={disabled}
+            >
+              {f.label === "All" ? "All" : f.label === "Unreviewed" ? `Unreviewed (${stats.unreviewed})` : f.label}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-        <div className="space-y-2 rounded-md border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-zinc-600 dark:text-zinc-300">Navigation</span>
-            <span className="tabular-nums text-zinc-500">
-              {hasActive && filteredTotal > 0 && activeFilteredIndex >= 0
-                ? `Candidate ${activeFilteredIndex + 1} / ${filteredTotal}`
-                : filteredTotal > 0
-                  ? `— / ${filteredTotal}`
-                  : "—"}
-            </span>
-          </div>
+      <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800" />
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={onPrev} disabled={disabled || filteredTotal === 0}>
-              Previous (← / J)
-            </Button>
-            <Button variant="outline" onClick={onNext} disabled={disabled || filteredTotal === 0}>
-              Next (→ / K)
-            </Button>
-            {onJumpToBestUnreviewed ? (
-              <Button variant="outline" onClick={onJumpToBestUnreviewed} disabled={disabled}>
-                Best unreviewed
-              </Button>
-            ) : null}
-          </div>
-
-          <div className="text-zinc-500">
-            total candidates: <code>{candidatesTotal}</code>
-          </div>
+      {/* 2. Candidate Nav & Actions */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center bg-white rounded border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-800">
+          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-none" onClick={onPrev} disabled={disabled || filteredTotal === 0} title="Previous (J)">
+            ←
+          </Button>
+          <span className="px-2 tabular-nums text-zinc-500 border-x border-zinc-100 dark:border-zinc-800 min-w-12 text-center text-[10px]">
+            {activeFilteredIndex + 1} / {filteredTotal}
+          </span>
+          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-none" onClick={onNext} disabled={disabled || filteredTotal === 0} title="Next (K)">
+            →
+          </Button>
         </div>
 
-        <div className="space-y-2 rounded-md border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-zinc-600 dark:text-zinc-300">Classification</span>
-            {hasActive ? (
-              <span className="tabular-nums text-zinc-500">
-                score{" "}
-                <code>
-                  {activeCandidate.score == null ? "—" : activeCandidate.score.toFixed(3)}
-                </code>{" "}
-                · <code>{activeCandidate.source}</code> · <code>{activeCandidate.status}</code>
-              </span>
-            ) : (
-              <span className="text-zinc-500">No candidate selected</span>
-            )}
-          </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className={`h-7 px-3 text-xs ${activeCandidate?.status === "accepted" ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-400" : ""}`}
+          onClick={onAccept}
+          disabled={disabled || !hasActive}
+          title="Accept (A)"
+        >
+          Accept
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className={`h-7 px-3 text-xs ${activeCandidate?.status === "rejected" ? "bg-red-50 border-red-200 text-red-700 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400" : ""}`}
+          onClick={onReject}
+          disabled={disabled || !hasActive}
+          title="Reject (R)"
+        >
+          Reject
+        </Button>
+      </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={onAccept} disabled={disabled || !hasActive}>
-              Accept (A)
-            </Button>
-            <Button variant="destructive" onClick={onReject} disabled={disabled || !hasActive}>
-              Reject (R)
-            </Button>
-            {canDeleteManual ? (
-              <Button variant="outline" onClick={onDeleteManual} disabled={disabled}>
-                Delete manual (⌫)
-              </Button>
-            ) : null}
-          </div>
+      <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800" />
 
-          {hasActive ? (
-            <div className="tabular-nums text-zinc-500">
-              {activeCandidate.startSec.toFixed(3)}s → {activeCandidate.endSec.toFixed(3)}s
-            </div>
-          ) : null}
-        </div>
+      {/* 3. Playback */}
+      <div className="flex items-center gap-1">
+        <Button variant="outline" size="sm" className="h-7 px-2 text-xs gap-1.5" onClick={onPlayCandidate} disabled={disabled || !hasActive} title="Play Candidate (Space)">
+          <span>▶ Match</span>
+        </Button>
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-zinc-500" onClick={onPlayQuery} disabled={disabled} title="Play Query (Q)">
+          ▶ Query
+        </Button>
+      </div>
 
-        <div className="space-y-2 rounded-md border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-zinc-600 dark:text-zinc-300">Playback</span>
-            <span className="text-zinc-500">Space plays/stops</span>
-          </div>
+      <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300">
+        <input
+          type="checkbox"
+          checked={loopCandidate}
+          onChange={(e) => onLoopCandidateChange(e.target.checked)}
+          disabled={disabled}
+          className="rounded-sm w-3 h-3 text-zinc-600"
+        />
+        Loop
+      </label>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={onPlayCandidate} disabled={disabled || !hasActive}>
-              Play candidate
-            </Button>
-            <Button variant="outline" onClick={onPlayQuery} disabled={disabled}>
-              Play query (Q)
-            </Button>
-          </div>
+      <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300" title="Auto-advance on Accept/Reject">
+        <input
+          type="checkbox"
+          checked={autoPlayOnNavigate}
+          onChange={(e) => onAutoPlayOnNavigateChange(e.target.checked)}
+          disabled={disabled}
+          className="rounded-sm w-3 h-3 text-zinc-600"
+        />
+        Auto-play
+      </label>
 
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={loopCandidate}
-                onChange={(e) => onLoopCandidateChange(e.target.checked)}
-                disabled={disabled}
-              />
-              <span className="text-zinc-600 dark:text-zinc-300">Loop candidate</span>
-            </label>
+      {/* Spacer */}
+      <div className="flex-1" />
 
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={autoPlayOnNavigate}
-                onChange={(e) => onAutoPlayOnNavigateChange(e.target.checked)}
-                disabled={disabled}
-              />
-              <span className="text-zinc-600 dark:text-zinc-300">Auto-play on next/prev</span>
-            </label>
-          </div>
+      {/* 4. Utils */}
+      <div className="flex items-center gap-1">
+        {onJumpToBestUnreviewed && (
+          <Button size="sm" variant="ghost" className="h-7 w-7 text-zinc-400 hover:text-indigo-600" onClick={onJumpToBestUnreviewed} disabled={disabled} title="Jump to Best Unreviewed">
+            ✨
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant={addMissingMode ? "default" : "ghost"}
+          onClick={onToggleAddMissingMode}
+          disabled={disabled}
+          className={`h-7 text-xs ${addMissingMode ? "bg-emerald-600 hover:bg-emerald-700" : "text-zinc-400 hover:text-zinc-700"}`}
+          title="Add Missing Match (M)"
+        >
+          {addMissingMode ? "Add Mode ON" : "+ Add"}
+        </Button>
 
-          <div className="text-[11px] text-zinc-500">
-            Shortcuts: J/K prev/next · A accept · R reject · Space play/stop · Q play query · M add mode · Delete removes manual
-          </div>
-        </div>
+        {canDeleteManual && (
+          <Button size="sm" variant="ghost" className="h-7 w-7 text-zinc-400 hover:text-red-600" onClick={onDeleteManual} disabled={disabled} title="Delete Manual Region">
+            ⌫
+          </Button>
+        )}
+
+        <Button size="sm" variant="ghost" className="h-7 w-7 text-zinc-400" onClick={onCopyJson} disabled={disabled || candidatesTotal === 0} title="Copy JSON">
+          📋
+        </Button>
       </div>
     </div>
   );

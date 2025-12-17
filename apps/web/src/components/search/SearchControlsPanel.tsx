@@ -55,11 +55,13 @@ export function SearchControlsPanel({
   }, [value.precision, selectionDurationSec]);
 
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-950">
-      <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Search Controls</div>
-      <div className="mt-3 space-y-3">
-        <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
-          <span className="text-xs text-zinc-600 dark:text-zinc-300">{thresholdLabel}</span>
+    <div className="flex items-center gap-4 text-xs">
+      {/* Threshold & Precision */}
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2">
+          <span className="whitespace-nowrap font-medium text-zinc-700 dark:text-zinc-300">
+            {thresholdLabel}
+          </span>
           <input
             type="range"
             min={60}
@@ -68,55 +70,66 @@ export function SearchControlsPanel({
             value={thresholdPct}
             onChange={(e) => onChange({ ...value, threshold: clamp01(Number(e.target.value) / 100) })}
             disabled={disabled}
+            className="w-24 accent-indigo-600"
           />
-          <span className="text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">{thresholdPct}%</span>
+          <span className="w-8 tabular-nums text-zinc-600 dark:text-zinc-400">{thresholdPct}%</span>
         </label>
 
-        <label className="inline-flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
-          <input
-            type="checkbox"
-            checked={!!value.applySoftmax}
-            onChange={(e) => onChange({ ...value, applySoftmax: e.target.checked })}
-            disabled={disabled || refinementOn}
-          />
-          <span>Apply softmax to similarity curve (baseline only)</span>
-        </label>
+        <select
+          value={value.precision}
+          onChange={(e) => onChange({ ...value, precision: e.target.value as SearchPrecision })}
+          disabled={disabled}
+          className="h-7 rounded border border-zinc-200 bg-white px-2 py-0 dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          <option value="coarse">Coarse</option>
+          <option value="medium">Medium</option>
+          <option value="fine">Fine</option>
+        </select>
+      </div>
 
+      <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800" />
+
+      {/* Checkboxes */}
+      <div className="flex items-center gap-3">
         {onUseRefinementChange ? (
-          <label className="inline-flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
+          <label className="flex items-center gap-1.5 select-none hover:text-zinc-900 dark:hover:text-zinc-100">
             <input
               type="checkbox"
               checked={!!useRefinement}
               onChange={(e) => onUseRefinementChange(e.target.checked)}
               disabled={disabled || !refinementAvailable}
+              className="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
             />
-            <span>Use refinement (accepted/rejected examples)</span>
-            {!refinementAvailable ? <span className="text-[11px] text-zinc-500">(add labels to enable)</span> : null}
+            <span>Refinement</span>
           </label>
         ) : null}
 
-        <label className="grid grid-cols-[180px,1fr] items-center gap-2">
-          <span className="text-xs text-zinc-600 dark:text-zinc-300">Search precision</span>
-          <div className="flex items-center gap-2">
-            <select
-              value={value.precision}
-              onChange={(e) => onChange({ ...value, precision: e.target.value as SearchPrecision })}
-              disabled={disabled}
-              className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-            >
-              <option value="coarse">Coarse</option>
-              <option value="medium">Medium</option>
-              <option value="fine">Fine</option>
-            </select>
-            <span className="text-xs text-zinc-500">≈ {hopMs}ms hop</span>
-          </div>
+        <label className="flex items-center gap-1.5 select-none hover:text-zinc-900 dark:hover:text-zinc-100">
+          <input
+            type="checkbox"
+            checked={!!value.applySoftmax}
+            onChange={(e) => onChange({ ...value, applySoftmax: e.target.checked })}
+            disabled={disabled || refinementOn}
+            className="rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+          />
+          <span>Softmax</span>
         </label>
+      </div>
 
-        <details className="rounded-md border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
-          <summary className="cursor-pointer select-none text-zinc-700 dark:text-zinc-200">Advanced (weights)</summary>
-          <div className="mt-2 space-y-2">
-            <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
-              <span className="text-xs text-zinc-600 dark:text-zinc-300">Timbre weight (mel)</span>
+      <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800" />
+
+      {/* Advanced (Weights) - Compact Details */}
+      <details className="relative group">
+        <summary className="cursor-pointer select-none text-[11px] text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 flex items-center gap-1 h-7">
+          Advanced ▾
+        </summary>
+        <div className="absolute top-full left-0 mt-1 w-48 rounded-md border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-800 dark:bg-zinc-950 z-20">
+          <div className="space-y-2">
+            <label className="flex flex-col gap-1">
+              <div className="flex justify-between">
+                <span>Timbre (mel)</span>
+                <span className="tabular-nums text-zinc-500">{value.melWeight.toFixed(2)}</span>
+              </div>
               <input
                 type="range"
                 min={0}
@@ -125,11 +138,14 @@ export function SearchControlsPanel({
                 value={Math.round(value.melWeight * 100)}
                 onChange={(e) => onChange({ ...value, melWeight: Number(e.target.value) / 100 })}
                 disabled={disabled}
+                className="w-full h-1"
               />
-              <span className="text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">{value.melWeight.toFixed(2)}</span>
             </label>
-            <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
-              <span className="text-xs text-zinc-600 dark:text-zinc-300">Transient weight (onset)</span>
+            <label className="flex flex-col gap-1">
+              <div className="flex justify-between">
+                <span>Transient (onset)</span>
+                <span className="tabular-nums text-zinc-500">{value.transientWeight.toFixed(2)}</span>
+              </div>
               <input
                 type="range"
                 min={0}
@@ -138,15 +154,15 @@ export function SearchControlsPanel({
                 value={Math.round(value.transientWeight * 100)}
                 onChange={(e) => onChange({ ...value, transientWeight: Number(e.target.value) / 100 })}
                 disabled={disabled}
+                className="w-full h-1"
               />
-              <span className="text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">{value.transientWeight.toFixed(2)}</span>
             </label>
-            <p className="text-[11px] text-zinc-500">
-              These weights scale the feature blocks before cosine similarity.
-            </p>
+            <div className="pt-1 text-[10px] text-zinc-400 border-t border-zinc-100 dark:border-zinc-800">
+              ≈ {hopMs}ms hop
+            </div>
           </div>
-        </details>
-      </div>
+        </div>
+      </details>
     </div>
   );
 }

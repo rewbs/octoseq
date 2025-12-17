@@ -42,8 +42,9 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
     // Map cosine [-1,1] -> [0,1]. With our features it tends to be >= 0 anyway,
     // but we keep the mapping deterministic and bounded.
     const cos = dot / denom;
-    const clamped = Math.max(-1, Math.min(1, cos));
-    return (clamped + 1) / 2;
+    // Map cosine: clear negatives (penalize mismatch strongly), keep positives 0..1.
+    // Previous (cos+1)/2 was too lenient for "orthogonal" features.
+    return Math.max(0, cos);
 }
 
 function pushScaled(dst: number[], src: Float32Array, scale: number) {
