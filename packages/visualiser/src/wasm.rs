@@ -102,7 +102,12 @@ impl WasmVisualiser {
             inner.state.time,
             inner.state.last_rot_input,
             // Debug signal info if present
-            if let Some(s) = &inner.rotation_signal { s.get_duration() } else { -1.0 }
+            if let Some(s) = &inner.rotation_signal { s.get_duration() } else { -1.0 },
+            // Sparkline stats
+            inner.state.rot_sparkline.last_min,
+            inner.state.rot_sparkline.last_max,
+            inner.state.zoom_sparkline.last_min,
+            inner.state.zoom_sparkline.last_max
         ]
     }
 

@@ -1,4 +1,5 @@
 use crate::input::InputSignal;
+use crate::sparkline::Sparkline;
 
 pub struct VisualiserConfig {
     pub base_rotation_speed: f32, // Radians per second
@@ -24,6 +25,8 @@ pub struct VisualiserState {
     pub zoom: f32,
     pub last_rot_input: f32,
     pub config: VisualiserConfig,
+    pub rot_sparkline: Sparkline,
+    pub zoom_sparkline: Sparkline,
 }
 
 impl VisualiserState {
@@ -34,6 +37,8 @@ impl VisualiserState {
             zoom: 0.0,
             last_rot_input: 0.0,
             config: VisualiserConfig::default(),
+            rot_sparkline: Sparkline::new(500),
+            zoom_sparkline: Sparkline::new(500),
         }
     }
 
@@ -57,12 +62,15 @@ impl VisualiserState {
             // Use windowed sampling to catch transients
             let raw = sig.sample_window(self.time, dt);
             // Apply sigmoid if enabled
-            if self.config.sigmoid_k > 0.0 {
+            let val = if self.config.sigmoid_k > 0.0 {
                 sig.apply_sigmoid(raw, self.config.sigmoid_k)
             } else {
                 raw
-            }
+            };
+            self.rot_sparkline.push(val);
+            val
         } else {
+            self.rot_sparkline.push(0.0);
             0.0
         };
 
@@ -103,8 +111,10 @@ impl VisualiserState {
              // Zoom effect: oscillate or offset?
              // Use value directly as offset from base distance
              self.zoom = val * self.config.zoom_sensitivity;
+             self.zoom_sparkline.push(val);
         } else {
              self.zoom = 0.0;
+             self.zoom_sparkline.push(0.0);
         }
     }
 }

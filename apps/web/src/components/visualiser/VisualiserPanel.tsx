@@ -252,14 +252,18 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
       // @ts-ignore
       if (vis.get_current_vals) {
         // @ts-ignore
-        const vals = vis.get_current_vals(); // returns Float32Array [rot, zoom, time, last_input, sig_dur]
-        if (vals && vals.length >= 5) {
+        const vals = vis.get_current_vals(); // returns Float32Array [rot, zoom, time, last_input, sig_dur, rotMin, rotMax, zoomMin, zoomMax]
+        if (vals && vals.length >= 9) {
           setDebugValues({
-            rot: vals[0],
-            zoom: vals[1],
-            time: vals[2],
-            input: vals[3],
-            sigDur: vals[4]
+            rot: vals[0] || 0,
+            zoom: vals[1] || 0,
+            time: vals[2] || 0,
+            input: vals[3] || 0,
+            sigDur: vals[4] || 0,
+            rotMin: vals[5] || 0,
+            rotMax: vals[6] || 0,
+            zoomMin: vals[7] || 0,
+            zoomMax: vals[8] || 0
           });
         }
       } else {
@@ -294,7 +298,10 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
     return () => observer.disconnect();
   }, [isReady]);
 
-  const [debugValues, setDebugValues] = useState<{ rot: number, zoom: number, time: number, input: number, sigDur: number } | null>(null);
+  const [debugValues, setDebugValues] = useState<{
+    rot: number, zoom: number, time: number, input: number, sigDur: number,
+    rotMin: number, rotMax: number, zoomMin: number, zoomMax: number
+  } | null>(null);
 
   const availableSources = useMemo(() => {
     const keys = mirResults ? Object.keys(mirResults) : [];
@@ -390,6 +397,25 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
             <div>SigDur: {debugValues.sigDur.toFixed(3)}</div>
             <div>FPS: {((1000 / 16)).toFixed(0)}</div>
           </div>
+        )}
+
+        {/* Sparkline Overlays */}
+        {isReady && debugValues && (
+          <>
+            {/* Rotation Sparkline Info (Top Left) */}
+            <div className="absolute top-[10%] left-[2%] font-mono text-xs text-green-400 bg-black/50 p-1 rounded">
+              <div className="font-bold">Rotation</div>
+              <div>Max: {debugValues.rotMax.toFixed(3)}</div>
+              <div>Min: {debugValues.rotMin.toFixed(3)}</div>
+            </div>
+
+            {/* Zoom Sparkline Info (Bottom Left) */}
+            <div className="absolute bottom-[20%] left-[2%] font-mono text-xs text-cyan-400 bg-black/50 p-1 rounded">
+              <div className="font-bold">Zoom</div>
+              <div>Max: {debugValues.zoomMax.toFixed(3)}</div>
+              <div>Min: {debugValues.zoomMin.toFixed(3)}</div>
+            </div>
+          </>
         )}
 
         {!isReady && (
