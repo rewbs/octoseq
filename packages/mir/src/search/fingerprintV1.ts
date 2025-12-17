@@ -81,7 +81,7 @@ function weightedStats(
     // Normalize frame for shape statistics
     const nf = new Float32Array(dim);
     const d = w > 1e-12 ? w : 1;
-    for (let j = 0; j < dim; j++) nf[j] = f[j]! / d;
+    for (let j = 0; j < dim; j++) nf[j] = f[j] / d;
     normFrames[i] = nf;
   }
 
@@ -91,25 +91,25 @@ function weightedStats(
   // 2. Weighted Mean
   // Mean = sum(w_i * x_i) / sum(w_i)
   for (let i = 0; i < nFrames; i++) {
-    const w = weights[i]!; // safe: loop matches init
-    const nf = normFrames[i]!; // safe: loop matches init
+    const w = weights[i];
+    const nf = normFrames[i];
     if (w <= 0) continue;
     const scale = w / totalWeight;
     for (let j = 0; j < dim; j++) {
-      mean[j]! += nf[j]! * scale;
+      mean[j] += nf[j] * scale;
     }
   }
 
   // 3. Weighted Variance
   // Var = sum(w_i * (x_i - mean)^2) / sum(w_i)
   for (let i = 0; i < nFrames; i++) {
-    const w = weights[i]!;
-    const nf = normFrames[i]!;
+    const w = weights[i];
+    const nf = normFrames[i];
     if (w <= 0) continue;
     const scale = w / totalWeight;
     for (let j = 0; j < dim; j++) {
-      const diff = nf[j]! - mean[j]!;
-      variance[j]! += diff * diff * scale;
+      const diff = nf[j] - mean[j];
+      variance[j] += diff * diff * scale;
     }
   }
 

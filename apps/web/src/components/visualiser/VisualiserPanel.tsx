@@ -12,10 +12,7 @@ interface VisualiserPanelProps {
   audio: AudioBufferLike | null;
   playbackTime: number;
   audioDuration?: number; // Optional explicitly passed duration
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  mirResults: Record<string, any> | null; // Keys are feature names
-  similarityCurve?: Float32Array | null; // New prop for similarity data
-  isPlaying?: boolean;
+  mirResults: Record<string, number[]> | null; // Keys are feature names
   className?: string;
 }
 
@@ -29,7 +26,7 @@ function normalizeSignal(data: number[] | Float32Array, customRange?: [number, n
     max = customRange[1];
   } else {
     for (let i = 0; i < data.length; i++) {
-      const v = data[i]!;
+      const v = data[i];
       if (v < min) min = v;
       if (v > max) max = v;
     }
@@ -40,7 +37,7 @@ function normalizeSignal(data: number[] | Float32Array, customRange?: [number, n
   if (range === 0) return out; // All zeros
 
   for (let i = 0; i < data.length; i++) {
-    out[i] = (data[i]! - min) / range;
+    out[i] = (data[i] - min) / range;
   }
   return out;
 }
@@ -51,8 +48,7 @@ function getSignalData(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mirResults: Record<string, any> | null,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  audioBuffer: any | null,
-  similarityCurve?: Float32Array | null
+  audioBuffer: any | null
 ): Float32Array | null {
   if (sourceName === "Waveform") {
     if (audioBuffer) {
@@ -67,79 +63,41 @@ function getSignalData(
     }
     return null;
   }
-
-  if (sourceName === "Similarity") {
-    return similarityCurve ?? null;
+  if (mirResults && mirResults[sourceName]) {
+    const val = mirResults[sourceName];
+    // If it's a raw array
+    if (val.length !== undefined && val.constructor !== Object) {
+      return new Float32Array(val);
+    }
+    // If it's a Mir1DResult object
+    if (val.values) {
+      return new Float32Array(val.values);
+    }
   }
-
-  if (!mirResults) return null;
-  const res = mirResults[sourceName];
-  if (!res) return null;
-
-  // Handle generic 1D result object from page.tsx
-  if (res.values) return res.values;
-  // Handle raw array if passed directly
-  if (res instanceof Float32Array || Array.isArray(res)) return new Float32Array(res);
-
   return null;
 }
 
-
-export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults, similarityCurve, isPlaying, className }: VisualiserPanelProps) {
+export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults, className }: VisualiserPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const visualiserRef = useRef<WasmVisualiser | null>(null);
-  const [rotSource, setRotSource] = useState<string>("spectralCentroid");
-  const [zoomSource, setZoomSource] = useState<string>("spectralFlux");
+  const [rotSource, setRotSource] = useState<string>("Spectral Centroid (1D)");
+  const [zoomSource, setZoomSource] = useState<string>("RMS (1D)");
   const [sigmoidK, setSigmoidK] = useState<number>(5.0);
-  const [sigmoidC, setSigmoidC] = useState<number>(0.5); // Center 0.0-1.0
   const [isReady, setIsReady] = useState(false);
   const requestRef = useRef<number>(0);
   const timeRef = useRef(playbackTime);
-  const isPlayingRef = useRef(!!isPlaying);
-
-  // Range controls (Min, Max)
-  // Default to full normalised range 0-1
-  const [rotRange, setRotRange] = useState<[number, number]>([0, 1]);
-  const [zoomRange, setZoomRange] = useState<[number, number]>([0, 1]);
-
-  // Gain controls (Multiplier)
+  const [rotRange, setRotRange] = useState<[number, number]>([-1, 1]); // Default for waveform
+  const [zoomRange, setZoomRange] = useState<[number, number]>([0, 1]); // Default for RMS
   const [rotGain, setRotGain] = useState<number>(1.0);
   const [zoomGain, setZoomGain] = useState<number>(1.0);
 
   // Update timeRef for the loop
   useEffect(() => {
     timeRef.current = playbackTime;
-    isPlayingRef.current = !!isPlaying;
-
     if (visualiserRef.current) {
-      // Check for large drift or paused state to sync
-      // If playing, we rely on render loop (dt) to advance time smoothly.
-      // Only force set_time if we drift significantly (e.g. user seek).
-      const vis = visualiserRef.current;
-      // @ts-ignore
-      if (vis.get_current_vals) {
-        // @ts-ignore
-        const vals = vis.get_current_vals();
-        const internalTime = (vals && vals[2] !== undefined) ? vals[2] : -1;
-
-        // If paused, always sync.
-        if (!isPlaying) {
-          vis.set_time(playbackTime);
-          return;
-        }
-
-        // If playing, check drift (> 50ms)
-        const drift = Math.abs(internalTime - playbackTime);
-        if (drift > 0.1) {
-          // console.log("Syncing drift:", drift);
-          vis.set_time(playbackTime);
-        }
-      } else {
-        // Fallback for safety if no getter
-        vis.set_time(playbackTime);
-      }
+      visualiserRef.current.set_time(playbackTime);
     }
-  }, [playbackTime, isPlaying]);
+  }, [playbackTime]);
 
   useEffect(() => {
     let active = true;
@@ -196,52 +154,27 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
     }
 
     // Process Rotation
-    let rotData = new Float32Array(0);
-    if (rotSource === "None") {
-      // no-op
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = getSignalData(rotSource, mirResults, audio, similarityCurve) as any;
-      if (data) {
-        rotData = data;
-      } else {
-        console.warn(`[VisualiserPanel] Source not found: ${rotSource}`);
-      }
-    }
-
-    // --- Zoom Data ---
-    let zoomData = new Float32Array(0);
-    if (zoomSource === "None") {
-      // no-op
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = getSignalData(zoomSource, mirResults, audio, similarityCurve) as any;
-      if (data) {
-        zoomData = data;
-      } else {
-        console.warn(`[VisualiserPanel] Source not found: ${zoomSource}`);
-      }
-    }
+    const rotData = getSignalData(rotSource, mirResults, audio);
     if (rotData && rotData.length > 0) {
       // Calculate raw stats for debug
       let min = Infinity, max = -Infinity;
       for (let i = 0; i < rotData.length; i++) {
-        if (rotData[i]! < min) min = rotData[i]!;
-        if (rotData[i]! > max) max = rotData[i]!;
+        if (rotData[i] < min) min = rotData[i];
+        if (rotData[i] > max) max = rotData[i];
       }
       console.log(`[${rotSource}] Raw Range:`, min, "to", max);
 
       // Use safe defaults if NaN
       const rMin = isNaN(rotRange[0]) ? -1 : rotRange[0];
       const rMax = isNaN(rotRange[1]) ? 1 : rotRange[1];
-      const currentRotGain = isNaN(rotGain) ? 1.0 : rotGain;
+      const rGain = isNaN(rotGain) ? 1.0 : rotGain;
 
       const norm = normalizeSignal(rotData, [rMin, rMax]);
 
       // Apply gain
-      if (currentRotGain !== 1.0) {
+      if (rGain !== 1.0) {
         for (let i = 0; i < norm.length; i++) {
-          norm[i]! *= currentRotGain;
+          norm[i] *= rGain;
         }
       }
 
@@ -254,25 +187,26 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
     }
 
     // Process Zoom
+    const zoomData = getSignalData(zoomSource, mirResults, audio);
     if (zoomData && zoomData.length > 0) {
       // stats
       let min = Infinity, max = -Infinity;
       for (let i = 0; i < zoomData.length; i++) {
-        if (zoomData[i]! < min) min = zoomData[i]!;
-        if (zoomData[i]! > max) max = zoomData[i]!;
+        if (zoomData[i] < min) min = zoomData[i];
+        if (zoomData[i] > max) max = zoomData[i];
       }
       console.log(`[${zoomSource}] Raw Range:`, min, "to", max);
 
       const zMin = isNaN(zoomRange[0]) ? 0 : zoomRange[0];
       const zMax = isNaN(zoomRange[1]) ? 1 : zoomRange[1];
-      const currentZoomGain = isNaN(zoomGain) ? 1.0 : zoomGain;
+      const zGain = isNaN(zoomGain) ? 1.0 : zoomGain;
 
       const norm = normalizeSignal(zoomData, [zMin, zMax]);
 
       // Apply gain
-      if (currentZoomGain !== 1.0) {
+      if (zGain !== 1.0) {
         for (let i = 0; i < norm.length; i++) {
-          norm[i]! *= currentZoomGain;
+          norm[i] *= zGain;
         }
       }
 
@@ -285,7 +219,7 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
         vis.push_zoom_data(norm, rate);
       }
     }
-  }, [rotSource, zoomSource, mirResults, isReady, audio, audioDuration, rotRange, zoomRange, rotGain, zoomGain, similarityCurve]);
+  }, [rotSource, zoomSource, mirResults, isReady, audio, audioDuration, rotRange, zoomRange, rotGain, zoomGain]);
 
   // Update Sigmoid
   useEffect(() => {
@@ -308,26 +242,24 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
       const dt = (now - lastTime) / 1000;
       lastTime = now;
 
-      if (isPlayingRef.current) {
-        vis.render(dt);
-      } else {
-        // If paused, force the specific time and render with dt=0 to update uniforms but not advance time
-        vis.set_time(timeRef.current);
-        vis.render(0);
-      }
+      // Do NOT clamp time every frame.
+      // vis.set_time(timeRef.current);
+      // Instead let render(dt) advance time, and sync only on prop change (above).
+
+      vis.render(dt);
 
       // Poll debug values if available
       // @ts-ignore
       if (vis.get_current_vals) {
         // @ts-ignore
         const vals = vis.get_current_vals(); // returns Float32Array [rot, zoom, time, last_input, sig_dur]
-        if (vals) {
+        if (vals && vals.length >= 5) {
           setDebugValues({
-            rot: vals[0]!,
-            zoom: vals[1]!,
-            time: vals[2]!,
-            input: vals[3]!,
-            sigDur: vals[4]!
+            rot: vals[0],
+            zoom: vals[1],
+            time: vals[2],
+            input: vals[3],
+            sigDur: vals[4]
           });
         }
       } else {
@@ -363,42 +295,39 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
   }, [isReady]);
 
   const [debugValues, setDebugValues] = useState<{ rot: number, zoom: number, time: number, input: number, sigDur: number } | null>(null);
-  const [availableSources, setAvailableSources] = useState<string[]>([]);
 
-  useEffect(() => {
-    const available = new Set(["Waveform", "Similarity"]);
-    if (mirResults) {
-      Object.keys(mirResults).forEach(k => available.add(k));
-    }
-    setAvailableSources(Array.from(available).sort());
-  }, [mirResults, audio]);
+  const availableSources = useMemo(() => {
+    const keys = mirResults ? Object.keys(mirResults) : [];
+    return ["Waveform", ...keys];
+  }, [mirResults]);
 
   return (
-    <div className={`flex flex-col bg-gray-900 rounded-lg overflow-hidden ${className}`}>
-      <div className="flex-none flex justify-between items-center p-2 bg-gray-900 z-10">
-        <h3 className="text-gray-200 font-bold text-sm">Visualiser</h3>
-        <div className="flex gap-4 text-sm scale-90 origin-right">
+    <div className={`p-4 bg-gray-900 rounded-lg ${className}`}>
+      <div className="flex justify-between items-center mb-2">
+        <h3 className="text-gray-200 font-bold">GPU Visualiser</h3>
+        <div className="flex gap-4 text-sm">
           <div className="flex gap-4 text-sm items-end">
             <div className="flex flex-col">
-              <label className="text-gray-400 text-[10px]">Rot Source</label>
+              <label className="text-gray-400 text-xs">Rotation Source</label>
               <select
                 value={rotSource}
                 onChange={e => setRotSource(e.target.value)}
-                className="bg-gray-800 text-white rounded p-1 w-24 text-xs"
+                className="bg-gray-800 text-white rounded p-1 w-32"
               >
                 {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div className="flex gap-1 items-center">
               <div className="flex flex-col w-12">
-                <label className="text-gray-500 text-[10px]">Min</label>
+                <label className="text-gray-500 text-[10px]">In Min</label>
                 <input type="number" step="0.1" value={isNaN(rotRange[0]) ? '' : rotRange[0]} onChange={e => setRotRange([parseFloat(e.target.value), rotRange[1]])} className="bg-gray-800 text-white rounded p-1 text-xs" />
               </div>
               <div className="flex flex-col w-12">
-                <label className="text-gray-500 text-[10px]">Max</label>
+                <label className="text-gray-500 text-[10px]">In Max</label>
                 <input type="number" step="0.1" value={isNaN(rotRange[1]) ? '' : rotRange[1]} onChange={e => setRotRange([rotRange[0], parseFloat(e.target.value)])} className="bg-gray-800 text-white rounded p-1 text-xs" />
               </div>
-              <div className="flex flex-col w-10">
+              {/* Gain */}
+              <div className="flex flex-col w-12">
                 <label className="text-gray-500 text-[10px]">Gain</label>
                 <input type="number" step="0.1" value={isNaN(rotGain) ? '' : rotGain} onChange={e => setRotGain(parseFloat(e.target.value))} className="bg-gray-800 text-white rounded p-1 text-xs" />
               </div>
@@ -407,25 +336,26 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
             <div className="w-px bg-gray-700 h-8 mx-2"></div>
 
             <div className="flex flex-col">
-              <label className="text-gray-400 text-[10px]">Zoom Source</label>
+              <label className="text-gray-400 text-xs">Zoom Source</label>
               <select
                 value={zoomSource}
                 onChange={e => setZoomSource(e.target.value)}
-                className="bg-gray-800 text-white rounded p-1 w-24 text-xs"
+                className="bg-gray-800 text-white rounded p-1 w-32"
               >
                 {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
             <div className="flex gap-1 items-center">
               <div className="flex flex-col w-12">
-                <label className="text-gray-500 text-[10px]">Min</label>
+                <label className="text-gray-500 text-[10px]">In Min</label>
                 <input type="number" step="0.1" value={isNaN(zoomRange[0]) ? '' : zoomRange[0]} onChange={e => setZoomRange([parseFloat(e.target.value), zoomRange[1]])} className="bg-gray-800 text-white rounded p-1 text-xs" />
               </div>
               <div className="flex flex-col w-12">
-                <label className="text-gray-500 text-[10px]">Max</label>
+                <label className="text-gray-500 text-[10px]">In Max</label>
                 <input type="number" step="0.1" value={isNaN(zoomRange[1]) ? '' : zoomRange[1]} onChange={e => setZoomRange([zoomRange[0], parseFloat(e.target.value)])} className="bg-gray-800 text-white rounded p-1 text-xs" />
               </div>
-              <div className="flex flex-col w-10">
+              {/* Gain */}
+              <div className="flex flex-col w-12">
                 <label className="text-gray-500 text-[10px]">Gain</label>
                 <input type="number" step="0.1" value={isNaN(zoomGain) ? '' : zoomGain} onChange={e => setZoomGain(parseFloat(e.target.value))} className="bg-gray-800 text-white rounded p-1 text-xs" />
               </div>
@@ -433,8 +363,8 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
 
             <div className="w-px bg-gray-700 h-8 mx-2"></div>
 
-            <div className="flex flex-col w-20">
-              <label className="text-gray-400 text-[10px]">Sigmoid ({sigmoidK})</label>
+            <div className="flex flex-col w-32">
+              <label className="text-gray-400 text-xs">Sigmoid (K={sigmoidK})</label>
               <input
                 type="range"
                 min="0" max="20" step="0.5"
@@ -447,8 +377,8 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
         </div>
       </div>
 
-      <div className="flex-1 relative w-full h-full bg-black overflow-hidden">
-        <canvas ref={canvasRef} className="absolute inset-0 block w-full h-full" />
+      <div className="relative aspect-video bg-black rounded overflow-hidden border border-gray-800">
+        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
 
         {/* Debug Overlay */}
         {isReady && debugValues && (
@@ -456,6 +386,9 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
             <div>ROT: {debugValues.rot.toFixed(3)}</div>
             <div>ZOOM: {debugValues.zoom.toFixed(3)}</div>
             <div>TIME: {debugValues.time.toFixed(3)}</div>
+            <div>Knee: {debugValues.input.toFixed(3)}</div>
+            <div>SigDur: {debugValues.sigDur.toFixed(3)}</div>
+            <div>FPS: {((1000 / 16)).toFixed(0)}</div>
           </div>
         )}
 

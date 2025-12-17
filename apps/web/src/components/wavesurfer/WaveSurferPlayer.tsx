@@ -49,7 +49,6 @@ export type WaveSurferPlayerHandle = {
   stop: () => void;
   playSegment: (opts: { startSec: number; endSec: number; loop?: boolean }) => void;
   isPlaying: () => boolean;
-  loadAudio: (file: File) => Promise<void>;
 };
 
 type WaveSurferPlayerProps = {
@@ -81,9 +80,6 @@ type WaveSurferPlayerProps = {
   /** Playback position in seconds (for driving playhead overlays elsewhere). */
   onPlaybackTime?: (timeSec: number) => void;
 
-  /** Playback state change. */
-  onPlayingChange?: (isPlaying: boolean) => void;
-
   /**
    * Region selection (single active region).
    * Called whenever the user creates/updates a region.
@@ -107,8 +103,6 @@ type WaveSurferPlayerProps = {
 
   /** Optional: map waveform clicks to an external seek handler. */
   onWaveformClick?: (timeSec: number) => void;
-  onConfigClick?: () => void;
-  onDebugClick?: () => void;
 };
 
 /**
@@ -124,7 +118,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     onAudioDecoded,
     onViewportChange,
     onPlaybackTime,
-    onPlayingChange,
     onRegionChange,
     queryRegion,
     candidates,
@@ -140,8 +133,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     viewport,
     seekToTimeSec,
     onWaveformClick,
-    onConfigClick,
-    onDebugClick,
   }: WaveSurferPlayerProps,
   ref
 ) {
@@ -153,7 +144,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   const onAudioDecodedRef = useRef<WaveSurferPlayerProps["onAudioDecoded"]>(onAudioDecoded);
   const onViewportChangeRef = useRef<WaveSurferPlayerProps["onViewportChange"]>(onViewportChange);
   const onPlaybackTimeRef = useRef<WaveSurferPlayerProps["onPlaybackTime"]>(onPlaybackTime);
-  const onPlayingChangeRef = useRef<WaveSurferPlayerProps["onPlayingChange"]>(onPlayingChange);
   const onRegionChangeRef = useRef<WaveSurferPlayerProps["onRegionChange"]>(onRegionChange);
   const seekToTimeSecRef = useRef<WaveSurferPlayerProps["seekToTimeSec"]>(seekToTimeSec);
   const onWaveformClickRef = useRef<WaveSurferPlayerProps["onWaveformClick"]>(onWaveformClick);
@@ -169,13 +159,62 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   const programmaticCreatesRef = useRef<Set<string>>(new Set());
   const programmaticUpdatesRef = useRef<Set<string>>(new Set());
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      playPause: () => {
+        // User intent: "normal" play/pause should not be constrained to a previously reviewed segment.
+        segmentPlaybackRef.current = null;
+        void wsRef.current?.playPause();
+      },
+      pause: () => {
+        segmentPlaybackRef.current = null;
+        wsRef.current?.pause();
+      },
+      stop: () => {
+        segmentPlaybackRef.current = null;
+        const ws = wsRef.current;
+        if (!ws) return;
+        ws.pause();
+        ws.seekTo(0);
+      },
+      playSegment: ({ startSec, endSec, loop }) => {
+        const ws = wsRef.current;
+        if (!ws) return;
 
+        const dur = ws.getDuration() || 0;
+        const startRaw = Math.min(startSec, endSec);
+        const endRaw = Math.max(startSec, endSec);
+        const start = Math.max(0, Math.min(dur || Infinity, startRaw));
+        const end = Math.max(start, Math.min(dur || Infinity, endRaw));
+
+        // Keep non-zero so one-shot playback is audible on very small selections.
+        const safeEnd = end > start ? end : Math.min(dur || Infinity, start + 0.01);
+
+        segmentPlaybackRef.current = { startSec: start, endSec: safeEnd, loop: !!loop };
+
+        // Prefer WaveSurfer's own segment playback (start,end) so we don't fight internal timing/stopAtPosition.
+        void ws.play(start, safeEnd);
+
+        // Center view to the segment start for quick A/B comparisons.
+        const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
+        const minPxPerSec = zoomRef.current;
+        if (scrollContainer && minPxPerSec > 0) {
+          const targetPx = start * minPxPerSec;
+          const left = Math.max(0, targetPx - scrollContainer.clientWidth / 2);
+          const maxLeft = Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth);
+          scrollContainer.scrollLeft = Math.min(maxLeft, left);
+        }
+      },
+      isPlaying: () => isPlayingRef.current,
+    }),
+    []
+  );
 
   useEffect(() => {
     onAudioDecodedRef.current = onAudioDecoded;
     onViewportChangeRef.current = onViewportChange;
     onPlaybackTimeRef.current = onPlaybackTime;
-    onPlayingChangeRef.current = onPlayingChange;
     onRegionChangeRef.current = onRegionChange;
     onWaveformClickRef.current = onWaveformClick;
     onSelectCandidateIdRef.current = onSelectCandidateId;
@@ -188,7 +227,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     onAudioDecoded,
     onViewportChange,
     onPlaybackTime,
-    onPlayingChange,
     onRegionChange,
     onWaveformClick,
     onSelectCandidateId,
@@ -258,86 +296,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       objectUrlRef.current = null;
     }
   }
-
-  async function onPickFile(file: File) {
-    const ws = wsRef.current;
-    if (!ws) return;
-
-    // New audio invalidates all regions (query + candidates); clear proactively so UI never shows stale marks.
-    regionsPluginRef.current?.clearRegions();
-    queryRegionRef.current = null;
-    programmaticCreatesRef.current.clear();
-    programmaticUpdatesRef.current.clear();
-    segmentPlaybackRef.current = null;
-    isPlayingRef.current = false;
-    setActiveRegion(null);
-    onRegionChangeRef.current?.(null);
-    onSelectCandidateIdRef.current?.(null);
-
-    cleanupObjectUrl();
-    const url = URL.createObjectURL(file);
-    objectUrlRef.current = url;
-
-    setIsReady(false);
-    setIsPlaying(false);
-    setZoom(0);
-
-    await ws.load(url);
-  }
-
-  useImperativeHandle(
-    ref,
-    () => ({
-      playPause: () => {
-        // User intent: "normal" play/pause should not be constrained to a previously reviewed segment.
-        segmentPlaybackRef.current = null;
-        void wsRef.current?.playPause();
-      },
-      pause: () => {
-        segmentPlaybackRef.current = null;
-        wsRef.current?.pause();
-      },
-      stop: () => {
-        segmentPlaybackRef.current = null;
-        const ws = wsRef.current;
-        if (!ws) return;
-        ws.pause();
-        ws.seekTo(0);
-      },
-      playSegment: ({ startSec, endSec, loop }) => {
-        const ws = wsRef.current;
-        if (!ws) return;
-
-        const dur = ws.getDuration() || 0;
-        const startRaw = Math.min(startSec, endSec);
-        const endRaw = Math.max(startSec, endSec);
-        const start = Math.max(0, Math.min(dur || Infinity, startRaw));
-        const end = Math.max(start, Math.min(dur || Infinity, endRaw));
-
-        // Keep non-zero so one-shot playback is audible on very small selections.
-        const safeEnd = end > start ? end : Math.min(dur || Infinity, start + 0.01);
-
-        segmentPlaybackRef.current = { startSec: start, endSec: safeEnd, loop: !!loop };
-
-        // Prefer WaveSurfer's own segment playback (start,end) so we don't fight internal timing/stopAtPosition.
-        void ws.play(start, safeEnd);
-
-        // Center view to the segment start for quick A/B comparisons.
-        const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
-        const minPxPerSec = zoomRef.current;
-        if (scrollContainer && minPxPerSec > 0) {
-          const targetPx = start * minPxPerSec;
-          const left = Math.max(0, targetPx - scrollContainer.clientWidth / 2);
-          const maxLeft = Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth);
-          scrollContainer.scrollLeft = Math.min(maxLeft, left);
-        }
-      },
-      isPlaying: () => isPlayingRef.current,
-      loadAudio: (file: File) => onPickFile(file),
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  );
 
   useEffect(() => {
     if (!containerEl || !timelineEl) return;
@@ -638,12 +596,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       ws.un("scroll", onScroll);
       ws.un("interaction", onInteraction);
       ws.un("finish", onFinish);
-      try {
-        ws.destroy();
-      } catch (e) {
-        // Ignore "signal is aborted" errors during destroy
-        console.warn("[WaveSurfer] destroy error suppressed", e);
-      }
+      ws.destroy();
       wsRef.current = null;
       regionsPluginRef.current = null;
       queryRegionRef.current = null;
@@ -688,16 +641,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
 
     const ws = wsRef.current;
     if (!ws) return;
-
-    // Avoid zooming if audio isn't loaded yet to prevent "No audio loaded" runtime error.
-    const duration = ws.getDuration();
-    if (duration > 0) {
-      try {
-        ws.zoom(zoom);
-      } catch (e) {
-        console.warn("[WaveSurfer] zoom error suppressed", e);
-      }
-    }
+    ws.zoom(zoom);
 
     // WaveSurfer only emits 'scroll' on actual scroll/drag.
     // After zoom changes we synthesize a viewport update using the same
@@ -707,8 +651,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
     if (!scrollContainer) return;
 
-    // Use the duration we fetched earlier
-    // const duration = ws.getDuration() || 0;
+    const duration = ws.getDuration() || 0;
     const minPxPerSec = zoom;
 
     const scrollLeftPx = scrollContainer.scrollLeft || 0;
@@ -818,7 +761,31 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     queryRegionRef.current = null;
   }, [queryRegion]);
 
-  // ... (moved up)
+  async function onPickFile(file: File) {
+    const ws = wsRef.current;
+    if (!ws) return;
+
+    // New audio invalidates all regions (query + candidates); clear proactively so UI never shows stale marks.
+    regionsPluginRef.current?.clearRegions();
+    queryRegionRef.current = null;
+    programmaticCreatesRef.current.clear();
+    programmaticUpdatesRef.current.clear();
+    segmentPlaybackRef.current = null;
+    isPlayingRef.current = false;
+    setActiveRegion(null);
+    onRegionChangeRef.current?.(null);
+    onSelectCandidateIdRef.current?.(null);
+
+    cleanupObjectUrl();
+    const url = URL.createObjectURL(file);
+    objectUrlRef.current = url;
+
+    setIsReady(false);
+    setIsPlaying(false);
+    setZoom(0);
+
+    await ws.load(url);
+  }
 
   function togglePlay() {
     // User intent: the player controls are "track playback", not segment playback.
@@ -867,24 +834,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
               if (f) void onPickFile(f);
             }}
           />
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 px-2 text-xs"
-            onClick={onConfigClick}
-            title="Analysis Configuration"
-          >
-            Config
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 px-2 text-xs"
-            onClick={onDebugClick}
-            title="Debug Info"
-          >
-            Debug
-          </Button>
         </label>
 
         <Button onClick={togglePlay} disabled={!isReady}>
@@ -909,20 +858,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
             {zoom}
           </span>
         </div>
-        {/* Compact Region Debug Readout */}
-        {activeRegion && (
-          <div className="flex items-center gap-3 text-[10px] text-zinc-500 font-mono ml-auto lg:ml-0 lg:order-last">
-            <span>
-              <span className="text-zinc-400">Range:</span> {activeRegion.startSec.toFixed(3)}s - {activeRegion.endSec.toFixed(3)}s
-            </span>
-            <span className="hidden sm:inline">
-              <span className="text-zinc-400">Dur:</span> {activeRegion.durationSec.toFixed(3)}s
-            </span>
-            <span className="hidden md:inline">
-              <span className="text-zinc-400">Samples:</span> {activeRegion.startSample} - {activeRegion.startSample + activeRegion.durationSamples}
-            </span>
-          </div>
-        )}
       </div>
 
       <div
@@ -942,6 +877,36 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
             onMouseMove={handleCursorHover}
             onMouseLeave={handleCursorLeave}
           />
+        </div>
+
+        {/* Region debug readout (deterministic + sample-accurate). */}
+        <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-zinc-600 dark:text-zinc-300 sm:grid-cols-4">
+          <div>
+            <span className="text-zinc-500">Region start</span>
+            <div className="tabular-nums">{activeRegion ? activeRegion.startSec.toFixed(3) : "—"}s</div>
+          </div>
+          <div>
+            <span className="text-zinc-500">Region end</span>
+            <div className="tabular-nums">{activeRegion ? activeRegion.endSec.toFixed(3) : "—"}s</div>
+          </div>
+          <div>
+            <span className="text-zinc-500">Duration</span>
+            <div className="tabular-nums">{activeRegion ? activeRegion.durationSec.toFixed(3) : "—"}s</div>
+          </div>
+          <div>
+            <span className="text-zinc-500">Start sample</span>
+            <div className="tabular-nums">{activeRegion ? activeRegion.startSample : "—"}</div>
+          </div>
+          <div>
+            <span className="text-zinc-500">Duration samples</span>
+            <div className="tabular-nums">{activeRegion ? activeRegion.durationSamples : "—"}</div>
+          </div>
+          <div>
+            <span className="text-zinc-500">End sample</span>
+            <div className="tabular-nums">
+              {activeRegion ? activeRegion.startSample + activeRegion.durationSamples : "—"}
+            </div>
+          </div>
         </div>
       </div>
 

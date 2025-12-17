@@ -13,15 +13,17 @@ import {
 
 import { Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { prepareHpssSpectrogramForHeatmap, prepareMfccForHeatmap } from "@/lib/mirDisplayTransforms";
+import { runMir } from "@octoseq/mir/runner/runMir";
+
 import { HeatmapPlayheadOverlay } from "@/components/heatmap/HeatmapPlayheadOverlay";
-import { type HeatmapColorScheme, TimeAlignedHeatmapPixi } from "@/components/heatmap/TimeAlignedHeatmapPixi";
+import { TimeAlignedHeatmapPixi, type TimeAlignedHeatmapData, type HeatmapColorScheme } from "@/components/heatmap/TimeAlignedHeatmapPixi";
 import { MirControlPanel, type MirFunctionId } from "@/components/mir/MirControlPanel";
 import { SyncedWaveSurferSignal } from "@/components/wavesurfer/SyncedWaveSurferSignal";
 import { ViewportOverlayMarkers } from "@/components/wavesurfer/ViewportOverlayMarkers";
 import { WaveSurferPlayer, type WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
 import { VisualiserPanel } from "@/components/visualiser/VisualiserPanel";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
-import { runMir } from "@octoseq/mir/runner/runMir";
 import { MirWorkerClient, type MirWorkerJob, type MirWorkerSearchJob } from "@/lib/mirWorkerClient";
 import { useElementSize } from "@/lib/useElementSize";
 import { SearchControlsPanel, type SearchControls } from "@/components/search/SearchControlsPanel";
@@ -38,14 +40,10 @@ import {
   makeInitialRefinementState,
 } from "@/lib/searchRefinement";
 
-import { MirConfigModal } from "@/components/mir/MirConfigModal";
-import { DebugPanel } from "@/components/common/DebugPanel";
-
 type UiMirResult =
   | { kind: "none" }
   | { kind: "1d"; fn: MirFunctionId; times: Float32Array; values: Float32Array }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  | { kind: "2d"; fn: MirFunctionId; raw: any }
+  | { kind: "2d"; fn: MirFunctionId; raw: TimeAlignedHeatmapData }
   | { kind: "events"; fn: MirFunctionId; times: Float32Array; events: Array<{ time: number; strength: number; index: number }> };
 
 export default function Home() {
@@ -108,14 +106,8 @@ export default function Home() {
 
   const [selected, setSelected] = useState<MirFunctionId>("spectralCentroid");
   const [isRunning, setIsRunning] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-
-  // Config modal state
-  const [isConfigOpen, setIsConfigOpen] = useState(false);
-  const [isDebugOpen, setIsDebugOpen] = useState(false);
 
   const [mirResults, setMirResults] = useState<Partial<Record<MirFunctionId, UiMirResult>>>({});
-  const [lastRunTimings, setLastRunTimings] = useState<{ totalMs: number;[key: string]: number } | null>(null);
 
   const canRun = !!audio;
 
@@ -123,7 +115,7 @@ export default function Home() {
   const [debug, setDebug] = useState(false);
   const [useWorker, setUseWorker] = useState(true);
   const [enableGpu, setEnableGpu] = useState(true);
-  const [heatmapScheme, setHeatmapScheme] = useState<HeatmapColorScheme>("magma");
+  const [heatmapScheme, setHeatmapScheme] = useState<HeatmapColorScheme>("grayscale");
 
   // Minimal config UI state (keep intentionally small / non-dynamic)
   const [fftSize, setFftSize] = useState(512);
@@ -150,6 +142,14 @@ export default function Home() {
   const [showDcBin, setShowDcBin] = useState(false);
   const [showMfccC0, setShowMfccC0] = useState(false);
 
+  const [lastTimings, setLastTimings] = useState<{
+    workerTotalMs?: number;
+    cpuMs?: number;
+    gpuMs?: number;
+    totalMs?: number;
+    backend?: string;
+    usedGpu?: boolean;
+  } | null>(null);
 
   const workerRef = useRef<MirWorkerClient | null>(null);
   const activeJobRef = useRef<MirWorkerJob | null>(null);
@@ -189,6 +189,7 @@ export default function Home() {
     }
 
     setIsRunning(true);
+    setLastTimings(null);
 
     const ch0 = audio.getChannelData(0);
     // Copy into a standalone typed array so we can transfer its ArrayBuffer into the worker.
@@ -232,19 +233,23 @@ export default function Home() {
 
         result = await job.promise;
         workerTotalMs = await job.workerTotalMs;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        setLastRunTimings((result as any).timings || (workerTotalMs ? { totalMs: workerTotalMs } : null));
       } else {
         // Main-thread runner (kept for comparison / fallback).
         result = await runMir(payload, request, {
           // no gpu ctx on main thread for now; worker path validates WebGPU.
           strictGpu: false,
         });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        setLastRunTimings((result as any).timings || null);
       }
 
       const meta = result.meta;
+      setLastTimings({
+        workerTotalMs,
+        cpuMs: meta.timings.cpuMs,
+        gpuMs: meta.timings.gpuMs,
+        totalMs: meta.timings.totalMs,
+        backend: meta.backend,
+        usedGpu: meta.usedGpu,
+      });
 
       if (result.kind === "1d") {
         const norm = normaliseForWaveform(result.values, {
@@ -576,7 +581,15 @@ export default function Home() {
     return candidatesById.get(refinement.activeCandidateId) ?? null;
   }, [candidatesById, refinement.activeCandidateId]);
 
-
+  const activeCandidateGroupLogit = useMemo(() => {
+    if (!searchResult || !activeCandidate) return null;
+    const startMs = Math.round(activeCandidate.startSec * 1000);
+    const endMs = Math.round(activeCandidate.endSec * 1000);
+    const match = searchResult.candidates.find(
+      (c) => Math.round(c.windowStartSec * 1000) === startMs && Math.round(c.windowEndSec * 1000) === endMs
+    );
+    return match?.explain?.groupLogit ?? null;
+  }, [activeCandidate, searchResult]);
 
   const filteredCandidates = useMemo(() => {
     if (candidateFilter === "all") return refinement.candidates;
@@ -867,13 +880,13 @@ export default function Home() {
     }));
 
     return [
-      ...mirTabsWithAvailability,
       { id: "search", label: "Similarity", hasData: hasSearchResult },
+      ...mirTabsWithAvailability,
     ];
   }, [hasSearchResult, mirResults, mirTabs]);
 
   useEffect(() => {
-    // Ensure the selected tab id exists; prefer spectralCentroid first (first MIR tab).
+    // Ensure the selected tab id exists; prefer similarity first.
     if (tabDefs.find((t) => t.id === visualTab)) return;
     const fallback = tabDefs.find((t) => t.hasData) ?? tabDefs[0];
     if (fallback) setVisualTab(fallback.id);
@@ -905,410 +918,773 @@ export default function Home() {
 
   const handleCursorLeave = () => setCursorTimeSec(null);
 
+  const usesMel =
+    selected === "melSpectrogram" ||
+    selected === "onsetEnvelope" ||
+    selected === "onsetPeaks" ||
+    selected === "mfcc" ||
+    selected === "mfccDelta" ||
+    selected === "mfccDeltaDelta";
+  const usesOnset = selected === "onsetEnvelope" || selected === "onsetPeaks";
+  const usesPeakPick = selected === "onsetPeaks";
+  const usesHpss = selected === "hpssHarmonic" || selected === "hpssPercussive";
+  const usesMfcc = selected === "mfcc" || selected === "mfccDelta" || selected === "mfccDeltaDelta";
+  const usesHeatmapFn =
+    selected === "melSpectrogram" ||
+    selected === "hpssHarmonic" ||
+    selected === "hpssPercussive" ||
+    selected === "mfcc" ||
+    selected === "mfccDelta" ||
+    selected === "mfccDeltaDelta";
+
+  const visibleRange = useMemo(() => {
+    // If we don't have a viewport yet (e.g. before first scroll interaction),
+    // fall back to the full audio duration so visualisations have a non-empty window.
+    if (!viewport) {
+      return { startTime: 0, endTime: audioDuration };
+    }
+    return { startTime: viewport.startTime, endTime: viewport.endTime };
+  }, [viewport, audioDuration]);
+
   const tabResult = visualTab !== "search" ? mirResults[visualTab as MirFunctionId] : undefined;
 
-  const { ref: eventsHostRef, size: eventsHostSize } = useElementSize<HTMLDivElement>();
-  const { ref: heatmapHostRef, size: heatmapHostSize } = useElementSize<HTMLDivElement>();
+  const displayedHeatmap = useMemo<TimeAlignedHeatmapData | null>(() => {
+    if (!tabResult || tabResult.kind !== "2d") return null;
 
-  // Helper to sync tab click with MIR selection
-  const handleTabClick = (id: string) => {
-    setVisualTab(id as MirFunctionId | "search");
-    // If it's an MIR function, select it for analysis
-    if (id !== 'search') {
-      setSelected(id as MirFunctionId);
+    const { raw, fn } = tabResult;
+
+    const displayData =
+      fn === "hpssHarmonic" || fn === "hpssPercussive"
+        ? prepareHpssSpectrogramForHeatmap(raw.data, { showDc: showDcBin, useDb: true, minDb: -80, maxDb: 0 })
+        : fn === "mfcc" || fn === "mfccDelta" || fn === "mfccDeltaDelta"
+          ? prepareMfccForHeatmap(raw.data, { showC0: showMfccC0 })
+          : raw.data;
+
+    return { data: displayData, times: raw.times };
+  }, [tabResult, showDcBin, showMfccC0]);
+
+  const heatmapValueRange = useMemo(() => {
+    if (!tabResult || tabResult.kind !== "2d") return undefined;
+    const fn = tabResult.fn;
+
+    // For HPSS + MFCC we pre-normalise to [0,1], so use a fixed colormap range.
+    if (fn === "hpssHarmonic" || fn === "hpssPercussive" || fn === "mfcc" || fn === "mfccDelta" || fn === "mfccDeltaDelta") {
+      return { min: 0, max: 1 };
     }
-  };
+
+    return undefined;
+  }, [tabResult]);
+
+  const heatmapYAxisLabel = useMemo(() => {
+    if (!tabResult || tabResult.kind !== "2d") return "feature index";
+    const fn = tabResult.fn;
+
+    // MFCC coefficients are DCT basis weights (not frequency bins).
+    if (fn === "mfcc" || fn === "mfccDelta" || fn === "mfccDeltaDelta") return "MFCC index";
+
+    return "frequency bin";
+  }, [tabResult]);
+
+  const { ref: heatmapHostRef, size: heatmapHostSize } = useElementSize<HTMLDivElement>();
+  const { ref: eventsHostRef, size: eventsHostSize } = useElementSize<HTMLDivElement>();
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-zinc-100 font-sans text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100">
-      <header className="flex-none flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-2 dark:border-zinc-800 dark:bg-zinc-950 h-12">
-        <div className="flex items-center gap-1.5 px-4 text-xs font-medium text-zinc-900 dark:text-zinc-100">
-          <div className="h-2 w-2 rounded-full bg-indigo-500" />
-          <span className="hidden sm:inline">Octoseq</span>
-        </div>
+    <div className="flex flex-col min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
+      <main className="w-full max-w-[1600px] rounded-2xl bg-white p-10 shadow-sm dark:bg-black">
+        <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">Octoseq</h1>
 
-        <div className="flex items-center gap-2">
-          {/* Load Audio Button (Hidden file input) */}
-          <input
-            type="file"
-            accept="audio/*"
-            className="hidden"
-            ref={fileInputRef}
-            onChange={(e) => {
-              if (playerRef.current) {
-                const f = e.target.files?.[0];
-                if (f) playerRef.current.loadAudio(f);
-              }
-            }}
-          />
-          <Button
-            size="sm"
-            variant={!audio ? "default" : "outline"}
-            className={`h-7 text-xs ${!audio ? "animate-pulse bg-blue-600 hover:bg-blue-700 text-white" : ""}`}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            Load Audio
+        <div className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-zinc-700 dark:text-zinc-200">
+            Load a local audio file to drive the analyses below.
+          </div>
+          <Button className="w-full sm:w-auto" onClick={() => fileInputRef.current?.click()}>
+            Load audio file
           </Button>
-
-          <a
-            href="https://github.com/rewbs/octoseq"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-2 flex items-center gap-1.5 text-zinc-500 transition-colors hover:text-zinc-900 dark:hover:text-zinc-200"
-          >
-            <Github className="h-3.5 w-3.5" />
-          </a>
-        </div>
-      </header>
-
-      {/* Main Content Area - Flex Column */}
-      <div className="flex flex-1 flex-col min-h-0 relative">
-
-        {/* Visualiser Section - 50% split */}
-        <div className={`relative min-h-0 bg-black transition-all duration-300 ease-in-out flex-1`}>
-          <VisualiserPanel
-            audio={audio}
-            playbackTime={mirroredCursorTimeSec}
-            audioDuration={audioDuration}
-            mirResults={mirResults as Record<string, number[]>}
-            similarityCurve={searchSignal}
-            className="w-full h-full"
-            isPlaying={isPlaying}
-          />
         </div>
 
-        {/* Expanded Search Controls & Review Toolbar */}
-        {visualTab === "search" && (
-          <div className="flex-none border-b border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-zinc-950">
-            <div className="flex items-center gap-4 overflow-x-auto">
-              <SearchControlsPanel
-                value={searchControls}
-                onChange={setSearchControls}
-                disabled={isSearchRunning || !audio}
-                selectionDurationSec={
-                  refinement.queryRegion ? refinement.queryRegion.endSec - refinement.queryRegion.startSec : null
-                }
-                useRefinement={useRefinementSearch}
-                onUseRefinementChange={userSetUseRefinementRef.current || refinementLabelsAvailable ? setUseRefinementSearch : undefined}
-                refinementAvailable={refinementLabelsAvailable}
-              />
+        <section className="mt-10">
+          <div className="mt-4 space-y-3">
+            <MirControlPanel
+              selected={selected}
+              onSelectedChange={setSelected}
+              onRun={() => void runAnalysis()}
+              onCancel={() => cancelAnalysis()}
+              disabled={!canRun}
+              isRunning={isRunning}
+            />
 
-              <div className="flex flex-col items-center justify-center gap-1">
-                <Button
-                  size="sm"
-                  className={`h-8 px-4 text-xs font-medium shadow-none ${isSearchRunning
-                    ? "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
-                    : "bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500"
-                    }`}
-                  onClick={() => {
-                    if (refinement.queryRegion)
-                      void runSearch(refinement.queryRegion, searchControls).catch((e) => {
-                        if ((e as Error)?.message === "cancelled") return;
-                        console.error("[SEARCH] failed", e);
-                      });
-                  }}
-                  disabled={isSearchRunning || !audio || !refinement.queryRegion}
-                >
-                  {isSearchRunning ? "..." : "Run Search"}
-                </Button>
-                {searchDirty && searchResult ? (
-                  <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium whitespace-nowrap">
-                    Has changes
-                  </span>
-                ) : null}
+            <details className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+              <summary className="cursor-pointer select-none text-zinc-700 dark:text-zinc-200">Config</summary>
+              <div className="mt-3 space-y-4">
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                    <span className="text-xs text-zinc-600 dark:text-zinc-300">FFT size (power of 2)</span>
+                    <input
+                      type="number"
+                      min={64}
+                      step={64}
+                      value={fftSize}
+                      onChange={(e) => setFftSize(Math.max(64, Math.floor(Number(e.target.value)) || 64))}
+                      className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                    />
+                  </label>
+                  <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                    <span className="text-xs text-zinc-600 dark:text-zinc-300">Hop size</span>
+                    <input
+                      type="number"
+                      min={1}
+                      step={16}
+                      value={hopSize}
+                      onChange={(e) => setHopSize(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                      className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                    />
+                  </label>
+                </div>
+
+                {usesMel && (
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                      <span className="text-xs text-zinc-600 dark:text-zinc-300">Mel bands (nMels)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={256}
+                        step={1}
+                        value={melBands}
+                        onChange={(e) => setMelBands(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                        className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                      />
+                    </label>
+                    <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                      <span className="text-xs text-zinc-600 dark:text-zinc-300">Mel fMin (Hz)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={10}
+                        value={melFMin}
+                        onChange={(e) => setMelFMin(e.target.value)}
+                        placeholder="default"
+                        className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                      />
+                    </label>
+                    <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                      <span className="text-xs text-zinc-600 dark:text-zinc-300">Mel fMax (Hz)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={10}
+                        value={melFMax}
+                        onChange={(e) => setMelFMax(e.target.value)}
+                        placeholder="default (Nyquist)"
+                        className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {usesOnset && (
+                  <div className="space-y-2">
+                    <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
+                      <span className="text-xs text-zinc-600 dark:text-zinc-300">Onset smoothing (ms)</span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={200}
+                        step={5}
+                        value={onsetSmoothMs}
+                        onChange={(e) => setOnsetSmoothMs(Number(e.target.value))}
+                      />
+                      <span className="text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">{onsetSmoothMs}</span>
+                    </label>
+
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                        <span className="text-xs text-zinc-600 dark:text-zinc-300">Diff method</span>
+                        <select
+                          value={onsetDiffMethod}
+                          onChange={(e) => setOnsetDiffMethod(e.target.value as typeof onsetDiffMethod)}
+                          className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                        >
+                          <option value="rectified">Rectified (positive only)</option>
+                          <option value="abs">Absolute</option>
+                        </select>
+                      </label>
+                      <label className="inline-flex items-center gap-2">
+                        <input type="checkbox" checked={onsetUseLog} onChange={(e) => setOnsetUseLog(e.target.checked)} />
+                        <span className="text-xs text-zinc-600 dark:text-zinc-300">Log-compress differences</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {usesPeakPick && (
+                  <div className="space-y-2">
+                    <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
+                      <span className="text-xs text-zinc-600 dark:text-zinc-300">Peak min interval (ms)</span>
+                      <input
+                        type="range"
+                        min={20}
+                        max={400}
+                        step={10}
+                        value={peakMinIntervalMs}
+                        onChange={(e) => setPeakMinIntervalMs(Number(e.target.value))}
+                      />
+                      <span className="text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">{peakMinIntervalMs}</span>
+                    </label>
+
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                      <label className="grid grid-cols-[140px,1fr] items-center gap-2">
+                        <span className="text-xs text-zinc-600 dark:text-zinc-300">Peak threshold</span>
+                        <input
+                          type="number"
+                          step={0.01}
+                          value={peakThreshold}
+                          onChange={(e) => setPeakThreshold(e.target.value)}
+                          placeholder="auto"
+                          className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                        />
+                      </label>
+                      <label className="grid grid-cols-[140px,1fr] items-center gap-2">
+                        <span className="text-xs text-zinc-600 dark:text-zinc-300">Adaptive factor</span>
+                        <input
+                          type="number"
+                          step={0.1}
+                          value={peakAdaptiveFactor}
+                          onChange={(e) => setPeakAdaptiveFactor(e.target.value)}
+                          placeholder="blank = off"
+                          className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                )}
+
+                {usesHpss && (
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                      <span className="text-xs text-zinc-600 dark:text-zinc-300">HPSS timeMedian</span>
+                      <input
+                        type="number"
+                        min={1}
+                        step={2}
+                        value={hpssTimeMedian}
+                        onChange={(e) => setHpssTimeMedian(Math.max(1, Math.floor(Number(e.target.value)) | 1))}
+                        className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                      />
+                    </label>
+                    <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                      <span className="text-xs text-zinc-600 dark:text-zinc-300">HPSS freqMedian</span>
+                      <input
+                        type="number"
+                        min={1}
+                        step={2}
+                        value={hpssFreqMedian}
+                        onChange={(e) => setHpssFreqMedian(Math.max(1, Math.floor(Number(e.target.value)) | 1))}
+                        className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {usesMfcc && (
+                  <label className="grid grid-cols-[180px,1fr] items-center gap-2">
+                    <span className="text-xs text-zinc-600 dark:text-zinc-300">MFCC nCoeffs</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={40}
+                      step={1}
+                      value={mfccNCoeffs}
+                      onChange={(e) => setMfccNCoeffs(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                      className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                    />
+                  </label>
+                )}
+
+                {(usesHpss || usesMfcc) && (
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    {usesHpss && (
+                      <label className="inline-flex items-center gap-2">
+                        <input type="checkbox" checked={showDcBin} onChange={(e) => setShowDcBin(e.target.checked)} />
+                        <span className="text-xs text-zinc-600 dark:text-zinc-300">Show DC bin (spectrogram display)</span>
+                      </label>
+                    )}
+                    {usesMfcc && (
+                      <label className="inline-flex items-center gap-2">
+                        <input type="checkbox" checked={showMfccC0} onChange={(e) => setShowMfccC0(e.target.checked)} />
+                        <span className="text-xs text-zinc-600 dark:text-zinc-300">Show MFCC C0 (display)</span>
+                      </label>
+                    )}
+                  </div>
+                )}
+
+                {usesHeatmapFn && (
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                      <span className="text-xs text-zinc-600 dark:text-zinc-300">Heatmap colour scheme</span>
+                      <select
+                        value={heatmapScheme}
+                        onChange={(e) => setHeatmapScheme(e.target.value as HeatmapColorScheme)}
+                        className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                      >
+                        <option value="grayscale">Grayscale</option>
+                        <option value="viridis">Viridis</option>
+                        <option value="plasma">Plasma</option>
+                        <option value="magma">Magma</option>
+                      </select>
+                    </label>
+                  </div>
+                )}
+
+                <p className="text-xs text-zinc-500">Config applies only to the currently selected MIR function.</p>
               </div>
+            </details>
 
-              <div className="h-8 w-px bg-zinc-200 dark:bg-zinc-800" />
+            <details className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+              <summary className="cursor-pointer select-none text-zinc-700 dark:text-zinc-200">Debug</summary>
+              <div className="mt-3 grid grid-cols-1 gap-2">
+                <label className="inline-flex items-center gap-2">
+                  <input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} />
+                  <span>Verbose worker logs</span>
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input type="checkbox" checked={useWorker} onChange={(e) => setUseWorker(e.target.checked)} />
+                  <span>Use Web Worker (non-blocking)</span>
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input type="checkbox" checked={enableGpu} onChange={(e) => setEnableGpu(e.target.checked)} />
+                  <span>Enable WebGPU stage (mel projection + onset envelope)</span>
+                </label>
 
-              <div className="flex-1 min-w-0">
-                <SearchRefinementPanel
-                  filter={candidateFilter}
-                  onFilterChange={handleFilterChange}
-                  candidatesTotal={refinement.candidates.length}
-                  filteredTotal={filteredCandidates.length}
-                  activeFilteredIndex={activeFilteredIndex}
-                  activeCandidate={activeCandidate}
-                  stats={refinement.refinementStats}
-                  onPrev={onPrevCandidate}
-                  onNext={onNextCandidate}
-                  onAccept={acceptActive}
-                  onReject={rejectActive}
-                  onPlayCandidate={playActiveCandidate}
-                  onPlayQuery={playQueryRegion}
-                  loopCandidate={loopCandidate}
-                  onLoopCandidateChange={setLoopCandidate}
-                  autoPlayOnNavigate={autoPlayOnNavigate}
-                  onAutoPlayOnNavigateChange={setAutoPlayOnNavigate}
-                  addMissingMode={addMissingMode}
-                  onToggleAddMissingMode={() => setAddMissingMode((v) => !v)}
-                  canDeleteManual={activeCandidate?.source === "manual"}
-                  onDeleteManual={deleteActiveManual}
-                  onJumpToBestUnreviewed={refinement.refinementStats.unreviewed > 0 ? jumpToBestUnreviewed : undefined}
-                  onCopyJson={copyRefinementJson}
-                  disabled={!audio || !hasSearchResult}
-                />
+                <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">
+                  <div>worker: <code>{String(useWorker)}</code></div>
+                  <div>gpu enabled: <code>{String(enableGpu)}</code></div>
+                  <div>
+                    timings: {lastTimings ? (
+                      <pre className="mt-1 whitespace-pre-wrap rounded bg-white p-2 dark:bg-black">{JSON.stringify(lastTimings, null, 2)}</pre>
+                    ) : (
+                      <span className="text-zinc-500">(no run yet)</span>
+                    )}
+                  </div>
+
+                  {tabResult?.kind === "2d" && (
+                    <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">
+                      raw shape: <code>{tabResult.raw.data.length}</code> frames ×{" "}
+                      <code>{tabResult.raw.data[0]?.length ?? 0}</code>
+                      {" "}features
+                      {displayedHeatmap ? (
+                        <>
+                          <br />
+                          display shape: <code>{displayedHeatmap.data.length}</code> frames ×{" "}
+                          <code>{displayedHeatmap.data[0]?.length ?? 0}</code>
+                          {" "}features
+                        </>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            </details>
           </div>
-        )}
+        </section>
 
-        {/* Bottom Section - Waveform & Signals - 50% split */}
-        <div className="flex-1 min-h-0 flex flex-col border-t border-gray-800 bg-zinc-50 dark:bg-zinc-950 overflow-hidden">
+        <section className="mt-4">
+          <div className="space-y-4">
+            <details className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+              <summary className="cursor-pointer select-none text-zinc-700 dark:text-zinc-200">Search for similar features</summary>
 
-          {/* Signal Toolbar / Tabs */}
-          <div className="flex-none h-12 border-b border-gray-200 dark:border-gray-800 flex items-center px-4 gap-2 bg-white dark:bg-black justify-between">
-            <div className="flex items-center gap-2 overflow-x-auto">
-              {tabDefs.map(({ id, label, hasData }) => {
-                const active = visualTab === id;
-                const base = "whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors";
-                const styles = active
-                  ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black"
-                  : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700";
-                return (
-                  <button
-                    key={id}
-                    className={`${base} ${styles} ${hasData ? "" : "opacity-60"}`}
-                    onClick={() => handleTabClick(id)}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Analysis Controls (Only for MIR tabs) */}
-            {visualTab !== 'search' && audio && (
-              <div className="flex items-center gap-2 border-l border-zinc-200 pl-4 dark:border-zinc-800">
-                <MirControlPanel
-                  selected={selected}
-                  onSelectedChange={setSelected}
-                  isRunning={isRunning}
-                  onRun={() => void runAnalysis()}
-                  onCancel={() => cancelAnalysis()}
-                  config={{
-                    fftSize,
-                    setFftSize,
-                    hopSize,
-                    setHopSize,
-                    melBands,
-                    setMelBands,
-                    melFMin,
-                    setMelFMin,
-                    melFMax,
-                    setMelFMax,
-                    onsetSmoothMs,
-                    setOnsetSmoothMs,
-                    onsetDiffMethod,
-                    setOnsetDiffMethod,
-                    onsetUseLog,
-                    setOnsetUseLog,
-                    peakMinIntervalMs,
-                    setPeakMinIntervalMs,
-                    peakThreshold,
-                    setPeakThreshold,
-                    peakAdaptiveFactor,
-                    setPeakAdaptiveFactor,
-                    hpssTimeMedian,
-                    setHpssTimeMedian,
-                    hpssFreqMedian,
-                    setHpssFreqMedian,
-                    mfccNCoeffs,
-                    setMfccNCoeffs,
-                    showDcBin,
-                    setShowDcBin,
-                    showMfccC0,
-                    setShowMfccC0,
+              <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
+                <SearchControlsPanel
+                  value={searchControls}
+                  onChange={(next) => setSearchControls(next)}
+                  disabled={!audio || !refinement.queryRegion}
+                  useRefinement={useRefinementSearch}
+                  onUseRefinementChange={(next) => {
+                    userSetUseRefinementRef.current = true;
+                    setUseRefinementSearch(next);
                   }}
-                  disabled={!canRun}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Scrollable Content (Waveform + Signal) */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* Main Waveform */}
-            <div className="relative">
-              <WaveSurferPlayer
-                ref={playerRef}
-                fileInputRef={fileInputRef}
-                cursorTimeSec={mirroredCursorTimeSec}
-                onCursorTimeChange={setCursorTimeSec}
-                viewport={viewport}
-                onPlayingChange={setIsPlaying}
-                onConfigClick={() => setIsConfigOpen(true)}
-                onDebugClick={() => setIsDebugOpen(true)}
-                seekToTimeSec={waveformSeekTo}
-                candidateCurveKind={searchResult?.curveKind}
-                queryRegion={
-                  refinement.queryRegion ? { startSec: refinement.queryRegion.startSec, endSec: refinement.queryRegion.endSec } : null
-                }
-                candidates={refinement.candidates}
-                activeCandidateId={refinement.activeCandidateId}
-                addMissingMode={addMissingMode}
-                onSelectCandidateId={(candidateId) => {
-                  setRefinement((prevState) => ({ ...prevState, activeCandidateId: candidateId }));
-                  const c = candidateId ? candidatesById.get(candidateId) : null;
-                  if (c) setWaveformSeekTo(c.startSec);
-                }}
-                onManualCandidateCreate={(c) => {
-                  setRefinement((prevState) => {
-                    if (prevState.candidates.some((x) => x.id === c.id)) return prevState;
-                    const manual = { ...c, score: 1.0, status: "accepted", source: "manual" } as RefinementCandidate;
-                    const next = [...prevState.candidates, manual].sort((a, b) => a.startSec - b.startSec);
-                    return { ...prevState, candidates: next, activeCandidateId: c.id, refinementStats: computeRefinementStats(next) };
-                  });
-                  setWaveformSeekTo(c.startSec);
-                }}
-                onManualCandidateUpdate={(u) => {
-                  setRefinement((prev) => {
-                    const startSec = Math.min(u.startSec, u.endSec);
-                    const endSec = Math.max(u.startSec, u.endSec);
-                    const next = prev.candidates.map(c => c.id === u.id && c.source === 'manual' ? { ...c, startSec, endSec } : c).sort((a, b) => a.startSec - b.startSec);
-                    return { ...prev, candidates: next, refinementStats: computeRefinementStats(next) };
-                  });
-                }}
-                onAudioDecoded={(a) => {
-                  setAudio(a);
-                  setAudioFileName(fileInputRef.current?.files?.[0]?.name ?? null);
-                  const ch0 = a.getChannelData(0);
-                  setAudioDuration(ch0.length / a.sampleRate);
-                  setAudioSampleRate(a.sampleRate);
-                  setAudioTotalSamples(ch0.length);
-                  setMirResults({});
-                  setSearchResult(null);
-                  setWaveformSeekTo(null);
-                  setCandidateFilter("all");
-                  setAddMissingMode(false);
-                  setLoopCandidate(false);
-                  setAutoPlayOnNavigate(false);
-                  userSetUseRefinementRef.current = false;
-                  setUseRefinementSearch(false);
-                  setRefinement(makeInitialRefinementState());
-                }}
-                onViewportChange={(vp) => setViewport(normaliseViewport(vp))}
-                onPlaybackTime={(t) => setPlayheadTimeSec(t)}
-                onRegionChange={(r) => {
-                  if (!r) {
-                    setWaveformSeekTo(null);
-                    setRefinement(makeInitialRefinementState());
-                    return;
+                  refinementAvailable={refinementLabelsAvailable}
+                  selectionDurationSec={
+                    refinement.queryRegion ? Math.max(0, Math.abs(refinement.queryRegion.endSec - refinement.queryRegion.startSec)) : null
                   }
-                  if (!audioSampleRate || !audioTotalSamples) return;
-                  const startSec = Math.min(r.startSec, r.endSec);
-                  const endSec = Math.max(r.startSec, r.endSec);
-                  const startSample = Math.max(0, Math.min(audioTotalSamples, Math.floor(startSec * audioSampleRate)));
-                  const endSample = Math.max(startSample, Math.min(audioTotalSamples, Math.floor(endSec * audioSampleRate)));
-                  setRefinement((prev) => ({ ...prev, queryRegion: { startSec, endSec, startSample, endSample } }));
-                }}
-              />
-            </div>
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    onClick={() => {
+                      if (refinement.queryRegion)
+                        void runSearch(refinement.queryRegion, searchControls).catch((e) => {
+                          if ((e as Error)?.message === "cancelled") return;
+                          console.error("[SEARCH] failed", e);
+                        });
+                    }}
+                    disabled={!audio || !refinement.queryRegion || isSearchRunning}
+                  >
+                    Run search
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (refinement.queryRegion)
+                        void runSearch(refinement.queryRegion, searchControls).catch((e) => {
+                          if ((e as Error)?.message === "cancelled") return;
+                          console.error("[SEARCH] failed", e);
+                        });
+                    }}
+                    disabled={!audio || !refinement.queryRegion || isSearchRunning}
+                  >
+                    Recompute features &amp; search
+                  </Button>
+                  {searchDirty && searchResult ? (
+                    <span className="text-xs text-amber-600 dark:text-amber-400">Parameters changed — rerun search</span>
+                  ) : null}
+                  {isSearchRunning ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                      Running search…
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  Select a snippet of audio and find similar segments.
+                </p>
+                {searchResult && (
+                  <div className="rounded-md border border-zinc-200 bg-white p-2 text-xs text-zinc-700 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200">
+                    <div>
+                      <span className="text-zinc-500">Search timings</span>: fp <code>{searchResult.timings.fingerprintMs.toFixed(1)}ms</code>, scan{" "}
+                      <code>{searchResult.timings.scanMs.toFixed(1)}ms</code>
+                      {searchResult.timings.modelMs != null ? (
+                        <>
+                          , model <code>{searchResult.timings.modelMs.toFixed(1)}ms</code>
+                        </>
+                      ) : null}
+                      , total <code>{searchResult.timings.totalMs.toFixed(1)}ms</code>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500">Curve</span>: <code>{searchResult.curveKind}</code> · model{" "}
+                      <code>{searchResult.model.kind}</code> · pos <code>{searchResult.model.positives}</code> · neg{" "}
+                      <code>{searchResult.model.negatives}</code>
+                    </div>
+                    {searchResult.model.weightL2 ? (
+                      <div>
+                        <span className="text-zinc-500">Model weight L2</span>: mel <code>{searchResult.model.weightL2.mel.toFixed(3)}</code> (fg{" "}
+                        <code>{searchResult.model.weightL2.melForeground.toFixed(3)}</code>
+                        {searchResult.model.weightL2.melContrast != null ? (
+                          <>
+                            , ct <code>{searchResult.model.weightL2.melContrast.toFixed(3)}</code>
+                          </>
+                        ) : null}
+                        ), onset <code>{searchResult.model.weightL2.onset.toFixed(3)}</code> (fg{" "}
+                        <code>{searchResult.model.weightL2.onsetForeground.toFixed(3)}</code>
+                        {searchResult.model.weightL2.onsetContrast != null ? (
+                          <>
+                            , ct <code>{searchResult.model.weightL2.onsetContrast.toFixed(3)}</code>
+                          </>
+                        ) : null}
+                        )
+                        {searchResult.model.weightL2.mfcc != null && searchResult.model.weightL2.mfccForeground != null ? (
+                          <>
+                            , mfcc <code>{searchResult.model.weightL2.mfcc.toFixed(3)}</code> (fg{" "}
+                            <code>{searchResult.model.weightL2.mfccForeground.toFixed(3)}</code>
+                            {searchResult.model.weightL2.mfccContrast != null ? (
+                              <>
+                                , ct <code>{searchResult.model.weightL2.mfccContrast.toFixed(3)}</code>
+                              </>
+                            ) : null}
+                            )
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <div>
+                      <span className="text-zinc-500">Window / hop</span>: <code>{searchResult.meta.windowSec.toFixed(3)}s</code> window,{" "}
+                      <code>{Math.round(searchResult.meta.hopSec * 1000)}ms</code> hop; scanned <code>{searchResult.meta.scannedWindows}</code>, skipped{" "}
+                      <code>{searchResult.meta.skippedWindows}</code>
+                    </div>
+                    <div>
+                      <span className="text-zinc-500">Candidates</span>: <code>{searchResult.candidates.length}</code>
+                    </div>
+                    {refinement.activeCandidateId ? (
+                      <div>
+                        <span className="text-zinc-500">Active</span>:{" "}
+                        <code>{refinement.activeCandidateId}</code>
+                      </div>
+                    ) : null}
+                    {activeCandidateGroupLogit ? (
+                      <div>
+                        <span className="text-zinc-500">Active group logit</span>: total{" "}
+                        <code>{activeCandidateGroupLogit.logit.toFixed(3)}</code> (bias{" "}
+                        <code>{activeCandidateGroupLogit.bias.toFixed(3)}</code>, mel{" "}
+                        <code>{activeCandidateGroupLogit.mel.toFixed(3)}</code>, onset{" "}
+                        <code>{activeCandidateGroupLogit.onset.toFixed(3)}</code>
+                        {activeCandidateGroupLogit.mfcc != null ? (
+                          <>
+                            , mfcc <code>{activeCandidateGroupLogit.mfcc.toFixed(3)}</code>
+                          </>
+                        ) : null}
+                        )
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </details>
 
-            {/* Secondary Signal Visualisation (Search Results / Feature Curves) */}
-            {visualTab === "search" ? (
-              hasSearchResult ? (
-                <div className="space-y-2">
-                  <SyncedWaveSurferSignal
-                    data={searchSignal}
-                    times={searchResult!.times}
-                    viewport={viewport}
-                    cursorTimeSec={mirroredCursorTimeSec}
-                    onCursorTimeChange={setCursorTimeSec}
-                    height={120}
-                    overlayThreshold={searchControls.threshold}
-                  />
-                  <p className="text-[10px] text-zinc-500">
-                    {searchResult?.curveKind === "confidence" ? "Confidence Curve" : "Similarity Curve"}
-                  </p>
-                </div>
-              ) : (
-                <div className="h-32 flex items-center justify-center text-zinc-400 text-sm border border-dashed border-zinc-700 rounded">
-                  Select an audio region to search
-                </div>
-              )
-            ) : (
-              <>
-                {/* Feature Views */}
-                {(visualTab === "spectralCentroid" || visualTab === "spectralFlux" || visualTab === "onsetEnvelope") &&
-                  tabResult?.kind === "1d" && tabResult.fn === visualTab && (
+            {refinement.candidates.length > 0 ? (
+              <SearchRefinementPanel
+                filter={candidateFilter}
+                onFilterChange={handleFilterChange}
+                candidatesTotal={refinement.candidates.length}
+                filteredTotal={filteredCandidates.length}
+                activeFilteredIndex={activeFilteredIndex}
+                activeCandidate={activeCandidate}
+                stats={refinement.refinementStats}
+                onPrev={onPrevCandidate}
+                onNext={onNextCandidate}
+                onAccept={acceptActive}
+                onReject={rejectActive}
+                onPlayCandidate={playActiveCandidate}
+                onPlayQuery={playQueryRegion}
+                loopCandidate={loopCandidate}
+                onLoopCandidateChange={setLoopCandidate}
+                autoPlayOnNavigate={autoPlayOnNavigate}
+                onAutoPlayOnNavigateChange={setAutoPlayOnNavigate}
+                addMissingMode={addMissingMode}
+                onToggleAddMissingMode={() => setAddMissingMode((v) => !v)}
+                canDeleteManual={activeCandidate?.source === "manual"}
+                onDeleteManual={deleteActiveManual}
+                onJumpToBestUnreviewed={refinement.refinementStats.unreviewed > 0 ? jumpToBestUnreviewed : undefined}
+                onCopyJson={copyRefinementJson}
+                disabled={!audio}
+              />
+            ) : null}
+
+            <WaveSurferPlayer
+              ref={playerRef}
+              fileInputRef={fileInputRef}
+              cursorTimeSec={mirroredCursorTimeSec}
+              onCursorTimeChange={setCursorTimeSec}
+              viewport={viewport}
+              seekToTimeSec={waveformSeekTo}
+              candidateCurveKind={searchResult?.curveKind}
+              queryRegion={
+                refinement.queryRegion ? { startSec: refinement.queryRegion.startSec, endSec: refinement.queryRegion.endSec } : null
+              }
+              candidates={refinement.candidates}
+              activeCandidateId={refinement.activeCandidateId}
+              addMissingMode={addMissingMode}
+              onSelectCandidateId={(candidateId) => {
+                setRefinement((prevState) => ({ ...prevState, activeCandidateId: candidateId }));
+                const c = candidateId ? candidatesById.get(candidateId) : null;
+                if (c) setWaveformSeekTo(c.startSec);
+              }}
+              onManualCandidateCreate={(c) => {
+                setRefinement((prevState) => {
+                  if (prevState.candidates.some((x) => x.id === c.id)) return prevState;
+                  const manualCandidate = {
+                    id: c.id,
+                    startSec: c.startSec,
+                    endSec: c.endSec,
+                    score: 1.0,
+                    status: "accepted",
+                    source: "manual",
+                  } satisfies RefinementCandidate;
+                  const nextCandidates = [...prevState.candidates, manualCandidate].sort((a, b) => a.startSec - b.startSec);
+                  return {
+                    ...prevState,
+                    candidates: nextCandidates,
+                    activeCandidateId: c.id,
+                    refinementStats: computeRefinementStats(nextCandidates),
+                  };
+                });
+                setWaveformSeekTo(c.startSec);
+              }}
+              onManualCandidateUpdate={(u) => {
+                setRefinement((prevState) => {
+                  const startSec = Math.min(u.startSec, u.endSec);
+                  const endSec = Math.max(u.startSec, u.endSec);
+                  const nextCandidates = prevState.candidates
+                    .map((c) => {
+                      if (c.id !== u.id) return c;
+                      if (c.source !== "manual") return c;
+                      return { ...c, startSec, endSec };
+                    })
+                    .sort((a, b) => a.startSec - b.startSec);
+                  return { ...prevState, candidates: nextCandidates, refinementStats: computeRefinementStats(nextCandidates) };
+                });
+              }}
+              onAudioDecoded={(a) => {
+                setAudio(a);
+                setAudioFileName(fileInputRef.current?.files?.[0]?.name ?? null);
+                const ch0 = a.getChannelData(0);
+                setAudioDuration(ch0.length / a.sampleRate);
+                setAudioSampleRate(a.sampleRate);
+                setAudioTotalSamples(ch0.length);
+                setMirResults({});
+                setSearchResult(null);
+                setWaveformSeekTo(null);
+                setCandidateFilter("all");
+                setAddMissingMode(false);
+                setLoopCandidate(false);
+                setAutoPlayOnNavigate(false);
+                userSetUseRefinementRef.current = false;
+                setUseRefinementSearch(false);
+                setRefinement(makeInitialRefinementState());
+              }}
+              onViewportChange={(vp) => setViewport(normaliseViewport(vp))}
+              onPlaybackTime={(t) => setPlayheadTimeSec(t)}
+              onRegionChange={(r) => {
+                if (!r) {
+                  setWaveformSeekTo(null);
+                  setRefinement(makeInitialRefinementState());
+                  return;
+                }
+                if (!audioSampleRate || !audioTotalSamples) return;
+                const startSec = Math.min(r.startSec, r.endSec);
+                const endSec = Math.max(r.startSec, r.endSec);
+                const startSample = Math.max(0, Math.min(audioTotalSamples, Math.floor(startSec * audioSampleRate)));
+                const endSample = Math.max(startSample, Math.min(audioTotalSamples, Math.floor(endSec * audioSampleRate)));
+                setRefinement((prevState) => ({
+                  ...prevState,
+                  queryRegion: { startSec, endSec, startSample, endSample },
+                }));
+              }}
+            />
+
+            <VisualiserPanel
+              audio={audio}
+              playbackTime={playheadTimeSec}
+              audioDuration={audioDuration}
+              mirResults={mirResults as any}
+              className="mt-4"
+            />
+
+            <div className="mt-2">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                {tabDefs.map(({ id, label, hasData }) => {
+                  const active = visualTab === id;
+                  const base = "rounded-md px-3 py-1 text-sm transition-colors";
+                  const styles = active
+                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black"
+                    : "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100";
+                  return (
+                    <button
+                      key={id}
+                      className={`${base} ${styles} ${hasData ? "" : "opacity-60"}`}
+                      onClick={() => setVisualTab(id)}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {visualTab === "search" ? (
+                hasSearchResult ? (
+                  <div className="space-y-2">
                     <SyncedWaveSurferSignal
-                      data={tabResult.values}
-                      times={tabResult.times}
+                      data={searchSignal}
+                      times={searchResult!.times}
                       viewport={viewport}
                       cursorTimeSec={mirroredCursorTimeSec}
                       onCursorTimeChange={setCursorTimeSec}
-                      height={120}
+                      height={200}
+                      overlayThreshold={searchControls.threshold}
                     />
-                  )}
-                {/* Events */}
-                {visualTab === "onsetPeaks" && tabResult?.kind === "events" && tabResult.fn === "onsetPeaks" && (
-                  <div className="relative h-[120px] bg-zinc-100 dark:bg-zinc-900 rounded" ref={eventsHostRef} onMouseMove={handleCursorHoverFromViewport} onMouseLeave={handleCursorLeave}>
-                    <ViewportOverlayMarkers viewport={viewport} events={tabResult.events} height={120} />
-                    <HeatmapPlayheadOverlay viewport={viewport} timeSec={mirroredCursorTimeSec} height={120} widthPx={eventsHostSize.width} />
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                      {searchResult?.curveKind === "confidence"
+                        ? "Track-wide confidence curve (0–1, normalised for display). Peaks above the threshold become candidates."
+                        : "Track-wide similarity curve (0–1, normalised for display). Peaks above the threshold become candidates."}
+                    </p>
                   </div>
-                )}
-                {/* 2D Heatmaps */}
-                {(visualTab === "melSpectrogram" || visualTab === "hpssHarmonic" || visualTab === "hpssPercussive" || visualTab === "mfcc") &&
-                  tabResult?.kind === "2d" && tabResult.fn === visualTab && (
-                    <div ref={heatmapHostRef} className="relative h-[200px] w-full rounded bg-zinc-900 overflow-hidden">
-                      <TimeAlignedHeatmapPixi
-                        input={{ data: tabResult.raw.data, times: tabResult.raw.times }}
-                        startTime={viewport?.startTime ?? 0}
-                        endTime={viewport?.endTime ?? 10}
-                        width={heatmapHostSize.width || 800}
-                        height={200}
-                        colorScheme={heatmapScheme}
-                      />
-                      <HeatmapPlayheadOverlay viewport={viewport} timeSec={mirroredCursorTimeSec} height={200} />
-                    </div>
-                  )}
-              </>
-            )}
+                ) : (
+                  <p className="text-sm text-zinc-500">Run a search to see the similarity curve.</p>
+                )
+              ) : (
+                <>
+                  {visualTab === "spectralCentroid" || visualTab === "spectralFlux" || visualTab === "onsetEnvelope" ? (
+                    tabResult?.kind === "1d" && tabResult.fn === visualTab ? (
+                      <div className="-mt-1">
+                        <SyncedWaveSurferSignal
+                          data={tabResult.values}
+                          times={tabResult.times}
+                          viewport={viewport}
+                          cursorTimeSec={mirroredCursorTimeSec}
+                          onCursorTimeChange={setCursorTimeSec}
+                          height={200}
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500">Run {visualTab} to view output.</p>
+                    )
+                  ) : null}
+
+                  {visualTab === "onsetPeaks" ? (
+                    tabResult?.kind === "events" && tabResult.fn === "onsetPeaks" ? (
+                      <div className="-mt-1">
+                        <div
+                          className="relative rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
+                          ref={eventsHostRef}
+                          onMouseMove={handleCursorHoverFromViewport}
+                          onMouseLeave={handleCursorLeave}
+                        >
+                          <ViewportOverlayMarkers viewport={viewport} events={tabResult.events} height={180} />
+                          <HeatmapPlayheadOverlay viewport={viewport} timeSec={mirroredCursorTimeSec} height={180} widthPx={eventsHostSize.width} />
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500">Run Onset Peaks to view output.</p>
+                    )
+                  ) : null}
+
+                  {visualTab === "melSpectrogram" ||
+                    visualTab === "hpssHarmonic" ||
+                    visualTab === "hpssPercussive" ||
+                    visualTab === "mfcc" ||
+                    visualTab === "mfccDelta" ||
+                    visualTab === "mfccDeltaDelta" ? (
+                    tabResult?.kind === "2d" && tabResult.fn === visualTab ? (
+                      <div className="-mt-1">
+                        <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+
+                          <div ref={heatmapHostRef} className="relative" onMouseMove={handleCursorHoverFromViewport} onMouseLeave={handleCursorLeave}>
+                            <TimeAlignedHeatmapPixi
+                              input={displayedHeatmap}
+                              startTime={visibleRange.startTime}
+                              endTime={visibleRange.endTime}
+                              width={Math.floor(heatmapHostSize.width || 0)}
+                              height={320}
+                              valueRange={heatmapValueRange}
+                              yLabel={heatmapYAxisLabel}
+                              colorScheme={heatmapScheme}
+                            />
+                            <HeatmapPlayheadOverlay viewport={viewport} timeSec={mirroredCursorTimeSec} height={320} widthPx={heatmapHostSize.width} />
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-zinc-500">Run {visualTab} to view output.</p>
+                    )
+                  ) : null}
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        </section>
 
-        <MirConfigModal
-          open={isConfigOpen}
-          onOpenChange={setIsConfigOpen}
-          config={{
-            fftSize, setFftSize,
-            hopSize, setHopSize,
-            melBands, setMelBands,
-            melFMin, setMelFMin,
-            melFMax, setMelFMax,
-            onsetSmoothMs, setOnsetSmoothMs,
-            onsetDiffMethod, setOnsetDiffMethod,
-            onsetUseLog, setOnsetUseLog,
-            peakMinIntervalMs, setPeakMinIntervalMs,
-            peakThreshold, setPeakThreshold,
-            peakAdaptiveFactor, setPeakAdaptiveFactor,
-            hpssTimeMedian, setHpssTimeMedian,
-            hpssFreqMedian, setHpssFreqMedian,
-            mfccNCoeffs, setMfccNCoeffs,
-            showDcBin, setShowDcBin,
-            showMfccC0, setShowMfccC0,
-          }}
-        />
+      </main>
 
-        <DebugPanel
-          isOpen={isDebugOpen}
-          onClose={() => setIsDebugOpen(false)}
-          stats={{
-            timings: lastRunTimings ?? searchResult?.timings,
-            audio: {
-              sampleRate: audioSampleRate,
-              totalSamples: audioTotalSamples,
-              duration: audioDuration,
-            }
-          }}
-          debug={debug}
-          setDebug={setDebug}
-          useWorker={useWorker}
-          setUseWorker={setUseWorker}
-          enableGpu={enableGpu}
-          setEnableGpu={setEnableGpu}
-        />
-      </div>
+      <footer className="mt-12 flex flex-col items-center justify-center gap-2 pb-8 text-xs text-zinc-500">
+        <p>⚠️ vibecoded with a range of models; use at your own risk.</p>
+        <a
+          href="https://github.com/rewbs/octoseq"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 transition-colors hover:text-zinc-900 dark:hover:text-zinc-200"
+        >
+          <Github className="h-3.5 w-3.5" />
+          <span>github</span>
+        </a>
+      </footer>
     </div>
   );
 }
