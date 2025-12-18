@@ -103,6 +103,9 @@ type WaveSurferPlayerProps = {
 
   /** Optional: map waveform clicks to an external seek handler. */
   onWaveformClick?: (timeSec: number) => void;
+
+  /** Notifies parent when playback state changes (play/pause). */
+  onIsPlayingChange?: (isPlaying: boolean) => void;
 };
 
 /**
@@ -133,6 +136,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     viewport,
     seekToTimeSec,
     onWaveformClick,
+    onIsPlayingChange,
   }: WaveSurferPlayerProps,
   ref
 ) {
@@ -158,6 +162,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   const queryRegionRef = useRef<RegionLike | null>(null);
   const programmaticCreatesRef = useRef<Set<string>>(new Set());
   const programmaticUpdatesRef = useRef<Set<string>>(new Set());
+  const onIsPlayingChangeRef = useRef<WaveSurferPlayerProps["onIsPlayingChange"]>(onIsPlayingChange);
 
   useImperativeHandle(
     ref,
@@ -216,6 +221,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     onViewportChangeRef.current = onViewportChange;
     onPlaybackTimeRef.current = onPlaybackTime;
     onRegionChangeRef.current = onRegionChange;
+    onIsPlayingChangeRef.current = onIsPlayingChange;
     onWaveformClickRef.current = onWaveformClick;
     onSelectCandidateIdRef.current = onSelectCandidateId;
     onManualCandidateCreateRef.current = onManualCandidateCreate;
@@ -224,18 +230,19 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     candidatesRef.current = candidates ?? [];
     activeCandidateIdRef.current = activeCandidateId ?? null;
   }, [
-    onAudioDecoded,
-    onViewportChange,
-    onPlaybackTime,
-    onRegionChange,
-    onWaveformClick,
-    onSelectCandidateId,
     onManualCandidateCreate,
     onManualCandidateUpdate,
     addMissingMode,
     candidates,
     activeCandidateId,
     cursorTimeSec,
+    onIsPlayingChange,
+    onAudioDecoded,
+    onViewportChange,
+    onPlaybackTime,
+    onRegionChange,
+    onWaveformClick,
+    onSelectCandidateId,
   ]);
 
   // Global hotkey: Shift+Space to play from cursor (hover position)
@@ -374,10 +381,12 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     const onPlay = () => {
       isPlayingRef.current = true;
       setIsPlaying(true);
+      onIsPlayingChangeRef.current?.(true);
     };
     const onPause = () => {
       isPlayingRef.current = false;
       setIsPlaying(false);
+      onIsPlayingChangeRef.current?.(false);
     };
     const onFinish = () => {
       const seg = segmentPlaybackRef.current;
@@ -775,6 +784,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     setActiveRegion(null);
     onRegionChangeRef.current?.(null);
     onSelectCandidateIdRef.current?.(null);
+    onIsPlayingChangeRef.current?.(false);
 
     cleanupObjectUrl();
     const url = URL.createObjectURL(file);

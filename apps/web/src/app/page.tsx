@@ -19,6 +19,7 @@ import { runMir } from "@octoseq/mir/runner/runMir";
 import { HeatmapPlayheadOverlay } from "@/components/heatmap/HeatmapPlayheadOverlay";
 import { TimeAlignedHeatmapPixi, type TimeAlignedHeatmapData, type HeatmapColorScheme } from "@/components/heatmap/TimeAlignedHeatmapPixi";
 import { MirControlPanel, type MirFunctionId } from "@/components/mir/MirControlPanel";
+import { MirConfigModal } from "@/components/mir/MirConfigModal";
 import { SyncedWaveSurferSignal } from "@/components/wavesurfer/SyncedWaveSurferSignal";
 import { ViewportOverlayMarkers } from "@/components/wavesurfer/ViewportOverlayMarkers";
 import { WaveSurferPlayer, type WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
@@ -108,6 +109,7 @@ export default function Home() {
   const [isRunning, setIsRunning] = useState(false);
 
   const [mirResults, setMirResults] = useState<Partial<Record<MirFunctionId, UiMirResult>>>({});
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false);
 
   const canRun = !!audio;
 
@@ -141,6 +143,8 @@ export default function Home() {
   // Display-only toggles (must not trigger re-analysis)
   const [showDcBin, setShowDcBin] = useState(false);
   const [showMfccC0, setShowMfccC0] = useState(false);
+
+  const [isConfigOpen, setIsConfigOpen] = useState(false);
 
   const [lastTimings, setLastTimings] = useState<{
     workerTotalMs?: number;
@@ -918,24 +922,7 @@ export default function Home() {
 
   const handleCursorLeave = () => setCursorTimeSec(null);
 
-  const usesMel =
-    selected === "melSpectrogram" ||
-    selected === "onsetEnvelope" ||
-    selected === "onsetPeaks" ||
-    selected === "mfcc" ||
-    selected === "mfccDelta" ||
-    selected === "mfccDeltaDelta";
-  const usesOnset = selected === "onsetEnvelope" || selected === "onsetPeaks";
-  const usesPeakPick = selected === "onsetPeaks";
-  const usesHpss = selected === "hpssHarmonic" || selected === "hpssPercussive";
-  const usesMfcc = selected === "mfcc" || selected === "mfccDelta" || selected === "mfccDeltaDelta";
-  const usesHeatmapFn =
-    selected === "melSpectrogram" ||
-    selected === "hpssHarmonic" ||
-    selected === "hpssPercussive" ||
-    selected === "mfcc" ||
-    selected === "mfccDelta" ||
-    selected === "mfccDeltaDelta";
+
 
   const visibleRange = useMemo(() => {
     // If we don't have a viewport yet (e.g. before first scroll interaction),
@@ -990,255 +977,72 @@ export default function Home() {
 
   return (
     <div className="flex flex-col min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="w-full max-w-[1600px] rounded-2xl bg-white p-10 shadow-sm dark:bg-black">
-        <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">Octoseq</h1>
-
-        <div className="mt-6 flex flex-col gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm text-zinc-700 dark:text-zinc-200">
-            Load a local audio file to drive the analyses below.
+      <main className="w-full max-w-[1600px] rounded-2xl bg-white p-4 shadow-sm dark:bg-black">
+        <div className="flex items-center gap-8">
+          <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">Octoseq</h1>
+          <div className="flex items-center gap-2">
+            <Button
+              className={`w-full sm:w-auto ${!audio ? "animate-pulse-glow-red" : ""}`}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              Load audio file
+            </Button>
+            <div className="text-xs text-zinc-700 dark:text-zinc-200">
+              Load a local audio file to drive the analyses below.
+            </div>
           </div>
-          <Button className="w-full sm:w-auto" onClick={() => fileInputRef.current?.click()}>
-            Load audio file
-          </Button>
         </div>
 
         <section className="mt-10">
           <div className="mt-4 space-y-3">
-            <MirControlPanel
-              selected={selected}
-              onSelectedChange={setSelected}
-              onRun={() => void runAnalysis()}
-              onCancel={() => cancelAnalysis()}
-              disabled={!canRun}
-              isRunning={isRunning}
-            />
-
-            <details className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-950">
-              <summary className="cursor-pointer select-none text-zinc-700 dark:text-zinc-200">Config</summary>
-              <div className="mt-3 space-y-4">
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                  <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                    <span className="text-xs text-zinc-600 dark:text-zinc-300">FFT size (power of 2)</span>
-                    <input
-                      type="number"
-                      min={64}
-                      step={64}
-                      value={fftSize}
-                      onChange={(e) => setFftSize(Math.max(64, Math.floor(Number(e.target.value)) || 64))}
-                      className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                    />
-                  </label>
-                  <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                    <span className="text-xs text-zinc-600 dark:text-zinc-300">Hop size</span>
-                    <input
-                      type="number"
-                      min={1}
-                      step={16}
-                      value={hopSize}
-                      onChange={(e) => setHopSize(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
-                      className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                    />
-                  </label>
-                </div>
-
-                {usesMel && (
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                      <span className="text-xs text-zinc-600 dark:text-zinc-300">Mel bands (nMels)</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={256}
-                        step={1}
-                        value={melBands}
-                        onChange={(e) => setMelBands(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
-                        className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                      />
-                    </label>
-                    <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                      <span className="text-xs text-zinc-600 dark:text-zinc-300">Mel fMin (Hz)</span>
-                      <input
-                        type="number"
-                        min={0}
-                        step={10}
-                        value={melFMin}
-                        onChange={(e) => setMelFMin(e.target.value)}
-                        placeholder="default"
-                        className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                      />
-                    </label>
-                    <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                      <span className="text-xs text-zinc-600 dark:text-zinc-300">Mel fMax (Hz)</span>
-                      <input
-                        type="number"
-                        min={0}
-                        step={10}
-                        value={melFMax}
-                        onChange={(e) => setMelFMax(e.target.value)}
-                        placeholder="default (Nyquist)"
-                        className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                      />
-                    </label>
-                  </div>
-                )}
-
-                {usesOnset && (
-                  <div className="space-y-2">
-                    <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
-                      <span className="text-xs text-zinc-600 dark:text-zinc-300">Onset smoothing (ms)</span>
-                      <input
-                        type="range"
-                        min={0}
-                        max={200}
-                        step={5}
-                        value={onsetSmoothMs}
-                        onChange={(e) => setOnsetSmoothMs(Number(e.target.value))}
-                      />
-                      <span className="text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">{onsetSmoothMs}</span>
-                    </label>
-
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                      <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                        <span className="text-xs text-zinc-600 dark:text-zinc-300">Diff method</span>
-                        <select
-                          value={onsetDiffMethod}
-                          onChange={(e) => setOnsetDiffMethod(e.target.value as typeof onsetDiffMethod)}
-                          className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                        >
-                          <option value="rectified">Rectified (positive only)</option>
-                          <option value="abs">Absolute</option>
-                        </select>
-                      </label>
-                      <label className="inline-flex items-center gap-2">
-                        <input type="checkbox" checked={onsetUseLog} onChange={(e) => setOnsetUseLog(e.target.checked)} />
-                        <span className="text-xs text-zinc-600 dark:text-zinc-300">Log-compress differences</span>
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {usesPeakPick && (
-                  <div className="space-y-2">
-                    <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
-                      <span className="text-xs text-zinc-600 dark:text-zinc-300">Peak min interval (ms)</span>
-                      <input
-                        type="range"
-                        min={20}
-                        max={400}
-                        step={10}
-                        value={peakMinIntervalMs}
-                        onChange={(e) => setPeakMinIntervalMs(Number(e.target.value))}
-                      />
-                      <span className="text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">{peakMinIntervalMs}</span>
-                    </label>
-
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                      <label className="grid grid-cols-[140px,1fr] items-center gap-2">
-                        <span className="text-xs text-zinc-600 dark:text-zinc-300">Peak threshold</span>
-                        <input
-                          type="number"
-                          step={0.01}
-                          value={peakThreshold}
-                          onChange={(e) => setPeakThreshold(e.target.value)}
-                          placeholder="auto"
-                          className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                        />
-                      </label>
-                      <label className="grid grid-cols-[140px,1fr] items-center gap-2">
-                        <span className="text-xs text-zinc-600 dark:text-zinc-300">Adaptive factor</span>
-                        <input
-                          type="number"
-                          step={0.1}
-                          value={peakAdaptiveFactor}
-                          onChange={(e) => setPeakAdaptiveFactor(e.target.value)}
-                          placeholder="blank = off"
-                          className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                )}
-
-                {usesHpss && (
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                      <span className="text-xs text-zinc-600 dark:text-zinc-300">HPSS timeMedian</span>
-                      <input
-                        type="number"
-                        min={1}
-                        step={2}
-                        value={hpssTimeMedian}
-                        onChange={(e) => setHpssTimeMedian(Math.max(1, Math.floor(Number(e.target.value)) | 1))}
-                        className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                      />
-                    </label>
-                    <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                      <span className="text-xs text-zinc-600 dark:text-zinc-300">HPSS freqMedian</span>
-                      <input
-                        type="number"
-                        min={1}
-                        step={2}
-                        value={hpssFreqMedian}
-                        onChange={(e) => setHpssFreqMedian(Math.max(1, Math.floor(Number(e.target.value)) | 1))}
-                        className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                      />
-                    </label>
-                  </div>
-                )}
-
-                {usesMfcc && (
-                  <label className="grid grid-cols-[180px,1fr] items-center gap-2">
-                    <span className="text-xs text-zinc-600 dark:text-zinc-300">MFCC nCoeffs</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={40}
-                      step={1}
-                      value={mfccNCoeffs}
-                      onChange={(e) => setMfccNCoeffs(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
-                      className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                    />
-                  </label>
-                )}
-
-                {(usesHpss || usesMfcc) && (
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    {usesHpss && (
-                      <label className="inline-flex items-center gap-2">
-                        <input type="checkbox" checked={showDcBin} onChange={(e) => setShowDcBin(e.target.checked)} />
-                        <span className="text-xs text-zinc-600 dark:text-zinc-300">Show DC bin (spectrogram display)</span>
-                      </label>
-                    )}
-                    {usesMfcc && (
-                      <label className="inline-flex items-center gap-2">
-                        <input type="checkbox" checked={showMfccC0} onChange={(e) => setShowMfccC0(e.target.checked)} />
-                        <span className="text-xs text-zinc-600 dark:text-zinc-300">Show MFCC C0 (display)</span>
-                      </label>
-                    )}
-                  </div>
-                )}
-
-                {usesHeatmapFn && (
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                    <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                      <span className="text-xs text-zinc-600 dark:text-zinc-300">Heatmap colour scheme</span>
-                      <select
-                        value={heatmapScheme}
-                        onChange={(e) => setHeatmapScheme(e.target.value as HeatmapColorScheme)}
-                        className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                      >
-                        <option value="grayscale">Grayscale</option>
-                        <option value="viridis">Viridis</option>
-                        <option value="plasma">Plasma</option>
-                        <option value="magma">Magma</option>
-                      </select>
-                    </label>
-                  </div>
-                )}
-
-                <p className="text-xs text-zinc-500">Config applies only to the currently selected MIR function.</p>
+            <div className="flex items-center justify-between rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+              <div className="flex flex-col gap-1">
+                <span className="font-medium text-zinc-900 dark:text-zinc-100">Analysis Configuration</span>
+                <span className="text-xs text-zinc-500">Configure parameters for MIR functions</span>
               </div>
-            </details>
+              <Button variant="outline" size="sm" onClick={() => setIsConfigOpen(true)}>
+                Configure
+              </Button>
+            </div>
+
+            <MirConfigModal
+              open={isConfigOpen}
+              onOpenChange={setIsConfigOpen}
+              fftSize={fftSize}
+              setFftSize={setFftSize}
+              hopSize={hopSize}
+              setHopSize={setHopSize}
+              melBands={melBands}
+              setMelBands={setMelBands}
+              melFMin={melFMin}
+              setMelFMin={setMelFMin}
+              melFMax={melFMax}
+              setMelFMax={setMelFMax}
+              onsetSmoothMs={onsetSmoothMs}
+              setOnsetSmoothMs={setOnsetSmoothMs}
+              onsetDiffMethod={onsetDiffMethod}
+              setOnsetDiffMethod={setOnsetDiffMethod}
+              onsetUseLog={onsetUseLog}
+              setOnsetUseLog={setOnsetUseLog}
+              peakMinIntervalMs={peakMinIntervalMs}
+              setPeakMinIntervalMs={setPeakMinIntervalMs}
+              peakThreshold={peakThreshold}
+              setPeakThreshold={setPeakThreshold}
+              peakAdaptiveFactor={peakAdaptiveFactor}
+              setPeakAdaptiveFactor={setPeakAdaptiveFactor}
+              hpssTimeMedian={hpssTimeMedian}
+              setHpssTimeMedian={setHpssTimeMedian}
+              hpssFreqMedian={hpssFreqMedian}
+              setHpssFreqMedian={setHpssFreqMedian}
+              mfccNCoeffs={mfccNCoeffs}
+              setMfccNCoeffs={setMfccNCoeffs}
+              showDcBin={showDcBin}
+              setShowDcBin={setShowDcBin}
+              showMfccC0={showMfccC0}
+              setShowMfccC0={setShowMfccC0}
+              heatmapScheme={heatmapScheme}
+              setHeatmapScheme={setHeatmapScheme}
+            />
 
             <details className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-950">
               <summary className="cursor-pointer select-none text-zinc-700 dark:text-zinc-200">Debug</summary>
@@ -1458,6 +1262,15 @@ export default function Home() {
               />
             ) : null}
 
+            <VisualiserPanel
+              audio={audio}
+              playbackTime={playheadTimeSec}
+              audioDuration={audioDuration}
+              mirResults={mirResults as any}
+              className="mt-4"
+              isPlaying={isAudioPlaying}
+            />
+
             <WaveSurferPlayer
               ref={playerRef}
               fileInputRef={fileInputRef}
@@ -1465,6 +1278,7 @@ export default function Home() {
               onCursorTimeChange={setCursorTimeSec}
               viewport={viewport}
               seekToTimeSec={waveformSeekTo}
+              onIsPlayingChange={setIsAudioPlaying}
               candidateCurveKind={searchResult?.curveKind}
               queryRegion={
                 refinement.queryRegion ? { startSec: refinement.queryRegion.startSec, endSec: refinement.queryRegion.endSec } : null
@@ -1529,6 +1343,7 @@ export default function Home() {
                 userSetUseRefinementRef.current = false;
                 setUseRefinementSearch(false);
                 setRefinement(makeInitialRefinementState());
+                setIsAudioPlaying(false);
               }}
               onViewportChange={(vp) => setViewport(normaliseViewport(vp))}
               onPlaybackTime={(t) => setPlayheadTimeSec(t)}
@@ -1550,32 +1365,43 @@ export default function Home() {
               }}
             />
 
-            <VisualiserPanel
-              audio={audio}
-              playbackTime={playheadTimeSec}
-              audioDuration={audioDuration}
-              mirResults={mirResults as any}
-              className="mt-4"
-            />
+
 
             <div className="mt-2">
               <div className="mb-3 flex flex-wrap items-center gap-2">
-                {tabDefs.map(({ id, label, hasData }) => {
-                  const active = visualTab === id;
-                  const base = "rounded-md px-3 py-1 text-sm transition-colors";
-                  const styles = active
-                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black"
-                    : "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100";
-                  return (
-                    <button
-                      key={id}
-                      className={`${base} ${styles} ${hasData ? "" : "opacity-60"}`}
-                      onClick={() => setVisualTab(id)}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
+                <select
+                  value={visualTab}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setVisualTab(id as MirFunctionId | "search");
+                    if (id !== "search") setSelected(id as MirFunctionId);
+                  }}
+                  className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                >
+                  {tabDefs.map(({ id, label, hasData }) => (
+                    <option key={id} value={id}>
+                      {label} {hasData ? "✓" : ""}
+                    </option>
+                  ))}
+                </select>
+
+                <Button
+                  onClick={() => void runAnalysis()}
+                  disabled={!canRun || isRunning}
+                  size="sm"
+                  variant="default"
+                >
+                  {isRunning ? "Running..." : "Run Analysis"}
+                </Button>
+                {isRunning && (
+                  <Button
+                    onClick={cancelAnalysis}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Cancel
+                  </Button>
+                )}
               </div>
 
               {visualTab === "search" ? (

@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
 
 export type MirFunctionId =
     | "spectralCentroid"
@@ -17,13 +16,10 @@ export type MirFunctionId =
 export type MirControlPanelProps = {
     selected: MirFunctionId;
     onSelectedChange: (id: MirFunctionId) => void;
-    onRun: () => void;
-    onCancel?: () => void;
     disabled?: boolean;
-    isRunning?: boolean;
 };
 
-export function MirControlPanel({ selected, onSelectedChange, onRun, onCancel, disabled, isRunning }: MirControlPanelProps) {
+export function MirControlPanel({ selected, onSelectedChange, disabled }: MirControlPanelProps) {
     return (
         <div className="flex flex-wrap items-center gap-3">
             <label className="inline-flex items-center gap-2">
@@ -46,14 +42,6 @@ export function MirControlPanel({ selected, onSelectedChange, onRun, onCancel, d
                     <option value="mfccDeltaDelta">MFCC Delta-Delta (2D)</option>
                 </select>
             </label>
-
-            <Button onClick={onRun} disabled={disabled || isRunning}>
-                {isRunning ? "Running…" : "Run Analysis"}
-            </Button>
-
-            <Button variant="outline" onClick={onCancel} disabled={!isRunning || !onCancel}>
-                Cancel
-            </Button>
         </div>
     );
 }

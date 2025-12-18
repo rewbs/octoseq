@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { memo, useEffect, useRef, useState, useMemo } from "react";
 import type { AudioBufferLike } from "@octoseq/mir";
 
 // We import the mock type if the real package isn't built yet, preventing TS errors.
 // In a real build, this would import from @octoseq/visualiser.
 // The dynamic import below handles the actual loading.
-import { WasmVisualiser } from "@octoseq/visualiser";
+import type { WasmVisualiser } from "@octoseq/visualiser";
 
 interface VisualiserPanelProps {
   audio: AudioBufferLike | null;
@@ -14,6 +14,7 @@ interface VisualiserPanelProps {
   audioDuration?: number; // Optional explicitly passed duration
   mirResults: Record<string, number[]> | null; // Keys are feature names
   className?: string;
+  isPlaying?: boolean;
 }
 
 // Helper to normalize array to [0, 1]
@@ -26,7 +27,7 @@ function normalizeSignal(data: number[] | Float32Array, customRange?: [number, n
     max = customRange[1];
   } else {
     for (let i = 0; i < data.length; i++) {
-      const v = data[i];
+      const v = data[i] as number;
       if (v < min) min = v;
       if (v > max) max = v;
     }
@@ -37,7 +38,7 @@ function normalizeSignal(data: number[] | Float32Array, customRange?: [number, n
   if (range === 0) return out; // All zeros
 
   for (let i = 0; i < data.length; i++) {
-    out[i] = (data[i] - min) / range;
+    out[i] = ((data[i] as number) - min) / range;
   }
   return out;
 }
@@ -50,7 +51,7 @@ function getSignalData(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   audioBuffer: any | null
 ): Float32Array | null {
-  if (sourceName === "Waveform") {
+  if (sourceName === "Amplitude") {
     if (audioBuffer) {
       // Standard AudioBuffer
       if (typeof audioBuffer.getChannelData === 'function') {
@@ -77,14 +78,22 @@ function getSignalData(
   return null;
 }
 
-export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults, className }: VisualiserPanelProps) {
+export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults, className, isPlaying = true }: VisualiserPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const visualiserRef = useRef<WasmVisualiser | null>(null);
-  const [rotSource, setRotSource] = useState<string>("Spectral Centroid (1D)");
-  const [zoomSource, setZoomSource] = useState<string>("RMS (1D)");
+  const visRef = useRef<WasmVisualiser | null>(null);
+  const rafRef = useRef<number>(0);
+  const lastTimeRef = useRef<number>(0);
+  const isPlayingRef = useRef(isPlaying);
+
+  // Keep ref up to date for loop access
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  const [rotSource, setRotSource] = useState<string>("Amplitude");
+  const [zoomSource, setZoomSource] = useState<string>("Amplitude");
   const [sigmoidK, setSigmoidK] = useState<number>(5.0);
   const [isReady, setIsReady] = useState(false);
-  const requestRef = useRef<number>(0);
   const timeRef = useRef(playbackTime);
   const [rotRange, setRotRange] = useState<[number, number]>([-1, 1]); // Default for waveform
   const [zoomRange, setZoomRange] = useState<[number, number]>([0, 1]); // Default for RMS
@@ -94,8 +103,8 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
   // Update timeRef for the loop
   useEffect(() => {
     timeRef.current = playbackTime;
-    if (visualiserRef.current) {
-      visualiserRef.current.set_time(playbackTime);
+    if (visRef.current) {
+      visRef.current.set_time(playbackTime);
     }
   }, [playbackTime]);
 
@@ -115,7 +124,7 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
         if (canvasRef.current) {
           // Initialize visualiser
           const vis = await pkg.create_visualiser(canvasRef.current);
-          visualiserRef.current = vis;
+          visRef.current = vis;
           console.log("Visualiser initialized", vis);
           console.log("WASM methods:", Object.keys(Object.getPrototypeOf(vis)));
           setIsReady(true);
@@ -135,15 +144,24 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
     };
   }, []);
 
+  // Cleanup loop
+  useEffect(() => {
+    return () => {
+      cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
   // Push Data to WASM when state changes
   useEffect(() => {
-    if (!visualiserRef.current || !mirResults) return;
-    const vis = visualiserRef.current;
+    if (!visRef.current) return;
+    const vis = visRef.current;
 
     // Calc audio duration safely
-    let duration = audioDuration || 1;
-
-    if (!audioDuration) {
+    // Calc audio duration safely
+    let duration = 1; // Default
+    if (audioDuration && audioDuration > 0) {
+      duration = audioDuration;
+    } else {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const a = audio as any;
       if (a) {
@@ -153,16 +171,18 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
       }
     }
 
+
     // Process Rotation
     const rotData = getSignalData(rotSource, mirResults, audio);
     if (rotData && rotData.length > 0) {
       // Calculate raw stats for debug
       let min = Infinity, max = -Infinity;
       for (let i = 0; i < rotData.length; i++) {
-        if (rotData[i] < min) min = rotData[i];
-        if (rotData[i] > max) max = rotData[i];
+        const v = rotData[i] as number;
+        if (v < min) min = v;
+        if (v > max) max = v;
       }
-      console.log(`[${rotSource}] Raw Range:`, min, "to", max);
+      console.log(`[${rotSource}] Raw Range: `, min, "to", max);
 
       // Use safe defaults if NaN
       const rMin = isNaN(rotRange[0]) ? -1 : rotRange[0];
@@ -180,7 +200,6 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
 
       const rate = duration > 0 ? norm.length / duration : 0;
 
-      // @ts-ignore
       if (vis.push_rotation_data) {
         vis.push_rotation_data(norm, rate);
       }
@@ -192,10 +211,11 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
       // stats
       let min = Infinity, max = -Infinity;
       for (let i = 0; i < zoomData.length; i++) {
-        if (zoomData[i] < min) min = zoomData[i];
-        if (zoomData[i] > max) max = zoomData[i];
+        const v = zoomData[i] as number;
+        if (v < min) min = v;
+        if (v > max) max = v;
       }
-      console.log(`[${zoomSource}] Raw Range:`, min, "to", max);
+      console.log(`[${zoomSource}] Raw Range: `, min, "to", max);
 
       const zMin = isNaN(zoomRange[0]) ? 0 : zoomRange[0];
       const zMax = isNaN(zoomRange[1]) ? 1 : zoomRange[1];
@@ -214,45 +234,42 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
 
       // console.log("Pushing ZOOM:", { src: zoomSource, len: norm.length, dur: duration, rate });
 
-      // @ts-ignore
       if (vis.push_zoom_data) {
         vis.push_zoom_data(norm, rate);
       }
     }
-  }, [rotSource, zoomSource, mirResults, isReady, audio, audioDuration, rotRange, zoomRange, rotGain, zoomGain]);
+  }, [rotSource, zoomSource, mirResults, isReady, audio, rotRange, zoomRange, rotGain, zoomGain, audioDuration]);
 
   // Update Sigmoid
   useEffect(() => {
-    if (!visualiserRef.current || !isReady) return;
-    // @ts-ignore
-    if (visualiserRef.current.set_sigmoid_k) {
-      // @ts-ignore
-      visualiserRef.current.set_sigmoid_k(sigmoidK);
+    if (!visRef.current || !isReady) return;
+    if (visRef.current.set_sigmoid_k) {
+      visRef.current.set_sigmoid_k(sigmoidK);
     }
   }, [sigmoidK, isReady]);
 
   // Render Loop
   useEffect(() => {
-    if (!isReady || !visualiserRef.current) return;
+    if (!isReady || !visRef.current) return;
 
-    let lastTime = performance.now();
-    const vis = visualiserRef.current;
+    let lastLog = performance.now();
+    lastTimeRef.current = performance.now();
+    const vis = visRef.current;
 
     const loop = (now: number) => {
-      const dt = (now - lastTime) / 1000;
-      lastTime = now;
+      if (now - lastLog > 1000) {
+        lastLog = now;
+      }
 
-      // Do NOT clamp time every frame.
-      // vis.set_time(timeRef.current);
-      // Instead let render(dt) advance time, and sync only on prop change (above).
+      const dt = isPlayingRef.current ? (now - lastTimeRef.current) / 1000 : 0;
+      lastTimeRef.current = now;
 
       vis.render(dt);
+      rafRef.current = requestAnimationFrame(loop);
 
-      // Poll debug values if available
-      // @ts-ignore
+      // Poll debug values
       if (vis.get_current_vals) {
-        // @ts-ignore
-        const vals = vis.get_current_vals(); // returns Float32Array [rot, zoom, time, last_input, sig_dur, rotMin, rotMax, zoomMin, zoomMax]
+        const vals = vis.get_current_vals();
         if (vals && vals.length >= 9) {
           setDebugValues({
             rot: vals[0] || 0,
@@ -266,35 +283,36 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
             zoomMax: vals[8] || 0
           });
         }
-      } else {
-        if (Math.random() < 0.01) console.warn("vis.get_current_vals not found on WASM object", Object.keys(Object.getPrototypeOf(vis)));
       }
-
-      requestRef.current = requestAnimationFrame(loop);
     };
-    requestRef.current = requestAnimationFrame(loop);
+    rafRef.current = requestAnimationFrame(loop);
+
     return () => {
-      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      cancelAnimationFrame(rafRef.current);
     };
   }, [isReady]);
 
   // Resize observer
   useEffect(() => {
-    if (!canvasRef.current || !visualiserRef.current) return;
-    const vis = visualiserRef.current;
+    if (!canvasRef.current || !visRef.current) return;
+    const vis = visRef.current;
 
     const observer = new ResizeObserver(entries => {
       for (const entry of entries) {
         const width = entry.contentRect.width;
         const height = entry.contentRect.height;
-        // Canvas logic
         const dpr = window.devicePixelRatio || 1;
-        canvasRef.current!.width = width * dpr;
-        canvasRef.current!.height = height * dpr;
+        if (canvasRef.current) {
+          canvasRef.current.width = width * dpr;
+          canvasRef.current.height = height * dpr;
+        }
         vis.resize(width * dpr, height * dpr);
       }
     });
-    observer.observe(canvasRef.current);
+
+    if (canvasRef.current) {
+      observer.observe(canvasRef.current);
+    }
     return () => observer.disconnect();
   }, [isReady]);
 
@@ -305,7 +323,7 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
 
   const availableSources = useMemo(() => {
     const keys = mirResults ? Object.keys(mirResults) : [];
-    return ["Waveform", ...keys];
+    return ["Amplitude", ...keys];
   }, [mirResults]);
 
   return (
@@ -426,4 +444,4 @@ export function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults
       </div>
     </div>
   );
-}
+});

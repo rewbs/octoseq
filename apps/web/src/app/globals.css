@@ -121,3 +121,19 @@
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes pulse-glow-red {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 15px 5px rgba(239, 68, 68, 0.6);
+    transform: scale(1.02);
+  }
+}
+
+.animate-pulse-glow-red {
+  animation: pulse-glow-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

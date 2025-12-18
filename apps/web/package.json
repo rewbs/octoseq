@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@octoseq/mir": "workspace:*",
+    "@octoseq/visualiser": "workspace:*",
     "@radix-ui/react-slot": "^1.2.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -21,7 +22,7 @@
     "react-dom": "19.2.1",
     "tailwind-merge": "^3.4.0",
     "wavesurfer.js": "^7.12.1",
-    "@octoseq/visualiser": "workspace:*"
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
