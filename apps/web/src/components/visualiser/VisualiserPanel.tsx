@@ -194,7 +194,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
       // Apply gain
       if (rGain !== 1.0) {
         for (let i = 0; i < norm.length; i++) {
-          norm[i] *= rGain;
+          norm[i] = (norm[i] ?? 0) * rGain;
         }
       }
 
@@ -226,7 +226,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
       // Apply gain
       if (zGain !== 1.0) {
         for (let i = 0; i < norm.length; i++) {
-          norm[i] *= zGain;
+          norm[i] = (norm[i] ?? 0) * zGain;
         }
       }
 

@@ -1,42 +1,21 @@
 "use client";
 
-import type { CandidateFilter, RefinementCandidate, RefinementStats } from "@/lib/searchRefinement";
-
+import { useCallback } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
+import {
+  useAudioStore,
+  useSearchStore,
+  useActiveCandidate,
+  useFilteredCandidates,
+  useActiveFilteredIndex,
+  useNavigationActions,
+} from "@/lib/stores";
+import type { CandidateFilter } from "@/lib/searchRefinement";
+import type { WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
 
 export type SearchRefinementPanelProps = {
-  filter: CandidateFilter;
-  onFilterChange: (next: CandidateFilter) => void;
-
-  candidatesTotal: number;
-  filteredTotal: number;
-  activeFilteredIndex: number; // -1 when none/invalid
-  activeCandidate: RefinementCandidate | null;
-
-  stats: RefinementStats;
-
-  onPrev: () => void;
-  onNext: () => void;
-  onAccept: () => void;
-  onReject: () => void;
-
-  onPlayCandidate: () => void;
-  onPlayQuery: () => void;
-  loopCandidate: boolean;
-  onLoopCandidateChange: (next: boolean) => void;
-  autoPlayOnNavigate: boolean;
-  onAutoPlayOnNavigateChange: (next: boolean) => void;
-
-  addMissingMode: boolean;
-  onToggleAddMissingMode: () => void;
-
-  canDeleteManual: boolean;
-  onDeleteManual: () => void;
-
-  onJumpToBestUnreviewed?: () => void;
-  onCopyJson: () => void;
-
-  disabled?: boolean;
+  playerRef: React.RefObject<WaveSurferPlayerHandle | null>;
 };
 
 const filterDefs: Array<{ id: CandidateFilter; label: string }> = [
@@ -46,33 +25,117 @@ const filterDefs: Array<{ id: CandidateFilter; label: string }> = [
   { id: "rejected", label: "Rejected" },
 ];
 
-export function SearchRefinementPanel({
-  filter,
-  onFilterChange,
-  candidatesTotal,
-  filteredTotal,
-  activeFilteredIndex,
-  activeCandidate,
-  stats,
-  onPrev,
-  onNext,
-  onAccept,
-  onReject,
-  onPlayCandidate,
-  onPlayQuery,
-  loopCandidate,
-  onLoopCandidateChange,
-  autoPlayOnNavigate,
-  onAutoPlayOnNavigateChange,
-  addMissingMode,
-  onToggleAddMissingMode,
-  canDeleteManual,
-  onDeleteManual,
-  onJumpToBestUnreviewed,
-  onCopyJson,
-  disabled,
-}: SearchRefinementPanelProps) {
+/**
+ * Panel for reviewing and refining search candidates.
+ * Uses stores directly instead of receiving most props.
+ */
+export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps) {
+  // Audio store
+  const audio = useAudioStore((s) => s.audio);
+  const audioFileName = useAudioStore((s) => s.audioFileName);
+  const audioSampleRate = useAudioStore((s) => s.audioSampleRate);
+
+  // Search store state
+  const {
+    candidateFilter,
+    addMissingMode,
+    loopCandidate,
+    autoPlayOnNavigate,
+    refinement,
+  } = useSearchStore(
+    useShallow((s) => ({
+      candidateFilter: s.candidateFilter,
+      addMissingMode: s.addMissingMode,
+      loopCandidate: s.loopCandidate,
+      autoPlayOnNavigate: s.autoPlayOnNavigate,
+      refinement: s.refinement,
+    }))
+  );
+
+  // Search store actions
+  const { setAddMissingMode, setLoopCandidate, setAutoPlayOnNavigate } = useSearchStore(
+    useShallow((s) => ({
+      setAddMissingMode: s.setAddMissingMode,
+      setLoopCandidate: s.setLoopCandidate,
+      setAutoPlayOnNavigate: s.setAutoPlayOnNavigate,
+    }))
+  );
+
+  // Derived state
+  const activeCandidate = useActiveCandidate();
+  const filteredCandidates = useFilteredCandidates();
+  const activeFilteredIndex = useActiveFilteredIndex();
+
+  // Navigation actions
+  const {
+    onPrevCandidate,
+    onNextCandidate,
+    playActiveCandidate,
+    playQueryRegion,
+    acceptActive,
+    rejectActive,
+    deleteActiveManual,
+    jumpToBestUnreviewed,
+    handleFilterChange,
+  } = useNavigationActions({ playerRef });
+
+  // Copy refinement JSON
+  const copyRefinementJson = useCallback(async () => {
+    const q = refinement.queryRegion;
+    if (!q) return;
+
+    const fileName = audioFileName ?? null;
+
+    const accepted = refinement.candidates
+      .filter((c) => c.status === "accepted")
+      .map((c) => ({
+        id: c.id,
+        startSec: c.startSec,
+        endSec: c.endSec,
+        score: c.score,
+        source: c.source,
+      }));
+    const rejected = refinement.candidates
+      .filter((c) => c.status === "rejected")
+      .map((c) => ({
+        id: c.id,
+        startSec: c.startSec,
+        endSec: c.endSec,
+        score: c.score,
+        source: c.source,
+      }));
+    const manualMatches = refinement.candidates
+      .filter((c) => c.source === "manual")
+      .map((c) => ({ id: c.id, startSec: c.startSec, endSec: c.endSec, status: c.status }));
+
+    const payload = {
+      queryRegion: q,
+      accepted,
+      rejected,
+      manualMatches,
+      meta: {
+        audioFileName: fileName,
+        sampleRate: audioSampleRate,
+        selectionDurationSec: Math.max(0, q.endSec - q.startSec),
+      },
+    };
+
+    const text = JSON.stringify(payload, null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      window.prompt("Copy refinement JSON:", text);
+    }
+  }, [audioFileName, audioSampleRate, refinement.candidates, refinement.queryRegion]);
+
+  // Computed values
+  const disabled = !audio;
   const hasActive = !!activeCandidate;
+  const candidatesTotal = refinement.candidates.length;
+  const filteredTotal = filteredCandidates.length;
+  const stats = refinement.refinementStats;
+  const canDeleteManual = activeCandidate?.source === "manual";
+  const showJumpToBest = stats.unreviewed > 0;
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
@@ -81,8 +144,8 @@ export function SearchRefinementPanel({
 
         <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
           <span className="tabular-nums">
-            accepted <code>{stats.accepted}</code> · rejected <code>{stats.rejected}</code> · unreviewed{" "}
-            <code>{stats.unreviewed}</code>
+            accepted <code>{stats.accepted}</code> · rejected <code>{stats.rejected}</code> ·
+            unreviewed <code>{stats.unreviewed}</code>
           </span>
         </div>
       </div>
@@ -90,15 +153,16 @@ export function SearchRefinementPanel({
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap items-center gap-1">
           {filterDefs.map((f) => {
-            const active = filter === f.id;
+            const active = candidateFilter === f.id;
             return (
               <button
                 key={f.id}
-                className={`rounded-md px-2 py-1 text-xs ${active
+                className={`rounded-md px-2 py-1 text-xs ${
+                  active
                     ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black"
                     : "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100"
-                  }`}
-                onClick={() => onFilterChange(f.id)}
+                }`}
+                onClick={() => handleFilterChange(f.id)}
                 disabled={disabled}
               >
                 {f.label}
@@ -110,13 +174,17 @@ export function SearchRefinementPanel({
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button
             variant={addMissingMode ? "default" : "outline"}
-            onClick={onToggleAddMissingMode}
+            onClick={() => setAddMissingMode(!addMissingMode)}
             disabled={disabled}
             className={addMissingMode ? "bg-emerald-600 hover:bg-emerald-600/90" : ""}
           >
             {addMissingMode ? "Add mode: ON (M)" : "Add missing match (M)"}
           </Button>
-          <Button variant="outline" onClick={onCopyJson} disabled={disabled || candidatesTotal === 0}>
+          <Button
+            variant="outline"
+            onClick={copyRefinementJson}
+            disabled={disabled || candidatesTotal === 0}
+          >
             Copy refinement JSON
           </Button>
         </div>
@@ -136,14 +204,22 @@ export function SearchRefinementPanel({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={onPrev} disabled={disabled || filteredTotal === 0}>
+            <Button
+              variant="outline"
+              onClick={onPrevCandidate}
+              disabled={disabled || filteredTotal === 0}
+            >
               Previous (← / J)
             </Button>
-            <Button variant="outline" onClick={onNext} disabled={disabled || filteredTotal === 0}>
+            <Button
+              variant="outline"
+              onClick={onNextCandidate}
+              disabled={disabled || filteredTotal === 0}
+            >
               Next (→ / K)
             </Button>
-            {onJumpToBestUnreviewed ? (
-              <Button variant="outline" onClick={onJumpToBestUnreviewed} disabled={disabled}>
+            {showJumpToBest ? (
+              <Button variant="outline" onClick={jumpToBestUnreviewed} disabled={disabled}>
                 Best unreviewed
               </Button>
             ) : null}
@@ -171,14 +247,14 @@ export function SearchRefinementPanel({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={onAccept} disabled={disabled || !hasActive}>
+            <Button onClick={acceptActive} disabled={disabled || !hasActive}>
               Accept (A)
             </Button>
-            <Button variant="destructive" onClick={onReject} disabled={disabled || !hasActive}>
+            <Button variant="destructive" onClick={rejectActive} disabled={disabled || !hasActive}>
               Reject (R)
             </Button>
             {canDeleteManual ? (
-              <Button variant="outline" onClick={onDeleteManual} disabled={disabled}>
+              <Button variant="outline" onClick={deleteActiveManual} disabled={disabled}>
                 Delete manual (⌫)
               </Button>
             ) : null}
@@ -198,10 +274,14 @@ export function SearchRefinementPanel({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" onClick={onPlayCandidate} disabled={disabled || !hasActive}>
+            <Button
+              variant="outline"
+              onClick={playActiveCandidate}
+              disabled={disabled || !hasActive}
+            >
               Play candidate
             </Button>
-            <Button variant="outline" onClick={onPlayQuery} disabled={disabled}>
+            <Button variant="outline" onClick={playQueryRegion} disabled={disabled}>
               Play query (Q)
             </Button>
           </div>
@@ -211,7 +291,7 @@ export function SearchRefinementPanel({
               <input
                 type="checkbox"
                 checked={loopCandidate}
-                onChange={(e) => onLoopCandidateChange(e.target.checked)}
+                onChange={(e) => setLoopCandidate(e.target.checked)}
                 disabled={disabled}
               />
               <span className="text-zinc-600 dark:text-zinc-300">Loop candidate</span>
@@ -221,7 +301,7 @@ export function SearchRefinementPanel({
               <input
                 type="checkbox"
                 checked={autoPlayOnNavigate}
-                onChange={(e) => onAutoPlayOnNavigateChange(e.target.checked)}
+                onChange={(e) => setAutoPlayOnNavigate(e.target.checked)}
                 disabled={disabled}
               />
               <span className="text-zinc-600 dark:text-zinc-300">Auto-play on next/prev</span>
@@ -229,11 +309,11 @@ export function SearchRefinementPanel({
           </div>
 
           <div className="text-[11px] text-zinc-500">
-            Shortcuts: J/K prev/next · A accept · R reject · Space play/stop · Q play query · M add mode · Delete removes manual
+            Shortcuts: J/K prev/next · A accept · R reject · Space play/stop · Q play query · M add
+            mode · Delete removes manual
           </div>
         </div>
       </div>
     </div>
   );
 }
-
