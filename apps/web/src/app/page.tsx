@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Github } from "lucide-react";
+import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 
@@ -351,13 +352,30 @@ export default function Home() {
               onPlaybackTime={(t) => setPlayheadTimeSec(t)}
               onRegionChange={handleRegionChange}
               toolbarLeft={
-                <Button
-                  className={`${!audio ? "animate-pulse-glow-red" : ""}`}
-                  size="sm"
-                  onClick={triggerFileInput}
-                >
-                  {!audio ? "Load audio" : "Change audio"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex flex-col  items-center justify-center mr-4">
+                    <Image
+                      src="/SquidPlain.png"
+                      alt="Octoseq"
+                      width={36}
+                      height={36}
+                      className="h-14 w-14 rounded-3xl bg-stone-200 p-1 dark:bg-stone-800"
+                    />
+                    <div className="absolute top-8 inset-0 flex items-center justify-center">
+                      <p className="w-full text-tiny tracking-[0.25em] font font-mono  text-zinc-900 dark:text-zinc-100 text-shadow-lg text-shadow-stone-500/50 dark:text-shadow-stone-100/50 text-center backdrop-blur-lg backdrop-opacity-20 ">
+                        octoseq
+                      </p>
+                    </div>
+
+                  </div>
+                  <Button
+                    className={`${!audio ? "animate-pulse-glow-red" : ""}`}
+                    size="sm"
+                    onClick={triggerFileInput}
+                  >
+                    {!audio ? "Load audio" : "Change audio"}
+                  </Button>
+                </div>
               }
               toolbarRight={
                 <div className="flex flex-wrap items-center gap-2 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
