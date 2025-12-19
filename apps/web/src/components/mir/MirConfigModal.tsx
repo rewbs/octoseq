@@ -30,6 +30,10 @@ export function MirConfigModal() {
     peakMinIntervalMs,
     peakThreshold,
     peakAdaptiveFactor,
+    transientFftSize,
+    transientHopSize,
+    timbreFftSize,
+    timbreHopSize,
     hpssTimeMedian,
     hpssFreqMedian,
     mfccNCoeffs,
@@ -50,6 +54,10 @@ export function MirConfigModal() {
       peakMinIntervalMs: s.peakMinIntervalMs,
       peakThreshold: s.peakThreshold,
       peakAdaptiveFactor: s.peakAdaptiveFactor,
+      transientFftSize: s.transientFftSize,
+      transientHopSize: s.transientHopSize,
+      timbreFftSize: s.timbreFftSize,
+      timbreHopSize: s.timbreHopSize,
       hpssTimeMedian: s.hpssTimeMedian,
       hpssFreqMedian: s.hpssFreqMedian,
       mfccNCoeffs: s.mfccNCoeffs,
@@ -72,6 +80,10 @@ export function MirConfigModal() {
     setPeakMinIntervalMs,
     setPeakThreshold,
     setPeakAdaptiveFactor,
+    setTransientFftSize,
+    setTransientHopSize,
+    setTimbreFftSize,
+    setTimbreHopSize,
     setHpssTimeMedian,
     setHpssFreqMedian,
     setMfccNCoeffs,
@@ -92,6 +104,10 @@ export function MirConfigModal() {
       setPeakMinIntervalMs: s.setPeakMinIntervalMs,
       setPeakThreshold: s.setPeakThreshold,
       setPeakAdaptiveFactor: s.setPeakAdaptiveFactor,
+      setTransientFftSize: s.setTransientFftSize,
+      setTransientHopSize: s.setTransientHopSize,
+      setTimbreFftSize: s.setTimbreFftSize,
+      setTimbreHopSize: s.setTimbreHopSize,
       setHpssTimeMedian: s.setHpssTimeMedian,
       setHpssFreqMedian: s.setHpssFreqMedian,
       setMfccNCoeffs: s.setMfccNCoeffs,
@@ -335,11 +351,33 @@ export function MirConfigModal() {
           {usesHpss && (
             <div className="rounded-md border border-zinc-100 bg-zinc-50/50 p-2 dark:border-zinc-800/50 dark:bg-zinc-900/50">
               <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                HPSS
+                Transient FFT (HPSS)
               </h3>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                  <span className="text-xs text-zinc-600 dark:text-zinc-300">HPSS timeMedian</span>
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">FFT size (power of 2)</span>
+                  <input
+                    type="number"
+                    min={64}
+                    step={64}
+                    value={transientFftSize}
+                    onChange={(e) => setTransientFftSize(Math.max(64, Math.floor(Number(e.target.value)) || 64))}
+                    className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                  />
+                </label>
+                <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">Hop size</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={16}
+                    value={transientHopSize}
+                    onChange={(e) => setTransientHopSize(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                    className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                  />
+                </label>
+                <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">Time median</span>
                   <input
                     type="number"
                     min={1}
@@ -352,7 +390,7 @@ export function MirConfigModal() {
                   />
                 </label>
                 <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                  <span className="text-xs text-zinc-600 dark:text-zinc-300">HPSS freqMedian</span>
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">Freq median</span>
                   <input
                     type="number"
                     min={1}
@@ -371,22 +409,46 @@ export function MirConfigModal() {
           {usesMfcc && (
             <div className="rounded-md border border-zinc-100 bg-zinc-50/50 p-2 dark:border-zinc-800/50 dark:bg-zinc-900/50">
               <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
-                MFCC
+                Timbre FFT (MFCC)
               </h3>
-              <label className="grid grid-cols-[180px,1fr] items-center gap-2">
-                <span className="text-xs text-zinc-600 dark:text-zinc-300">MFCC nCoeffs</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={40}
-                  step={1}
-                  value={mfccNCoeffs}
-                  onChange={(e) =>
-                    setMfccNCoeffs(Math.max(1, Math.floor(Number(e.target.value)) || 1))
-                  }
-                  className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                />
-              </label>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">FFT size (power of 2)</span>
+                  <input
+                    type="number"
+                    min={64}
+                    step={64}
+                    value={timbreFftSize}
+                    onChange={(e) => setTimbreFftSize(Math.max(64, Math.floor(Number(e.target.value)) || 64))}
+                    className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                  />
+                </label>
+                <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">Hop size</span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={16}
+                    value={timbreHopSize}
+                    onChange={(e) => setTimbreHopSize(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                    className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                  />
+                </label>
+                <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">Num coefficients</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={40}
+                    step={1}
+                    value={mfccNCoeffs}
+                    onChange={(e) =>
+                      setMfccNCoeffs(Math.max(1, Math.floor(Number(e.target.value)) || 1))
+                    }
+                    className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                  />
+                </label>
+              </div>
             </div>
           )}
 

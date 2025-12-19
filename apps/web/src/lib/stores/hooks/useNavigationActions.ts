@@ -117,7 +117,7 @@ export function useNavigationActions({ playerRef }: NavigationActionsOptions) {
     (status: "accepted" | "rejected") => {
       const searchStore = useSearchStore.getState();
       const playbackStore = usePlaybackStore.getState();
-      const { refinement, candidateFilter, loopCandidate, autoPlayOnNavigate } = searchStore;
+      const { refinement, candidateFilter, loopCandidate, autoPlayOnNavigate, advanceToNextBest } = searchStore;
 
       if (!refinement.activeCandidateId) return;
       const current = refinement.candidates.find((c) => c.id === refinement.activeCandidateId);
@@ -130,7 +130,19 @@ export function useNavigationActions({ playerRef }: NavigationActionsOptions) {
           : refinement.candidates.filter((c) => c.status === candidateFilter);
 
       let next: RefinementCandidate | null = null;
-      if (filteredCandidates.length > 1) {
+
+      if (advanceToNextBest) {
+        // Find next best unreviewed candidate (highest score among unreviewed)
+        let best: RefinementCandidate | null = null;
+        for (const c of refinement.candidates) {
+          if (c.id === current.id) continue; // Skip current
+          if (c.status !== "unreviewed") continue;
+          if (c.score == null) continue;
+          if (!best || (best.score ?? -Infinity) < c.score) best = c;
+        }
+        next = best;
+      } else if (filteredCandidates.length > 1) {
+        // Fall back to chronological (next in filtered list)
         const idx = filteredCandidates.findIndex((c) => c.id === current.id);
         const nextIndex = idx === -1 ? 0 : (idx + 1) % filteredCandidates.length;
         next = filteredCandidates[nextIndex] ?? null;

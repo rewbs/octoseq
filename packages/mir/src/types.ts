@@ -83,9 +83,19 @@ export type MirRunRequest = {
     hpss?: {
         timeMedian?: number;
         freqMedian?: number;
+        spectrogram?: {
+            fftSize: number;
+            hopSize: number;
+            window: "hann";
+        };
     };
     mfcc?: {
         nCoeffs?: number;
+        spectrogram?: {
+            fftSize: number;
+            hopSize: number;
+            window: "hann";
+        };
     };
 };
 

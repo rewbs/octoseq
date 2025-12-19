@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Github } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 
 import { HeatmapPlayheadOverlay } from "@/components/heatmap/HeatmapPlayheadOverlay";
@@ -13,8 +14,7 @@ import { SyncedWaveSurferSignal } from "@/components/wavesurfer/SyncedWaveSurfer
 import { ViewportOverlayMarkers } from "@/components/wavesurfer/ViewportOverlayMarkers";
 import { WaveSurferPlayer, type WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
 import { VisualiserPanel } from "@/components/visualiser/VisualiserPanel";
-import { SearchControlsPanel } from "@/components/search/SearchControlsPanel";
-import { SearchRefinementPanel } from "@/components/search/SearchRefinementPanel";
+import { SearchPanel } from "@/components/search/SearchPanel";
 import { DebugPanel } from "@/components/panels/DebugPanel";
 import { useElementSize } from "@/lib/useElementSize";
 import { computeRefinementStats } from "@/lib/searchRefinement";
@@ -140,6 +140,7 @@ export default function Home() {
     acceptActive,
     rejectActive,
     deleteActiveManual,
+    jumpToBestUnreviewed,
   } = useNavigationActions({ playerRef });
 
   // ===== DERIVED STATE HOOKS =====
@@ -169,6 +170,7 @@ export default function Home() {
     onPlayQuery: playQueryRegion,
     onToggleAddMissingMode: () => setAddMissingMode(!addMissingMode),
     onDeleteManual: deleteActiveManual,
+    onJumpToBestUnreviewed: jumpToBestUnreviewed,
     canDeleteManual: activeCandidate?.source === "manual",
   });
 
@@ -304,8 +306,8 @@ export default function Home() {
 
   // ===== RENDER =====
   return (
-    <div className="flex flex-col min-h-screen items-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="w-full max-w-400 bg-white p-2 shadow-sm dark:bg-black">
+    <div className="page-bg px-20 flex flex-col min-h-screen items-center bg-zinc-50 font-sans dark:bg-zinc-950">
+      <main className="main-bg w-full bg-white p-2 shadow dark:bg-zinc-950">
         <section>
           <div className="space-y-1.5">
             <WaveSurferPlayer
@@ -354,11 +356,11 @@ export default function Home() {
                   size="sm"
                   onClick={triggerFileInput}
                 >
-                  Load audio
+                  {!audio ? "Load audio" : "Change audio"}
                 </Button>
               }
               toolbarRight={
-                <div className="flex flex-wrap items-center gap-2 border-l border-zinc-200 dark:border-zinc-800 pl-2 ml-1">
+                <div className="flex flex-wrap items-center gap-2 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
                   <select
                     value={visualTab}
                     onChange={(e) => {
@@ -366,7 +368,7 @@ export default function Home() {
                       setVisualTab(id as MirFunctionId | "search");
                       if (id !== "search") setSelected(id as MirFunctionId);
                     }}
-                    className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                    className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
                   >
                     {tabDefs.map(({ id, label, hasData }) => (
                       <option key={id} value={id}>
@@ -382,7 +384,7 @@ export default function Home() {
                       size="sm"
                       variant="default"
                     >
-                      {isRunning ? "Running..." : "Run Analysis"}
+                      {isRunning ? "Analysing..." : "Analyse"}
                     </Button>
                     {isRunning && (
                       <Button onClick={cancelAnalysis} size="sm" variant="outline">
@@ -402,7 +404,7 @@ export default function Home() {
                       }}
                       disabled={!audio || !refinement.queryRegion || isSearchRunning}
                     >
-                      Run search
+                      Search
                     </Button>
                     {searchDirty && searchResult ? (
                       <span className="text-xs text-amber-600 dark:text-amber-400">
@@ -474,7 +476,7 @@ export default function Home() {
                   {visualTab === "onsetPeaks" ? (
                     tabResult?.kind === "events" && tabResult.fn === "onsetPeaks" ? (
                       <div
-                        className="relative rounded-md border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-950"
+                        className="relative rounded-md border border-zinc-300 bg-white p-1 dark:border-zinc-700 dark:bg-zinc-950"
                         ref={eventsHostRef}
                         onMouseMove={handleCursorHoverFromViewport}
                         onMouseLeave={handleCursorLeave}
@@ -526,10 +528,7 @@ export default function Home() {
               )}
             </div>
           </div>
-          {visualTab === "search" && <div className="flex">
-            <SearchControlsPanel />
-            <SearchRefinementPanel playerRef={playerRef} />
-          </div>}
+          {visualTab === "search" && <SearchPanel playerRef={playerRef} />}
           <VisualiserPanel
             audio={audio}
             playbackTime={playheadTimeSec}
@@ -546,17 +545,22 @@ export default function Home() {
 
       </main>
 
-      <footer className="mt-6 flex flex-col items-center justify-center gap-1.5 pb-4 text-xs text-zinc-500">
-        <p>vibecoded with a range of models; use at your own risk.</p>
+      <footer className="mt-6 flex items-center justify-center pb-4 text-xs text-zinc-500 dark:text-zinc-400 divide-x-2 divide-zinc-300 dark:divide-zinc-700">
+        <p>&nbsp;</p>
+        <p className="px-5">vibe-assisted with a range of models; use at your own risk.</p>
         <a
           href="https://github.com/rewbs/octoseq"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1 transition-colors hover:text-zinc-900 dark:hover:text-zinc-200"
+          className="px-5 flex items-center gap-1 transition-colors hover:text-zinc-900 dark:hover:text-zinc-200"
         >
           <Github className="h-4 w-4" />
-          <span>github</span>
+          code
         </a>
+        <div className="px-5">
+          <ThemeToggle />
+        </div>
+        <p>&nbsp;</p>
       </footer>
     </div>
   );

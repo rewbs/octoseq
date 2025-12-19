@@ -10,6 +10,7 @@ interface KeyboardShortcutCallbacks {
   onPlayQuery: () => void;
   onToggleAddMissingMode: () => void;
   onDeleteManual: () => void;
+  onJumpToBestUnreviewed: () => void;
   canDeleteManual: boolean;
 }
 
@@ -24,6 +25,7 @@ interface KeyboardShortcutCallbacks {
  * - Space: Toggle play/pause
  * - q: Play query region
  * - m: Toggle add missing mode
+ * - b: Jump to best unreviewed candidate
  * - Delete/Backspace: Delete manual candidate (when applicable)
  */
 export function useKeyboardShortcuts({
@@ -35,6 +37,7 @@ export function useKeyboardShortcuts({
   onPlayQuery,
   onToggleAddMissingMode,
   onDeleteManual,
+  onJumpToBestUnreviewed,
   canDeleteManual,
 }: KeyboardShortcutCallbacks) {
   useEffect(() => {
@@ -82,6 +85,11 @@ export function useKeyboardShortcuts({
         onToggleAddMissingMode();
         return;
       }
+      if (lower === "b") {
+        e.preventDefault();
+        onJumpToBestUnreviewed();
+        return;
+      }
       if ((key === "Delete" || key === "Backspace") && canDeleteManual) {
         e.preventDefault();
         onDeleteManual();
@@ -99,6 +107,7 @@ export function useKeyboardShortcuts({
     onPlayQuery,
     onToggleAddMissingMode,
     onDeleteManual,
+    onJumpToBestUnreviewed,
     canDeleteManual,
   ]);
 }

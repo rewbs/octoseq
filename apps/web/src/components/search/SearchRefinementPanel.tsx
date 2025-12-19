@@ -41,6 +41,7 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
     addMissingMode,
     loopCandidate,
     autoPlayOnNavigate,
+    advanceToNextBest,
     refinement,
   } = useSearchStore(
     useShallow((s) => ({
@@ -48,16 +49,18 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
       addMissingMode: s.addMissingMode,
       loopCandidate: s.loopCandidate,
       autoPlayOnNavigate: s.autoPlayOnNavigate,
+      advanceToNextBest: s.advanceToNextBest,
       refinement: s.refinement,
     }))
   );
 
   // Search store actions
-  const { setAddMissingMode, setLoopCandidate, setAutoPlayOnNavigate } = useSearchStore(
+  const { setAddMissingMode, setLoopCandidate, setAutoPlayOnNavigate, setAdvanceToNextBest } = useSearchStore(
     useShallow((s) => ({
       setAddMissingMode: s.setAddMissingMode,
       setLoopCandidate: s.setLoopCandidate,
       setAutoPlayOnNavigate: s.setAutoPlayOnNavigate,
+      setAdvanceToNextBest: s.setAdvanceToNextBest,
     }))
   );
 
@@ -219,7 +222,7 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
             </Button>
             {showJumpToBest ? (
               <Button variant="outline" onClick={jumpToBestUnreviewed} disabled={disabled}>
-                Best unreviewed
+                Best unreviewed (B)
               </Button>
             ) : null}
           </div>
@@ -305,10 +308,20 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
               />
               <span className="text-zinc-600 dark:text-zinc-300">Auto-play on next/prev</span>
             </label>
+
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={advanceToNextBest}
+                onChange={(e) => setAdvanceToNextBest(e.target.checked)}
+                disabled={disabled}
+              />
+              <span className="text-zinc-600 dark:text-zinc-300">Advance to next best</span>
+            </label>
           </div>
 
           <div className="text-[11px] text-zinc-500">
-            Shortcuts: J/K prev/next · A accept · R reject · Space play/stop · Q play query · M add
+            Shortcuts: J/K prev/next · A accept · R reject · B best unreviewed · Space play/stop · Q play query · M add
             mode · Delete removes manual
           </div>
         </div>

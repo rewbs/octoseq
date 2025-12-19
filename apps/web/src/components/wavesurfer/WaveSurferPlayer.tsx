@@ -5,7 +5,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import WaveSurfer from "wavesurfer.js";
 import Timeline from "wavesurfer.js/dist/plugins/timeline.esm.js";
 import Regions from "wavesurfer.js/dist/plugins/regions.esm.js";
-import { GripHorizontal } from "lucide-react";
+import { GripHorizontal, Play, Pause, } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -889,7 +889,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   };
 
   return (
-    <div className="w-full">
+    <div className="w-full ">
       {/* Hidden file input for programmatic triggering */}
       <input
         type="file"
@@ -902,17 +902,20 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         }}
       />
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 p-2 rounded-md ">
         {/* Additional toolbar content from parent (left) */}
         {toolbarLeft}
-        <Button onClick={togglePlay} disabled={!isReady}>
-          {isPlaying ? "Pause" : "Play"}
-        </Button>
-        <Button variant="outline" onClick={stop} disabled={!isReady}>
-          Stop
-        </Button>
+        <div className="flex gap-2 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
+          <Button size="sm" className="w-20" onClick={togglePlay} disabled={!isReady}>
+            {isPlaying ? <><Pause />Pause</> : <><Play />Play</>}
+          </Button>
+          {/* Stop button disabled for now to reduce UI clutter */}
+          {/* <Button size="sm" variant="outline" onClick={stop} disabled={!isReady}>
+            <>Stop</>
+          </Button> */}
+        </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
           <span className="text-sm text-zinc-600 dark:text-zinc-300">Zoom</span>
           <input
             type="range"
@@ -923,28 +926,24 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
             onChange={(e) => setZoom(Number(e.target.value))}
             disabled={!isReady}
           />
-          <span className="w-12 text-right text-sm tabular-nums text-zinc-600 dark:text-zinc-300">
+          <span className="w-4 text-right text-sm tabular-nums text-zinc-600 dark:text-zinc-300">
             {zoom}
           </span>
         </div>
 
         {/* Region info - inline display */}
-        <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-300 border-l border-zinc-200 dark:border-zinc-800 pl-2 ml-1">
+        <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-300 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
           <div className="flex items-center gap-1">
-            <span className="text-zinc-500">Region:</span>
+            <span className="text-zinc-500">Selected:</span>
             <span className="tabular-nums">{activeRegion ? `${activeRegion.startSec.toFixed(3)}s` : "—"}</span>
             <span className="text-zinc-400">→</span>
             <span className="tabular-nums">{activeRegion ? `${activeRegion.endSec.toFixed(3)}s` : "—"}</span>
             <span className="tabular-nums">({activeRegion ? `${activeRegion.durationSec.toFixed(3)}s` : "—"})</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-zinc-500">Samples:</span>
+            <span className="text-zinc-400"> / </span>
             <span className="tabular-nums">{activeRegion ? `${activeRegion.startSample}` : "—"}</span>
             <span className="text-zinc-400">→</span>
             <span className="tabular-nums">{activeRegion ? `${activeRegion.startSample + activeRegion.durationSamples}` : "—"}</span>
-            <span className="text-zinc-400">(</span>
-            <span className="tabular-nums">{activeRegion ? activeRegion.durationSamples : "—"}</span>
-            <span className="text-zinc-400">)</span>
+            <span className="tabular-nums">({activeRegion ? activeRegion.durationSamples : "—"})</span>
           </div>
         </div>
 

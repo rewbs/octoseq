@@ -19,9 +19,10 @@ interface VisualiserPanelProps {
   isPlaying?: boolean;
 }
 
-const MIN_HEIGHT = 150;
+const MIN_HEIGHT = 100;
 const MAX_HEIGHT = 800;
 const DEFAULT_HEIGHT = 400;
+const FOOTER_RESERVE = 80; // Space reserved for footer + margins
 
 // Helper to normalize array to [0, 1]
 function normalizeSignal(data: number[] | Float32Array, customRange?: [number, number]): Float32Array {
@@ -101,10 +102,33 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   const isResizingRef = useRef(false);
   const startYRef = useRef(0);
   const startHeightRef = useRef(0);
+  const userHasResizedRef = useRef(false);
+
+  // Auto-fit height calculation based on window size
+  useEffect(() => {
+    const calculateAutoFitHeight = () => {
+      if (!containerRef.current || userHasResizedRef.current) return;
+
+      const rect = containerRef.current.getBoundingClientRect();
+      const availableHeight = window.innerHeight - rect.top - FOOTER_RESERVE;
+      const clampedHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, availableHeight));
+      setPanelHeight(clampedHeight);
+    };
+
+    // Calculate after DOM is settled
+    const rafId = requestAnimationFrame(calculateAutoFitHeight);
+    window.addEventListener('resize', calculateAutoFitHeight);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', calculateAutoFitHeight);
+    };
+  }, []);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     isResizingRef.current = true;
+    userHasResizedRef.current = true; // User has manually resized, disable auto-fit
     startYRef.current = e.clientY;
     startHeightRef.current = panelHeight;
     document.body.style.cursor = 'ns-resize';

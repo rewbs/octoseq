@@ -42,9 +42,11 @@ export type RunMirOptions = {
     hpss?: {
         timeMedian?: number;
         freqMedian?: number;
+        spectrogram?: SpectrogramConfig;
     };
     mfcc?: {
         nCoeffs?: number;
+        spectrogram?: SpectrogramConfig;
     };
 };
 
@@ -284,6 +286,23 @@ export async function runMir(
     }
 
     if (request.fn === "hpssHarmonic" || request.fn === "hpssPercussive") {
+        // HPSS may use a custom spectrogram config
+        const hpssSpecConfig = options.hpss?.spectrogram ?? specConfig;
+        const needsHpssSpec = hpssSpecConfig.fftSize !== specConfig.fftSize || hpssSpecConfig.hopSize !== specConfig.hopSize;
+
+        let hpssSpec: Spectrogram;
+        let hpssCpuStart = cpuAfterSpec;
+
+        if (needsHpssSpec) {
+            hpssCpuStart = nowMs();
+            hpssSpec = await spectrogram(asAudioBufferLike(audio), hpssSpecConfig, undefined, {
+                isCancelled: options.isCancelled,
+            });
+        } else {
+            hpssSpec = spec;
+        }
+        const hpssAfterSpec = nowMs();
+
         // HPSS is CPU-heavy; we optionally accelerate mask estimation with WebGPU.
         // CPU path remains the reference implementation and is used as fallback.
         if (backend === "gpu") {
@@ -291,7 +310,7 @@ export async function runMir(
 
             const hpssStart = nowMs();
             try {
-                const out = await hpssGpu(spec, options.gpu, {
+                const out = await hpssGpu(hpssSpec, options.gpu, {
                     timeMedian: options.hpss?.timeMedian,
                     freqMedian: options.hpss?.freqMedian,
                     softMask: true, // preserve CPU default
@@ -309,7 +328,7 @@ export async function runMir(
                         usedGpu: true,
                         timings: {
                             totalMs: end - t0,
-                            cpuMs: cpuAfterSpec - cpuStart + ((end - hpssStart) - out.gpuMs),
+                            cpuMs: (needsHpssSpec ? hpssAfterSpec - hpssCpuStart : cpuAfterSpec - cpuStart) + ((end - hpssStart) - out.gpuMs),
                             gpuMs: out.gpuMs,
                         },
                     },
@@ -321,13 +340,13 @@ export async function runMir(
         }
 
         const hpssStart = nowMs();
-        const { harmonic, percussive } = hpss(spec, {
+        const { harmonic, percussive } = hpss(hpssSpec, {
             timeMedian: options.hpss?.timeMedian,
             freqMedian: options.hpss?.freqMedian,
             isCancelled: options.isCancelled,
         });
         const end = nowMs();
-        const cpuMs = cpuAfterSpec - cpuStart + (end - hpssStart);
+        const cpuMs = (needsHpssSpec ? hpssAfterSpec - hpssCpuStart : cpuAfterSpec - cpuStart) + (end - hpssStart);
 
         const chosen = request.fn === "hpssHarmonic" ? harmonic : percussive;
         return {
@@ -343,9 +362,29 @@ export async function runMir(
     }
 
     if (request.fn === "mfcc" || request.fn === "mfccDelta" || request.fn === "mfccDeltaDelta") {
-        const { mel, cpuExtraMs: melCpuMs } = await computeMel(false);
+        // MFCC may use a custom spectrogram config
+        const mfccSpecConfig = options.mfcc?.spectrogram ?? specConfig;
+        const needsMfccSpec = mfccSpecConfig.fftSize !== specConfig.fftSize || mfccSpecConfig.hopSize !== specConfig.hopSize;
+
+        let mfccMel: MelSpectrogram;
+        let mfccCpuMs: number;
+
+        if (needsMfccSpec) {
+            const mfccCpuStart = nowMs();
+            const mfccSpec = await spectrogram(asAudioBufferLike(audio), mfccSpecConfig, undefined, {
+                isCancelled: options.isCancelled,
+            });
+            const mfccMelResult = await melSpectrogram(mfccSpec, melConfig, undefined);
+            mfccMel = mfccMelResult;
+            mfccCpuMs = nowMs() - mfccCpuStart;
+        } else {
+            const { mel, cpuExtraMs } = await computeMel(false);
+            mfccMel = mel;
+            mfccCpuMs = cpuAfterSpec - cpuStart + cpuExtraMs;
+        }
+
         const mfccStart = nowMs();
-        const base = mfcc(mel, { nCoeffs: options.mfcc?.nCoeffs });
+        const base = mfcc(mfccMel, { nCoeffs: options.mfcc?.nCoeffs });
 
         const features = { times: base.times, values: base.coeffs };
         const chosen =
@@ -365,7 +404,7 @@ export async function runMir(
                 usedGpu: false,
                 timings: {
                     totalMs: end - t0,
-                    cpuMs: cpuAfterSpec - cpuStart + melCpuMs + (end - mfccStart),
+                    cpuMs: mfccCpuMs + (end - mfccStart),
                 },
             },
         };

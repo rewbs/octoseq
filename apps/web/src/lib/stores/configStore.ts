@@ -27,6 +27,14 @@ interface ConfigState {
   peakThreshold: string;
   peakAdaptiveFactor: string;
 
+  // Transient FFT (used by HPSS)
+  transientFftSize: number;
+  transientHopSize: number;
+
+  // Timbre FFT (used by MFCC)
+  timbreFftSize: number;
+  timbreHopSize: number;
+
   // HPSS
   hpssTimeMedian: number;
   hpssFreqMedian: number;
@@ -67,6 +75,14 @@ interface ConfigActions {
   setPeakThreshold: (v: string) => void;
   setPeakAdaptiveFactor: (v: string) => void;
 
+  // Transient FFT setters
+  setTransientFftSize: (v: number) => void;
+  setTransientHopSize: (v: number) => void;
+
+  // Timbre FFT setters
+  setTimbreFftSize: (v: number) => void;
+  setTimbreHopSize: (v: number) => void;
+
   // HPSS setters
   setHpssTimeMedian: (v: number) => void;
   setHpssFreqMedian: (v: number) => void;
@@ -87,8 +103,8 @@ interface ConfigActions {
   getMelConfig: () => { nMels: number; fMin?: number; fMax?: number };
   getOnsetConfig: () => { smoothMs: number; diffMethod: "rectified" | "abs"; useLog: boolean };
   getPeakPickConfig: () => { minIntervalSec: number; threshold?: number; adaptiveFactor?: number };
-  getHpssConfig: () => { timeMedian: number; freqMedian: number };
-  getMfccConfig: () => { nCoeffs: number };
+  getHpssConfig: () => { timeMedian: number; freqMedian: number; spectrogram: { fftSize: number; hopSize: number; window: "hann" } };
+  getMfccConfig: () => { nCoeffs: number; spectrogram: { fftSize: number; hopSize: number; window: "hann" } };
 }
 
 export type ConfigStore = ConfigState & ConfigActions;
@@ -117,6 +133,14 @@ const initialState: ConfigState = {
   peakMinIntervalMs: 120,
   peakThreshold: "",
   peakAdaptiveFactor: "",
+
+  // Transient FFT (used by HPSS)
+  transientFftSize: 2048,
+  transientHopSize: 512,
+
+  // Timbre FFT (used by MFCC)
+  timbreFftSize: 512,
+  timbreHopSize: 128,
 
   // HPSS
   hpssTimeMedian: 17,
@@ -162,6 +186,14 @@ export const useConfigStore = create<ConfigStore>()(
         setPeakMinIntervalMs: (v) => set({ peakMinIntervalMs: v }, false, "setPeakMinIntervalMs"),
         setPeakThreshold: (v) => set({ peakThreshold: v }, false, "setPeakThreshold"),
         setPeakAdaptiveFactor: (v) => set({ peakAdaptiveFactor: v }, false, "setPeakAdaptiveFactor"),
+
+        // Transient FFT setters
+        setTransientFftSize: (v) => set({ transientFftSize: v }, false, "setTransientFftSize"),
+        setTransientHopSize: (v) => set({ transientHopSize: v }, false, "setTransientHopSize"),
+
+        // Timbre FFT setters
+        setTimbreFftSize: (v) => set({ timbreFftSize: v }, false, "setTimbreFftSize"),
+        setTimbreHopSize: (v) => set({ timbreHopSize: v }, false, "setTimbreHopSize"),
 
         // HPSS setters
         setHpssTimeMedian: (v) => set({ hpssTimeMedian: v }, false, "setHpssTimeMedian"),
@@ -227,6 +259,11 @@ export const useConfigStore = create<ConfigStore>()(
           return {
             timeMedian: state.hpssTimeMedian,
             freqMedian: state.hpssFreqMedian,
+            spectrogram: {
+              fftSize: state.transientFftSize,
+              hopSize: Math.min(state.transientHopSize, state.transientFftSize),
+              window: "hann" as const,
+            },
           };
         },
 
@@ -234,6 +271,11 @@ export const useConfigStore = create<ConfigStore>()(
           const state = get();
           return {
             nCoeffs: state.mfccNCoeffs,
+            spectrogram: {
+              fftSize: state.timbreFftSize,
+              hopSize: Math.min(state.timbreHopSize, state.timbreFftSize),
+              window: "hann" as const,
+            },
           };
         },
       }),
@@ -255,6 +297,10 @@ export const useConfigStore = create<ConfigStore>()(
           peakMinIntervalMs: state.peakMinIntervalMs,
           peakThreshold: state.peakThreshold,
           peakAdaptiveFactor: state.peakAdaptiveFactor,
+          transientFftSize: state.transientFftSize,
+          transientHopSize: state.transientHopSize,
+          timbreFftSize: state.timbreFftSize,
+          timbreHopSize: state.timbreHopSize,
           hpssTimeMedian: state.hpssTimeMedian,
           hpssFreqMedian: state.hpssFreqMedian,
           mfccNCoeffs: state.mfccNCoeffs,

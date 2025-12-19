@@ -23,6 +23,7 @@ interface SearchState {
   addMissingMode: boolean;
   loopCandidate: boolean;
   autoPlayOnNavigate: boolean;
+  advanceToNextBest: boolean;
   useRefinementSearch: boolean;
 }
 
@@ -43,6 +44,7 @@ interface SearchActions {
   toggleAddMissingMode: () => void;
   setLoopCandidate: (loop: boolean) => void;
   setAutoPlayOnNavigate: (auto: boolean) => void;
+  setAdvanceToNextBest: (advance: boolean) => void;
   setUseRefinementSearch: (use: boolean) => void;
 
   // Candidate management actions
@@ -76,7 +78,8 @@ const initialState: SearchState = {
   candidateFilter: "all",
   addMissingMode: false,
   loopCandidate: false,
-  autoPlayOnNavigate: false,
+  autoPlayOnNavigate: true,
+  advanceToNextBest: true,
   useRefinementSearch: false,
 };
 
@@ -121,6 +124,8 @@ export const useSearchStore = create<SearchStore>()(
       setLoopCandidate: (loop) => set({ loopCandidate: loop }, false, "setLoopCandidate"),
 
       setAutoPlayOnNavigate: (auto) => set({ autoPlayOnNavigate: auto }, false, "setAutoPlayOnNavigate"),
+
+      setAdvanceToNextBest: (advance) => set({ advanceToNextBest: advance }, false, "setAdvanceToNextBest"),
 
       setUseRefinementSearch: (use) => set({ useRefinementSearch: use }, false, "setUseRefinementSearch"),
 
