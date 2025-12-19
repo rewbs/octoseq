@@ -304,37 +304,10 @@ export default function Home() {
 
   // ===== RENDER =====
   return (
-    <div className="flex flex-col min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="w-full max-w-400 rounded-2xl bg-white p-4 shadow-sm dark:bg-black">
-        <div className="flex items-center gap-8">
-          <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">
-            Octoseq
-          </h1>
-          <div className="flex items-center gap-2">
-            <Button
-              className={`w-full sm:w-auto ${!audio ? "animate-pulse-glow-red" : ""}`}
-              onClick={triggerFileInput}
-            >
-              Load audio file
-            </Button>
-            <div className="text-xs text-zinc-700 dark:text-zinc-200">
-              Load a local audio file to drive the analyses below.
-            </div>
-          </div>
-        </div>
-
-        <section className="mt-4">
-          <div className="space-y-4">
-            <VisualiserPanel
-              audio={audio}
-              playbackTime={playheadTimeSec}
-              audioDuration={audioDuration}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              mirResults={mirResults as any}
-              className="mt-4"
-              isPlaying={isAudioPlaying}
-            />
-
+    <div className="flex flex-col min-h-screen items-center bg-zinc-50 font-sans dark:bg-black">
+      <main className="w-full max-w-400 bg-white p-2 shadow-sm dark:bg-black">
+        <section>
+          <div className="space-y-1.5">
             <WaveSurferPlayer
               ref={playerRef}
               fileInputRef={fileInputRef}
@@ -375,97 +348,95 @@ export default function Home() {
               onViewportChange={(vp) => setViewport(normalizeViewport(vp, audioDuration))}
               onPlaybackTime={(t) => setPlayheadTimeSec(t)}
               onRegionChange={handleRegionChange}
+              toolbarLeft={
+                <Button
+                  className={`${!audio ? "animate-pulse-glow-red" : ""}`}
+                  size="sm"
+                  onClick={triggerFileInput}
+                >
+                  Load audio
+                </Button>
+              }
+              toolbarRight={
+                <div className="flex flex-wrap items-center gap-2 border-l border-zinc-200 dark:border-zinc-800 pl-2 ml-1">
+                  <select
+                    value={visualTab}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      setVisualTab(id as MirFunctionId | "search");
+                      if (id !== "search") setSelected(id as MirFunctionId);
+                    }}
+                    className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                  >
+                    {tabDefs.map(({ id, label, hasData }) => (
+                      <option key={id} value={id}>
+                        {label} {hasData ? "✓" : ""}
+                      </option>
+                    ))}
+                  </select>
+
+                  {visualTab !== 'search' && <>
+                    <Button
+                      onClick={() => void runAnalysis()}
+                      disabled={!canRun || isRunning}
+                      size="sm"
+                      variant="default"
+                    >
+                      {isRunning ? "Running..." : "Run Analysis"}
+                    </Button>
+                    {isRunning && (
+                      <Button onClick={cancelAnalysis} size="sm" variant="outline">
+                        Cancel
+                      </Button>
+                    )}
+                  </>}
+                  {visualTab === 'search' && <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (refinement.queryRegion)
+                          void runSearch(refinement.queryRegion, searchControls).catch((e) => {
+                            if ((e as Error)?.message === "cancelled") return;
+                            console.error("[SEARCH] failed", e);
+                          });
+                      }}
+                      disabled={!audio || !refinement.queryRegion || isSearchRunning}
+                    >
+                      Run search
+                    </Button>
+                    {searchDirty && searchResult ? (
+                      <span className="text-xs text-amber-600 dark:text-amber-400">
+                        Parameters changed — rerun search
+                      </span>
+                    ) : null}
+                    {isSearchRunning ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
+                        <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                        Running search…
+                      </span>
+                    ) : null}
+                  </div>}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsConfigOpen(true)}
+                    >
+                      Configure
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsDebugOpen(true)}
+                    >
+                      Debug
+                    </Button>
+                  </div>
+                </div>
+              }
             />
 
-            <div className="mt-2">
-              <div className="mb-3 flex flex-wrap items-center gap-6">
-                <select
-                  value={visualTab}
-                  onChange={(e) => {
-                    const id = e.target.value;
-                    setVisualTab(id as MirFunctionId | "search");
-                    if (id !== "search") setSelected(id as MirFunctionId);
-                  }}
-                  className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-                >
-                  {tabDefs.map(({ id, label, hasData }) => (
-                    <option key={id} value={id}>
-                      {label} {hasData ? "✓" : ""}
-                    </option>
-                  ))}
-                </select>
-
-                {visualTab !== 'search' && <>
-                  <Button
-                    onClick={() => void runAnalysis()}
-                    disabled={!canRun || isRunning}
-                    size="sm"
-                    variant="default"
-                  >
-                    {isRunning ? "Running..." : "Run Analysis"}
-                  </Button>
-                  {isRunning && (
-                    <Button onClick={cancelAnalysis} size="sm" variant="outline">
-                      Cancel
-                    </Button>
-                  )}
-                </>}
-                {visualTab === 'search' && <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      if (refinement.queryRegion)
-                        void runSearch(refinement.queryRegion, searchControls).catch((e) => {
-                          if ((e as Error)?.message === "cancelled") return;
-                          console.error("[SEARCH] failed", e);
-                        });
-                    }}
-                    disabled={!audio || !refinement.queryRegion || isSearchRunning}
-                  >
-                    Run search
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      if (refinement.queryRegion)
-                        void runSearch(refinement.queryRegion, searchControls).catch((e) => {
-                          if ((e as Error)?.message === "cancelled") return;
-                          console.error("[SEARCH] failed", e);
-                        });
-                    }}
-                    disabled={!audio || !refinement.queryRegion || isSearchRunning}
-                  >
-                    Recompute features &amp; search
-                  </Button>
-                  {searchDirty && searchResult ? (
-                    <span className="text-xs text-amber-600 dark:text-amber-400">
-                      Parameters changed — rerun search
-                    </span>
-                  ) : null}
-                  {isSearchRunning ? (
-                    <span className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
-                      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                      Running search…
-                    </span>
-                  ) : null}
-                </div>}
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsConfigOpen(true)}
-                  >
-                    Configure
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsDebugOpen(true)}
-                  >
-                    Debug
-                  </Button>
-                </div>
-              </div>
+            <div className="mt-1.5">
 
               {visualTab === "search" ? (
                 hasSearchResult ? (
@@ -476,14 +447,8 @@ export default function Home() {
                       viewport={viewport}
                       cursorTimeSec={mirroredCursorTimeSec}
                       onCursorTimeChange={setCursorTimeSec}
-                      height={200}
                       overlayThreshold={searchControls.threshold}
                     />
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                      {searchResult?.curveKind === "confidence"
-                        ? "Track-wide confidence curve (0–1, normalised for display). Peaks above the threshold become candidates."
-                        : "Track-wide similarity curve (0–1, normalised for display). Peaks above the threshold become candidates."}
-                    </p>
                   </div>
                 ) : (
                   <p className="text-sm text-zinc-500">Select an audio segment and run search to see the similarity curve.</p>
@@ -494,16 +459,13 @@ export default function Home() {
                     visualTab === "spectralFlux" ||
                     visualTab === "onsetEnvelope" ? (
                     tabResult?.kind === "1d" && tabResult.fn === visualTab ? (
-                      <div className="-mt-1">
-                        <SyncedWaveSurferSignal
-                          data={tabResult.values}
-                          times={tabResult.times}
-                          viewport={viewport}
-                          cursorTimeSec={mirroredCursorTimeSec}
-                          onCursorTimeChange={setCursorTimeSec}
-                          height={200}
-                        />
-                      </div>
+                      <SyncedWaveSurferSignal
+                        data={tabResult.values}
+                        times={tabResult.times}
+                        viewport={viewport}
+                        cursorTimeSec={mirroredCursorTimeSec}
+                        onCursorTimeChange={setCursorTimeSec}
+                      />
                     ) : (
                       <p className="text-sm text-zinc-500">Run {visualTab} to view output.</p>
                     )
@@ -511,25 +473,23 @@ export default function Home() {
 
                   {visualTab === "onsetPeaks" ? (
                     tabResult?.kind === "events" && tabResult.fn === "onsetPeaks" ? (
-                      <div className="-mt-1">
-                        <div
-                          className="relative rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
-                          ref={eventsHostRef}
-                          onMouseMove={handleCursorHoverFromViewport}
-                          onMouseLeave={handleCursorLeave}
-                        >
-                          <ViewportOverlayMarkers
-                            viewport={viewport}
-                            events={tabResult.events}
-                            height={180}
-                          />
-                          <HeatmapPlayheadOverlay
-                            viewport={viewport}
-                            timeSec={mirroredCursorTimeSec}
-                            height={180}
-                            widthPx={eventsHostSize.width}
-                          />
-                        </div>
+                      <div
+                        className="relative rounded-md border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-950"
+                        ref={eventsHostRef}
+                        onMouseMove={handleCursorHoverFromViewport}
+                        onMouseLeave={handleCursorLeave}
+                      >
+                        <ViewportOverlayMarkers
+                          viewport={viewport}
+                          events={tabResult.events}
+                          height={180}
+                        />
+                        <HeatmapPlayheadOverlay
+                          viewport={viewport}
+                          timeSec={mirroredCursorTimeSec}
+                          height={180}
+                          widthPx={eventsHostSize.width}
+                        />
                       </div>
                     ) : (
                       <p className="text-sm text-zinc-500">Run Onset Peaks to view output.</p>
@@ -543,32 +503,20 @@ export default function Home() {
                     visualTab === "mfccDelta" ||
                     visualTab === "mfccDeltaDelta" ? (
                     tabResult?.kind === "2d" && tabResult.fn === visualTab ? (
-                      <div className="-mt-1">
-                        <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
-                          <div
-                            ref={heatmapHostRef}
-                            className="relative"
-                            onMouseMove={handleCursorHoverFromViewport}
-                            onMouseLeave={handleCursorLeave}
-                          >
-                            <TimeAlignedHeatmapPixi
-                              input={displayedHeatmap}
-                              startTime={visibleRange.startTime}
-                              endTime={visibleRange.endTime}
-                              width={Math.floor(heatmapHostSize.width || 0)}
-                              height={320}
-                              valueRange={heatmapValueRange}
-                              yLabel={heatmapYAxisLabel}
-                              colorScheme={heatmapScheme}
-                            />
-                            <HeatmapPlayheadOverlay
-                              viewport={viewport}
-                              timeSec={mirroredCursorTimeSec}
-                              height={320}
-                              widthPx={heatmapHostSize.width}
-                            />
-                          </div>
-                        </div>
+                      <div
+                        ref={heatmapHostRef}
+                        onMouseMove={handleCursorHoverFromViewport}
+                        onMouseLeave={handleCursorLeave}
+                      >
+                        <TimeAlignedHeatmapPixi
+                          input={displayedHeatmap}
+                          startTime={visibleRange.startTime}
+                          endTime={visibleRange.endTime}
+                          width={Math.floor(heatmapHostSize.width || 0)}
+                          valueRange={heatmapValueRange}
+                          yLabel={heatmapYAxisLabel}
+                          colorScheme={heatmapScheme}
+                        />
                       </div>
                     ) : (
                       <p className="text-sm text-zinc-500">Run {visualTab} to view output.</p>
@@ -582,21 +530,31 @@ export default function Home() {
             <SearchControlsPanel />
             <SearchRefinementPanel playerRef={playerRef} />
           </div>}
+          <VisualiserPanel
+            audio={audio}
+            playbackTime={playheadTimeSec}
+            audioDuration={audioDuration}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            mirResults={mirResults as any}
+            searchSignal={searchSignal}
+            isPlaying={isAudioPlaying}
+          />
+
         </section>
         <MirConfigModal />
         <DebugPanel />
 
       </main>
 
-      <footer className="mt-12 flex flex-col items-center justify-center gap-2 pb-8 text-xs text-zinc-500">
+      <footer className="mt-6 flex flex-col items-center justify-center gap-1.5 pb-4 text-xs text-zinc-500">
         <p>vibecoded with a range of models; use at your own risk.</p>
         <a
           href="https://github.com/rewbs/octoseq"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-1.5 transition-colors hover:text-zinc-900 dark:hover:text-zinc-200"
+          className="flex items-center gap-1 transition-colors hover:text-zinc-900 dark:hover:text-zinc-200"
         >
-          <Github className="h-3.5 w-3.5" />
+          <Github className="h-4 w-4" />
           <span>github</span>
         </a>
       </footer>

@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import { Application, Sprite, Texture } from "pixi.js";
+import { GripHorizontal } from "lucide-react";
+
+const MIN_HEIGHT = 80;
+const MAX_HEIGHT = 600;
+const DEFAULT_HEIGHT = 150;
 
 export type TimeAlignedHeatmapData = {
   /** Shape: [timeIndex][featureIndex] */
@@ -21,7 +26,8 @@ export type TimeAlignedHeatmapProps = {
   endTime: number;
 
   width: number;
-  height: number;
+  /** Initial height (defaults to DEFAULT_HEIGHT). Component manages its own height state for resizing. */
+  initialHeight?: number;
 
   /** Optional: if provided, clamps to a fixed scale. */
   valueRange?: { min: number; max: number };
@@ -137,7 +143,7 @@ export function TimeAlignedHeatmapPixi({
   startTime,
   endTime,
   width,
-  height,
+  initialHeight = DEFAULT_HEIGHT,
   valueRange,
   yLabel,
   colorScheme = "grayscale",
@@ -147,6 +153,46 @@ export function TimeAlignedHeatmapPixi({
   const appRef = useRef<Application | null>(null);
   const spriteRef = useRef<Sprite | null>(null);
   const initDoneRef = useRef(false);
+
+  // Resizable height state
+  const [panelHeight, setPanelHeight] = useState(initialHeight);
+  const isResizingRef = useRef(false);
+  const startYRef = useRef(0);
+  const startHeightRef = useRef(0);
+
+  const handleResizeStart = useCallback((e: MouseEvent) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    startYRef.current = e.clientY;
+    startHeightRef.current = panelHeight;
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+  }, [panelHeight]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: globalThis.MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const delta = e.clientY - startYRef.current;
+      const newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startHeightRef.current + delta));
+      setPanelHeight(newHeight);
+    };
+
+    const handleMouseUp = () => {
+      if (isResizingRef.current) {
+        isResizingRef.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   // Keep latest render inputs in refs so we can trigger a render once Pixi finishes async init.
   const inputRef = useRef<TimeAlignedHeatmapData | null>(null);
@@ -190,7 +236,7 @@ export function TimeAlignedHeatmapPixi({
         // stage is fully created and attached.
         await app.init({
           width,
-          height,
+          height: initialHeight,
           backgroundAlpha: 0,
           antialias: false,
           autoDensity: true,
@@ -205,7 +251,7 @@ export function TimeAlignedHeatmapPixi({
         const sprite = new Sprite(Texture.EMPTY);
         spriteRef.current = sprite;
         sprite.width = width;
-        sprite.height = height;
+        sprite.height = initialHeight;
         app.stage.addChild(sprite);
 
         // Now safe to start ticking.
@@ -242,8 +288,21 @@ export function TimeAlignedHeatmapPixi({
         }
       });
     };
-    // width/height changes recreate app for simplicity.
-  }, [width, height]);
+    // width changes recreate app for simplicity.
+  }, [width, initialHeight]);
+
+  // Resize Pixi renderer dynamically without recreating
+  useEffect(() => {
+    const app = appRef.current;
+    const sprite = spriteRef.current;
+    if (!app || !initDoneRef.current) return;
+
+    app.renderer.resize(width, panelHeight);
+    if (sprite) {
+      sprite.width = width;
+      sprite.height = panelHeight;
+    }
+  }, [width, panelHeight]);
 
   const computedRange = useMemo(() => {
     if (!input) return { min: 0, max: 1 };
@@ -397,21 +456,31 @@ export function TimeAlignedHeatmapPixi({
     startTimeRef.current = startTime;
     endTimeRef.current = endTime;
     widthRef.current = width;
-    heightRef.current = height;
+    heightRef.current = panelHeight;
     rangeRef.current = computedRange;
     colorRef.current = colorScheme;
 
     renderNow();
-  }, [input, startTime, endTime, width, height, computedRange, colorScheme]);
+  }, [input, startTime, endTime, width, panelHeight, computedRange, colorScheme]);
 
   return (
     <div className="w-full">
-      <div
-        ref={(el) => {
-          containerRef.current = el;
-        }}
-        style={{ width, height }}
-      />
+      <div className="rounded-md border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-950">
+        <div
+          ref={(el) => {
+            containerRef.current = el;
+          }}
+          style={{ width, height: panelHeight }}
+        />
+
+        {/* Resize Handle */}
+        <div
+          onMouseDown={handleResizeStart}
+          className="flex items-center justify-center h-2 cursor-ns-resize hover:bg-zinc-200/50 dark:hover:bg-zinc-700/50 transition-colors group"
+        >
+          <GripHorizontal className="w-5 h-2 text-zinc-400 group-hover:text-zinc-600 dark:text-zinc-600 dark:group-hover:text-zinc-400" />
+        </div>
+      </div>
       <p className="mt-2 text-xs text-zinc-500">
         2D heatmap view (PixiJS, time-synchronised)
         {yLabel ? (

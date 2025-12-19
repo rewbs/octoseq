@@ -43,9 +43,9 @@ export function DebugPanel() {
   if (!isDebugOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-end p-4 pointer-events-none">
-      <div className="pointer-events-auto mt-16 mr-4 w-96 max-h-[80vh] overflow-auto rounded-lg border border-zinc-200 bg-white/90 p-4 shadow-lg backdrop-blur-sm dark:border-zinc-700 dark:bg-zinc-900/90">
-        <div className="flex items-center justify-between mb-3">
+    <div className="fixed inset-0 z-50 flex items-start justify-end p-2 pointer-events-none">
+      <div className="pointer-events-auto mt-12 mr-2 w-96 max-h-[80vh] overflow-auto rounded-md border border-zinc-200 bg-white/90 p-2 shadow-lg backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-900/90">
+        <div className="flex items-center justify-between mb-2">
           <h2 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">Debug</h2>
           <Button
             variant="ghost"
@@ -57,7 +57,7 @@ export function DebugPanel() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-1 gap-2 text-sm">
+        <div className="grid grid-cols-1 gap-1.5 text-sm">
           <label className="inline-flex items-center gap-2">
             <input
               type="checkbox"
@@ -83,7 +83,7 @@ export function DebugPanel() {
             <span className="text-zinc-700 dark:text-zinc-200">Enable WebGPU stage (mel projection + onset envelope)</span>
           </label>
 
-          <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">
+          <div className="mt-1.5 text-xs text-zinc-600 dark:text-zinc-300">
             <div>
               worker: <code>{String(useWorker)}</code>
             </div>
@@ -93,7 +93,7 @@ export function DebugPanel() {
             <div>
               timings:{" "}
               {lastTimings ? (
-                <pre className="mt-1 whitespace-pre-wrap rounded bg-white/50 p-2 dark:bg-black/50">
+                <pre className="mt-1 whitespace-pre-wrap rounded-md bg-white/50 p-1.5 dark:bg-black/50">
                   {JSON.stringify(lastTimings, null, 2)}
                 </pre>
               ) : (
@@ -102,7 +102,7 @@ export function DebugPanel() {
             </div>
 
             {tabResult?.kind === "2d" && (
-              <div className="mt-2 text-xs text-zinc-600 dark:text-zinc-300">
+              <div className="mt-1.5 text-xs text-zinc-600 dark:text-zinc-300">
                 raw shape: <code>{tabResult.raw.data.length}</code> frames ×{" "}
                 <code>{tabResult.raw.data[0]?.length ?? 0}</code> features
                 {displayedHeatmap ? (

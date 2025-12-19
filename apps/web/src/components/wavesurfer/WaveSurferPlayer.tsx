@@ -1,12 +1,17 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type MouseEvent, type RefObject } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type MouseEvent, type RefObject } from "react";
 
 import WaveSurfer from "wavesurfer.js";
 import Timeline from "wavesurfer.js/dist/plugins/timeline.esm.js";
 import Regions from "wavesurfer.js/dist/plugins/regions.esm.js";
+import { GripHorizontal } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+
+const MIN_HEIGHT = 80;
+const MAX_HEIGHT = 400;
+const DEFAULT_HEIGHT = 150;
 
 
 import type { AudioBufferLike } from "@octoseq/mir";
@@ -52,12 +57,17 @@ export type WaveSurferPlayerHandle = {
 };
 
 type WaveSurferPlayerProps = {
-  height?: number;
+  /** Initial height (defaults to DEFAULT_HEIGHT). Component manages its own height state for resizing. */
+  initialHeight?: number;
   fileInputRef?: RefObject<HTMLInputElement | null>;
   cursorTimeSec?: number | null;
   onCursorTimeChange?: (timeSec: number | null) => void;
   /** Current viewport (for mapping mirrored cursor overlay). */
   viewport?: WaveSurferViewport | null;
+  /** Additional content to render on the left side of the toolbar. */
+  toolbarLeft?: React.ReactNode;
+  /** Additional content to render on the right side of the toolbar. */
+  toolbarRight?: React.ReactNode;
 
   /**
    * Optional: allow parent to seek playback.
@@ -117,7 +127,7 @@ type WaveSurferPlayerProps = {
  */
 export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPlayerProps>(function WaveSurferPlayer(
   {
-    height = 128,
+    initialHeight = DEFAULT_HEIGHT,
     onAudioDecoded,
     onViewportChange,
     onPlaybackTime,
@@ -137,6 +147,8 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     seekToTimeSec,
     onWaveformClick,
     onIsPlayingChange,
+    toolbarLeft,
+    toolbarRight,
   }: WaveSurferPlayerProps,
   ref
 ) {
@@ -297,6 +309,46 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     durationSamples: number;
   } | null>(null);
 
+  // Resizable height state
+  const [panelHeight, setPanelHeight] = useState(initialHeight);
+  const isResizingRef = useRef(false);
+  const startYRef = useRef(0);
+  const startHeightRef = useRef(0);
+
+  const handleResizeStart = useCallback((e: MouseEvent) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    startYRef.current = e.clientY;
+    startHeightRef.current = panelHeight;
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+  }, [panelHeight]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: globalThis.MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const delta = e.clientY - startYRef.current;
+      const newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startHeightRef.current + delta));
+      setPanelHeight(newHeight);
+    };
+
+    const handleMouseUp = () => {
+      if (isResizingRef.current) {
+        isResizingRef.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
   function cleanupObjectUrl() {
     if (objectUrlRef.current) {
       URL.revokeObjectURL(objectUrlRef.current);
@@ -314,7 +366,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     // Create WS instance (once refs exist).
     const ws = WaveSurfer.create({
       container: containerEl,
-      height,
+      height: initialHeight,
       waveColor: "#62626b",
       progressColor: "#787666",
       cursorColor: "#d40f37",
@@ -613,7 +665,14 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       setIsPlaying(false);
       setActiveRegion(null);
     };
-  }, [containerEl, timelineEl, height]);
+  }, [containerEl, timelineEl, initialHeight]);
+
+  // Update WaveSurfer height dynamically without recreating
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!ws) return;
+    ws.setOptions({ height: panelHeight });
+  }, [panelHeight]);
 
   useEffect(() => {
     const regionsPlugin = regionsPluginRef.current;
@@ -831,21 +890,21 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
 
   return (
     <div className="w-full">
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="inline-flex items-center gap-2">
-          <span className="text-sm text-zinc-600 dark:text-zinc-300">Audio file</span>
-          <input
-            type="file"
-            accept="audio/*"
-            className="block text-sm"
-            ref={pickerRef}
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void onPickFile(f);
-            }}
-          />
-        </label>
+      {/* Hidden file input for programmatic triggering */}
+      <input
+        type="file"
+        accept="audio/*"
+        className="sr-only"
+        ref={pickerRef}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void onPickFile(f);
+        }}
+      />
 
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Additional toolbar content from parent (left) */}
+        {toolbarLeft}
         <Button onClick={togglePlay} disabled={!isReady}>
           {isPlaying ? "Pause" : "Play"}
         </Button>
@@ -868,10 +927,33 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
             {zoom}
           </span>
         </div>
+
+        {/* Region info - inline display */}
+        <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-300 border-l border-zinc-200 dark:border-zinc-800 pl-2 ml-1">
+          <div className="flex items-center gap-1">
+            <span className="text-zinc-500">Region:</span>
+            <span className="tabular-nums">{activeRegion ? `${activeRegion.startSec.toFixed(3)}s` : "—"}</span>
+            <span className="text-zinc-400">→</span>
+            <span className="tabular-nums">{activeRegion ? `${activeRegion.endSec.toFixed(3)}s` : "—"}</span>
+            <span className="tabular-nums">({activeRegion ? `${activeRegion.durationSec.toFixed(3)}s` : "—"})</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-zinc-500">Samples:</span>
+            <span className="tabular-nums">{activeRegion ? `${activeRegion.startSample}` : "—"}</span>
+            <span className="text-zinc-400">→</span>
+            <span className="tabular-nums">{activeRegion ? `${activeRegion.startSample + activeRegion.durationSamples}` : "—"}</span>
+            <span className="text-zinc-400">(</span>
+            <span className="tabular-nums">{activeRegion ? activeRegion.durationSamples : "—"}</span>
+            <span className="text-zinc-400">)</span>
+          </div>
+        </div>
+
+        {/* Additional toolbar content from parent */}
+        {toolbarRight}
       </div>
 
       <div
-        className={`mt-4 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950 ${addMissingMode ? "ring-2 ring-emerald-500 ring-offset-2 ring-offset-white dark:ring-offset-zinc-950" : ""
+        className={`mt-1.5 rounded-md border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-950 ${addMissingMode ? "ring-2 ring-emerald-500 ring-offset-1 ring-offset-white dark:ring-offset-zinc-950" : ""
           }`}
       >
         <div ref={setTimelineEl} className="w-full" />
@@ -889,38 +971,16 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
           />
         </div>
 
-        {/* Region debug readout (deterministic + sample-accurate). */}
-        <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-zinc-600 dark:text-zinc-300 sm:grid-cols-4">
-          <div>
-            <span className="text-zinc-500">Region start</span>
-            <div className="tabular-nums">{activeRegion ? activeRegion.startSec.toFixed(3) : "—"}s</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">Region end</span>
-            <div className="tabular-nums">{activeRegion ? activeRegion.endSec.toFixed(3) : "—"}s</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">Duration</span>
-            <div className="tabular-nums">{activeRegion ? activeRegion.durationSec.toFixed(3) : "—"}s</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">Start sample</span>
-            <div className="tabular-nums">{activeRegion ? activeRegion.startSample : "—"}</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">Duration samples</span>
-            <div className="tabular-nums">{activeRegion ? activeRegion.durationSamples : "—"}</div>
-          </div>
-          <div>
-            <span className="text-zinc-500">End sample</span>
-            <div className="tabular-nums">
-              {activeRegion ? activeRegion.startSample + activeRegion.durationSamples : "—"}
-            </div>
-          </div>
+        {/* Resize Handle */}
+        <div
+          onMouseDown={handleResizeStart}
+          className="flex items-center justify-center h-2 cursor-ns-resize hover:bg-zinc-200/50 dark:hover:bg-zinc-700/50 transition-colors group"
+        >
+          <GripHorizontal className="w-5 h-2 text-zinc-400 group-hover:text-zinc-600 dark:text-zinc-600 dark:group-hover:text-zinc-400" />
         </div>
       </div>
 
-      {!isReady && <p className="mt-3 text-sm text-zinc-500">Choose an audio file to load it.</p>}
+      {!isReady && <p className="mt-2 text-sm text-zinc-500">Choose an audio file to load it.</p>}
 
       {/* Intentionally no footer text here; MIR visualisation sits directly under waveform. */}
     </div>

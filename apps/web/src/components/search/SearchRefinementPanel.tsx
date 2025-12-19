@@ -138,7 +138,7 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
   const showJumpToBest = stats.unreviewed > 0;
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="rounded-md border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Search Refinement</div>
 
@@ -150,7 +150,7 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap items-center gap-1">
           {filterDefs.map((f) => {
             const active = candidateFilter === f.id;
@@ -189,8 +189,8 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
-        <div className="space-y-2 rounded-md border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
+        <div className="space-y-1.5 rounded-md border border-zinc-200 bg-white p-1.5 text-xs dark:border-zinc-800 dark:bg-zinc-950">
           <div className="flex items-center justify-between gap-2">
             <span className="text-zinc-600 dark:text-zinc-300">Navigation</span>
             <span className="tabular-nums text-zinc-500">
@@ -229,7 +229,7 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
           </div>
         </div>
 
-        <div className="space-y-2 rounded-md border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="space-y-1.5 rounded-md border border-zinc-200 bg-white p-1.5 text-xs dark:border-zinc-800 dark:bg-zinc-950">
           <div className="flex items-center justify-between gap-2">
             <span className="text-zinc-600 dark:text-zinc-300">Classification</span>
             {hasActive ? (
@@ -266,7 +266,7 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
           ) : null}
         </div>
 
-        <div className="space-y-2 rounded-md border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="space-y-1.5 rounded-md border border-zinc-200 bg-white p-1.5 text-xs dark:border-zinc-800 dark:bg-zinc-950">
           <div className="flex items-center justify-between gap-2">
             <span className="text-zinc-600 dark:text-zinc-300">Playback</span>
             <span className="text-zinc-500">Space plays/stops</span>
@@ -285,7 +285,7 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
             </Button>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <label className="inline-flex items-center gap-2">
               <input
                 type="checkbox"

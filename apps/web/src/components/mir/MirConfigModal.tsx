@@ -130,9 +130,9 @@ export function MirConfigModal() {
 
   return (
     <Modal title="MIR Configuration" open={isConfigOpen} onOpenChange={setIsConfigOpen}>
-      <div className="space-y-6">
+      <div className="space-y-4">
         {/* Filter Control */}
-        <div className="flex items-center gap-3 border-b border-zinc-100 pb-4 dark:border-zinc-800">
+        <div className="flex items-center gap-2 border-b border-zinc-100 pb-3 dark:border-zinc-800">
           <label className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
             Show options for:
           </label>
@@ -155,7 +155,7 @@ export function MirConfigModal() {
           </select>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <label className="grid grid-cols-[160px,1fr] items-center gap-2">
               <span className="text-xs text-zinc-600 dark:text-zinc-300">FFT size (power of 2)</span>
@@ -182,8 +182,8 @@ export function MirConfigModal() {
           </div>
 
           {usesMel && (
-            <div className="rounded-lg border border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800/50 dark:bg-zinc-900/50">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <div className="rounded-md border border-zinc-100 bg-zinc-50/50 p-2 dark:border-zinc-800/50 dark:bg-zinc-900/50">
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
                 Mel Spectrogram
               </h3>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -230,11 +230,11 @@ export function MirConfigModal() {
           )}
 
           {usesOnset && (
-            <div className="rounded-lg border border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800/50 dark:bg-zinc-900/50">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <div className="rounded-md border border-zinc-100 bg-zinc-50/50 p-2 dark:border-zinc-800/50 dark:bg-zinc-900/50">
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
                 Onset Detection
               </h3>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
                   <span className="text-xs text-zinc-600 dark:text-zinc-300">
                     Onset smoothing (ms)
@@ -282,11 +282,11 @@ export function MirConfigModal() {
           )}
 
           {usesPeakPick && (
-            <div className="rounded-lg border border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800/50 dark:bg-zinc-900/50">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <div className="rounded-md border border-zinc-100 bg-zinc-50/50 p-2 dark:border-zinc-800/50 dark:bg-zinc-900/50">
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
                 Peak Picking
               </h3>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
                   <span className="text-xs text-zinc-600 dark:text-zinc-300">
                     Peak min interval (ms)
@@ -333,8 +333,8 @@ export function MirConfigModal() {
           )}
 
           {usesHpss && (
-            <div className="rounded-lg border border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800/50 dark:bg-zinc-900/50">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <div className="rounded-md border border-zinc-100 bg-zinc-50/50 p-2 dark:border-zinc-800/50 dark:bg-zinc-900/50">
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
                 HPSS
               </h3>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -369,8 +369,8 @@ export function MirConfigModal() {
           )}
 
           {usesMfcc && (
-            <div className="rounded-lg border border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800/50 dark:bg-zinc-900/50">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+            <div className="rounded-md border border-zinc-100 bg-zinc-50/50 p-2 dark:border-zinc-800/50 dark:bg-zinc-900/50">
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
                 MFCC
               </h3>
               <label className="grid grid-cols-[180px,1fr] items-center gap-2">
@@ -390,8 +390,8 @@ export function MirConfigModal() {
             </div>
           )}
 
-          <div className="rounded-lg border border-zinc-100 bg-zinc-50/50 p-3 dark:border-zinc-800/50 dark:bg-zinc-900/50">
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          <div className="rounded-md border border-zinc-100 bg-zinc-50/50 p-2 dark:border-zinc-800/50 dark:bg-zinc-900/50">
+            <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
               Display Options
             </h3>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">

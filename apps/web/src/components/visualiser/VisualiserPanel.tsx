@@ -1,7 +1,8 @@
 "use client";
 
-import { memo, useEffect, useRef, useState, useMemo } from "react";
+import { memo, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import type { AudioBufferLike } from "@octoseq/mir";
+import { GripHorizontal } from "lucide-react";
 
 // We import the mock type if the real package isn't built yet, preventing TS errors.
 // In a real build, this would import from @octoseq/visualiser.
@@ -13,9 +14,14 @@ interface VisualiserPanelProps {
   playbackTime: number;
   audioDuration?: number; // Optional explicitly passed duration
   mirResults: Record<string, number[]> | null; // Keys are feature names
+  searchSignal?: Float32Array | null; // Search similarity curve
   className?: string;
   isPlaying?: boolean;
 }
+
+const MIN_HEIGHT = 150;
+const MAX_HEIGHT = 800;
+const DEFAULT_HEIGHT = 400;
 
 // Helper to normalize array to [0, 1]
 function normalizeSignal(data: number[] | Float32Array, customRange?: [number, number]): Float32Array {
@@ -49,7 +55,8 @@ function getSignalData(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mirResults: Record<string, any> | null,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  audioBuffer: any | null
+  audioBuffer: any | null,
+  searchSignal?: Float32Array | null
 ): Float32Array | null {
   if (sourceName === "Amplitude") {
     if (audioBuffer) {
@@ -63,6 +70,9 @@ function getSignalData(
       }
     }
     return null;
+  }
+  if (sourceName === "Search Similarity") {
+    return searchSignal ?? null;
   }
   if (mirResults && mirResults[sourceName]) {
     const val = mirResults[sourceName];
@@ -78,12 +88,53 @@ function getSignalData(
   return null;
 }
 
-export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults, className, isPlaying = true }: VisualiserPanelProps) {
+export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults, searchSignal, className, isPlaying = true }: VisualiserPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const visRef = useRef<WasmVisualiser | null>(null);
   const rafRef = useRef<number>(0);
   const lastTimeRef = useRef<number>(0);
   const isPlayingRef = useRef(isPlaying);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Resizable height state
+  const [panelHeight, setPanelHeight] = useState(DEFAULT_HEIGHT);
+  const isResizingRef = useRef(false);
+  const startYRef = useRef(0);
+  const startHeightRef = useRef(0);
+
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    startYRef.current = e.clientY;
+    startHeightRef.current = panelHeight;
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+  }, [panelHeight]);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const delta = e.clientY - startYRef.current;
+      const newHeight = Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startHeightRef.current + delta));
+      setPanelHeight(newHeight);
+    };
+
+    const handleMouseUp = () => {
+      if (isResizingRef.current) {
+        isResizingRef.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   // Keep ref up to date for loop access
   useEffect(() => {
@@ -173,7 +224,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
 
 
     // Process Rotation
-    const rotData = getSignalData(rotSource, mirResults, audio);
+    const rotData = getSignalData(rotSource, mirResults, audio, searchSignal);
     if (rotData && rotData.length > 0) {
       // Calculate raw stats for debug
       let min = Infinity, max = -Infinity;
@@ -206,7 +257,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
     }
 
     // Process Zoom
-    const zoomData = getSignalData(zoomSource, mirResults, audio);
+    const zoomData = getSignalData(zoomSource, mirResults, audio, searchSignal);
     if (zoomData && zoomData.length > 0) {
       // stats
       let min = Infinity, max = -Infinity;
@@ -238,7 +289,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
         vis.push_zoom_data(norm, rate);
       }
     }
-  }, [rotSource, zoomSource, mirResults, isReady, audio, rotRange, zoomRange, rotGain, zoomGain, audioDuration]);
+  }, [rotSource, zoomSource, mirResults, isReady, audio, rotRange, zoomRange, rotGain, zoomGain, audioDuration, searchSignal]);
 
   // Update Sigmoid
   useEffect(() => {
@@ -323,91 +374,65 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
 
   const availableSources = useMemo(() => {
     const keys = mirResults ? Object.keys(mirResults) : [];
-    return ["Amplitude", ...keys];
-  }, [mirResults]);
+    const sources = ["Amplitude", ...keys];
+    if (searchSignal && searchSignal.length > 0) {
+      sources.push("Search Similarity");
+    }
+    return sources;
+  }, [mirResults, searchSignal]);
 
   return (
-    <div className={`p-4 bg-gray-900 rounded-lg ${className}`}>
-      <div className="flex justify-between items-center mb-2">
-        <h3 className="text-gray-200 font-bold">GPU Visualiser</h3>
-        <div className="flex gap-4 text-sm">
-          <div className="flex gap-4 text-sm items-end">
-            <div className="flex flex-col">
-              <label className="text-gray-400 text-xs">Rotation Source</label>
-              <select
-                value={rotSource}
-                onChange={e => setRotSource(e.target.value)}
-                className="bg-gray-800 text-white rounded p-1 w-32"
-              >
-                {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="flex gap-1 items-center">
-              <div className="flex flex-col w-12">
-                <label className="text-gray-500 text-[10px]">In Min</label>
-                <input type="number" step="0.1" value={isNaN(rotRange[0]) ? '' : rotRange[0]} onChange={e => setRotRange([parseFloat(e.target.value), rotRange[1]])} className="bg-gray-800 text-white rounded p-1 text-xs" />
-              </div>
-              <div className="flex flex-col w-12">
-                <label className="text-gray-500 text-[10px]">In Max</label>
-                <input type="number" step="0.1" value={isNaN(rotRange[1]) ? '' : rotRange[1]} onChange={e => setRotRange([rotRange[0], parseFloat(e.target.value)])} className="bg-gray-800 text-white rounded p-1 text-xs" />
-              </div>
-              {/* Gain */}
-              <div className="flex flex-col w-12">
-                <label className="text-gray-500 text-[10px]">Gain</label>
-                <input type="number" step="0.1" value={isNaN(rotGain) ? '' : rotGain} onChange={e => setRotGain(parseFloat(e.target.value))} className="bg-gray-800 text-white rounded p-1 text-xs" />
-              </div>
-            </div>
+    <div className={`mt-1.5 rounded-md border border-zinc-200 p-1 dark:border-zinc-800 ${className}`}>
+      {/* Compact inline controls */}
+      <div className="flex flex-wrap items-center gap-2 mb-1 text-xs text-zinc-600 dark:text-zinc-300">
+        <span className="text-zinc-500">Rot:</span>
+        <select
+          value={rotSource}
+          onChange={e => setRotSource(e.target.value)}
+          className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 text-xs dark:border-zinc-800 dark:bg-zinc-950"
+        >
+          {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <input type="number" step="0.1" value={isNaN(rotRange[0]) ? '' : rotRange[0]} onChange={e => setRotRange([parseFloat(e.target.value), rotRange[1]])} className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 w-12 text-xs dark:border-zinc-800 dark:bg-zinc-950" title="Rot In Min" />
+        <input type="number" step="0.1" value={isNaN(rotRange[1]) ? '' : rotRange[1]} onChange={e => setRotRange([rotRange[0], parseFloat(e.target.value)])} className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 w-12 text-xs dark:border-zinc-800 dark:bg-zinc-950" title="Rot In Max" />
+        <input type="number" step="0.1" value={isNaN(rotGain) ? '' : rotGain} onChange={e => setRotGain(parseFloat(e.target.value))} className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 w-12 text-xs dark:border-zinc-800 dark:bg-zinc-950" title="Rot Gain" />
 
-            <div className="w-px bg-gray-700 h-8 mx-2"></div>
+        <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-700 mx-1"></div>
 
-            <div className="flex flex-col">
-              <label className="text-gray-400 text-xs">Zoom Source</label>
-              <select
-                value={zoomSource}
-                onChange={e => setZoomSource(e.target.value)}
-                className="bg-gray-800 text-white rounded p-1 w-32"
-              >
-                {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="flex gap-1 items-center">
-              <div className="flex flex-col w-12">
-                <label className="text-gray-500 text-[10px]">In Min</label>
-                <input type="number" step="0.1" value={isNaN(zoomRange[0]) ? '' : zoomRange[0]} onChange={e => setZoomRange([parseFloat(e.target.value), zoomRange[1]])} className="bg-gray-800 text-white rounded p-1 text-xs" />
-              </div>
-              <div className="flex flex-col w-12">
-                <label className="text-gray-500 text-[10px]">In Max</label>
-                <input type="number" step="0.1" value={isNaN(zoomRange[1]) ? '' : zoomRange[1]} onChange={e => setZoomRange([zoomRange[0], parseFloat(e.target.value)])} className="bg-gray-800 text-white rounded p-1 text-xs" />
-              </div>
-              {/* Gain */}
-              <div className="flex flex-col w-12">
-                <label className="text-gray-500 text-[10px]">Gain</label>
-                <input type="number" step="0.1" value={isNaN(zoomGain) ? '' : zoomGain} onChange={e => setZoomGain(parseFloat(e.target.value))} className="bg-gray-800 text-white rounded p-1 text-xs" />
-              </div>
-            </div>
+        <span className="text-zinc-500">Zoom:</span>
+        <select
+          value={zoomSource}
+          onChange={e => setZoomSource(e.target.value)}
+          className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 text-xs dark:border-zinc-800 dark:bg-zinc-950"
+        >
+          {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <input type="number" step="0.1" value={isNaN(zoomRange[0]) ? '' : zoomRange[0]} onChange={e => setZoomRange([parseFloat(e.target.value), zoomRange[1]])} className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 w-12 text-xs dark:border-zinc-800 dark:bg-zinc-950" title="Zoom In Min" />
+        <input type="number" step="0.1" value={isNaN(zoomRange[1]) ? '' : zoomRange[1]} onChange={e => setZoomRange([zoomRange[0], parseFloat(e.target.value)])} className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 w-12 text-xs dark:border-zinc-800 dark:bg-zinc-950" title="Zoom In Max" />
+        <input type="number" step="0.1" value={isNaN(zoomGain) ? '' : zoomGain} onChange={e => setZoomGain(parseFloat(e.target.value))} className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 w-12 text-xs dark:border-zinc-800 dark:bg-zinc-950" title="Zoom Gain" />
 
-            <div className="w-px bg-gray-700 h-8 mx-2"></div>
+        <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-700 mx-1"></div>
 
-            <div className="flex flex-col w-32">
-              <label className="text-gray-400 text-xs">Sigmoid (K={sigmoidK})</label>
-              <input
-                type="range"
-                min="0" max="20" step="0.5"
-                value={sigmoidK}
-                onChange={e => setSigmoidK(parseFloat(e.target.value))}
-                className="accent-indigo-500"
-              />
-            </div>
-          </div>
-        </div>
+        <span>K={sigmoidK}</span>
+        <input
+          type="range"
+          min="0" max="20" step="0.5"
+          value={sigmoidK}
+          onChange={e => setSigmoidK(parseFloat(e.target.value))}
+          className="w-20"
+        />
       </div>
 
-      <div className="relative aspect-video bg-black rounded overflow-hidden border border-gray-800">
+      <div
+        ref={containerRef}
+        className="relative bg-black rounded-md overflow-hidden border border-zinc-700"
+        style={{ height: panelHeight }}
+      >
         <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
 
         {/* Debug Overlay */}
         {isReady && debugValues && (
-          <div className="absolute top-2 left-2 bg-black/50 text-green-400 font-mono text-xs p-2 rounded pointer-events-none">
+          <div className="absolute top-1 left-1 bg-black/60 text-emerald-400 font-mono text-[10px] p-1.5 rounded-md pointer-events-none">
             <div>ROT: {debugValues.rot.toFixed(3)}</div>
             <div>ZOOM: {debugValues.zoom.toFixed(3)}</div>
             <div>TIME: {debugValues.time.toFixed(3)}</div>
@@ -421,14 +446,14 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
         {isReady && debugValues && (
           <>
             {/* Rotation Sparkline Info (Top Left) */}
-            <div className="absolute top-[10%] left-[2%] font-mono text-xs text-green-400 bg-black/50 p-1 rounded">
+            <div className="absolute top-[10%] left-[50%] font-mono text-[10px] text-emerald-400 bg-black/60 p-1 rounded-md">
               <div className="font-bold">Rotation</div>
               <div>Max: {debugValues.rotMax.toFixed(3)}</div>
               <div>Min: {debugValues.rotMin.toFixed(3)}</div>
             </div>
 
             {/* Zoom Sparkline Info (Bottom Left) */}
-            <div className="absolute bottom-[20%] left-[2%] font-mono text-xs text-cyan-400 bg-black/50 p-1 rounded">
+            <div className="absolute bottom-[20%] left-[50%] font-mono text-[10px] text-cyan-400 bg-black/60 p-1 rounded-md">
               <div className="font-bold">Zoom</div>
               <div>Max: {debugValues.zoomMax.toFixed(3)}</div>
               <div>Min: {debugValues.zoomMin.toFixed(3)}</div>
@@ -437,10 +462,18 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
         )}
 
         {!isReady && (
-          <div className="absolute inset-0 flex items-center justify-center text-xs text-neutral-500">
+          <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-500">
             Initializing WGPU...
           </div>
         )}
+      </div>
+
+      {/* Resize Handle */}
+      <div
+        onMouseDown={handleResizeStart}
+        className="flex items-center justify-center h-2 cursor-ns-resize hover:bg-zinc-200/50 dark:hover:bg-zinc-700/50 transition-colors group"
+      >
+        <GripHorizontal className="w-5 h-2 text-zinc-400 group-hover:text-zinc-600 dark:text-zinc-600 dark:group-hover:text-zinc-400" />
       </div>
     </div>
   );

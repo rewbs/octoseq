@@ -87,9 +87,9 @@ export function SearchControlsPanel() {
   };
 
   return (
-    <div className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="rounded-md border border-zinc-200 bg-zinc-50 p-2 text-sm dark:border-zinc-800 dark:bg-zinc-950">
       <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Search Controls</div>
-      <div className="mt-3 space-y-3">
+      <div className="mt-2 space-y-2">
         <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
           <span className="text-xs text-zinc-600 dark:text-zinc-300">{thresholdLabel}</span>
           <input
@@ -158,11 +158,11 @@ export function SearchControlsPanel() {
           </div>
         </label>
 
-        <details className="rounded-md border border-zinc-200 bg-white p-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
+        <details className="rounded-md border border-zinc-200 bg-white p-1.5 text-xs dark:border-zinc-800 dark:bg-zinc-950">
           <summary className="cursor-pointer select-none text-zinc-700 dark:text-zinc-200">
             Advanced (weights)
           </summary>
-          <div className="mt-2 space-y-2">
+          <div className="mt-1.5 space-y-1.5">
             <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
               <span className="text-xs text-zinc-600 dark:text-zinc-300">Timbre weight (mel)</span>
               <input
