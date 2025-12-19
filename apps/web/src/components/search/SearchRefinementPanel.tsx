@@ -140,7 +140,7 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
   return (
     <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Review</div>
+        <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Search Refinement</div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
           <span className="tabular-nums">
@@ -157,11 +157,10 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
             return (
               <button
                 key={f.id}
-                className={`rounded-md px-2 py-1 text-xs ${
-                  active
-                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black"
-                    : "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100"
-                }`}
+                className={`rounded-md px-2 py-1 text-xs ${active
+                  ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black"
+                  : "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100"
+                  }`}
                 onClick={() => handleFilterChange(f.id)}
                 disabled={disabled}
               >

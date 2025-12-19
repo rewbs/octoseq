@@ -86,6 +86,7 @@ export default function Home() {
   // Config store - only what's needed in page.tsx
   const heatmapScheme = useConfigStore((s) => s.heatmapScheme);
   const setIsConfigOpen = useConfigStore((s) => s.setIsConfigOpen);
+  const setIsDebugOpen = useConfigStore((s) => s.setIsDebugOpen);
 
   // MIR store
   const mirResults = useMirStore((s) => s.mirResults);
@@ -304,7 +305,7 @@ export default function Home() {
   // ===== RENDER =====
   return (
     <div className="flex flex-col min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="w-full max-w-[1600px] rounded-2xl bg-white p-4 shadow-sm dark:bg-black">
+      <main className="w-full max-w-400 rounded-2xl bg-white p-4 shadow-sm dark:bg-black">
         <div className="flex items-center gap-8">
           <h1 className="text-3xl font-semibold tracking-tight text-black dark:text-zinc-50">
             Octoseq
@@ -322,69 +323,13 @@ export default function Home() {
           </div>
         </div>
 
-        <DebugPanel />
-
         <section className="mt-4">
           <div className="space-y-4">
-            <details className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm dark:border-zinc-800 dark:bg-zinc-950">
-              <summary className="cursor-pointer select-none text-zinc-700 dark:text-zinc-200">
-                Search for similar features
-              </summary>
-
-              <div className="flex flex-col gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
-                <SearchControlsPanel />
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    onClick={() => {
-                      if (refinement.queryRegion)
-                        void runSearch(refinement.queryRegion, searchControls).catch((e) => {
-                          if ((e as Error)?.message === "cancelled") return;
-                          console.error("[SEARCH] failed", e);
-                        });
-                    }}
-                    disabled={!audio || !refinement.queryRegion || isSearchRunning}
-                  >
-                    Run search
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      if (refinement.queryRegion)
-                        void runSearch(refinement.queryRegion, searchControls).catch((e) => {
-                          if ((e as Error)?.message === "cancelled") return;
-                          console.error("[SEARCH] failed", e);
-                        });
-                    }}
-                    disabled={!audio || !refinement.queryRegion || isSearchRunning}
-                  >
-                    Recompute features &amp; search
-                  </Button>
-                  {searchDirty && searchResult ? (
-                    <span className="text-xs text-amber-600 dark:text-amber-400">
-                      Parameters changed — rerun search
-                    </span>
-                  ) : null}
-                  {isSearchRunning ? (
-                    <span className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
-                      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                      Running search…
-                    </span>
-                  ) : null}
-                </div>
-                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  Select a snippet of audio and find similar segments.
-                </p>
-              </div>
-            </details>
-
-            {refinement.candidates.length > 0 ? (
-              <SearchRefinementPanel playerRef={playerRef} />
-            ) : null}
-
             <VisualiserPanel
               audio={audio}
               playbackTime={playheadTimeSec}
               audioDuration={audioDuration}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               mirResults={mirResults as any}
               className="mt-4"
               isPlaying={isAudioPlaying}
@@ -433,7 +378,7 @@ export default function Home() {
             />
 
             <div className="mt-2">
-              <div className="mb-3 flex flex-wrap items-center gap-2">
+              <div className="mb-3 flex flex-wrap items-center gap-6">
                 <select
                   value={visualTab}
                   onChange={(e) => {
@@ -450,26 +395,76 @@ export default function Home() {
                   ))}
                 </select>
 
-                <Button
-                  onClick={() => void runAnalysis()}
-                  disabled={!canRun || isRunning}
-                  size="sm"
-                  variant="default"
-                >
-                  {isRunning ? "Running..." : "Run Analysis"}
-                </Button>
-                {isRunning && (
-                  <Button onClick={cancelAnalysis} size="sm" variant="outline">
-                    Cancel
+                {visualTab !== 'search' && <>
+                  <Button
+                    onClick={() => void runAnalysis()}
+                    disabled={!canRun || isRunning}
+                    size="sm"
+                    variant="default"
+                  >
+                    {isRunning ? "Running..." : "Run Analysis"}
                   </Button>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsConfigOpen(true)}
-                >
-                  Configure
-                </Button>
+                  {isRunning && (
+                    <Button onClick={cancelAnalysis} size="sm" variant="outline">
+                      Cancel
+                    </Button>
+                  )}
+                </>}
+                {visualTab === 'search' && <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      if (refinement.queryRegion)
+                        void runSearch(refinement.queryRegion, searchControls).catch((e) => {
+                          if ((e as Error)?.message === "cancelled") return;
+                          console.error("[SEARCH] failed", e);
+                        });
+                    }}
+                    disabled={!audio || !refinement.queryRegion || isSearchRunning}
+                  >
+                    Run search
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      if (refinement.queryRegion)
+                        void runSearch(refinement.queryRegion, searchControls).catch((e) => {
+                          if ((e as Error)?.message === "cancelled") return;
+                          console.error("[SEARCH] failed", e);
+                        });
+                    }}
+                    disabled={!audio || !refinement.queryRegion || isSearchRunning}
+                  >
+                    Recompute features &amp; search
+                  </Button>
+                  {searchDirty && searchResult ? (
+                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                      Parameters changed — rerun search
+                    </span>
+                  ) : null}
+                  {isSearchRunning ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                      Running search…
+                    </span>
+                  ) : null}
+                </div>}
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsConfigOpen(true)}
+                  >
+                    Configure
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsDebugOpen(true)}
+                  >
+                    Debug
+                  </Button>
+                </div>
               </div>
 
               {visualTab === "search" ? (
@@ -491,13 +486,13 @@ export default function Home() {
                     </p>
                   </div>
                 ) : (
-                  <p className="text-sm text-zinc-500">Run a search to see the similarity curve.</p>
+                  <p className="text-sm text-zinc-500">Select an audio segment and run search to see the similarity curve.</p>
                 )
               ) : (
                 <>
                   {visualTab === "spectralCentroid" ||
-                  visualTab === "spectralFlux" ||
-                  visualTab === "onsetEnvelope" ? (
+                    visualTab === "spectralFlux" ||
+                    visualTab === "onsetEnvelope" ? (
                     tabResult?.kind === "1d" && tabResult.fn === visualTab ? (
                       <div className="-mt-1">
                         <SyncedWaveSurferSignal
@@ -542,11 +537,11 @@ export default function Home() {
                   ) : null}
 
                   {visualTab === "melSpectrogram" ||
-                  visualTab === "hpssHarmonic" ||
-                  visualTab === "hpssPercussive" ||
-                  visualTab === "mfcc" ||
-                  visualTab === "mfccDelta" ||
-                  visualTab === "mfccDeltaDelta" ? (
+                    visualTab === "hpssHarmonic" ||
+                    visualTab === "hpssPercussive" ||
+                    visualTab === "mfcc" ||
+                    visualTab === "mfccDelta" ||
+                    visualTab === "mfccDeltaDelta" ? (
                     tabResult?.kind === "2d" && tabResult.fn === visualTab ? (
                       <div className="-mt-1">
                         <div className="rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
@@ -583,8 +578,14 @@ export default function Home() {
               )}
             </div>
           </div>
+          {visualTab === "search" && <div className="flex">
+            <SearchControlsPanel />
+            <SearchRefinementPanel playerRef={playerRef} />
+          </div>}
         </section>
         <MirConfigModal />
+        <DebugPanel />
+
       </main>
 
       <footer className="mt-12 flex flex-col items-center justify-center gap-2 pb-8 text-xs text-zinc-500">

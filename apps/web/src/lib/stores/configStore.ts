@@ -39,6 +39,7 @@ interface ConfigState {
   showMfccC0: boolean;
   heatmapScheme: HeatmapColorScheme;
   isConfigOpen: boolean;
+  isDebugOpen: boolean;
 }
 
 interface ConfigActions {
@@ -78,6 +79,7 @@ interface ConfigActions {
   setShowMfccC0: (v: boolean) => void;
   setHeatmapScheme: (v: HeatmapColorScheme) => void;
   setIsConfigOpen: (v: boolean) => void;
+  setIsDebugOpen: (v: boolean) => void;
 
   // Utility
   parseOptionalNumber: (v: string) => number | undefined;
@@ -128,6 +130,7 @@ const initialState: ConfigState = {
   showMfccC0: false,
   heatmapScheme: "grayscale",
   isConfigOpen: false,
+  isDebugOpen: false,
 };
 
 export const useConfigStore = create<ConfigStore>()(
@@ -172,6 +175,7 @@ export const useConfigStore = create<ConfigStore>()(
         setShowMfccC0: (v) => set({ showMfccC0: v }, false, "setShowMfccC0"),
         setHeatmapScheme: (v) => set({ heatmapScheme: v }, false, "setHeatmapScheme"),
         setIsConfigOpen: (v) => set({ isConfigOpen: v }, false, "setIsConfigOpen"),
+        setIsDebugOpen: (v) => set({ isDebugOpen: v }, false, "setIsDebugOpen"),
 
         // Utility
         parseOptionalNumber: (v: string): number | undefined => {
