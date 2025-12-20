@@ -6,10 +6,14 @@
 # It uses the 'dev' npm tag to get the latest prerelease version (with git SHA).
 # It includes retry logic to handle the race condition where GitHub Actions
 # may still be publishing packages when Vercel starts building.
+#
+# If the matching SHA isn't found after a timeout, it falls back to the latest
+# dev version (this handles commits that don't trigger the publish workflow).
 
 set -e
 
-MAX_RETRIES=30
+# Retry settings for waiting for matching SHA
+MAX_RETRIES=12
 RETRY_DELAY=10
 
 get_latest_dev_version() {
@@ -22,7 +26,7 @@ wait_for_package() {
     local expected_sha=$2
     local attempt=1
 
-    echo "    Waiting for $package_name with SHA $expected_sha on npm..."
+    echo "    Looking for $package_name with SHA $expected_sha..."
 
     while [ $attempt -le $MAX_RETRIES ]; do
         local dev_version=$(get_latest_dev_version "$package_name")
@@ -40,12 +44,20 @@ wait_for_package() {
             echo "    Attempt $attempt/$MAX_RETRIES: No dev version found yet, waiting ${RETRY_DELAY}s..."
         fi
 
-        echo -n "."
+        echo "    Retrying..."
         sleep $RETRY_DELAY
         attempt=$((attempt + 1))
     done
 
-    echo "    ERROR: Timed out waiting for $package_name with SHA $expected_sha"
+    # Fallback: use whatever dev version is available
+    local fallback_version=$(get_latest_dev_version "$package_name")
+    if [ -n "$fallback_version" ]; then
+        echo "    WARNING: SHA $expected_sha not found, falling back to latest dev: $fallback_version"
+        echo "$fallback_version"
+        return 0
+    fi
+
+    echo "    ERROR: No dev version available for $package_name"
     return 1
 }
 

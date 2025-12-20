@@ -260,6 +260,13 @@ pnpm format
 
 The web app will be available at `http://localhost:3000`.
 
+### How Local Changes Are Picked Up
+
+The web app uses `workspace:*` dependencies, which pnpm resolves as symlinks to the local packages. This means:
+
+- **`@octoseq/mir`**: Changes are picked up instantly. The package exports raw TypeScript source files (not compiled output), so Next.js transpiles them on-the-fly during development. No rebuild needed.
+- **`@octoseq/visualiser`**: Changes require running `pnpm build:wasm` because the package must be compiled from Rust to WASM.
+
 ### Package-Specific Commands
 
 | Package               | Build                                          | Dev                              |
@@ -304,10 +311,11 @@ The [build-and-publish.yml](.github/workflows/build-and-publish.yml) workflow ha
 The web app at [octoseq.xyz](https://octoseq.xyz) is deployed via Vercel. The deployment uses a custom install script ([scripts/vercel-install.sh](scripts/vercel-install.sh)) that:
 
 1. Waits for the corresponding npm packages (with matching git SHA) to be published
-2. Updates the workspace to use the published npm packages instead of local builds
-3. Runs `pnpm install` with the resolved versions
+2. Rewrites `pnpm-workspace.yaml` to exclude `packages/*`, so they are no longer workspace members
+3. Replaces `workspace:*` in `apps/web/package.json` with the resolved npm versions (e.g., `0.1.0-main.abc1234`)
+4. Runs `pnpm install`, which now fetches the pre-built packages from npm
 
-This approach ensures Vercel uses pre-built WASM artifacts from npm rather than attempting to compile Rust during deployment. The script includes retry logic to handle the race condition where GitHub Actions may still be publishing when Vercel starts building.
+This approach ensures Vercel uses pre-built WASM artifacts from npm rather than attempting to compile Rust during deployment. The script includes retry logic to handle the race condition where GitHub Actions may still be publishing when Vercel starts building. If a matching package isn't found (e.g., for commits that don't trigger the publish workflow), it falls back to the latest available `dev` version. These modifications are transient (not committed) — the repo always uses `workspace:*` for local development.
 
 ---
 
