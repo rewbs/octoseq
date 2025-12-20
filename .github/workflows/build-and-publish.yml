@@ -117,6 +117,19 @@ jobs:
           "
           echo "Updated package.json to version $PACKAGE_VERSION"
 
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - name: Debug npm config
+        run: |
+          echo "=== .npmrc ==="
+          cat ~/.npmrc || echo "No ~/.npmrc"
+          cat .npmrc || echo "No .npmrc"
+          echo "=== npm config ==="
+          npm config list
+          echo "=== npm version ==="
+          npm --version
+
       - name: Publish to npm
         id: publish
         if: |
