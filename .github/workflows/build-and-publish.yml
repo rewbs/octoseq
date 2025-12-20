@@ -65,7 +65,10 @@ jobs:
 
       - name: Build WASM
         working-directory: packages/visualiser
-        run: wasm-pack build --target web --out-name visualiser --out-dir pkg
+        run: |
+          wasm-pack build --target web --out-name visualiser --out-dir pkg
+          # Remove wasm-pack's auto-generated .gitignore (npm respects it and excludes pkg contents)
+          rm -f pkg/.gitignore
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
