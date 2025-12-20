@@ -76,6 +76,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Verify build output
         working-directory: packages/visualiser
@@ -125,9 +126,9 @@ jobs:
         run: |
           # For prerelease versions, use the 'dev' tag; for releases, use 'latest'
           if [[ "${{ steps.version.outputs.package_version }}" == *"-main."* ]]; then
-            npm publish --access public --tag dev
+            npm publish --provenance --access public --tag dev
           else
-            npm publish --access public
+            npm publish --provenance --access public
           fi
           echo "published=true" >> $GITHUB_OUTPUT
 
@@ -152,6 +153,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          registry-url: "https://registry.npmjs.org"
           cache: "pnpm"
 
       - name: Install dependencies
@@ -198,6 +200,18 @@ jobs:
           "
           echo "Updated package.json to version $PACKAGE_VERSION"
 
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - name: Debug npm config
+        run: |
+          echo "=== .npmrc ==="
+          cat ~/.npmrc || echo "No ~/.npmrc"
+          cat .npmrc || echo "No .npmrc"
+          echo "=== npm config ==="
+          npm config list
+          echo "=== npm version ==="
+          npm --version
       - name: Publish to npm
         id: publish
         if: |
