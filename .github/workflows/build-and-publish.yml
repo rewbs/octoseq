@@ -126,13 +126,11 @@ jobs:
         run: |
           # For prerelease versions, use the 'dev' tag; for releases, use 'latest'
           if [[ "${{ steps.version.outputs.package_version }}" == *"-main."* ]]; then
-            pnpm publish --no-git-checks --tag dev
+            npm publish --access public --tag dev
           else
-            pnpm publish --no-git-checks
+            npm publish --access public
           fi
           echo "published=true" >> $GITHUB_OUTPUT
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   build-mir:
     name: Build MIR (TypeScript)
@@ -211,13 +209,11 @@ jobs:
         run: |
           # For prerelease versions, use the 'dev' tag; for releases, use 'latest'
           if [[ "${{ steps.version.outputs.package_version }}" == *"-main."* ]]; then
-            pnpm publish --no-git-checks --tag dev
+            npm publish --provenance --access public --tag dev
           else
-            pnpm publish --no-git-checks
+            npm publish --provenance --access public
           fi
           echo "published=true" >> $GITHUB_OUTPUT
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   summary:
     name: Build Summary
