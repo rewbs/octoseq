@@ -123,7 +123,7 @@ export function SyncedWaveSurferSignal({
       progressColor: "#c4b5fd", // violet-300
       cursorColor: "#d4af37",
       normalize: false,
-      autoScroll: false,
+      autoScroll: true,
       autoCenter: false,
       interact: false,
       dragToSeek: false,

@@ -22,6 +22,7 @@ get_latest_dev_version() {
 }
 
 # Check if the current commit affects paths that trigger package publishing
+# Must match the paths in .github/workflows/build-and-publish.yml
 commit_triggers_publish() {
     # Get list of changed files in this commit compared to parent
     local changed_files
@@ -32,8 +33,9 @@ commit_triggers_publish() {
         return 0
     fi
 
-    # Check if any changed file matches the publish trigger paths
-    if echo "$changed_files" | grep -qE '^packages/(visualiser|mir)/'; then
+    # Check if any changed file matches the workflow trigger paths
+    # These must stay in sync with .github/workflows/build-and-publish.yml
+    if echo "$changed_files" | grep -qE '^(apps/web/|packages/(visualiser|mir)/|\.github/workflows/build-and-publish\.yml$)'; then
         return 0  # true - triggers publish
     else
         return 1  # false - doesn't trigger publish

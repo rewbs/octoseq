@@ -397,7 +397,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       barRadius: 0,
       cursorWidth: 2,
       normalize: true,
-      autoScroll: false,
+      autoScroll: true,
       autoCenter: false,
       // Important: allow region drag selection; plain click still seeks by default.
       dragToSeek: false,
@@ -882,14 +882,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     // User intent: the player controls are "track playback", not segment playback.
     segmentPlaybackRef.current = null;
     void wsRef.current?.playPause();
-  }
-
-  function stop() {
-    const ws = wsRef.current;
-    if (!ws) return;
-    segmentPlaybackRef.current = null;
-    ws.pause();
-    ws.seekTo(0);
   }
 
   const handleCursorHover = (evt: MouseEvent<HTMLDivElement>) => {

@@ -1,9 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
 
 import { Application, Sprite, Texture } from "pixi.js";
 import { GripHorizontal } from "lucide-react";
+
+// Pre-computed color lookup tables for performance (256 entries per scheme)
+const COLOR_LUT_SIZE = 256;
+type ColorLUT = Uint8Array; // RGBA * 256 = 1024 bytes
+
+const colorLUTCache = new Map<HeatmapColorScheme, ColorLUT>();
 
 const MIN_HEIGHT = 80;
 const MAX_HEIGHT = 600;
@@ -69,38 +75,60 @@ function lerpColor(stops: ColorStop[], t: number): [number, number, number, numb
   return [r, g, bCh, 255];
 }
 
-function colourMap(scheme: HeatmapColorScheme, v01: number): [number, number, number, number] {
-  // Stops loosely based on matplotlib palettes; kept small for perf.
-  const maps: Record<HeatmapColorScheme, ColorStop[]> = {
-    grayscale: [
-      { t: 0, rgb: [0, 0, 0] },
-      { t: 1, rgb: [255, 255, 255] },
-    ],
-    viridis: [
-      { t: 0, rgb: [68, 1, 84] },
-      { t: 0.25, rgb: [59, 82, 139] },
-      { t: 0.5, rgb: [33, 145, 140] },
-      { t: 0.75, rgb: [94, 201, 98] },
-      { t: 1, rgb: [253, 231, 37] },
-    ],
-    plasma: [
-      { t: 0, rgb: [13, 8, 135] },
-      { t: 0.25, rgb: [75, 3, 161] },
-      { t: 0.5, rgb: [125, 3, 168] },
-      { t: 0.75, rgb: [168, 34, 150] },
-      { t: 1, rgb: [240, 249, 33] },
-    ],
-    magma: [
-      { t: 0, rgb: [0, 0, 4] },
-      { t: 0.25, rgb: [28, 16, 68] },
-      { t: 0.5, rgb: [79, 18, 123] },
-      { t: 0.75, rgb: [150, 33, 109] },
-      { t: 1, rgb: [252, 255, 191] },
-    ],
-  };
+const COLOR_STOPS: Record<HeatmapColorScheme, ColorStop[]> = {
+  grayscale: [
+    { t: 0, rgb: [0, 0, 0] },
+    { t: 1, rgb: [255, 255, 255] },
+  ],
+  viridis: [
+    { t: 0, rgb: [68, 1, 84] },
+    { t: 0.25, rgb: [59, 82, 139] },
+    { t: 0.5, rgb: [33, 145, 140] },
+    { t: 0.75, rgb: [94, 201, 98] },
+    { t: 1, rgb: [253, 231, 37] },
+  ],
+  plasma: [
+    { t: 0, rgb: [13, 8, 135] },
+    { t: 0.25, rgb: [75, 3, 161] },
+    { t: 0.5, rgb: [125, 3, 168] },
+    { t: 0.75, rgb: [168, 34, 150] },
+    { t: 1, rgb: [240, 249, 33] },
+  ],
+  magma: [
+    { t: 0, rgb: [0, 0, 4] },
+    { t: 0.25, rgb: [28, 16, 68] },
+    { t: 0.5, rgb: [79, 18, 123] },
+    { t: 0.75, rgb: [150, 33, 109] },
+    { t: 1, rgb: [252, 255, 191] },
+  ],
+};
 
-  const stops = maps[scheme] ?? maps.grayscale;
-  return lerpColor(stops, v01);
+/** Build a 256-entry RGBA lookup table for a color scheme (computed once, cached). */
+function getColorLUT(scheme: HeatmapColorScheme): ColorLUT {
+  const cached = colorLUTCache.get(scheme);
+  if (cached) return cached;
+
+  const lut = new Uint8Array(COLOR_LUT_SIZE * 4);
+  const stops = COLOR_STOPS[scheme] ?? COLOR_STOPS.grayscale;
+
+  for (let i = 0; i < COLOR_LUT_SIZE; i++) {
+    const t = i / (COLOR_LUT_SIZE - 1);
+    const [r, g, b, a] = lerpColor(stops, t);
+    const idx = i * 4;
+    lut[idx] = r;
+    lut[idx + 1] = g;
+    lut[idx + 2] = b;
+    lut[idx + 3] = a;
+  }
+
+  colorLUTCache.set(scheme, lut);
+  return lut;
+}
+
+/** Fast color lookup using pre-computed LUT (avoids interpolation per-pixel). */
+function colourMapFast(lut: ColorLUT, v01: number): [number, number, number, number] {
+  const idx = Math.round(clamp01(v01) * (COLOR_LUT_SIZE - 1)) * 4;
+  return [lut[idx]!, lut[idx + 1]!, lut[idx + 2]!, lut[idx + 3]!];
 }
 
 function lowerBound(times: Float32Array, t: number): number {
@@ -145,7 +173,6 @@ export function TimeAlignedHeatmapPixi({
   width,
   initialHeight = DEFAULT_HEIGHT,
   valueRange,
-  yLabel,
   colorScheme = "grayscale",
 }: TimeAlignedHeatmapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -200,7 +227,6 @@ export function TimeAlignedHeatmapPixi({
   const endTimeRef = useRef(0);
   const widthRef = useRef(0);
   const heightRef = useRef(0);
-  const rangeRef = useRef<{ min: number; max: number }>({ min: 0, max: 1 });
   const colorRef = useRef<HeatmapColorScheme>(colorScheme);
 
   // Track unmount to avoid updating Pixi after teardown.
@@ -208,6 +234,9 @@ export function TimeAlignedHeatmapPixi({
 
   // Callable ref so we can trigger a render from async init without "use before declare".
   const renderNowRef = useRef<() => void>(() => { });
+
+  // RAF-based render throttling to avoid rendering on every scroll/zoom frame
+  const rafIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     aliveRef.current = true;
@@ -304,35 +333,11 @@ export function TimeAlignedHeatmapPixi({
     }
   }, [width, panelHeight]);
 
-  const computedRange = useMemo(() => {
-    if (!input) return { min: 0, max: 1 };
-    if (valueRange) return valueRange;
-
-    // For visualisation we want a stable-ish range per render call; we compute min/max
-    // over just the visible window to avoid outliers in offscreen data dominating.
-    const { data, times } = input;
-    const i0 = Math.max(0, lowerBound(times, startTime));
-    const i1 = Math.min(data.length, upperBound(times, endTime));
-
-    let min = Infinity;
-    let max = -Infinity;
-
-    for (let i = i0; i < i1; i++) {
-      const row = data[i];
-      if (!row) continue;
-      for (let j = 0; j < row.length; j++) {
-        const v = row[j] ?? 0;
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-    }
-
-    if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
-      return { min: 0, max: 1 };
-    }
-
-    return { min, max };
-  }, [input, valueRange, startTime, endTime]);
+  // Store valueRange in a ref so renderNow can access the current value
+  const valueRangeRef = useRef(valueRange);
+  useEffect(() => {
+    valueRangeRef.current = valueRange;
+  }, [valueRange]);
 
   function renderNow() {
     const app = appRef.current;
@@ -349,7 +354,6 @@ export function TimeAlignedHeatmapPixi({
     const curEndTime = endTimeRef.current;
     const curWidth = widthRef.current;
     const curHeight = heightRef.current;
-    const range = rangeRef.current;
 
     // Avoid Pixi rendering while we hot-swap textures.
     app.stop();
@@ -403,11 +407,35 @@ export function TimeAlignedHeatmapPixi({
       return;
     }
 
+    // Compute value range for normalization (now inside RAF-throttled render)
+    let range: { min: number; max: number };
+    if (valueRangeRef.current) {
+      range = valueRangeRef.current;
+    } else {
+      let min = Infinity;
+      let max = -Infinity;
+      for (let i = frame0; i < frame1; i++) {
+        const row = data[i];
+        if (!row) continue;
+        for (let j = 0; j < row.length; j++) {
+          const v = row[j] ?? 0;
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
+      }
+      range = (!Number.isFinite(min) || !Number.isFinite(max) || min === max)
+        ? { min: 0, max: 1 }
+        : { min, max };
+    }
+
     const inv = 1 / (range.max - range.min);
 
     const w = Math.max(1, Math.floor(curWidth));
     const h = Math.max(1, Math.floor(curHeight));
     const pixels = new Uint8Array(w * h * 4);
+
+    // Use pre-computed LUT for fast color mapping
+    const lut = getColorLUT(colorRef.current);
 
     for (let x = 0; x < w; x++) {
       const a = w <= 1 ? 0 : x / (w - 1);
@@ -418,7 +446,7 @@ export function TimeAlignedHeatmapPixi({
         const fj = h <= 1 ? 0 : Math.round(((h - 1 - y) / (h - 1)) * (nFeatures - 1));
         const v = row[fj] ?? 0;
         const v01 = clamp01((v - range.min) * inv);
-        const [r, g, b, a255] = colourMap(colorRef.current, v01);
+        const [r, g, b, a255] = colourMapFast(lut, v01);
 
         const idx = (y * w + x) * 4;
         pixels[idx] = r;
@@ -450,18 +478,38 @@ export function TimeAlignedHeatmapPixi({
     renderNowRef.current = renderNow;
   });
 
-  // Keep refs in sync and render on updates.
+  // Schedule a render on the next animation frame (coalesces rapid updates)
+  const scheduleRender = useCallback(() => {
+    // Cancel any pending RAF and schedule a new one
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+    }
+    rafIdRef.current = requestAnimationFrame(() => {
+      rafIdRef.current = null;
+      renderNowRef.current();
+    });
+  }, []);
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+    };
+  }, []);
+
+  // Keep refs in sync and schedule render on updates (RAF-throttled).
   useEffect(() => {
     inputRef.current = input;
     startTimeRef.current = startTime;
     endTimeRef.current = endTime;
     widthRef.current = width;
     heightRef.current = panelHeight;
-    rangeRef.current = computedRange;
     colorRef.current = colorScheme;
 
-    renderNow();
-  }, [input, startTime, endTime, width, panelHeight, computedRange, colorScheme]);
+    scheduleRender();
+  }, [input, startTime, endTime, width, panelHeight, colorScheme, scheduleRender]);
 
   return (
     <div className="w-full">
@@ -481,15 +529,6 @@ export function TimeAlignedHeatmapPixi({
           <GripHorizontal className="w-5 h-2 text-zinc-400 group-hover:text-zinc-600 dark:text-zinc-600 dark:group-hover:text-zinc-400" />
         </div>
       </div>
-      <p className="mt-2 text-xs text-zinc-500">
-        2D heatmap view (PixiJS, time-synchronised)
-        {yLabel ? (
-          <>
-            {" "}
-            <span className="text-zinc-400">— Y axis: {yLabel}</span>
-          </>
-        ) : null}
-      </p>
     </div>
   );
 }
