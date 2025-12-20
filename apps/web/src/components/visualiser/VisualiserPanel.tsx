@@ -413,12 +413,36 @@ fn update(dt, inputs) {
       vis.clear_signals();
     }
 
+    // Push amplitude signal from raw audio
+    if (audio && typeof vis.push_signal === "function") {
+      let audioData: Float32Array | null = null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const audioBuffer = audio as any;
+      // Standard AudioBuffer
+      if (typeof audioBuffer.getChannelData === "function") {
+        audioData = audioBuffer.getChannelData(0);
+      }
+      // MirAudioPayload
+      else if (audioBuffer.mono) {
+        audioData = audioBuffer.mono;
+      }
+
+      if (audioData && audioData.length > 0) {
+        // Normalize waveform from [-1, 1] to [0, 1]
+        const norm = normalizeSignal(audioData, [-1, 1]);
+        const rate = duration > 0 ? norm.length / duration : 0;
+        vis.push_signal("amplitude", norm, rate);
+      }
+    }
+
     // Push available MIR signals
     if (mirResults && typeof vis.push_signal === "function") {
       // Map signal names from metadata to MIR result keys
+      // Note: "flux" is an alias for "spectralFlux" for convenience in scripts
       const signalMappings: Record<string, string> = {
         spectralCentroid: "spectralCentroid",
         spectralFlux: "spectralFlux",
+        flux: "spectralFlux",
         onsetEnvelope: "onsetEnvelope",
       };
 

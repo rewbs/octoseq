@@ -120,11 +120,17 @@ impl VisualiserState {
             sampled_signals.insert(name.clone(), val);
         }
 
-        // Add core signals
+        // Add core signals (don't overwrite if already present from named_signals)
         sampled_signals.insert("time".to_string(), self.time);
         sampled_signals.insert("dt".to_string(), dt);
-        sampled_signals.insert("amplitude".to_string(), amplitude);
-        sampled_signals.insert("flux".to_string(), flux);
+        // Only use legacy rotation_signal for amplitude if not already in named_signals
+        if !sampled_signals.contains_key("amplitude") {
+            sampled_signals.insert("amplitude".to_string(), amplitude);
+        }
+        // Only use legacy zoom_signal for flux if not already in named_signals
+        if !sampled_signals.contains_key("flux") {
+            sampled_signals.insert("flux".to_string(), flux);
+        }
 
         // Update script engine (this also syncs the scene graph)
         self.script_engine.update(dt, &sampled_signals);
