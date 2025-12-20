@@ -40,6 +40,7 @@ wait_for_package() {
             echo "    Attempt $attempt/$MAX_RETRIES: No dev version found yet, waiting ${RETRY_DELAY}s..."
         fi
 
+        echo -n "."
         sleep $RETRY_DELAY
         attempt=$((attempt + 1))
     done

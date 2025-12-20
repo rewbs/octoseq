@@ -13,9 +13,9 @@ This separation is the core architectural idea behind the project.
 
 ---
 
-## Hasn't this been done?
+## Hasn't this been done before?
 
-Octoseq is inspired by a long lineage of audio-reactive visual tools, most notably Milkdrop and its successors, which demonstrated how expressive and programmable music-driven visuals could be.
+Only to a point. Octoseq is inspired by a long lineage of audio-reactive visual tools, most notably Milkdrop and its successors, which demonstrated how expressive and programmable music-driven visuals could be.
 
 Despite decades of progress in rendering and real-time graphics, there remains a gap between low-level audio features and visually or musically meaningful structure: most modern tools still operate in real time, react to instantaneous signals, and leave interpretation implicit or opaque.
 
@@ -201,6 +201,113 @@ It bridges interpretation and execution.
 - Scripts declare, engines execute
 - Data should be visible
 - Offline capability is essential
+
+---
+
+## Development
+
+### Project Structure
+
+Octoseq is a monorepo managed with [pnpm workspaces](https://pnpm.io/workspaces) and [Turborepo](https://turbo.build/):
+
+```
+octoseq/
+├── apps/
+│   └── web/              # Next.js web application ("Lab")
+├── packages/
+│   ├── mir/              # TypeScript MIR library (WebGPU)
+│   └── visualiser/       # Rust/WASM rendering engine
+├── turbo.json            # Turborepo task configuration
+└── pnpm-workspace.yaml   # Workspace definition
+```
+
+### Prerequisites
+
+- **Node.js** 20.x or later
+- **pnpm** 10.x (`corepack enable` to use the version specified in package.json)
+- **Rust toolchain** (for building the visualiser locally)
+  - Install via [rustup](https://rustup.rs/)
+  - Add the WASM target: `rustup target add wasm32-unknown-unknown`
+  - Install wasm-pack: `cargo install wasm-pack`
+
+### Local Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Build the WASM visualiser (required before first run)
+pnpm build:wasm
+
+# Start development server (all apps/packages in watch mode)
+pnpm dev
+
+# Build all packages
+pnpm build
+
+# Run linting
+pnpm lint
+
+# Run type checking
+pnpm typecheck
+
+# Run tests
+pnpm test
+
+# Format code
+pnpm format
+```
+
+The web app will be available at `http://localhost:3000`.
+
+### Package-Specific Commands
+
+| Package               | Build                                          | Dev                              |
+| --------------------- | ---------------------------------------------- | -------------------------------- |
+| `@octoseq/mir`        | `pnpm --filter @octoseq/mir build`             | `pnpm --filter @octoseq/mir dev` |
+| `@octoseq/visualiser` | `pnpm --filter @octoseq/visualiser build:wasm` | —                                |
+| `web`                 | `pnpm --filter web build`                      | `pnpm --filter web dev`          |
+
+---
+
+## CI/CD Pipeline
+
+### GitHub Actions: Build & Publish
+
+The [build-and-publish.yml](.github/workflows/build-and-publish.yml) workflow handles building and publishing the library packages.
+
+**Triggers:**
+
+- Push to `main` branch (when `packages/visualiser/**`, `packages/mir/**`, or the workflow file changes)
+- Push of version tags (`v*`)
+- Manual dispatch (with optional publish flag)
+
+**Jobs:**
+
+1. **build-visualiser** — Builds the Rust/WASM visualiser:
+   - Sets up Rust toolchain with `wasm32-unknown-unknown` target
+   - Builds with `wasm-pack build --target web`
+   - Publishes to npm
+
+2. **build-mir** — Builds the TypeScript MIR library:
+   - Installs dependencies with pnpm
+   - Builds with `tsup`
+   - Publishes to npm
+
+**Versioning:**
+
+- **Release builds** (tags like `v1.0.0`): Uses the version from `package.json` as-is, published with the `latest` npm tag
+- **Prerelease builds** (pushes to `main`): Appends `-main.<short-sha>` to the version (e.g., `0.1.0-main.abc1234`), published with the `dev` npm tag
+
+### Vercel Deployment
+
+The web app at [octoseq.xyz](https://octoseq.xyz) is deployed via Vercel. The deployment uses a custom install script ([scripts/vercel-install.sh](scripts/vercel-install.sh)) that:
+
+1. Waits for the corresponding npm packages (with matching git SHA) to be published
+2. Updates the workspace to use the published npm packages instead of local builds
+3. Runs `pnpm install` with the resolved versions
+
+This approach ensures Vercel uses pre-built WASM artifacts from npm rather than attempting to compile Rust during deployment. The script includes retry logic to handle the race condition where GitHub Actions may still be publishing when Vercel starts building.
 
 ---
 
