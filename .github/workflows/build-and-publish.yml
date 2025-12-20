@@ -8,6 +8,8 @@ on:
       - "packages/visualiser/**"
       - "packages/mir/**"
       - ".github/workflows/build-and-publish.yml"
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       publish:
@@ -24,9 +26,8 @@ jobs:
     name: Build Visualiser (WASM)
     runs-on: ubuntu-latest
     outputs:
-      package_name: ${{ steps.check-version.outputs.package_name }}
-      package_version: ${{ steps.check-version.outputs.package_version }}
-      version_exists: ${{ steps.check-version.outputs.version_exists }}
+      package_name: ${{ steps.version.outputs.package_name }}
+      package_version: ${{ steps.version.outputs.package_version }}
       published: ${{ steps.publish.outputs.published }}
 
     steps:
@@ -81,32 +82,49 @@ jobs:
           test -f pkg/visualiser_bg.wasm || (echo "Missing visualiser_bg.wasm" && exit 1)
           test -f pkg/visualiser.d.ts || (echo "Missing visualiser.d.ts" && exit 1)
 
-      - name: Check if version exists on npm
-        id: check-version
+      - name: Set version
+        id: version
         working-directory: packages/visualiser
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          SHORT_SHA=${GITHUB_SHA::7}
+
+          # For tags (releases), use the base version as-is
+          # For commits to main, append git SHA as prerelease
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            PACKAGE_VERSION="$BASE_VERSION"
+            echo "Using release version: $PACKAGE_VERSION"
+          else
+            PACKAGE_VERSION="${BASE_VERSION}-main.${SHORT_SHA}"
+            echo "Using prerelease version: $PACKAGE_VERSION"
+          fi
+
           echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
           echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
 
-          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>/dev/null; then
-            echo "Version $PACKAGE_VERSION already exists on npm"
-            echo "version_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Version $PACKAGE_VERSION not found on npm"
-            echo "version_exists=false" >> $GITHUB_OUTPUT
-          fi
+          # Update package.json with the computed version
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '$PACKAGE_VERSION';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 4) + '\n');
+          "
+          echo "Updated package.json to version $PACKAGE_VERSION"
 
       - name: Publish to npm
         id: publish
         if: |
           (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) &&
-          steps.check-version.outputs.version_exists == 'false' &&
           (github.event_name != 'workflow_dispatch' || github.event.inputs.publish == 'true')
         working-directory: packages/visualiser
         run: |
-          pnpm publish --no-git-checks
+          # For prerelease versions, use the 'dev' tag; for releases, use 'latest'
+          if [[ "${{ steps.version.outputs.package_version }}" == *"-main."* ]]; then
+            pnpm publish --no-git-checks --tag dev
+          else
+            pnpm publish --no-git-checks
+          fi
           echo "published=true" >> $GITHUB_OUTPUT
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -115,9 +133,8 @@ jobs:
     name: Build MIR (TypeScript)
     runs-on: ubuntu-latest
     outputs:
-      package_name: ${{ steps.check-version.outputs.package_name }}
-      package_version: ${{ steps.check-version.outputs.package_version }}
-      version_exists: ${{ steps.check-version.outputs.version_exists }}
+      package_name: ${{ steps.version.outputs.package_name }}
+      package_version: ${{ steps.version.outputs.package_version }}
       published: ${{ steps.publish.outputs.published }}
 
     steps:
@@ -150,32 +167,49 @@ jobs:
           ls -la dist/
           test -f dist/index.js || (echo "Missing dist/index.js" && exit 1)
 
-      - name: Check if version exists on npm
-        id: check-version
+      - name: Set version
+        id: version
         working-directory: packages/mir
         run: |
           PACKAGE_NAME=$(node -p "require('./package.json').name")
-          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          SHORT_SHA=${GITHUB_SHA::7}
+
+          # For tags (releases), use the base version as-is
+          # For commits to main, append git SHA as prerelease
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            PACKAGE_VERSION="$BASE_VERSION"
+            echo "Using release version: $PACKAGE_VERSION"
+          else
+            PACKAGE_VERSION="${BASE_VERSION}-main.${SHORT_SHA}"
+            echo "Using prerelease version: $PACKAGE_VERSION"
+          fi
+
           echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
           echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
 
-          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>/dev/null; then
-            echo "Version $PACKAGE_VERSION already exists on npm"
-            echo "version_exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "Version $PACKAGE_VERSION not found on npm"
-            echo "version_exists=false" >> $GITHUB_OUTPUT
-          fi
+          # Update package.json with the computed version
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '$PACKAGE_VERSION';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 4) + '\n');
+          "
+          echo "Updated package.json to version $PACKAGE_VERSION"
 
       - name: Publish to npm
         id: publish
         if: |
           (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) &&
-          steps.check-version.outputs.version_exists == 'false' &&
           (github.event_name != 'workflow_dispatch' || github.event.inputs.publish == 'true')
         working-directory: packages/mir
         run: |
-          pnpm publish --no-git-checks
+          # For prerelease versions, use the 'dev' tag; for releases, use 'latest'
+          if [[ "${{ steps.version.outputs.package_version }}" == *"-main."* ]]; then
+            pnpm publish --no-git-checks --tag dev
+          else
+            pnpm publish --no-git-checks
+          fi
           echo "published=true" >> $GITHUB_OUTPUT
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -194,7 +228,6 @@ jobs:
 
           echo "### @octoseq/visualiser" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: ${{ needs.build-visualiser.outputs.package_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Already on npm**: ${{ needs.build-visualiser.outputs.version_exists }}" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ needs.build-visualiser.outputs.published }}" == "true" ]]; then
             echo "- **Published**: Yes" >> $GITHUB_STEP_SUMMARY
           else
@@ -204,7 +237,6 @@ jobs:
 
           echo "### @octoseq/mir" >> $GITHUB_STEP_SUMMARY
           echo "- **Version**: ${{ needs.build-mir.outputs.package_version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Already on npm**: ${{ needs.build-mir.outputs.version_exists }}" >> $GITHUB_STEP_SUMMARY
           if [[ "${{ needs.build-mir.outputs.published }}" == "true" ]]; then
             echo "- **Published**: Yes" >> $GITHUB_STEP_SUMMARY
           else
