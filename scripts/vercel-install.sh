@@ -103,4 +103,12 @@ sleep 5
 echo "==> Running pnpm install..."
 pnpm install --no-frozen-lockfile
 
+# Debug: verify packages were installed
+echo "==> Verifying installed packages..."
+echo "    apps/web/package.json dependencies:"
+node -e "console.log(JSON.stringify(require('./apps/web/package.json').dependencies, null, 2))"
+echo "    Checking node_modules..."
+ls -la apps/web/node_modules/@octoseq/ 2>/dev/null || echo "    WARNING: @octoseq not found in apps/web/node_modules"
+ls -la node_modules/@octoseq/ 2>/dev/null || echo "    WARNING: @octoseq not found in root node_modules"
+
 echo "==> Vercel Install: Complete!"
