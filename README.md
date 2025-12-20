@@ -1,5 +1,7 @@
 # Octoseq
 
+Live here: https://octoseq.xyz
+
 **Octoseq** is an experimental, work-in-progress system for turning music into visuals. Some parts have been vibe coded with minimal human inspection, so use at your own risk for now.
 
 It is **not** a single “audio in → visual out” black box and is **not** intended for realtime visuals. It is a **two-phase creative system**:
@@ -10,6 +12,14 @@ It is **not** a single “audio in → visual out” black box and is **not** in
 This separation is the core architectural idea behind the project.
 
 ---
+
+## Hasn't this been done?
+
+Octoseq is inspired by a long lineage of audio-reactive visual tools, most notably Milkdrop and its successors, which demonstrated how expressive and programmable music-driven visuals could be.
+
+Despite decades of progress in rendering and real-time graphics, there remains a gap between low-level audio features and visually or musically meaningful structure: most modern tools still operate in real time, react to instantaneous signals, and leave interpretation implicit or opaque.
+
+Octoseq aims to explore that gap by treating audio understanding as a first-class, inspectable process, decoupling interpretation from execution, and enabling deterministic, non-realtime visual synthesis driven by whole-track context and programmable visual logic, using a combination of MIR signals, MIR pipelines aiming to capture perceptual traits, and human-driven tweaking, composition, and annotations.
 
 ## High-Level Architecture
 
@@ -198,8 +208,105 @@ It bridges interpretation and execution.
 
 Octoseq is **experimental**.
 
-Its purpose is to discover whether musical structure can be extracted and visualised meaningfully.
+Its purpose is to discover whether musical structure and interpretation can be extracted and visualised meaningfully.
 
 ### What's implemented
 
+The project is actively evolving, but the following pieces are already working at a proof-of-concept level:
+
+**MIR library**
+
+- GPU-accelerated MIR pipeline implemented in TypeScript with WebGPU
+- Runs in browser, Web Workers, and Node.js
+- Implemented analyses include:
+  - basic 1D signals (e.g. amplitude, flux, centroid)
+  - 2D representations (spectrogram, mel spectrogram, HPSS)
+  - sparse events (onsets / peaks)
+- Whole-track (non-realtime) analysis is supported
+- Outputs are designed to be inspectable and visualisable, not just consumed blindly
+
+**Web UI “Lab”**
+
+- Audio loading and waveform display
+- Viewport-synchronised visualisation of:
+  - waveform
+  - 1D MIR signals
+  - 2D MIR data (spectrogram-like views)
+  - sparse event timelines
+- Ability to run MIR analyses on demand and inspect intermediate results
+- Experimental “audio search” feature:
+  - select an audio segment
+  - attempt to find similar occurrences elsewhere in the track
+  - manual refinement of candidates
+  - currently exploratory and not considered robust
+
+**Rendering engine**
+
+- Rust + wgpu based rendering engine
+- Deterministic execution model
+- Can run:
+  - headless/offline (CLI, faster-than-realtime)
+  - in the browser via WASM for preview
+- GPU-first rendering with no software fallback
+- Rendering engine itself contains no baked-in scene logic
+
+**Rhai scripting**
+
+- Rhai scripting integrated as the visual control layer
+- Scripts run once per visual frame with persistent state
+- Scripts can:
+  - define scene content (no hardcoded geometry in Rust)
+  - create mesh instances (e.g. cubes, planes)
+  - create procedural line primitives (e.g. sparklines / oscilloscopes)
+  - update transforms and properties over time
+- Inputs to scripts include frame-aligned MIR-derived scalar signals
+- Basic scripting DX in the web UI:
+  - Monaco editor
+  - Rhai syntax highlighting
+  - hover tooltips and autocomplete for available inputs
+  - script logging surfaced to the JS console and CLI output
+
+Overall, the system already supports an end-to-end loop:  
+audio → MIR analysis → inspected data → scripted visual → deterministic render.
+
 ### Next steps
+
+Near-term development is focused on validating the **core hypothesis** of the project:  
+that perceptually meaningful structure can be extracted from music and used to drive compelling visuals.
+
+Planned next steps include:
+
+**1. Visual scripting maturity**
+
+- Expand the Rhai scene API incrementally:
+  - materials
+  - camera control
+  - additional procedural primitives
+- Improve scripting ergonomics and debugging affordances
+- Build a small library of reference visuals to serve as a testbed
+
+**2. Perceptual trait extraction (proof of concept)**
+
+- Define a provisional ontology of perceptual traits (e.g. energy, density, tension, anticipation, release)
+- Implement 2–3 traits end-to-end using whole-track context and lookahead/lookbehind
+- Validate traits visually by mapping them to simple but expressive visuals
+- Refine MIR or search techniques only insofar as they support trait extraction
+
+**3. Strengthen the interpretation–execution contract**
+
+- Formalise the “audio interpretation package” format
+- Ensure it can be:
+  - generated automatically
+  - enriched manually in the Lab
+  - consumed headlessly by the rendering engine
+- Keep the boundary stable so alternative MIR backends can be explored later
+
+**4. Offline rendering workflows**
+
+- Improve CLI tooling for batch rendering
+- Support parameter sweeps and preset iteration
+- Focus on repeatability and determinism rather than realtime interactivity
+
+Search, automatic classification, and robustness across genres are considered **supporting tools**, not headline goals, and will only be pursued insofar as they help extract or validate perceptual structure.
+
+At this stage, the primary goal is not polish or completeness, but to determine whether the underlying idea is musically and visually meaningful at all.
