@@ -75,7 +75,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
       - name: Verify build output
@@ -117,19 +117,6 @@ jobs:
           "
           echo "Updated package.json to version $PACKAGE_VERSION"
 
-      - name: Upgrade npm
-        run: npm install -g npm@latest
-
-      - name: Debug npm config
-        run: |
-          echo "=== .npmrc ==="
-          cat ~/.npmrc || echo "No ~/.npmrc"
-          cat .npmrc || echo "No .npmrc"
-          echo "=== npm config ==="
-          npm config list
-          echo "=== npm version ==="
-          npm --version
-
       - name: Publish to npm
         id: publish
         if: |
@@ -165,7 +152,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
           cache: "pnpm"
 
@@ -213,18 +200,6 @@ jobs:
           "
           echo "Updated package.json to version $PACKAGE_VERSION"
 
-      - name: Upgrade npm
-        run: npm install -g npm@latest
-
-      - name: Debug npm config
-        run: |
-          echo "=== .npmrc ==="
-          cat ~/.npmrc || echo "No ~/.npmrc"
-          cat .npmrc || echo "No .npmrc"
-          echo "=== npm config ==="
-          npm config list
-          echo "=== npm version ==="
-          npm --version
       - name: Publish to npm
         id: publish
         if: |
