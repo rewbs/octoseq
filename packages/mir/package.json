@@ -43,5 +43,13 @@
   },
   "dependencies": {
     "fft.js": "^4.0.4"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rewbs/octoseq.git",
+    "directory": "packages/mir"
   }
 }

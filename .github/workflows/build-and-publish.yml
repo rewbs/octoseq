@@ -1,0 +1,212 @@
+name: Build & Publish Packages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/visualiser/**"
+      - "packages/mir/**"
+      - ".github/workflows/build-and-publish.yml"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish to npm"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-visualiser:
+    name: Build Visualiser (WASM)
+    runs-on: ubuntu-latest
+    outputs:
+      package_name: ${{ steps.check-version.outputs.package_name }}
+      package_version: ${{ steps.check-version.outputs.package_version }}
+      version_exists: ${{ steps.check-version.outputs.version_exists }}
+      published: ${{ steps.publish.outputs.published }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            packages/visualiser/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('packages/visualiser/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install wasm-pack
+        run: |
+          if ! command -v wasm-pack &> /dev/null; then
+            curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          fi
+
+      - name: Build WASM
+        working-directory: packages/visualiser
+        run: wasm-pack build --target web --out-name visualiser --out-dir pkg
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Verify build output
+        working-directory: packages/visualiser
+        run: |
+          echo "Build output:"
+          ls -la pkg/
+          test -f pkg/visualiser.js || (echo "Missing visualiser.js" && exit 1)
+          test -f pkg/visualiser_bg.wasm || (echo "Missing visualiser_bg.wasm" && exit 1)
+          test -f pkg/visualiser.d.ts || (echo "Missing visualiser.d.ts" && exit 1)
+
+      - name: Check if version exists on npm
+        id: check-version
+        working-directory: packages/visualiser
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+          echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>/dev/null; then
+            echo "Version $PACKAGE_VERSION already exists on npm"
+            echo "version_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version $PACKAGE_VERSION not found on npm"
+            echo "version_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish to npm
+        id: publish
+        if: |
+          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) &&
+          steps.check-version.outputs.version_exists == 'false' &&
+          (github.event_name != 'workflow_dispatch' || github.event.inputs.publish == 'true')
+        working-directory: packages/visualiser
+        run: |
+          pnpm publish --no-git-checks
+          echo "published=true" >> $GITHUB_OUTPUT
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  build-mir:
+    name: Build MIR (TypeScript)
+    runs-on: ubuntu-latest
+    outputs:
+      package_name: ${{ steps.check-version.outputs.package_name }}
+      package_version: ${{ steps.check-version.outputs.package_version }}
+      version_exists: ${{ steps.check-version.outputs.version_exists }}
+      published: ${{ steps.publish.outputs.published }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --filter @octoseq/mir...
+
+      - name: Build MIR
+        working-directory: packages/mir
+        run: pnpm build
+
+      - name: Verify build output
+        working-directory: packages/mir
+        run: |
+          echo "Build output:"
+          ls -la dist/
+          test -f dist/index.js || (echo "Missing dist/index.js" && exit 1)
+
+      - name: Check if version exists on npm
+        id: check-version
+        working-directory: packages/mir
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+          echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+
+          if npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>/dev/null; then
+            echo "Version $PACKAGE_VERSION already exists on npm"
+            echo "version_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "Version $PACKAGE_VERSION not found on npm"
+            echo "version_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish to npm
+        id: publish
+        if: |
+          (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) &&
+          steps.check-version.outputs.version_exists == 'false' &&
+          (github.event_name != 'workflow_dispatch' || github.event.inputs.publish == 'true')
+        working-directory: packages/mir
+        run: |
+          pnpm publish --no-git-checks
+          echo "published=true" >> $GITHUB_OUTPUT
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [build-visualiser, build-mir]
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Build & Publish Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### @octoseq/visualiser" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ needs.build-visualiser.outputs.package_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Already on npm**: ${{ needs.build-visualiser.outputs.version_exists }}" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.build-visualiser.outputs.published }}" == "true" ]]; then
+            echo "- **Published**: Yes" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Published**: No" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### @octoseq/mir" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ needs.build-mir.outputs.package_version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Already on npm**: ${{ needs.build-mir.outputs.version_exists }}" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.build-mir.outputs.published }}" == "true" ]]; then
+            echo "- **Published**: Yes" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **Published**: No" >> $GITHUB_STEP_SUMMARY
+          fi
