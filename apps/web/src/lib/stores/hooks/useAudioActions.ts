@@ -24,9 +24,15 @@ export function useAudioActions({ fileInputRef, onAudioLoaded }: AudioActionsOpt
       // Set audio buffer
       audioStore.setAudio(a as AudioBuffer);
 
-      // Get filename from input
-      const fileName = fileInputRef.current?.files?.[0]?.name ?? null;
+      // Get filename: prefer pendingFileName (for URL loads), then fall back to file input
+      const pendingFileName = audioStore.pendingFileName;
+      const fileName = pendingFileName ?? fileInputRef.current?.files?.[0]?.name ?? null;
       const ch0 = a.getChannelData(0);
+
+      // Clear pending filename after use
+      if (pendingFileName) {
+        audioStore.setPendingFileName(null);
+      }
 
       // Set metadata
       audioStore.setAudioMetadata({

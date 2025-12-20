@@ -9,6 +9,7 @@ import Regions from "wavesurfer.js/dist/plugins/regions.esm.js";
 import { GripHorizontal, Play, Pause, } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useAudioStore } from "@/lib/stores/audioStore";
 
 const MIN_HEIGHT = 80;
 const MAX_HEIGHT = 400;
@@ -55,6 +56,8 @@ export type WaveSurferPlayerHandle = {
   stop: () => void;
   playSegment: (opts: { startSec: number; endSec: number; loop?: boolean }) => void;
   isPlaying: () => boolean;
+  /** Load audio from a URL (e.g., for demo files). Sets pendingFileName in store before loading. */
+  loadUrl: (url: string, fileName: string) => Promise<void>;
 };
 
 type WaveSurferPlayerProps = {
@@ -225,6 +228,27 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         }
       },
       isPlaying: () => isPlayingRef.current,
+      loadUrl: async (url: string, fileName: string) => {
+        const ws = wsRef.current;
+        if (!ws) return;
+
+        // Set pending filename in store before loading
+        useAudioStore.getState().setPendingFileName(fileName);
+
+        // Clear existing refs (similar to onPickFile)
+        regionsPluginRef.current?.clearRegions();
+        queryRegionRef.current = null;
+        programmaticCreatesRef.current.clear();
+        programmaticUpdatesRef.current.clear();
+        segmentPlaybackRef.current = null;
+        isPlayingRef.current = false;
+        onRegionChangeRef.current?.(null);
+        onSelectCandidateIdRef.current?.(null);
+        onIsPlayingChangeRef.current?.(false);
+
+        // Load from URL - state updates (isReady, isPlaying, zoom) happen via event handlers
+        await ws.load(url);
+      },
     }),
     []
   );

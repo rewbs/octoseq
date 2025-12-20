@@ -95,8 +95,8 @@ console.log('    Updated @octoseq/visualiser to: ${VISUALISER_VERSION}');
 console.log('    Updated @octoseq/mir to: ${MIR_VERSION}');
 "
 
-# Run pnpm install
+# Run pnpm install (--no-frozen-lockfile because we modified package.json)
 echo "==> Running pnpm install..."
-pnpm install
+pnpm install --no-frozen-lockfile
 
 echo "==> Vercel Install: Complete!"

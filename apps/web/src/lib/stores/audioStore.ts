@@ -8,6 +8,8 @@ interface AudioState {
   audioSampleRate: number | null;
   audioTotalSamples: number | null;
   audioDuration: number;
+  /** Used to pass filename when loading from URL (not file input) */
+  pendingFileName: string | null;
 }
 
 interface AudioActions {
@@ -18,6 +20,7 @@ interface AudioActions {
     totalSamples: number;
     duration: number;
   }) => void;
+  setPendingFileName: (fileName: string | null) => void;
   resetAudio: () => void;
 }
 
@@ -29,6 +32,7 @@ const initialState: AudioState = {
   audioSampleRate: null,
   audioTotalSamples: null,
   audioDuration: 0,
+  pendingFileName: null,
 };
 
 export const useAudioStore = create<AudioStore>()(
@@ -49,6 +53,9 @@ export const useAudioStore = create<AudioStore>()(
           false,
           "setAudioMetadata"
         ),
+
+      setPendingFileName: (fileName) =>
+        set({ pendingFileName: fileName }, false, "setPendingFileName"),
 
       resetAudio: () => set(initialState, false, "resetAudio"),
     }),

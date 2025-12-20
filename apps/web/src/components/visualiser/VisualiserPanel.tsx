@@ -67,45 +67,6 @@ function normalizeSignal(data: number[] | Float32Array, customRange?: [number, n
   return out;
 }
 
-// Helper to get raw data
-function getSignalData(
-  sourceName: string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  mirResults: Record<string, any> | null,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  audioBuffer: any | null,
-  searchSignal?: Float32Array | null
-): Float32Array | null {
-  if (sourceName === "Amplitude") {
-    if (audioBuffer) {
-      // Standard AudioBuffer
-      if (typeof audioBuffer.getChannelData === 'function') {
-        return audioBuffer.getChannelData(0);
-      }
-      // MirAudioPayload
-      if (audioBuffer.mono) {
-        return audioBuffer.mono;
-      }
-    }
-    return null;
-  }
-  if (sourceName === "Search Similarity") {
-    return searchSignal ?? null;
-  }
-  if (mirResults && mirResults[sourceName]) {
-    const val = mirResults[sourceName];
-    // If it's a raw array
-    if (val.length !== undefined && val.constructor !== Object) {
-      return new Float32Array(val);
-    }
-    // If it's a Mir1DResult object
-    if (val.values) {
-      return new Float32Array(val.values);
-    }
-  }
-  return null;
-}
-
 export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults, searchSignal, className, isPlaying = true }: VisualiserPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const visRef = useRef<WasmVisualiser | null>(null);
@@ -182,19 +143,9 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
 
-  const [rotSource, setRotSource] = useState<string>("Amplitude");
-  const [zoomSource, setZoomSource] = useState<string>("Amplitude");
-  const [sigmoidK, setSigmoidK] = useState<number>(5.0);
   const [isReady, setIsReady] = useState(false);
   const [webGpuError, setWebGpuError] = useState<string | null>(null);
   const timeRef = useRef(playbackTime);
-  const [rotRange, setRotRange] = useState<[number, number]>([-1, 1]); // Default for waveform
-  const [zoomRange, setZoomRange] = useState<[number, number]>([0, 1]); // Default for RMS
-  const [rotGain, setRotGain] = useState<number>(1.0);
-  const [zoomGain, setZoomGain] = useState<number>(1.0);
-
-  // Script state
-  const [scriptEnabled, setScriptEnabled] = useState(true);
   const [scriptError, setScriptError] = useState<string | null>(null);
   const monacoDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
 
@@ -255,7 +206,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   const scriptStartHeightRef = useRef(0);
 
   // Layout mode: 'vertical' (stacked) or 'horizontal' (side-by-side)
-  const [layoutMode, setLayoutMode] = useState<'vertical' | 'horizontal'>('vertical');
+  const [layoutMode, setLayoutMode] = useState<'vertical' | 'horizontal'>('horizontal');
 
   // Horizontal layout split (percentage for script width)
   const [scriptWidthPercent, setScriptWidthPercent] = useState(SCRIPT_DEFAULT_WIDTH_PERCENT);
@@ -436,95 +387,6 @@ fn update(dt, inputs) {
     };
   }, []);
 
-  // Push Data to WASM when state changes
-  useEffect(() => {
-    if (!visRef.current) return;
-    const vis = visRef.current;
-
-    // Calc audio duration safely
-    // Calc audio duration safely
-    let duration = 1; // Default
-    if (audioDuration && audioDuration > 0) {
-      duration = audioDuration;
-    } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const a = audio as any;
-      if (a) {
-        const len = a.length || (a.mono ? a.mono.length : 0);
-        const sr = a.sampleRate || 0;
-        if (len > 0 && sr > 0) duration = len / sr;
-      }
-    }
-
-
-    // Process Rotation
-    const rotData = getSignalData(rotSource, mirResults, audio, searchSignal);
-    if (rotData && rotData.length > 0) {
-      // Calculate raw stats for debug
-      let min = Infinity, max = -Infinity;
-      for (let i = 0; i < rotData.length; i++) {
-        const v = rotData[i] as number;
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-      console.log(`[${rotSource}] Raw Range: `, min, "to", max);
-
-      // Use safe defaults if NaN
-      const rMin = isNaN(rotRange[0]) ? -1 : rotRange[0];
-      const rMax = isNaN(rotRange[1]) ? 1 : rotRange[1];
-      const rGain = isNaN(rotGain) ? 1.0 : rotGain;
-
-      const norm = normalizeSignal(rotData, [rMin, rMax]);
-
-      // Apply gain
-      if (rGain !== 1.0) {
-        for (let i = 0; i < norm.length; i++) {
-          norm[i] = (norm[i] ?? 0) * rGain;
-        }
-      }
-
-      const rate = duration > 0 ? norm.length / duration : 0;
-
-      if (vis.push_rotation_data) {
-        vis.push_rotation_data(norm, rate);
-      }
-    }
-
-    // Process Zoom
-    const zoomData = getSignalData(zoomSource, mirResults, audio, searchSignal);
-    if (zoomData && zoomData.length > 0) {
-      // stats
-      let min = Infinity, max = -Infinity;
-      for (let i = 0; i < zoomData.length; i++) {
-        const v = zoomData[i] as number;
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-      console.log(`[${zoomSource}] Raw Range: `, min, "to", max);
-
-      const zMin = isNaN(zoomRange[0]) ? 0 : zoomRange[0];
-      const zMax = isNaN(zoomRange[1]) ? 1 : zoomRange[1];
-      const zGain = isNaN(zoomGain) ? 1.0 : zoomGain;
-
-      const norm = normalizeSignal(zoomData, [zMin, zMax]);
-
-      // Apply gain
-      if (zGain !== 1.0) {
-        for (let i = 0; i < norm.length; i++) {
-          norm[i] = (norm[i] ?? 0) * zGain;
-        }
-      }
-
-      const rate = duration > 0 ? norm.length / duration : 0;
-
-      // console.log("Pushing ZOOM:", { src: zoomSource, len: norm.length, dur: duration, rate });
-
-      if (vis.push_zoom_data) {
-        vis.push_zoom_data(norm, rate);
-      }
-    }
-  }, [rotSource, zoomSource, mirResults, isReady, audio, rotRange, zoomRange, rotGain, zoomGain, audioDuration, searchSignal]);
-
   // Push all available 1D signals to WASM for scripting access
   useEffect(() => {
     if (!visRef.current || !isReady) return;
@@ -591,20 +453,13 @@ fn update(dt, inputs) {
     }
   }, [mirResults, isReady, audio, audioDuration, searchSignal]);
 
-  // Update Sigmoid
-  useEffect(() => {
-    if (!visRef.current || !isReady) return;
-    if (visRef.current.set_sigmoid_k) {
-      visRef.current.set_sigmoid_k(sigmoidK);
-    }
-  }, [sigmoidK, isReady]);
 
   // Load script when enabled or script changes
   useEffect(() => {
     if (!visRef.current || !isReady) return;
     const vis = visRef.current;
 
-    if (scriptEnabled && script.trim()) {
+    if (script.trim()) {
       const success = vis.load_script(script);
       if (success) {
         setScriptError(null);
@@ -615,7 +470,7 @@ fn update(dt, inputs) {
         console.error("Script error:", err);
       }
     }
-  }, [scriptEnabled, script, isReady]);
+  }, [script, isReady]);
 
   // Render Loop
   useEffect(() => {
@@ -698,7 +553,7 @@ fn update(dt, inputs) {
       {/* Compact inline controls */}
       <div className="flex flex-wrap items-center gap-2 mb-1 text-xs text-zinc-600 dark:text-zinc-300">
 
-        {scriptEnabled && (
+        {(
           <button
             onClick={() => setLayoutMode(m => m === 'vertical' ? 'horizontal' : 'vertical')}
             className="p-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
@@ -711,7 +566,7 @@ fn update(dt, inputs) {
             )}
           </button>
         )}
-        {scriptEnabled && scriptError && (
+        {scriptError && (
           <span className="text-red-500 text-xs" title={scriptError}>⚠️ Error</span>
         )}
       </div>
@@ -719,14 +574,14 @@ fn update(dt, inputs) {
       {/* Main content area - uses flex for horizontal, block for vertical */}
       <div
         ref={horizontalContainerRef}
-        className={scriptEnabled && layoutMode === 'horizontal' ? 'flex gap-0' : 'block'}
-        style={{ height: scriptEnabled && layoutMode === 'horizontal' ? panelHeight : undefined }}
+        className={layoutMode === 'horizontal' ? 'flex gap-0' : 'block'}
+        style={{ height: layoutMode === 'horizontal' ? panelHeight : undefined }}
       >
         {/* Script Editor - horizontal mode (side panel) */}
-        {scriptEnabled && layoutMode === 'horizontal' && (
+        {layoutMode === 'horizontal' && (
           <>
             <div
-              className="flex-shrink-0 rounded-l-md border border-r-0 border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col"
+              className="shrink-0 rounded-l-md border border-r-0 border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col"
               style={{ width: `${scriptWidthPercent}%` }}
             >
               <Editor
@@ -759,7 +614,7 @@ fn update(dt, inputs) {
         )}
 
         {/* Script Editor - vertical mode (stacked above) */}
-        {scriptEnabled && layoutMode === 'vertical' && (
+        {layoutMode === 'vertical' && (
           <div className="mb-1 rounded-md border border-zinc-200 dark:border-zinc-800 overflow-hidden">
             <div style={{ height: scriptHeight }}>
               <Editor
@@ -793,17 +648,17 @@ fn update(dt, inputs) {
         {/* Canvas Container - always in the same position in the React tree */}
         <div
           ref={containerRef}
-          className={`relative bg-black overflow-hidden border border-zinc-700 ${scriptEnabled && layoutMode === 'horizontal'
+          className={`relative bg-black overflow-hidden border border-zinc-700 ${layoutMode === 'horizontal'
             ? 'flex-1 rounded-r-md border-l-0'
             : 'rounded-md'
             }`}
-          style={scriptEnabled && layoutMode === 'horizontal' ? undefined : { height: panelHeight }}
+          style={layoutMode === 'horizontal' ? undefined : { height: panelHeight }}
         >
           <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
 
           {/* Debug Overlay */}
           {isReady && debugValues && (
-            <div className="absolute top-1 left-1 bg-black/60 text-emerald-400 font-mono text-[10px] p-1.5 rounded-md pointer-events-none">
+            <div className="absolute top-1 left-1 bg-black/60 text-emerald-400 font-mono text-tiny p-1.5 rounded-md pointer-events-none">
               <div>TIME: {debugValues.time.toFixed(3)}</div>
               <div>Entities: {debugValues.entityCount.toFixed(0)}</div>
               <div>Meshes: {debugValues.meshCount.toFixed(0)}</div>
