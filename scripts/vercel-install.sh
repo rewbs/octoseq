@@ -26,7 +26,7 @@ wait_for_package() {
     local expected_sha=$2
     local attempt=1
 
-    echo "    Looking for $package_name with SHA $expected_sha..."
+    echo "    Looking for $package_name with SHA $expected_sha..." >&2
 
     while [ $attempt -le $MAX_RETRIES ]; do
         local dev_version=$(get_latest_dev_version "$package_name")
@@ -34,17 +34,16 @@ wait_for_package() {
         if [ -n "$dev_version" ]; then
             # Check if the dev version contains our expected SHA
             if [[ "$dev_version" == *"$expected_sha"* ]]; then
-                echo "    Found $package_name@$dev_version (matches SHA)"
+                echo "    Found $package_name@$dev_version (matches SHA)" >&2
                 echo "$dev_version"
                 return 0
             else
-                echo "    Attempt $attempt/$MAX_RETRIES: Found $dev_version but expecting SHA $expected_sha, waiting ${RETRY_DELAY}s..."
+                echo "    Attempt $attempt/$MAX_RETRIES: Found $dev_version but expecting SHA $expected_sha, waiting ${RETRY_DELAY}s..." >&2
             fi
         else
-            echo "    Attempt $attempt/$MAX_RETRIES: No dev version found yet, waiting ${RETRY_DELAY}s..."
+            echo "    Attempt $attempt/$MAX_RETRIES: No dev version found yet, waiting ${RETRY_DELAY}s..." >&2
         fi
 
-        echo "    Retrying..."
         sleep $RETRY_DELAY
         attempt=$((attempt + 1))
     done
@@ -52,12 +51,12 @@ wait_for_package() {
     # Fallback: use whatever dev version is available
     local fallback_version=$(get_latest_dev_version "$package_name")
     if [ -n "$fallback_version" ]; then
-        echo "    WARNING: SHA $expected_sha not found, falling back to latest dev: $fallback_version"
+        echo "    WARNING: SHA $expected_sha not found, falling back to latest dev: $fallback_version" >&2
         echo "$fallback_version"
         return 0
     fi
 
-    echo "    ERROR: No dev version available for $package_name"
+    echo "    ERROR: No dev version available for $package_name" >&2
     return 1
 }
 
