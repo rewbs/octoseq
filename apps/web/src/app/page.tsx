@@ -19,7 +19,7 @@ import { DebugPanel } from "@/components/panels/DebugPanel";
 import { useElementSize } from "@/lib/useElementSize";
 import { computeRefinementStats } from "@/lib/searchRefinement";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
-import { DEMO_AUDIO_FILES } from "@/lib/demoAudio";
+import { DemoAudioModal } from "@/components/DemoAudioModal";
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 
 // Stores and hooks
@@ -377,25 +377,11 @@ export default function Home() {
                   >
                     {!audio ? "Load audio" : "Change audio"}
                   </Button>
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      const path = e.target.value;
-                      if (!path) return;
-                      const demo = DEMO_AUDIO_FILES.find((d) => d.path === path);
-                      if (demo) {
-                        void playerRef.current?.loadUrl(demo.path, demo.name);
-                      }
+                  <DemoAudioModal
+                    onSelectDemo={async (demo) => {
+                      await playerRef.current?.loadUrl(demo.path, demo.name);
                     }}
-                    className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-                  >
-                    <option value="">Load demo...</option>
-                    {DEMO_AUDIO_FILES.map((demo) => (
-                      <option key={demo.path} value={demo.path}>
-                        {demo.name}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
               }
               toolbarRight={

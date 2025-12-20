@@ -1,0 +1,114 @@
+[
+  {
+    "name": "100bpm",
+    "path": "/audio/100bpm.mp3",
+    "filename": "100bpm.mp3",
+    "size": 154479,
+    "sizeFormatted": "150.9 KB"
+  },
+  {
+    "name": "120bpm",
+    "path": "/audio/120bpm.mp3",
+    "filename": "120bpm.mp3",
+    "size": 128984,
+    "sizeFormatted": "126.0 KB"
+  },
+  {
+    "name": "140bpm",
+    "path": "/audio/140bpm.mp3",
+    "filename": "140bpm.mp3",
+    "size": 110594,
+    "sizeFormatted": "108.0 KB"
+  },
+  {
+    "name": "160bpm",
+    "path": "/audio/160bpm.mp3",
+    "filename": "160bpm.mp3",
+    "size": 96801,
+    "sizeFormatted": "94.5 KB"
+  },
+  {
+    "name": "180bpm",
+    "path": "/audio/180bpm.mp3",
+    "filename": "180bpm.mp3",
+    "size": 86352,
+    "sizeFormatted": "84.3 KB"
+  },
+  {
+    "name": "200bpm",
+    "path": "/audio/200bpm.mp3",
+    "filename": "200bpm.mp3",
+    "size": 77575,
+    "sizeFormatted": "75.8 KB"
+  },
+  {
+    "name": "80bpm",
+    "path": "/audio/80bpm.mp3",
+    "filename": "80bpm.mp3",
+    "size": 192932,
+    "sizeFormatted": "188.4 KB"
+  },
+  {
+    "name": "ArtThing",
+    "path": "/audio/ArtThing.mp3",
+    "filename": "ArtThing.mp3",
+    "size": 1451695,
+    "sizeFormatted": "1.4 MB"
+  },
+  {
+    "name": "benz",
+    "path": "/audio/benz.mp3",
+    "filename": "benz.mp3",
+    "size": 813523,
+    "sizeFormatted": "794.5 KB"
+  },
+  {
+    "name": "Four Four short",
+    "path": "/audio/Four-Four-short.mp3",
+    "filename": "Four-Four-short.mp3",
+    "size": 193768,
+    "sizeFormatted": "189.2 KB"
+  },
+  {
+    "name": "Freq test",
+    "path": "/audio/Freq-test.wav",
+    "filename": "Freq-test.wav",
+    "size": 3845774,
+    "sizeFormatted": "3.7 MB"
+  },
+  {
+    "name": "parseq demo 140bpm",
+    "path": "/audio/parseq-demo-140bpm.mp3",
+    "filename": "parseq-demo-140bpm.mp3",
+    "size": 220099,
+    "sizeFormatted": "214.9 KB"
+  },
+  {
+    "name": "ParseqTut3 full",
+    "path": "/audio/ParseqTut3-full.mp3",
+    "filename": "ParseqTut3-full.mp3",
+    "size": 1281692,
+    "sizeFormatted": "1.2 MB"
+  },
+  {
+    "name": "rewbs dramatisons (Hi Q)",
+    "path": "/audio/rewbs - dramatisons (Hi-Q).mp3",
+    "filename": "rewbs - dramatisons (Hi-Q).mp3",
+    "size": 3588495,
+    "sizeFormatted": "3.4 MB"
+  },
+  {
+    "name": "rewbs Spongiform brain diseases (CJD)",
+    "path": "/audio/rewbs - Spongiform brain diseases (CJD).mp3",
+    "filename": "rewbs - Spongiform brain diseases (CJD).mp3",
+    "size": 7262208,
+    "sizeFormatted": "6.9 MB"
+  },
+  {
+    "name": "super",
+    "path": "/audio/super.mp3",
+    "filename": "super.mp3",
+    "size": 434003,
+    "sizeFormatted": "423.8 KB"
+  }
+]

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/generate-demo-audio-list.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint -c eslint.config.mjs",

@@ -95,6 +95,10 @@ console.log('    Updated @octoseq/visualiser to: ${VISUALISER_VERSION}');
 console.log('    Updated @octoseq/mir to: ${MIR_VERSION}');
 "
 
+# Brief delay to allow npm registry CDN propagation
+echo "==> Waiting for npm registry propagation..."
+sleep 5
+
 # Run pnpm install (--no-frozen-lockfile because we modified package.json)
 echo "==> Running pnpm install..."
 pnpm install --no-frozen-lockfile
