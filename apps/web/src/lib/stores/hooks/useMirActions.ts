@@ -7,6 +7,7 @@ import { useMirStore } from "../mirStore";
 import { useConfigStore } from "../configStore";
 import { MirWorkerClient, type MirWorkerJob } from "@/lib/mirWorkerClient";
 import type { UiMirResult } from "../types";
+import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 
 /**
  * Hook that provides MIR analysis actions with worker management.
@@ -20,14 +21,14 @@ export function useMirActions() {
     workerRef.current = new MirWorkerClient();
   }
 
-  const runAnalysis = useCallback(async () => {
+  const runAnalysis = useCallback(async (fnOverride?: MirFunctionId) => {
     const { audio } = useAudioStore.getState();
     if (!audio) return;
 
     const mirStore = useMirStore.getState();
     const configStore = useConfigStore.getState();
 
-    const { selected } = mirStore;
+    const selected = fnOverride ?? mirStore.selected;
     const { useWorker, enableGpu, debug } = configStore;
 
     const spectrogramConfig = configStore.getSpectrogramConfig();
@@ -160,5 +161,27 @@ export function useMirActions() {
     }
   }, []);
 
-  return { runAnalysis, cancelAnalysis };
+  const ALL_MIR_FUNCTIONS: MirFunctionId[] = [
+    "spectralCentroid",
+    "spectralFlux",
+    "melSpectrogram",
+    "onsetEnvelope",
+    "onsetPeaks",
+    "hpssHarmonic",
+    "hpssPercussive",
+    "mfcc",
+    "mfccDelta",
+    "mfccDeltaDelta",
+  ];
+
+  const runAllAnalyses = useCallback(async () => {
+    const { audio } = useAudioStore.getState();
+    if (!audio) return;
+
+    for (const fn of ALL_MIR_FUNCTIONS) {
+      await runAnalysis(fn);
+    }
+  }, [runAnalysis]);
+
+  return { runAnalysis, runAllAnalyses, cancelAnalysis };
 }

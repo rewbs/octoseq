@@ -77,3 +77,20 @@ pub fn create_cube_geometry() -> (Vec<Vertex>, Vec<u16>) {
 
     (vertices, indices)
 }
+
+/// Create a unit plane in the XZ plane (Y up), centered at origin.
+pub fn create_plane_geometry() -> (Vec<Vertex>, Vec<u16>) {
+    let vertices = vec![
+        // Four corners of the plane (white/gray gradient)
+        Vertex::new([-0.5, 0.0, -0.5], [0.8, 0.8, 0.8]),
+        Vertex::new([0.5, 0.0, -0.5], [0.9, 0.9, 0.9]),
+        Vertex::new([0.5, 0.0, 0.5], [1.0, 1.0, 1.0]),
+        Vertex::new([-0.5, 0.0, 0.5], [0.9, 0.9, 0.9]),
+    ];
+
+    let indices = vec![
+        0, 1, 2, 2, 3, 0, // Top face
+    ];
+
+    (vertices, indices)
+}

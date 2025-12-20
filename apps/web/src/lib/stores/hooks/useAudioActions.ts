@@ -6,13 +6,14 @@ import { useSearchStore } from "../searchStore";
 
 interface AudioActionsOptions {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
+  onAudioLoaded?: () => void;
 }
 
 /**
  * Hook that provides audio-related actions.
  * Handles audio decoding and resetting state when new audio is loaded.
  */
-export function useAudioActions({ fileInputRef }: AudioActionsOptions) {
+export function useAudioActions({ fileInputRef, onAudioLoaded }: AudioActionsOptions) {
   const handleAudioDecoded = useCallback(
     (a: { sampleRate: number; getChannelData: (n: number) => Float32Array }) => {
       const audioStore = useAudioStore.getState();
@@ -48,8 +49,11 @@ export function useAudioActions({ fileInputRef }: AudioActionsOptions) {
       // Reset search-specific flags
       searchStore.setLoopCandidate(false);
       searchStore.setAutoPlayOnNavigate(false);
+
+      // Trigger callback after audio is loaded
+      onAudioLoaded?.();
     },
-    [fileInputRef]
+    [fileInputRef, onAudioLoaded]
   );
 
   const triggerFileInput = useCallback(() => {

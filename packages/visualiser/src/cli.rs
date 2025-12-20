@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use crate::gpu::renderer::Renderer;
 use crate::visualiser::VisualiserState;
 use crate::input::InputSignal;
-use wgpu::util::DeviceExt;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::io::Read;
 use std::fs::File;
@@ -27,6 +27,10 @@ enum Commands {
         #[arg(long)]
         out: PathBuf,
 
+        /// Rhai script file for controlling the visualiser
+        #[arg(long)]
+        script: Option<PathBuf>,
+
         /// Frames per second
         #[arg(long, default_value_t = 60.0)]
         fps: f32,
@@ -49,14 +53,24 @@ pub fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Render { input, out, fps, duration, width, height } => {
-            pollster::block_on(render_offline(input, out, fps, duration, width, height))?;
+        Commands::Render { input, out, script, fps, duration, width, height } => {
+            pollster::block_on(render_offline(input, out, script, fps, duration, width, height))?;
         }
     }
     Ok(())
 }
 
-async fn render_offline(input_path: PathBuf, out_dir: PathBuf, fps: f32, duration_limit: Option<f32>, width: u32, height: u32) -> Result<()> {
+async fn render_offline(input_path: PathBuf, out_dir: PathBuf, script_path: Option<PathBuf>, fps: f32, duration_limit: Option<f32>, width: u32, height: u32) -> Result<()> {
+    // Load script if provided
+    let script_content = if let Some(ref path) = script_path {
+        let mut script_file = File::open(path)?;
+        let mut content = String::new();
+        script_file.read_to_string(&mut content)?;
+        Some(content)
+    } else {
+        None
+    };
+
     // Deserialize input
     let mut file = File::open(input_path)?;
     let mut contents = String::new();
@@ -83,7 +97,7 @@ async fn render_offline(input_path: PathBuf, out_dir: PathBuf, fps: f32, duratio
     // I'll assume 100Hz default for features if metadata not present.
     let signal = InputSignal::new(samples, 100.0);
 
-    let render_duration = duration_limit.unwrap_or(signal.duration);
+    let render_duration = duration_limit.unwrap_or(signal.get_duration());
     let total_frames = (render_duration * fps).ceil() as usize;
     let dt = 1.0 / fps;
 
@@ -138,10 +152,20 @@ async fn render_offline(input_path: PathBuf, out_dir: PathBuf, fps: f32, duratio
     let mut renderer = Renderer::new(device, queue, texture_desc.format, width, height);
     let mut state = VisualiserState::new();
 
+    // Load script if provided
+    if let Some(ref script) = script_content {
+        if state.load_script(script) {
+            println!("Loaded script successfully");
+        } else {
+            eprintln!("Warning: Failed to load script: {:?}", state.get_script_error());
+        }
+    }
+
     println!("Rendering {} frames to {:?}...", total_frames, out_dir);
 
     for i in 0..total_frames {
-        state.update(dt, Some(&signal), None);
+        let empty_signals: HashMap<String, InputSignal> = HashMap::new();
+        state.update(dt, Some(&signal), None, &empty_signals);
 
         // Render to texture
         renderer.render(&texture_view, &state);

@@ -2,12 +2,19 @@
 
 import { memo, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import type { AudioBufferLike } from "@octoseq/mir";
-import { GripHorizontal } from "lucide-react";
+import { GripHorizontal, GripVertical, Rows3, Columns3 } from "lucide-react";
+import Editor, { type Monaco } from "@monaco-editor/react";
 
 // We import the mock type if the real package isn't built yet, preventing TS errors.
 // In a real build, this would import from @octoseq/visualiser.
 // The dynamic import below handles the actual loading.
 import type { WasmVisualiser } from "@octoseq/visualiser";
+import {
+  registerRhaiLanguage,
+  RHAI_LANGUAGE_ID,
+  ALL_SIGNALS,
+  type SignalMetadata,
+} from "@/lib/scripting";
 
 interface VisualiserPanelProps {
   audio: AudioBufferLike | null;
@@ -23,6 +30,16 @@ const MIN_HEIGHT = 100;
 const MAX_HEIGHT = 800;
 const DEFAULT_HEIGHT = 400;
 const FOOTER_RESERVE = 80; // Space reserved for footer + margins
+
+// Script editor sizing
+const SCRIPT_MIN_HEIGHT = 60;
+const SCRIPT_MAX_HEIGHT = 400;
+const SCRIPT_DEFAULT_HEIGHT = 96; // h-24 equivalent
+
+// Horizontal layout sizing (percentage-based)
+const SCRIPT_MIN_WIDTH_PERCENT = 15;
+const SCRIPT_MAX_WIDTH_PERCENT = 70;
+const SCRIPT_DEFAULT_WIDTH_PERCENT = 30;
 
 // Helper to normalize array to [0, 1]
 function normalizeSignal(data: number[] | Float32Array, customRange?: [number, number]): Float32Array {
@@ -169,11 +186,184 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   const [zoomSource, setZoomSource] = useState<string>("Amplitude");
   const [sigmoidK, setSigmoidK] = useState<number>(5.0);
   const [isReady, setIsReady] = useState(false);
+  const [webGpuError, setWebGpuError] = useState<string | null>(null);
   const timeRef = useRef(playbackTime);
   const [rotRange, setRotRange] = useState<[number, number]>([-1, 1]); // Default for waveform
   const [zoomRange, setZoomRange] = useState<[number, number]>([0, 1]); // Default for RMS
   const [rotGain, setRotGain] = useState<number>(1.0);
   const [zoomGain, setZoomGain] = useState<number>(1.0);
+
+  // Script state
+  const [scriptEnabled, setScriptEnabled] = useState(true);
+  const [scriptError, setScriptError] = useState<string | null>(null);
+  const monacoDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
+
+  // Compute available signals based on current data
+  const availableSignals = useMemo((): SignalMetadata[] => {
+    const signals: SignalMetadata[] = [];
+
+    // Always include timing signals
+    signals.push(...ALL_SIGNALS.filter((s) => s.category === "timing"));
+
+    // Include audio signals if we have audio
+    if (audio) {
+      signals.push(...ALL_SIGNALS.filter((s) => s.category === "audio"));
+    }
+
+    // Include MIR signals that are actually computed
+    if (mirResults) {
+      const availableMirKeys = Object.keys(mirResults);
+      const mirSignals = ALL_SIGNALS.filter(
+        (s) =>
+          (s.category === "spectral" || s.category === "onset") &&
+          availableMirKeys.includes(s.name)
+      );
+      signals.push(...mirSignals);
+    }
+
+    // Include search signals if we have search results
+    if (searchSignal && searchSignal.length > 0) {
+      signals.push(...ALL_SIGNALS.filter((s) => s.category === "search"));
+    }
+
+    return signals;
+  }, [audio, mirResults, searchSignal]);
+
+  // Handler for Monaco editor initialization
+  const handleEditorBeforeMount = useCallback(
+    (monaco: Monaco) => {
+      // Clean up any previous registrations
+      monacoDisposablesRef.current.forEach((d) => d.dispose());
+
+      // Register Rhai language with dynamic signal list
+      monacoDisposablesRef.current = registerRhaiLanguage(monaco, () => availableSignals);
+    },
+    [availableSignals]
+  );
+
+  // Cleanup Monaco disposables on unmount
+  useEffect(() => {
+    return () => {
+      monacoDisposablesRef.current.forEach((d) => d.dispose());
+    };
+  }, []);
+
+  // Script editor resizable height state
+  const [scriptHeight, setScriptHeight] = useState(SCRIPT_DEFAULT_HEIGHT);
+  const isScriptResizingRef = useRef(false);
+  const scriptStartYRef = useRef(0);
+  const scriptStartHeightRef = useRef(0);
+
+  // Layout mode: 'vertical' (stacked) or 'horizontal' (side-by-side)
+  const [layoutMode, setLayoutMode] = useState<'vertical' | 'horizontal'>('vertical');
+
+  // Horizontal layout split (percentage for script width)
+  const [scriptWidthPercent, setScriptWidthPercent] = useState(SCRIPT_DEFAULT_WIDTH_PERCENT);
+  const isHorizontalResizingRef = useRef(false);
+  const horizontalStartXRef = useRef(0);
+  const horizontalStartWidthRef = useRef(0);
+  const horizontalContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleHorizontalResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isHorizontalResizingRef.current = true;
+    horizontalStartXRef.current = e.clientX;
+    horizontalStartWidthRef.current = scriptWidthPercent;
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+  }, [scriptWidthPercent]);
+
+  useEffect(() => {
+    const handleHorizontalMouseMove = (e: MouseEvent) => {
+      if (!isHorizontalResizingRef.current || !horizontalContainerRef.current) return;
+      const containerWidth = horizontalContainerRef.current.offsetWidth;
+      const deltaX = e.clientX - horizontalStartXRef.current;
+      const deltaPercent = (deltaX / containerWidth) * 100;
+      const newPercent = Math.min(
+        SCRIPT_MAX_WIDTH_PERCENT,
+        Math.max(SCRIPT_MIN_WIDTH_PERCENT, horizontalStartWidthRef.current + deltaPercent)
+      );
+      setScriptWidthPercent(newPercent);
+    };
+
+    const handleHorizontalMouseUp = () => {
+      if (isHorizontalResizingRef.current) {
+        isHorizontalResizingRef.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    document.addEventListener('mousemove', handleHorizontalMouseMove);
+    document.addEventListener('mouseup', handleHorizontalMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleHorizontalMouseMove);
+      document.removeEventListener('mouseup', handleHorizontalMouseUp);
+    };
+  }, []);
+
+  const handleScriptResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isScriptResizingRef.current = true;
+    scriptStartYRef.current = e.clientY;
+    scriptStartHeightRef.current = scriptHeight;
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+  }, [scriptHeight]);
+
+  useEffect(() => {
+    const handleScriptMouseMove = (e: MouseEvent) => {
+      if (!isScriptResizingRef.current) return;
+      const delta = e.clientY - scriptStartYRef.current;
+      const newHeight = Math.min(SCRIPT_MAX_HEIGHT, Math.max(SCRIPT_MIN_HEIGHT, scriptStartHeightRef.current + delta));
+      setScriptHeight(newHeight);
+    };
+
+    const handleScriptMouseUp = () => {
+      if (isScriptResizingRef.current) {
+        isScriptResizingRef.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    document.addEventListener('mousemove', handleScriptMouseMove);
+    document.addEventListener('mouseup', handleScriptMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleScriptMouseMove);
+      document.removeEventListener('mouseup', handleScriptMouseUp);
+    };
+  }, []);
+
+  // Default demo script - uses scene graph API
+  // Uses signals that are always available: time, dt, amplitude, flux
+  const defaultScript = `// Rhai script: Cube reacts to audio
+// Available signals: time, dt, amplitude, flux
+// Also: spectralCentroid, spectralFlux, onsetEnvelope (if MIR computed)
+
+let cube;
+let phase = 0.0;
+
+fn init(ctx) {
+    cube = mesh.cube();
+    scene.add(cube);
+}
+
+fn update(dt, inputs) {
+    // Use flux (from zoom source) or fall back to constant rotation
+    let flux_val = if inputs.contains("flux") { inputs.flux } else { 0.0 };
+    phase += dt * (0.5 + flux_val * 2.0);
+
+    cube.rotation.y = phase;
+    cube.rotation.x = 0.1 * (inputs.time * 2.0).sin();
+
+    // Scale based on amplitude (from rotation source)
+    let amp = if inputs.contains("amplitude") { inputs.amplitude } else { 0.0 };
+    cube.scale = 1.0 + amp * 0.5;
+}`;
+  const [script, setScript] = useState(defaultScript);
 
   // Update timeRef for the loop
   useEffect(() => {
@@ -188,6 +378,23 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
 
     async function init() {
       try {
+        // Check for WebGPU support first
+        if (!navigator.gpu) {
+          setWebGpuError(
+            "WebGPU is not supported in this browser. Please use a WebGPU-enabled browser such as Chrome 113+, Edge 113+, or Firefox Nightly with WebGPU enabled."
+          );
+          return;
+        }
+
+        // Try to get an adapter to confirm WebGPU is actually working
+        const adapter = await navigator.gpu.requestAdapter();
+        if (!adapter) {
+          setWebGpuError(
+            "WebGPU is supported but no compatible GPU adapter was found. Please ensure your GPU drivers are up to date."
+          );
+          return;
+        }
+
         const pkg = await import("@octoseq/visualiser");
         if (!active) return;
 
@@ -209,6 +416,9 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
         }
       } catch (e) {
         console.error("Failed to load visualiser WASM:", e);
+        setWebGpuError(
+          `Failed to initialize WebGPU visualiser: ${e instanceof Error ? e.message : String(e)}`
+        );
       }
     }
 
@@ -315,6 +525,72 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
     }
   }, [rotSource, zoomSource, mirResults, isReady, audio, rotRange, zoomRange, rotGain, zoomGain, audioDuration, searchSignal]);
 
+  // Push all available 1D signals to WASM for scripting access
+  useEffect(() => {
+    if (!visRef.current || !isReady) return;
+    // Cast to allow new methods (types will be updated after WASM rebuild)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vis = visRef.current as any;
+
+    // Calculate audio duration
+    let duration = 1;
+    if (audioDuration && audioDuration > 0) {
+      duration = audioDuration;
+    } else {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const a = audio as any;
+      if (a) {
+        const len = a.length || (a.mono ? a.mono.length : 0);
+        const sr = a.sampleRate || 0;
+        if (len > 0 && sr > 0) duration = len / sr;
+      }
+    }
+
+    // Clear previous signals (method may not exist yet until WASM is rebuilt)
+    if (typeof vis.clear_signals === "function") {
+      vis.clear_signals();
+    }
+
+    // Push available MIR signals
+    if (mirResults && typeof vis.push_signal === "function") {
+      // Map signal names from metadata to MIR result keys
+      const signalMappings: Record<string, string> = {
+        spectralCentroid: "spectralCentroid",
+        spectralFlux: "spectralFlux",
+        onsetEnvelope: "onsetEnvelope",
+      };
+
+      for (const [signalName, mirKey] of Object.entries(signalMappings)) {
+        const mirResult = mirResults[mirKey];
+        if (mirResult) {
+          // Get raw data from MIR result
+          let data: Float32Array | null = null;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const val = mirResult as any;
+          if (val.values) {
+            data = new Float32Array(val.values);
+          } else if (val.length !== undefined) {
+            data = new Float32Array(val);
+          }
+
+          if (data && data.length > 0) {
+            // Normalize to 0-1
+            const norm = normalizeSignal(data);
+            const rate = duration > 0 ? norm.length / duration : 0;
+            vis.push_signal(signalName, norm, rate);
+          }
+        }
+      }
+    }
+
+    // Push search similarity signal
+    if (searchSignal && searchSignal.length > 0 && typeof vis.push_signal === "function") {
+      const norm = normalizeSignal(searchSignal);
+      const rate = duration > 0 ? norm.length / duration : 0;
+      vis.push_signal("searchSimilarity", norm, rate);
+    }
+  }, [mirResults, isReady, audio, audioDuration, searchSignal]);
+
   // Update Sigmoid
   useEffect(() => {
     if (!visRef.current || !isReady) return;
@@ -322,6 +598,24 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
       visRef.current.set_sigmoid_k(sigmoidK);
     }
   }, [sigmoidK, isReady]);
+
+  // Load script when enabled or script changes
+  useEffect(() => {
+    if (!visRef.current || !isReady) return;
+    const vis = visRef.current;
+
+    if (scriptEnabled && script.trim()) {
+      const success = vis.load_script(script);
+      if (success) {
+        setScriptError(null);
+        console.log("Script loaded successfully");
+      } else {
+        const err = vis.get_script_error() ?? "Unknown script error";
+        setScriptError(err);
+        console.error("Script error:", err);
+      }
+    }
+  }, [scriptEnabled, script, isReady]);
 
   // Render Loop
   useEffect(() => {
@@ -345,17 +639,12 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
       // Poll debug values
       if (vis.get_current_vals) {
         const vals = vis.get_current_vals();
-        if (vals && vals.length >= 9) {
+        if (vals && vals.length >= 4) {
           setDebugValues({
-            rot: vals[0] || 0,
-            zoom: vals[1] || 0,
-            time: vals[2] || 0,
-            input: vals[3] || 0,
-            sigDur: vals[4] || 0,
-            rotMin: vals[5] || 0,
-            rotMax: vals[6] || 0,
-            zoomMin: vals[7] || 0,
-            zoomMax: vals[8] || 0
+            time: vals[0] || 0,
+            entityCount: vals[1] || 0,
+            meshCount: vals[2] || 0,
+            lineCount: vals[3] || 0
           });
         }
       }
@@ -392,104 +681,151 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   }, [isReady]);
 
   const [debugValues, setDebugValues] = useState<{
-    rot: number, zoom: number, time: number, input: number, sigDur: number,
-    rotMin: number, rotMax: number, zoomMin: number, zoomMax: number
+    time: number, entityCount: number, meshCount: number, lineCount: number
   } | null>(null);
 
-  const availableSources = useMemo(() => {
-    const keys = mirResults ? Object.keys(mirResults) : [];
-    const sources = ["Amplitude", ...keys];
-    if (searchSignal && searchSignal.length > 0) {
-      sources.push("Search Similarity");
-    }
-    return sources;
-  }, [mirResults, searchSignal]);
+  // const availableSources = useMemo(() => {
+  //   const keys = mirResults ? Object.keys(mirResults) : [];
+  //   const sources = ["Amplitude", ...keys];
+  //   if (searchSignal && searchSignal.length > 0) {
+  //     sources.push("Search Similarity");
+  //   }
+  //   return sources;
+  // }, [mirResults, searchSignal]);
 
   return (
     <div className={`mt-1.5 rounded-md border border-zinc-200 p-1 dark:border-zinc-800 ${className}`}>
       {/* Compact inline controls */}
       <div className="flex flex-wrap items-center gap-2 mb-1 text-xs text-zinc-600 dark:text-zinc-300">
-        <span className="text-zinc-500">Rot:</span>
-        <select
-          value={rotSource}
-          onChange={e => setRotSource(e.target.value)}
-          className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 text-xs dark:border-zinc-800 dark:bg-zinc-950"
-        >
-          {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <input type="number" step="0.1" value={isNaN(rotRange[0]) ? '' : rotRange[0]} onChange={e => setRotRange([parseFloat(e.target.value), rotRange[1]])} className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 w-12 text-xs dark:border-zinc-800 dark:bg-zinc-950" title="Rot In Min" />
-        <input type="number" step="0.1" value={isNaN(rotRange[1]) ? '' : rotRange[1]} onChange={e => setRotRange([rotRange[0], parseFloat(e.target.value)])} className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 w-12 text-xs dark:border-zinc-800 dark:bg-zinc-950" title="Rot In Max" />
-        <input type="number" step="0.1" value={isNaN(rotGain) ? '' : rotGain} onChange={e => setRotGain(parseFloat(e.target.value))} className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 w-12 text-xs dark:border-zinc-800 dark:bg-zinc-950" title="Rot Gain" />
 
-        <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-700 mx-1"></div>
-
-        <span className="text-zinc-500">Zoom:</span>
-        <select
-          value={zoomSource}
-          onChange={e => setZoomSource(e.target.value)}
-          className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 text-xs dark:border-zinc-800 dark:bg-zinc-950"
-        >
-          {availableSources.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <input type="number" step="0.1" value={isNaN(zoomRange[0]) ? '' : zoomRange[0]} onChange={e => setZoomRange([parseFloat(e.target.value), zoomRange[1]])} className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 w-12 text-xs dark:border-zinc-800 dark:bg-zinc-950" title="Zoom In Min" />
-        <input type="number" step="0.1" value={isNaN(zoomRange[1]) ? '' : zoomRange[1]} onChange={e => setZoomRange([zoomRange[0], parseFloat(e.target.value)])} className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 w-12 text-xs dark:border-zinc-800 dark:bg-zinc-950" title="Zoom In Max" />
-        <input type="number" step="0.1" value={isNaN(zoomGain) ? '' : zoomGain} onChange={e => setZoomGain(parseFloat(e.target.value))} className="rounded-md border border-zinc-200 bg-white px-1 py-0.5 w-12 text-xs dark:border-zinc-800 dark:bg-zinc-950" title="Zoom Gain" />
-
-        <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-700 mx-1"></div>
-
-        <span>K={sigmoidK}</span>
-        <input
-          type="range"
-          min="0" max="20" step="0.5"
-          value={sigmoidK}
-          onChange={e => setSigmoidK(parseFloat(e.target.value))}
-          className="w-20"
-        />
+        {scriptEnabled && (
+          <button
+            onClick={() => setLayoutMode(m => m === 'vertical' ? 'horizontal' : 'vertical')}
+            className="p-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+            title={layoutMode === 'vertical' ? 'Switch to side-by-side layout' : 'Switch to stacked layout'}
+          >
+            {layoutMode === 'vertical' ? (
+              <Columns3 className="w-4 h-4" />
+            ) : (
+              <Rows3 className="w-4 h-4" />
+            )}
+          </button>
+        )}
+        {scriptEnabled && scriptError && (
+          <span className="text-red-500 text-xs" title={scriptError}>⚠️ Error</span>
+        )}
       </div>
 
+      {/* Main content area - uses flex for horizontal, block for vertical */}
       <div
-        ref={containerRef}
-        className="relative bg-black rounded-md overflow-hidden border border-zinc-700"
-        style={{ height: panelHeight }}
+        ref={horizontalContainerRef}
+        className={scriptEnabled && layoutMode === 'horizontal' ? 'flex gap-0' : 'block'}
+        style={{ height: scriptEnabled && layoutMode === 'horizontal' ? panelHeight : undefined }}
       >
-        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
-
-        {/* Debug Overlay */}
-        {isReady && debugValues && (
-          <div className="absolute top-1 left-1 bg-black/60 text-emerald-400 font-mono text-[10px] p-1.5 rounded-md pointer-events-none">
-            <div>ROT: {debugValues.rot.toFixed(3)}</div>
-            <div>ZOOM: {debugValues.zoom.toFixed(3)}</div>
-            <div>TIME: {debugValues.time.toFixed(3)}</div>
-            <div>Knee: {debugValues.input.toFixed(3)}</div>
-            <div>SigDur: {debugValues.sigDur.toFixed(3)}</div>
-            <div>FPS: {((1000 / 16)).toFixed(0)}</div>
-          </div>
-        )}
-
-        {/* Sparkline Overlays */}
-        {isReady && debugValues && (
+        {/* Script Editor - horizontal mode (side panel) */}
+        {scriptEnabled && layoutMode === 'horizontal' && (
           <>
-            {/* Rotation Sparkline Info (Top Left) */}
-            <div className="absolute top-[10%] left-[50%] font-mono text-[10px] text-emerald-400 bg-black/60 p-1 rounded-md">
-              <div className="font-bold">Rotation</div>
-              <div>Max: {debugValues.rotMax.toFixed(3)}</div>
-              <div>Min: {debugValues.rotMin.toFixed(3)}</div>
+            <div
+              className="flex-shrink-0 rounded-l-md border border-r-0 border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col"
+              style={{ width: `${scriptWidthPercent}%` }}
+            >
+              <Editor
+                height="100%"
+                defaultLanguage={RHAI_LANGUAGE_ID}
+                theme="vs-dark"
+                value={script}
+                onChange={(value) => setScript(value ?? "")}
+                beforeMount={handleEditorBeforeMount}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 12,
+                  lineNumbers: "on",
+                  scrollBeyondLastLine: false,
+                  wordWrap: "on",
+                  automaticLayout: true,
+                  tabSize: 2,
+                }}
+              />
             </div>
 
-            {/* Zoom Sparkline Info (Bottom Left) */}
-            <div className="absolute bottom-[20%] left-[50%] font-mono text-[10px] text-cyan-400 bg-black/60 p-1 rounded-md">
-              <div className="font-bold">Zoom</div>
-              <div>Max: {debugValues.zoomMax.toFixed(3)}</div>
-              <div>Min: {debugValues.zoomMin.toFixed(3)}</div>
+            {/* Horizontal Resize Handle */}
+            <div
+              onMouseDown={handleHorizontalResizeStart}
+              className="flex items-center justify-center w-2 cursor-ew-resize bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors group"
+            >
+              <GripVertical className="w-2 h-5 text-zinc-500 group-hover:text-zinc-700 dark:text-zinc-600 dark:group-hover:text-zinc-400" />
             </div>
           </>
         )}
 
-        {!isReady && (
-          <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-500">
-            Initializing WGPU...
+        {/* Script Editor - vertical mode (stacked above) */}
+        {scriptEnabled && layoutMode === 'vertical' && (
+          <div className="mb-1 rounded-md border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+            <div style={{ height: scriptHeight }}>
+              <Editor
+                height="100%"
+                defaultLanguage={RHAI_LANGUAGE_ID}
+                theme="vs-dark"
+                value={script}
+                onChange={(value) => setScript(value ?? "")}
+                beforeMount={handleEditorBeforeMount}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 12,
+                  lineNumbers: "on",
+                  scrollBeyondLastLine: false,
+                  wordWrap: "on",
+                  automaticLayout: true,
+                  tabSize: 2,
+                }}
+              />
+            </div>
+            {/* Script Resize Handle */}
+            <div
+              onMouseDown={handleScriptResizeStart}
+              className="flex items-center justify-center h-2 cursor-ns-resize dark:bg-zinc-900 hover:bg-zinc-700/50 transition-colors group"
+            >
+              <GripHorizontal className="w-5 h-2 text-zinc-600 group-hover:text-zinc-400" />
+            </div>
           </div>
         )}
+
+        {/* Canvas Container - always in the same position in the React tree */}
+        <div
+          ref={containerRef}
+          className={`relative bg-black overflow-hidden border border-zinc-700 ${scriptEnabled && layoutMode === 'horizontal'
+            ? 'flex-1 rounded-r-md border-l-0'
+            : 'rounded-md'
+            }`}
+          style={scriptEnabled && layoutMode === 'horizontal' ? undefined : { height: panelHeight }}
+        >
+          <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
+
+          {/* Debug Overlay */}
+          {isReady && debugValues && (
+            <div className="absolute top-1 left-1 bg-black/60 text-emerald-400 font-mono text-[10px] p-1.5 rounded-md pointer-events-none">
+              <div>TIME: {debugValues.time.toFixed(3)}</div>
+              <div>Entities: {debugValues.entityCount.toFixed(0)}</div>
+              <div>Meshes: {debugValues.meshCount.toFixed(0)}</div>
+              <div>Lines: {debugValues.lineCount.toFixed(0)}</div>
+            </div>
+          )}
+
+          {!isReady && !webGpuError && (
+            <div className="absolute inset-0 flex items-center justify-center text-xs text-zinc-500">
+              Initializing WebGPU...
+            </div>
+          )}
+
+          {webGpuError && (
+            <div className="absolute inset-0 flex items-center justify-center p-6">
+              <div className="max-w-md text-center">
+                <div className="text-red-500 text-lg font-semibold mb-2">WebGPU Required</div>
+                <div className="text-sm text-zinc-400">{webGpuError}</div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Resize Handle */}

@@ -64,12 +64,12 @@ pub fn create_sparkline_pipeline(
             module: &shader,
             entry_point: Some("vs_sparkline"),
             buffers: &[wgpu::VertexBufferLayout {
-                array_stride: std::mem::size_of::<f32>() as wgpu::BufferAddress,
+                array_stride: (std::mem::size_of::<f32>() * 2) as wgpu::BufferAddress, // vec2<f32>
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &[wgpu::VertexAttribute {
                     offset: 0,
                     shader_location: 0,
-                    format: wgpu::VertexFormat::Float32,
+                    format: wgpu::VertexFormat::Float32x2, // x, y pairs
                 }],
             }],
             compilation_options: wgpu::PipelineCompilationOptions::default(),

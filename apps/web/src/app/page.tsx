@@ -8,11 +8,10 @@ import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 
-import { HeatmapPlayheadOverlay } from "@/components/heatmap/HeatmapPlayheadOverlay";
 import { TimeAlignedHeatmapPixi } from "@/components/heatmap/TimeAlignedHeatmapPixi";
 import { MirConfigModal } from "@/components/mir/MirConfigModal";
 import { SyncedWaveSurferSignal } from "@/components/wavesurfer/SyncedWaveSurferSignal";
-import { ViewportOverlayMarkers } from "@/components/wavesurfer/ViewportOverlayMarkers";
+import { SparseEventsViewer } from "@/components/wavesurfer/SparseEventsViewer";
 import { WaveSurferPlayer, type WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
 import { VisualiserPanel } from "@/components/visualiser/VisualiserPanel";
 import { SearchPanel } from "@/components/search/SearchPanel";
@@ -130,9 +129,12 @@ export default function Home() {
   );
 
   // ===== ACTION HOOKS =====
-  const { runAnalysis, cancelAnalysis } = useMirActions();
+  const { runAnalysis, runAllAnalyses, cancelAnalysis } = useMirActions();
   const { runSearch } = useSearchActions();
-  const { handleAudioDecoded, triggerFileInput } = useAudioActions({ fileInputRef });
+  const { handleAudioDecoded, triggerFileInput } = useAudioActions({
+    fileInputRef,
+    onAudioLoaded: runAllAnalyses,
+  });
   const {
     onPrevCandidate,
     onNextCandidate,
@@ -303,7 +305,6 @@ export default function Home() {
 
   // ===== SIZE HOOKS =====
   const { ref: heatmapHostRef, size: heatmapHostSize } = useElementSize<HTMLDivElement>();
-  const { ref: eventsHostRef, size: eventsHostSize } = useElementSize<HTMLDivElement>();
 
   // ===== RENDER =====
   return (
@@ -438,6 +439,14 @@ export default function Home() {
                   </div>}
                   <div className="flex gap-2">
                     <Button
+                      onClick={() => void runAllAnalyses()}
+                      disabled={!canRun || isRunning}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {isRunning ? "Analysing..." : "Run All"}
+                    </Button>
+                    <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setIsConfigOpen(true)}
@@ -493,24 +502,12 @@ export default function Home() {
 
                   {visualTab === "onsetPeaks" ? (
                     tabResult?.kind === "events" && tabResult.fn === "onsetPeaks" ? (
-                      <div
-                        className="relative rounded-md border border-zinc-300 bg-white p-1 dark:border-zinc-700 dark:bg-zinc-950"
-                        ref={eventsHostRef}
-                        onMouseMove={handleCursorHoverFromViewport}
-                        onMouseLeave={handleCursorLeave}
-                      >
-                        <ViewportOverlayMarkers
-                          viewport={viewport}
-                          events={tabResult.events}
-                          height={180}
-                        />
-                        <HeatmapPlayheadOverlay
-                          viewport={viewport}
-                          timeSec={mirroredCursorTimeSec}
-                          height={180}
-                          widthPx={eventsHostSize.width}
-                        />
-                      </div>
+                      <SparseEventsViewer
+                        events={tabResult.events}
+                        viewport={viewport}
+                        cursorTimeSec={mirroredCursorTimeSec}
+                        onCursorTimeChange={setCursorTimeSec}
+                      />
                     ) : (
                       <p className="text-sm text-zinc-500">Run Onset Peaks to view output.</p>
                     )

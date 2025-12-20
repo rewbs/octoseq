@@ -1,22 +1,12 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
-use wasm_bindgen::closure::Closure;
 
 use crate::gpu::renderer::Renderer;
 use crate::visualiser::VisualiserState;
 use crate::input::InputSignal;
-
-fn window() -> web_sys::Window {
-    web_sys::window().expect("no global `window` exists")
-}
-
-fn request_animation_frame(f: &Closure<dyn FnMut(f64)>) {
-    window()
-        .request_animation_frame(f.as_ref().unchecked_ref())
-        .expect("should register `requestAnimationFrame` OK");
-}
 
 #[wasm_bindgen]
 pub struct WasmVisualiser {
@@ -30,6 +20,8 @@ struct VisualiserContext {
     state: VisualiserState,
     rotation_signal: Option<InputSignal>,
     zoom_signal: Option<InputSignal>,
+    /// Named signals for dynamic script inputs (e.g., "spectralCentroid", "onsetEnvelope")
+    named_signals: HashMap<String, InputSignal>,
 }
 
 #[wasm_bindgen]
@@ -62,9 +54,46 @@ impl WasmVisualiser {
          self.push_rotation_data(samples, sample_rate);
     }
 
+    /// Push a named signal for use in scripts.
+    /// The signal will be available as `inputs.<name>` in Rhai scripts.
+    pub fn push_signal(&self, name: &str, samples: &[f32], sample_rate: f32) {
+        log::info!("Rust received signal '{}': {} samples, rate {}", name, samples.len(), sample_rate);
+        let mut inner = self.inner.borrow_mut();
+        inner.named_signals.insert(name.to_string(), InputSignal::new(samples.to_vec(), sample_rate));
+    }
+
+    /// Clear all named signals.
+    pub fn clear_signals(&self) {
+        let mut inner = self.inner.borrow_mut();
+        inner.named_signals.clear();
+    }
+
     pub fn set_sigmoid_k(&self, k: f32) {
         let mut inner = self.inner.borrow_mut();
         inner.state.config.sigmoid_k = k;
+    }
+
+    /// Load a Rhai script for controlling the visualiser.
+    /// Returns true if the script was loaded successfully.
+    pub fn load_script(&self, script: &str) -> bool {
+        let mut inner = self.inner.borrow_mut();
+        let result = inner.state.load_script(script);
+        if !result {
+            log::error!("Failed to load script: {:?}", inner.state.get_script_error());
+        }
+        result
+    }
+
+    /// Check if a script is currently loaded.
+    pub fn has_script(&self) -> bool {
+        let inner = self.inner.borrow();
+        inner.state.has_script()
+    }
+
+    /// Get the last script error message, if any.
+    pub fn get_script_error(&self) -> Option<String> {
+        let inner = self.inner.borrow();
+        inner.state.get_script_error().map(|s| s.to_string())
     }
 
     pub fn resize(&self, width: u32, height: u32) {
@@ -72,15 +101,6 @@ impl WasmVisualiser {
 
         let mut inner = self.inner.borrow_mut();
         let ctx = &mut *inner;
-
-        // We need mutable access to renderer but immutable to state?
-        // state is in `inner`. `ctx` has both.
-        // ctx.renderer.resize needs `&mut renderer`.
-        // and checks `&state`.
-        // `ctx` is `&mut VisualiserContext`.
-        // We can split borrow:
-        // let state = &ctx.state;
-        // ctx.renderer.resize(..., state);
 
         ctx.renderer.resize(width, height, &ctx.state);
         ctx.config.width = width;
@@ -94,20 +114,16 @@ impl WasmVisualiser {
         inner.state.set_time(time);
     }
 
+    /// Get current state values for debugging.
+    /// Returns [time, scene_entity_count, mesh_count, line_count]
     pub fn get_current_vals(&self) -> Vec<f32> {
         let inner = self.inner.borrow();
+        let scene_graph = inner.state.scene_graph();
         vec![
-            inner.state.rotation,
-            inner.state.zoom,
             inner.state.time,
-            inner.state.last_rot_input,
-            // Debug signal info if present
-            if let Some(s) = &inner.rotation_signal { s.get_duration() } else { -1.0 },
-            // Sparkline stats
-            inner.state.rot_sparkline.last_min,
-            inner.state.rot_sparkline.last_max,
-            inner.state.zoom_sparkline.last_min,
-            inner.state.zoom_sparkline.last_max
+            scene_graph.scene_entities().count() as f32,
+            scene_graph.meshes().count() as f32,
+            scene_graph.lines().count() as f32,
         ]
     }
 
@@ -115,27 +131,19 @@ impl WasmVisualiser {
         let mut inner = self.inner.borrow_mut();
         let ctx = &mut *inner;
 
-        // Update state
+        // Update state with named signals
         ctx.state.update(
             dt,
             ctx.rotation_signal.as_ref(),
-            ctx.zoom_signal.as_ref()
+            ctx.zoom_signal.as_ref(),
+            &ctx.named_signals
         );
 
         // Render
         match ctx.surface.get_current_texture() {
             Ok(output) => {
                 let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-                // We need to split borrow here as well?
-                // ctx.renderer.render(&view, &ctx.state);
-                // The issue here is ctx.renderer needs mut, ctx.state needs ref.
-                // Since `ctx` is `&mut VisualiserContext`, the compiler can split the borrow.
-                // But previously `ctx` was `RefMut<VisualiserContext>`, which cannot split.
-                // Dereferencing to `&mut *inner` above solved it.
-
                 ctx.renderer.render(&view, &ctx.state);
-
                 output.present();
             },
             Err(wgpu::SurfaceError::Lost) => {
@@ -143,16 +151,15 @@ impl WasmVisualiser {
                 ctx.surface.configure(ctx.renderer.device(), &ctx.config);
             }
             Err(wgpu::SurfaceError::OutOfMemory) => {
-                 // log
+                log::error!("Surface out of memory");
             }
-            Err(_e) => {
-                // log
+            Err(e) => {
+                log::warn!("Surface error: {:?}", e);
             }
         }
     }
 }
 
-// Global hook for logging
 #[wasm_bindgen]
 pub async fn create_visualiser(canvas: HtmlCanvasElement) -> Result<WasmVisualiser, JsValue> {
     init_panic_hook();
@@ -164,17 +171,12 @@ pub async fn create_visualiser(canvas: HtmlCanvasElement) -> Result<WasmVisualis
         gles_minor_version: wgpu::Gles3MinorVersion::Automatic,
     });
 
-    // Error 1: create_surface using generic WindowHandle approach + traits
-    // wgpu 0.17+ requires a target. For Web, Instance::create_surface_from_canvas or wgpu::SurfaceTarget::Canvas
-    // wgpu v22/23: create_surface(target).
-    // We need to pass the canvas into something that implements Into<SurfaceTarget>.
-    // SurfaceTarget has a Canvas variant.
     let target = wgpu::SurfaceTarget::Canvas(canvas.clone());
     let surface = instance.create_surface(target)
         .map_err(|e| JsValue::from_str(&format!("Failed to create surface: {}", e)))?;
 
     let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::None, // No 'Default'
+        power_preference: wgpu::PowerPreference::None,
         compatible_surface: Some(&surface),
         force_fallback_adapter: false,
     }).await.ok_or_else(|| JsValue::from_str("Failed to find an appropriate adapter"))?;
@@ -184,12 +186,11 @@ pub async fn create_visualiser(canvas: HtmlCanvasElement) -> Result<WasmVisualis
             label: None,
             required_features: wgpu::Features::empty(),
             required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
-            memory_hints: Default::default(), // Missing field
+            memory_hints: Default::default(),
         },
         None,
     ).await.map_err(|e| JsValue::from_str(&format!("Failed to create device: {}", e)))?;
 
-    // Error 2: type inference for format
     let surface_caps = surface.get_capabilities(&adapter);
     let surface_format = surface_caps.formats.iter()
         .copied()
@@ -226,6 +227,7 @@ pub async fn create_visualiser(canvas: HtmlCanvasElement) -> Result<WasmVisualis
             state,
             rotation_signal: None,
             zoom_signal: None,
+            named_signals: HashMap::new(),
         })),
     })
 }

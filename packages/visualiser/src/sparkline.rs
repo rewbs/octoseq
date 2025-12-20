@@ -45,7 +45,7 @@ impl Sparkline {
         // But only if we are not at end
         let gap_size = 10;
         for i in 0..gap_size {
-            let idx = (self.cursor + i) % self.capacity;
+            let _idx = (self.cursor + i) % self.capacity;
             // Only clear ahead if we haven't just wrapped to 0 and cleared idx 0...
             // actually standard pulse meter just cuts off.
             // Setting to 0.0 might be confusing if 0 is a valid signal.

@@ -1,5 +1,14 @@
+//! Visualiser state management.
+//!
+//! This module manages the high-level visualiser state including:
+//! - Script engine and scene graph
+//! - Input signal processing
+//! - Frame updates
+
+use std::collections::HashMap;
 use crate::input::InputSignal;
-use crate::sparkline::Sparkline;
+use crate::scripting::ScriptEngine;
+use crate::scene_graph::SceneGraph;
 
 pub struct VisualiserConfig {
     pub base_rotation_speed: f32, // Radians per second
@@ -12,7 +21,7 @@ impl Default for VisualiserConfig {
     fn default() -> Self {
         Self {
             base_rotation_speed: 0.5,
-            sensitivity: 2.0, // Reduced default since input might be pushed by sigmoid
+            sensitivity: 2.0,
             sigmoid_k: 0.0,
             zoom_sensitivity: 5.0,
         }
@@ -21,100 +30,109 @@ impl Default for VisualiserConfig {
 
 pub struct VisualiserState {
     pub time: f32,
-    pub rotation: f32,
-    pub zoom: f32,
-    pub last_rot_input: f32,
     pub config: VisualiserConfig,
-    pub rot_sparkline: Sparkline,
-    pub zoom_sparkline: Sparkline,
+    /// Script engine manages scripts and the scene graph
+    script_engine: ScriptEngine,
 }
 
 impl VisualiserState {
     pub fn new() -> Self {
         Self {
             time: 0.0,
-            rotation: 0.0,
-            zoom: 0.0,
-            last_rot_input: 0.0,
             config: VisualiserConfig::default(),
-            rot_sparkline: Sparkline::new(500),
-            zoom_sparkline: Sparkline::new(500),
+            script_engine: ScriptEngine::new(),
         }
+    }
+
+    /// Load a Rhai script. Returns true if successful.
+    pub fn load_script(&mut self, script: &str) -> bool {
+        self.script_engine.load_script(script)
+    }
+
+    /// Check if a script is loaded.
+    pub fn has_script(&self) -> bool {
+        self.script_engine.has_script()
+    }
+
+    /// Get the last script error, if any.
+    pub fn get_script_error(&self) -> Option<&str> {
+        self.script_engine.last_error.as_deref()
+    }
+
+    /// Get a reference to the scene graph for rendering.
+    pub fn scene_graph(&self) -> &SceneGraph {
+        &self.script_engine.scene_graph
     }
 
     pub fn reset(&mut self) {
         self.time = 0.0;
-        self.rotation = 0.0;
-        self.zoom = 0.0;
-        self.last_rot_input = 0.0;
+        self.script_engine = ScriptEngine::new();
     }
 
     pub fn set_time(&mut self, time: f32) {
         self.time = time;
     }
 
-    // Now accepts two optional signals
-    pub fn update(&mut self, dt: f32, rotation_signal: Option<&InputSignal>, zoom_signal: Option<&InputSignal>) {
+    /// Update the visualiser state for one frame.
+    pub fn update(
+        &mut self,
+        dt: f32,
+        rotation_signal: Option<&InputSignal>,
+        zoom_signal: Option<&InputSignal>,
+        named_signals: &HashMap<String, InputSignal>,
+    ) {
         self.time += dt;
 
-        // Rotation Logic
-        let rot_input = if let Some(sig) = rotation_signal {
-            // Use windowed sampling to catch transients
+        // Sample input signals
+        let amplitude = if let Some(sig) = rotation_signal {
             let raw = sig.sample_window(self.time, dt);
-            // Apply sigmoid if enabled
-            let val = if self.config.sigmoid_k > 0.0 {
+            if self.config.sigmoid_k > 0.0 {
                 sig.apply_sigmoid(raw, self.config.sigmoid_k)
             } else {
                 raw
-            };
-            self.rot_sparkline.push(val);
-            val
+            }
         } else {
-            self.rot_sparkline.push(0.0);
             0.0
         };
 
-        self.last_rot_input = rot_input;
-        // User requested to disable auto-rotation
-        // let speed = self.config.base_rotation_speed + (rot_input.abs() * self.config.sensitivity);
-
-        let speed = rot_input * self.config.sensitivity;
-
-        // If we want absolute rotation driven by signal, that's different from integration.
-        // Currently it integrates speed: self.rotation += speed * dt;
-        // If signal IS the speed, then this is correct.
-        // If signal IS the angle, we should do: self.rotation = rot_input * scale;
-
-        // "Disable auto-incrementing rotation... only use the input signal"
-        // This implies signal -> angle (direct mapping) OR signal -> speed (w/o base).
-        // Given it's a "Visualiser" usually we map magnitude to some property.
-        // If signal is RMS (magnitude), mapping it to ANGLE might be jittery but "direct".
-        // Mapping it to SPEED means it spins faster when loud.
-
-        // "Auto-incrementing" suggests there was a base speed.
-        // Removing base speed means 0 signal = 0 speed (stop).
-        // This seems to be what is requested.
-
-        self.rotation += speed * dt;
-        self.rotation %= std::f32::consts::TAU;
-
-        // Zoom Logic
-        if let Some(sig) = zoom_signal {
-             // Use windowed sampling
-             let raw = sig.sample_window(self.time, dt);
-             // Apply same sigmoid? Or separate? For now same config.
-             let val = if self.config.sigmoid_k > 0.0 {
-                 sig.apply_sigmoid(raw, self.config.sigmoid_k)
-             } else {
-                 raw
-             };
-             // Zoom effect: oscillate or offset?
-             // Use value directly as offset from base distance
-             self.zoom = val * self.config.zoom_sensitivity;
-             self.zoom_sparkline.push(val);
+        let flux = if let Some(sig) = zoom_signal {
+            let raw = sig.sample_window(self.time, dt);
+            if self.config.sigmoid_k > 0.0 {
+                sig.apply_sigmoid(raw, self.config.sigmoid_k)
+            } else {
+                raw
+            }
         } else {
-             self.zoom = 0.0;
-             self.zoom_sparkline.push(0.0);
+            0.0
+        };
+
+        // Build signals map for script
+        let mut sampled_signals: HashMap<String, f32> = HashMap::new();
+
+        // Sample all named signals
+        for (name, signal) in named_signals {
+            let raw = signal.sample_window(self.time, dt);
+            let val = if self.config.sigmoid_k > 0.0 {
+                signal.apply_sigmoid(raw, self.config.sigmoid_k)
+            } else {
+                raw
+            };
+            sampled_signals.insert(name.clone(), val);
         }
+
+        // Add core signals
+        sampled_signals.insert("time".to_string(), self.time);
+        sampled_signals.insert("dt".to_string(), dt);
+        sampled_signals.insert("amplitude".to_string(), amplitude);
+        sampled_signals.insert("flux".to_string(), flux);
+
+        // Update script engine (this also syncs the scene graph)
+        self.script_engine.update(dt, &sampled_signals);
+    }
+}
+
+impl Default for VisualiserState {
+    fn default() -> Self {
+        Self::new()
     }
 }

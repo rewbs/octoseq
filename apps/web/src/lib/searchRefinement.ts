@@ -63,10 +63,3 @@ export function makeAutoCandidateId(startSec: number, endSec: number, index: num
   return `auto-${startMs}-${endMs}-${index}`;
 }
 
-export function isCandidateTextInputTarget(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null;
-  if (!el) return false;
-  if (el.isContentEditable) return true;
-  const tag = el.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-}

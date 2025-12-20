@@ -22,11 +22,12 @@ anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Native only
+# Native only (includes scripting engine)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 winit = "0.29"
 clap = { version = "4.5", features = ["derive"] }
 image = "0.25"
+rhai = { version = "1.20", features = ["no_module", "no_custom_syntax", "f32_float"] }
 
 # WASM only
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -41,3 +42,5 @@ web-sys = { version = "0.3", features = [
     "HtmlCanvasElement",
     "console",
 ] }
+rhai = { version = "1.20", features = ["no_module", "no_custom_syntax", "f32_float", "wasm-bindgen"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }

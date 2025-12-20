@@ -1,5 +1,4 @@
-import { useEffect } from "react";
-import { isCandidateTextInputTarget } from "@/lib/searchRefinement";
+import { useHotkeys } from "react-hotkeys-hook";
 
 interface KeyboardShortcutCallbacks {
   onPrevCandidate: () => void;
@@ -16,6 +15,10 @@ interface KeyboardShortcutCallbacks {
 
 /**
  * Hook that handles keyboard shortcuts for the search refinement workflow.
+ *
+ * Uses react-hotkeys-hook which automatically disables shortcuts when:
+ * - Focus is in contentEditable elements (like Monaco editor)
+ * - Focus is in form elements (input, textarea, select)
  *
  * Shortcuts:
  * - ArrowLeft/j: Previous candidate
@@ -40,74 +43,23 @@ export function useKeyboardShortcuts({
   onJumpToBestUnreviewed,
   canDeleteManual,
 }: KeyboardShortcutCallbacks) {
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      // Skip if user is typing in a text input
-      if (isCandidateTextInputTarget(e.target)) return;
-      // Skip if modifier keys are held
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // Navigation shortcuts
+  useHotkeys("left, j", onPrevCandidate, { preventDefault: true }, [onPrevCandidate]);
+  useHotkeys("right, k", onNextCandidate, { preventDefault: true }, [onNextCandidate]);
 
-      const key = e.key;
-      const lower = key.toLowerCase();
+  // Action shortcuts
+  useHotkeys("a", onAccept, { preventDefault: true }, [onAccept]);
+  useHotkeys("r", onReject, { preventDefault: true }, [onReject]);
+  useHotkeys("space", onTogglePlay, { preventDefault: true }, [onTogglePlay]);
+  useHotkeys("q", onPlayQuery, { preventDefault: true }, [onPlayQuery]);
+  useHotkeys("m", onToggleAddMissingMode, { preventDefault: true }, [onToggleAddMissingMode]);
+  useHotkeys("b", onJumpToBestUnreviewed, { preventDefault: true }, [onJumpToBestUnreviewed]);
 
-      if (key === "ArrowLeft" || lower === "j") {
-        e.preventDefault();
-        onPrevCandidate();
-        return;
-      }
-      if (key === "ArrowRight" || lower === "k") {
-        e.preventDefault();
-        onNextCandidate();
-        return;
-      }
-      if (lower === "a") {
-        e.preventDefault();
-        onAccept();
-        return;
-      }
-      if (lower === "r") {
-        e.preventDefault();
-        onReject();
-        return;
-      }
-      if (key === " ") {
-        e.preventDefault();
-        onTogglePlay();
-        return;
-      }
-      if (lower === "q") {
-        e.preventDefault();
-        onPlayQuery();
-        return;
-      }
-      if (lower === "m") {
-        e.preventDefault();
-        onToggleAddMissingMode();
-        return;
-      }
-      if (lower === "b") {
-        e.preventDefault();
-        onJumpToBestUnreviewed();
-        return;
-      }
-      if ((key === "Delete" || key === "Backspace") && canDeleteManual) {
-        e.preventDefault();
-        onDeleteManual();
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
-    onPrevCandidate,
-    onNextCandidate,
-    onAccept,
-    onReject,
-    onTogglePlay,
-    onPlayQuery,
-    onToggleAddMissingMode,
+  // Conditional delete shortcut
+  useHotkeys(
+    "delete, backspace",
     onDeleteManual,
-    onJumpToBestUnreviewed,
-    canDeleteManual,
-  ]);
+    { preventDefault: true, enabled: canDeleteManual },
+    [onDeleteManual, canDeleteManual]
+  );
 }

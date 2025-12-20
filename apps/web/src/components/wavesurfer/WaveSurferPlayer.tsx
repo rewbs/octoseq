@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type MouseEvent, type RefObject } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 
 import WaveSurfer from "wavesurfer.js";
 import Timeline from "wavesurfer.js/dist/plugins/timeline.esm.js";
@@ -258,29 +259,26 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   ]);
 
   // Global hotkey: Shift+Space to play from cursor (hover position)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === "Space" && e.shiftKey) {
-        e.preventDefault();
+  // Uses react-hotkeys-hook which auto-disables in contentEditable (Monaco) and form elements
+  useHotkeys(
+    "shift+space",
+    () => {
+      // Reset any segment constraints
+      segmentPlaybackRef.current = null;
 
-        // Reset any segment constraints
-        segmentPlaybackRef.current = null;
+      const ws = wsRef.current;
+      if (!ws) return;
 
-        const ws = wsRef.current;
-        if (!ws) return;
-
-        // Play from hover cursor if available, otherwise just play from current pos
-        // (ignoring any active region loops).
-        if (cursorTimeSec != null && Number.isFinite(cursorTimeSec)) {
-          ws.setTime(cursorTimeSec);
-        }
-        void ws.play();
+      // Play from hover cursor if available, otherwise just play from current pos
+      // (ignoring any active region loops).
+      if (cursorTimeSec != null && Number.isFinite(cursorTimeSec)) {
+        ws.setTime(cursorTimeSec);
       }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [cursorTimeSec]);
+      void ws.play();
+    },
+    { preventDefault: true },
+    [cursorTimeSec]
+  );
 
   useEffect(() => {
     // Treat seeks as a one-shot "command" from the parent.
