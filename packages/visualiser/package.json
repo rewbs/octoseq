@@ -1,10 +1,16 @@
 {
     "name": "@octoseq/visualiser",
     "version": "0.1.0",
-    "private": true,
+    "description": "WASM-based visualiser for Octoseq",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/rewbs/octoseq.git",
+        "directory": "packages/visualiser"
+    },
     "scripts": {
-        "build": "wasm-pack build --target web --out-name visualiser --out-dir pkg",
-        "wasm": "wasm-pack build --target web --out-name visualiser --out-dir pkg"
+        "build": "echo 'Skipping WASM build - prebuilt artifacts are published to npm'",
+        "build:wasm": "wasm-pack build --target web --out-name visualiser --out-dir pkg"
     },
     "type": "module",
     "main": "pkg/visualiser.js",
@@ -16,6 +22,9 @@
     "files": [
         "pkg"
     ],
+    "publishConfig": {
+        "access": "public"
+    },
     "devDependencies": {
         "wasm-pack": "^0.12.1"
     }

@@ -6,6 +6,10 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
+    "build:wasm": {
+      "outputs": ["pkg/**"],
+      "cache": true
+    },
     "dev": {
       "cache": false,
       "persistent": true

@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
+    "build:wasm": "pnpm --filter @octoseq/visualiser build:wasm",
     "test": "turbo test",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
