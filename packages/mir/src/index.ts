@@ -9,7 +9,13 @@ export type {
   MirResult,
   MirFunctionId,
   MirRunRequest,
-  MirAudioPayload
+  MirAudioPayload,
+  BeatCandidate,
+  BeatCandidateSource,
+  BeatCandidatesResult,
+  TempoHypothesis,
+  TempoHypothesisEvidence,
+  TempoHypothesesResult,
 } from "./types";
 
 export const MIR_VERSION: MirVersion = "0.1.0";
@@ -58,6 +64,20 @@ export { onsetEnvelopeFromSpectrogram, onsetEnvelopeFromMel, onsetEnvelopeFromMe
 
 export type { PeakPickEvent, PeakPickOptions } from "./dsp/peakPick";
 export { peakPick } from "./dsp/peakPick";
+
+// ----------------------------
+// Beat Candidates
+// ----------------------------
+
+export type { BeatCandidatesOptions, BeatCandidatesOutput, BeatSalienceSignal } from "./dsp/beatCandidates";
+export { detectBeatCandidates, beatSalienceFromMel } from "./dsp/beatCandidates";
+
+// ----------------------------
+// Tempo Hypotheses
+// ----------------------------
+
+export type { TempoHypothesesOptions, TempoHypothesesOutput } from "./dsp/tempoHypotheses";
+export { generateTempoHypotheses } from "./dsp/tempoHypotheses";
 
 // ----------------------------
 // HPSS

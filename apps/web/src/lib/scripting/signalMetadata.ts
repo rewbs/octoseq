@@ -222,4 +222,21 @@ export const TOP_LEVEL_IDENTIFIERS = [
     description: "Delta time since last frame (shorthand for inputs.dt)",
     kind: "variable" as const,
   },
+  {
+    name: "dbg",
+    description: "Debug module for emitting signals during analysis mode",
+    kind: "object" as const,
+  },
+];
+
+/**
+ * Debug module methods.
+ */
+export const DEBUG_MODULE_METHODS = [
+  {
+    name: "emit",
+    description: "Emit a named debug signal value. Use dbg.emit(\"name\", value) to record signals for visualization.",
+    signature: "dbg.emit(name: string, value: number)",
+    example: 'dbg.emit("energy", inputs.amplitude * 2.0)',
+  },
 ];

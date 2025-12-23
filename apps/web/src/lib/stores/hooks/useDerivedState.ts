@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useSearchStore } from "../searchStore";
 import { useMirStore, mirTabDefinitions } from "../mirStore";
+import { useDebugSignalStore } from "../debugSignalStore";
 import { useConfigStore } from "../configStore";
 import { useAudioStore } from "../audioStore";
 import { usePlaybackStore, getMirroredCursorTime } from "../playbackStore";
@@ -99,11 +100,27 @@ export function useRefinementLabelsAvailable(): boolean {
 }
 
 /**
+ * Check if we have debug signals.
+ */
+export function useHasDebugSignals(): boolean {
+  const debugSignals = useDebugSignalStore((s) => s.debugSignals);
+  return debugSignals.length > 0;
+}
+
+/**
+ * Get debug signals.
+ */
+export function useDebugSignals() {
+  return useDebugSignalStore((s) => s.debugSignals);
+}
+
+/**
  * Get tab definitions with availability status.
  */
 export function useTabDefs() {
   const mirResults = useMirStore((s) => s.mirResults);
   const hasSearchResult = useHasSearchResult();
+  const hasDebugSignals = useHasDebugSignals();
 
   return useMemo(() => {
     const mirTabsWithAvailability = mirTabDefinitions.map((t) => ({
@@ -113,9 +130,10 @@ export function useTabDefs() {
 
     return [
       { id: "search" as const, label: "Similarity", hasData: hasSearchResult },
+      { id: "debug" as const, label: "Debug Signals", hasData: hasDebugSignals },
       ...mirTabsWithAvailability,
     ];
-  }, [hasSearchResult, mirResults]);
+  }, [hasSearchResult, hasDebugSignals, mirResults]);
 }
 
 /**
@@ -124,7 +142,9 @@ export function useTabDefs() {
 export function useTabResult() {
   const visualTab = useMirStore((s) => s.visualTab);
   const mirResults = useMirStore((s) => s.mirResults);
-  return visualTab !== "search" ? mirResults[visualTab] : undefined;
+  // Don't return MIR results for search or debug tabs
+  if (visualTab === "search" || visualTab === "debug") return undefined;
+  return mirResults[visualTab];
 }
 
 /**

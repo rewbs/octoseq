@@ -9,10 +9,14 @@ export type OverlayEvent = {
     strength?: number;
 };
 
+export type OverlayMarkerVariant = "onset" | "beatCandidate";
+
 export type ViewportOverlayMarkersProps = {
     viewport: WaveSurferViewport | null;
     events: OverlayEvent[];
     height?: number;
+    /** Visual variant. "onset" = gold markers, "beatCandidate" = cyan markers with strength-based opacity. */
+    variant?: OverlayMarkerVariant;
 };
 
 /**
@@ -23,7 +27,7 @@ export type ViewportOverlayMarkersProps = {
  * - We convert event time -> x pixel via the same mapping as WaveSurfer:
  *     x = (time - viewport.startTime) * viewport.minPxPerSec
  */
-export function ViewportOverlayMarkers({ viewport, events, height = 128 }: ViewportOverlayMarkersProps) {
+export function ViewportOverlayMarkers({ viewport, events, height = 128, variant = "onset" }: ViewportOverlayMarkersProps) {
     const hostRef = useRef<HTMLDivElement | null>(null);
 
     // Avoid reflow churn by updating via DOM style mutations.
@@ -51,12 +55,23 @@ export function ViewportOverlayMarkers({ viewport, events, height = 128 }: Viewp
             div.style.top = "0px";
             div.style.width = "2px";
             div.style.height = `${height}px`;
-            div.style.background = "rgba(212, 175, 55, 0.9)"; // gold
             div.style.pointerEvents = "none";
+
+            if (variant === "beatCandidate") {
+                // Cyan/teal color for beat candidates with strength-based opacity.
+                // Strength is expected to be in [0, 1] range.
+                const opacity = e.strength !== undefined
+                    ? 0.4 + 0.5 * Math.min(1, Math.max(0, e.strength))
+                    : 0.8;
+                div.style.background = `rgba(0, 188, 212, ${opacity})`; // cyan
+            } else {
+                // Gold color for onset peaks (default).
+                div.style.background = "rgba(212, 175, 55, 0.9)";
+            }
 
             host.appendChild(div);
         }
-    }, [viewport, events, height]);
+    }, [viewport, events, height, variant]);
 
     return (
         <div

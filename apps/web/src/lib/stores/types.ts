@@ -1,6 +1,7 @@
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 import type { TimeAlignedHeatmapData } from "@/components/heatmap/TimeAlignedHeatmapPixi";
 import type { SearchCandidateOverlayEvent } from "@/components/wavesurfer/ViewportOverlaySearchCandidates";
+import type { TempoHypothesis } from "@octoseq/mir";
 
 /**
  * Represents different kinds of MIR analysis results for UI display.
@@ -9,7 +10,8 @@ export type UiMirResult =
   | { kind: "none" }
   | { kind: "1d"; fn: MirFunctionId; times: Float32Array; values: Float32Array }
   | { kind: "2d"; fn: MirFunctionId; raw: TimeAlignedHeatmapData }
-  | { kind: "events"; fn: MirFunctionId; times: Float32Array; events: Array<{ time: number; strength: number; index: number }> };
+  | { kind: "events"; fn: MirFunctionId; times: Float32Array; events: Array<{ time: number; strength: number; index: number }> }
+  | { kind: "tempoHypotheses"; fn: MirFunctionId; hypotheses: TempoHypothesis[]; inputCandidateCount: number };
 
 /**
  * Search result from similarity search.
@@ -51,3 +53,40 @@ export type MirTimings = {
   backend?: string;
   usedGpu?: boolean;
 };
+
+/**
+ * A debug signal extracted from script analysis.
+ * Contains time-series data emitted via dbg.emit() in Rhai scripts.
+ */
+export interface DebugSignal {
+  name: string;
+  times: Float32Array;
+  values: Float32Array;
+}
+
+/**
+ * Raw analysis result from WASM (JSON deserialized).
+ * Arrays are plain number[] before conversion to Float32Array.
+ */
+export interface RawAnalysisResult {
+  success: boolean;
+  error?: string;
+  signals: Array<{
+    name: string;
+    times: number[];
+    values: number[];
+  }>;
+  step_count: number;
+  duration: number;
+}
+
+/**
+ * Processed analysis result with Float32Array signals.
+ */
+export interface AnalysisResult {
+  success: boolean;
+  error?: string;
+  signals: DebugSignal[];
+  stepCount: number;
+  duration: number;
+}

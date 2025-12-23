@@ -159,3 +159,32 @@
 .animate-pulse-glow-red {
   animation: pulse-glow-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Analysis overlay animations */
+@keyframes analysis-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.92;
+    transform: scale(1.01);
+  }
+}
+
+@keyframes spin-reverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+.animate-analysis-pulse {
+  animation: analysis-pulse 2.5s ease-in-out infinite;
+}
+
+.animate-spin-reverse {
+  animation: spin-reverse 1.5s linear infinite;
+}

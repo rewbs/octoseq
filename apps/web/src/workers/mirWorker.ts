@@ -89,6 +89,50 @@ function serialiseResult(
         };
     }
 
+    if (result.kind === "beatCandidates") {
+        return {
+            msg: {
+                type: "RESULT",
+                jobId,
+                workerTotalMs,
+                result: {
+                    kind: "beatCandidates",
+                    times: timesBuf,
+                    candidates: result.candidates,
+                    meta: result.meta,
+                },
+            },
+            transfer,
+        };
+    }
+
+    if (result.kind === "tempoHypotheses") {
+        let histogramData: { bpmBins: ArrayBuffer; counts: ArrayBuffer } | undefined;
+        if (result.histogram) {
+            const bpmBinsBuf = result.histogram.bpmBins.buffer.slice(0) as ArrayBuffer;
+            const countsBuf = result.histogram.counts.buffer.slice(0) as ArrayBuffer;
+            transfer.push(bpmBinsBuf, countsBuf);
+            histogramData = { bpmBins: bpmBinsBuf, counts: countsBuf };
+        }
+
+        return {
+            msg: {
+                type: "RESULT",
+                jobId,
+                workerTotalMs,
+                result: {
+                    kind: "tempoHypotheses",
+                    times: timesBuf,
+                    hypotheses: result.hypotheses,
+                    inputCandidateCount: result.inputCandidateCount,
+                    histogram: histogramData,
+                    meta: result.meta,
+                },
+            },
+            transfer,
+        };
+    }
+
     // 2d
     const data2d: ArrayBuffer[] = new Array(result.data.length);
     for (let i = 0; i < result.data.length; i++) {

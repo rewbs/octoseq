@@ -37,6 +37,11 @@ export function MirConfigModal() {
     hpssTimeMedian,
     hpssFreqMedian,
     mfccNCoeffs,
+    tempoMinBpm,
+    tempoMaxBpm,
+    tempoBinSize,
+    tempoMaxHypotheses,
+    tempoWeightByStrength,
     showDcBin,
     showMfccC0,
     heatmapScheme,
@@ -61,6 +66,11 @@ export function MirConfigModal() {
       hpssTimeMedian: s.hpssTimeMedian,
       hpssFreqMedian: s.hpssFreqMedian,
       mfccNCoeffs: s.mfccNCoeffs,
+      tempoMinBpm: s.tempoMinBpm,
+      tempoMaxBpm: s.tempoMaxBpm,
+      tempoBinSize: s.tempoBinSize,
+      tempoMaxHypotheses: s.tempoMaxHypotheses,
+      tempoWeightByStrength: s.tempoWeightByStrength,
       showDcBin: s.showDcBin,
       showMfccC0: s.showMfccC0,
       heatmapScheme: s.heatmapScheme,
@@ -87,6 +97,11 @@ export function MirConfigModal() {
     setHpssTimeMedian,
     setHpssFreqMedian,
     setMfccNCoeffs,
+    setTempoMinBpm,
+    setTempoMaxBpm,
+    setTempoBinSize,
+    setTempoMaxHypotheses,
+    setTempoWeightByStrength,
     setShowDcBin,
     setShowMfccC0,
     setHeatmapScheme,
@@ -111,6 +126,11 @@ export function MirConfigModal() {
       setHpssTimeMedian: s.setHpssTimeMedian,
       setHpssFreqMedian: s.setHpssFreqMedian,
       setMfccNCoeffs: s.setMfccNCoeffs,
+      setTempoMinBpm: s.setTempoMinBpm,
+      setTempoMaxBpm: s.setTempoMaxBpm,
+      setTempoBinSize: s.setTempoBinSize,
+      setTempoMaxHypotheses: s.setTempoMaxHypotheses,
+      setTempoWeightByStrength: s.setTempoWeightByStrength,
       setShowDcBin: s.setShowDcBin,
       setShowMfccC0: s.setShowMfccC0,
       setHeatmapScheme: s.setHeatmapScheme,
@@ -122,6 +142,7 @@ export function MirConfigModal() {
     filter === "melSpectrogram" ||
     filter === "onsetEnvelope" ||
     filter === "onsetPeaks" ||
+    filter === "beatCandidates" ||
     filter === "mfcc" ||
     filter === "mfccDelta" ||
     filter === "mfccDeltaDelta";
@@ -144,6 +165,8 @@ export function MirConfigModal() {
     filter === "mfccDelta" ||
     filter === "mfccDeltaDelta";
 
+  const usesTempo = filter === "all" || filter === "tempoHypotheses";
+
   return (
     <Modal title="MIR Configuration" open={isConfigOpen} onOpenChange={setIsConfigOpen}>
       <div className="space-y-4">
@@ -162,12 +185,14 @@ export function MirConfigModal() {
             <option value="spectralFlux">Spectral Flux (1D)</option>
             <option value="onsetEnvelope">Onset Envelope (1D)</option>
             <option value="onsetPeaks">Onset Peaks (events)</option>
+            <option value="beatCandidates">Beat Candidates (events)</option>
             <option value="melSpectrogram">Mel Spectrogram (2D)</option>
             <option value="hpssHarmonic">HPSS Harmonic Spectrogram (2D)</option>
             <option value="hpssPercussive">HPSS Percussive Spectrogram (2D)</option>
             <option value="mfcc">MFCC (2D)</option>
             <option value="mfccDelta">MFCC Delta (2D)</option>
             <option value="mfccDeltaDelta">MFCC Delta-Delta (2D)</option>
+            <option value="tempoHypotheses">Tempo Hypotheses</option>
           </select>
         </div>
 
@@ -448,6 +473,80 @@ export function MirConfigModal() {
                     className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                   />
                 </label>
+              </div>
+            </div>
+          )}
+
+          {usesTempo && (
+            <div className="rounded-md border border-zinc-100 bg-zinc-50/50 p-2 dark:border-zinc-800/50 dark:bg-zinc-900/50">
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Tempo Hypotheses
+              </h3>
+              <div className="space-y-1.5">
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                    <span className="text-xs text-zinc-600 dark:text-zinc-300">Min BPM</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={300}
+                      step={1}
+                      value={tempoMinBpm}
+                      onChange={(e) => setTempoMinBpm(Math.max(1, Math.floor(Number(e.target.value)) || 24))}
+                      className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                    />
+                  </label>
+                  <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                    <span className="text-xs text-zinc-600 dark:text-zinc-300">Max BPM</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={600}
+                      step={1}
+                      value={tempoMaxBpm}
+                      onChange={(e) => setTempoMaxBpm(Math.max(1, Math.floor(Number(e.target.value)) || 300))}
+                      className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                    />
+                  </label>
+                </div>
+                <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">Bin size (BPM)</span>
+                  <input
+                    type="range"
+                    min={0.1}
+                    max={5}
+                    step={0.1}
+                    value={tempoBinSize}
+                    onChange={(e) => setTempoBinSize(Number(e.target.value))}
+                  />
+                  <span className="text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">
+                    {tempoBinSize.toFixed(1)}
+                  </span>
+                </label>
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                    <span className="text-xs text-zinc-600 dark:text-zinc-300">Max hypotheses</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      step={1}
+                      value={tempoMaxHypotheses}
+                      onChange={(e) => setTempoMaxHypotheses(Math.max(1, Math.floor(Number(e.target.value)) || 10))}
+                      className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                    />
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={tempoWeightByStrength}
+                      onChange={(e) => setTempoWeightByStrength(e.target.checked)}
+                    />
+                    <span className="text-xs text-zinc-600 dark:text-zinc-300">
+                      Weight by beat strength
+                    </span>
+                  </label>
+                </div>
               </div>
             </div>
           )}

@@ -2,8 +2,9 @@
 
 import { memo, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import type { AudioBufferLike } from "@octoseq/mir";
-import { GripHorizontal, GripVertical, Rows3, Columns3 } from "lucide-react";
+import { GripHorizontal, GripVertical, Rows3, Columns3, FlaskConical, Loader2 } from "lucide-react";
 import Editor, { type Monaco } from "@monaco-editor/react";
+import { useDebugSignalStore, type RawAnalysisResult, type DebugSignal } from "@/lib/stores";
 
 // We import the mock type if the real package isn't built yet, preventing TS errors.
 // In a real build, this would import from @octoseq/visualiser.
@@ -27,14 +28,13 @@ interface VisualiserPanelProps {
 }
 
 const MIN_HEIGHT = 100;
-const MAX_HEIGHT = 800;
+const MAX_HEIGHT = 2000;
 const DEFAULT_HEIGHT = 400;
 const FOOTER_RESERVE = 80; // Space reserved for footer + margins
 
 // Script editor sizing
 const SCRIPT_MIN_HEIGHT = 60;
-const SCRIPT_MAX_HEIGHT = 400;
-const SCRIPT_DEFAULT_HEIGHT = 96; // h-24 equivalent
+const SCRIPT_DEFAULT_HEIGHT = 200;
 
 // Horizontal layout sizing (percentage-based)
 const SCRIPT_MIN_WIDTH_PERCENT = 15;
@@ -267,7 +267,8 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
     const handleScriptMouseMove = (e: MouseEvent) => {
       if (!isScriptResizingRef.current) return;
       const delta = e.clientY - scriptStartYRef.current;
-      const newHeight = Math.min(SCRIPT_MAX_HEIGHT, Math.max(SCRIPT_MIN_HEIGHT, scriptStartHeightRef.current + delta));
+      const maxScriptHeight = panelHeight - MIN_HEIGHT;
+      const newHeight = Math.min(maxScriptHeight, Math.max(SCRIPT_MIN_HEIGHT, scriptStartHeightRef.current + delta));
       setScriptHeight(newHeight);
     };
 
@@ -286,7 +287,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
       document.removeEventListener('mousemove', handleScriptMouseMove);
       document.removeEventListener('mouseup', handleScriptMouseUp);
     };
-  }, []);
+  }, [panelHeight]);
 
   // Default demo script - uses scene graph API
   // Uses signals that are always available: time, dt, amplitude, flux
@@ -563,6 +564,65 @@ fn update(dt, inputs) {
     time: number, entityCount: number, meshCount: number, lineCount: number
   } | null>(null);
 
+  // Debug signal analysis
+  const {
+    isRunning: isAnalysisRunning,
+    lastError: analysisError,
+    setDebugSignals,
+    setIsRunning: setAnalysisRunning,
+    setLastError: setAnalysisError,
+    setLastRunDuration,
+    setLastStepCount,
+  } = useDebugSignalStore();
+
+  const handleRunAnalysis = useCallback(() => {
+    const vis = visRef.current;
+    if (!vis || !script.trim()) {
+      setAnalysisError("No visualizer or script available");
+      return;
+    }
+
+    // Get duration from audio or use default
+    let duration = 10.0;
+    if (audioDuration && audioDuration > 0) {
+      duration = audioDuration;
+    }
+
+    setAnalysisRunning(true);
+    setAnalysisError(null);
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const visAny = vis as any;
+      if (typeof visAny.run_analysis !== "function") {
+        throw new Error("Analysis not available - please rebuild WASM");
+      }
+
+      const resultJson = visAny.run_analysis(script, duration, 0.01); // 10ms steps
+      const result: RawAnalysisResult = JSON.parse(resultJson);
+
+      if (result.success) {
+        // Convert arrays to Float32Array
+        const signals: DebugSignal[] = result.signals.map((s) => ({
+          name: s.name,
+          times: new Float32Array(s.times),
+          values: new Float32Array(s.values),
+        }));
+
+        setDebugSignals(signals);
+        setLastRunDuration(result.duration);
+        setLastStepCount(result.step_count);
+        console.log(`Analysis complete: ${signals.length} signals, ${result.step_count} steps`);
+      } else {
+        setAnalysisError(result.error ?? "Unknown analysis error");
+      }
+    } catch (e) {
+      setAnalysisError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAnalysisRunning(false);
+    }
+  }, [script, audioDuration, setDebugSignals, setAnalysisRunning, setAnalysisError, setLastRunDuration, setLastStepCount]);
+
   // const availableSources = useMemo(() => {
   //   const keys = mirResults ? Object.keys(mirResults) : [];
   //   const sources = ["Amplitude", ...keys];
@@ -590,8 +650,24 @@ fn update(dt, inputs) {
             )}
           </button>
         )}
+        {/* Extract debug signals button */}
+        <button
+          onClick={handleRunAnalysis}
+          disabled={isAnalysisRunning || !script.trim() || !isReady}
+          className="p-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Extract debug signals from script (runs analysis mode)"
+        >
+          {isAnalysisRunning ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <FlaskConical className="w-4 h-4" />
+          )}
+        </button>
+        {analysisError && (
+          <span className="text-red-500 text-xs" title={analysisError}>Analysis error</span>
+        )}
         {scriptError && (
-          <span className="text-red-500 text-xs" title={scriptError}>⚠️ Error</span>
+          <span className="text-red-500 text-xs" title={scriptError}>⚠️ Script error</span>
         )}
       </div>
 

@@ -42,6 +42,13 @@ interface ConfigState {
   // MFCC
   mfccNCoeffs: number;
 
+  // Tempo Hypotheses
+  tempoMinBpm: number;
+  tempoMaxBpm: number;
+  tempoBinSize: number;
+  tempoMaxHypotheses: number;
+  tempoWeightByStrength: boolean;
+
   // Display options
   showDcBin: boolean;
   showMfccC0: boolean;
@@ -90,6 +97,13 @@ interface ConfigActions {
   // MFCC setters
   setMfccNCoeffs: (v: number) => void;
 
+  // Tempo Hypotheses setters
+  setTempoMinBpm: (v: number) => void;
+  setTempoMaxBpm: (v: number) => void;
+  setTempoBinSize: (v: number) => void;
+  setTempoMaxHypotheses: (v: number) => void;
+  setTempoWeightByStrength: (v: boolean) => void;
+
   // Display setters
   setShowDcBin: (v: boolean) => void;
   setShowMfccC0: (v: boolean) => void;
@@ -105,6 +119,7 @@ interface ConfigActions {
   getPeakPickConfig: () => { minIntervalSec: number; threshold?: number; adaptiveFactor?: number };
   getHpssConfig: () => { timeMedian: number; freqMedian: number; spectrogram: { fftSize: number; hopSize: number; window: "hann" } };
   getMfccConfig: () => { nCoeffs: number; spectrogram: { fftSize: number; hopSize: number; window: "hann" } };
+  getTempoHypothesesConfig: () => { minBpm: number; maxBpm: number; binSizeBpm: number; maxHypotheses: number; weightByStrength: boolean };
 }
 
 export type ConfigStore = ConfigState & ConfigActions;
@@ -148,6 +163,13 @@ const initialState: ConfigState = {
 
   // MFCC
   mfccNCoeffs: 13,
+
+  // Tempo Hypotheses
+  tempoMinBpm: 24,
+  tempoMaxBpm: 300,
+  tempoBinSize: 1.0,
+  tempoMaxHypotheses: 10,
+  tempoWeightByStrength: true,
 
   // Display options
   showDcBin: false,
@@ -201,6 +223,13 @@ export const useConfigStore = create<ConfigStore>()(
 
         // MFCC setters
         setMfccNCoeffs: (v) => set({ mfccNCoeffs: v }, false, "setMfccNCoeffs"),
+
+        // Tempo Hypotheses setters
+        setTempoMinBpm: (v) => set({ tempoMinBpm: v }, false, "setTempoMinBpm"),
+        setTempoMaxBpm: (v) => set({ tempoMaxBpm: v }, false, "setTempoMaxBpm"),
+        setTempoBinSize: (v) => set({ tempoBinSize: v }, false, "setTempoBinSize"),
+        setTempoMaxHypotheses: (v) => set({ tempoMaxHypotheses: v }, false, "setTempoMaxHypotheses"),
+        setTempoWeightByStrength: (v) => set({ tempoWeightByStrength: v }, false, "setTempoWeightByStrength"),
 
         // Display setters
         setShowDcBin: (v) => set({ showDcBin: v }, false, "setShowDcBin"),
@@ -278,6 +307,17 @@ export const useConfigStore = create<ConfigStore>()(
             },
           };
         },
+
+        getTempoHypothesesConfig: () => {
+          const state = get();
+          return {
+            minBpm: state.tempoMinBpm,
+            maxBpm: state.tempoMaxBpm,
+            binSizeBpm: state.tempoBinSize,
+            maxHypotheses: state.tempoMaxHypotheses,
+            weightByStrength: state.tempoWeightByStrength,
+          };
+        },
       }),
       {
         name: "octoseq-config",
@@ -304,6 +344,11 @@ export const useConfigStore = create<ConfigStore>()(
           hpssTimeMedian: state.hpssTimeMedian,
           hpssFreqMedian: state.hpssFreqMedian,
           mfccNCoeffs: state.mfccNCoeffs,
+          tempoMinBpm: state.tempoMinBpm,
+          tempoMaxBpm: state.tempoMaxBpm,
+          tempoBinSize: state.tempoBinSize,
+          tempoMaxHypotheses: state.tempoMaxHypotheses,
+          tempoWeightByStrength: state.tempoWeightByStrength,
           showDcBin: state.showDcBin,
           showMfccC0: state.showMfccC0,
           heatmapScheme: state.heatmapScheme,

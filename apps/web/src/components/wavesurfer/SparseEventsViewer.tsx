@@ -6,7 +6,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { GripHorizontal } from "lucide-react";
 
 import { HeatmapPlayheadOverlay } from "@/components/heatmap/HeatmapPlayheadOverlay";
-import { ViewportOverlayMarkers, type OverlayEvent } from "./ViewportOverlayMarkers";
+import { ViewportOverlayMarkers, type OverlayEvent, type OverlayMarkerVariant } from "./ViewportOverlayMarkers";
 import type { WaveSurferViewport } from "./types";
 
 const MIN_HEIGHT = 60;
@@ -28,6 +28,9 @@ export type SparseEventsViewerProps = {
 
   /** Notify parent when this view is hovered so other views can mirror cursor. */
   onCursorTimeChange?: (timeSec: number | null) => void;
+
+  /** Visual variant for markers. Defaults to "onset". */
+  variant?: OverlayMarkerVariant;
 };
 
 /**
@@ -42,6 +45,7 @@ export function SparseEventsViewer({
   initialHeight = DEFAULT_HEIGHT,
   cursorTimeSec,
   onCursorTimeChange,
+  variant,
 }: SparseEventsViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -133,7 +137,7 @@ export function SparseEventsViewer({
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         >
-          <ViewportOverlayMarkers viewport={viewport} events={events} height={panelHeight} />
+          <ViewportOverlayMarkers viewport={viewport} events={events} height={panelHeight} variant={variant} />
           <HeatmapPlayheadOverlay
             viewport={viewport}
             timeSec={cursorTimeSec ?? null}

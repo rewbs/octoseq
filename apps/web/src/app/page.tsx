@@ -12,6 +12,7 @@ import { TimeAlignedHeatmapPixi } from "@/components/heatmap/TimeAlignedHeatmapP
 import { MirConfigModal } from "@/components/mir/MirConfigModal";
 import { SyncedWaveSurferSignal } from "@/components/wavesurfer/SyncedWaveSurferSignal";
 import { SparseEventsViewer } from "@/components/wavesurfer/SparseEventsViewer";
+import { TempoHypothesesViewer } from "@/components/tempo/TempoHypothesesViewer";
 import { WaveSurferPlayer, type WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
 import { VisualiserPanel } from "@/components/visualiser/VisualiserPanel";
 import { SearchPanel } from "@/components/search/SearchPanel";
@@ -21,6 +22,7 @@ import { computeRefinementStats } from "@/lib/searchRefinement";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { DemoAudioModal } from "@/components/DemoAudioModal";
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
+import { mirTabDefinitions } from "@/lib/stores/mirStore";
 
 // Stores and hooks
 import {
@@ -38,6 +40,7 @@ import {
   useSearchSignal,
   useHasSearchResult,
   useRefinementLabelsAvailable,
+  useDebugSignals,
   useTabDefs,
   useTabResult,
   useDisplayedHeatmap,
@@ -92,6 +95,8 @@ export default function Home() {
   // MIR store
   const mirResults = useMirStore((s) => s.mirResults);
   const isRunning = useMirStore((s) => s.isRunning);
+  const selected = useMirStore((s) => s.selected);
+  const lastTimings = useMirStore((s) => s.lastTimings);
   const visualTab = useMirStore((s) => s.visualTab);
   const { setSelected, setVisualTab } = useMirStore(
     useShallow((s) => ({
@@ -153,6 +158,7 @@ export default function Home() {
   const searchSignal = useSearchSignal();
   const hasSearchResult = useHasSearchResult();
   const refinementLabelsAvailable = useRefinementLabelsAvailable();
+  const debugSignals = useDebugSignals();
   const tabDefs = useTabDefs();
   const tabResult = useTabResult();
   const displayedHeatmap = useDisplayedHeatmap();
@@ -310,7 +316,7 @@ export default function Home() {
   // ===== RENDER =====
   return (
     <div className="page-bg px-20 flex flex-col min-h-screen items-center bg-zinc-50 font-sans dark:bg-zinc-950">
-      <main className="main-bg w-full bg-white p-2 shadow dark:bg-zinc-950">
+      <main className="main-bg w-full flex-1 bg-white p-2 shadow dark:bg-zinc-950">
         <section>
           <div className="space-y-1.5">
             <WaveSurferPlayer
@@ -353,6 +359,10 @@ export default function Home() {
               onViewportChange={(vp) => setViewport(normalizeViewport(vp, audioDuration))}
               onPlaybackTime={(t) => setPlayheadTimeSec(t)}
               onRegionChange={handleRegionChange}
+              isAnalysing={isRunning}
+              analysisName={mirTabDefinitions.find((t) => t.id === selected)?.label}
+              lastAnalysisMs={lastTimings?.totalMs}
+              analysisBackend={lastTimings?.backend}
               toolbarLeft={
                 <div className="flex items-center gap-2">
                   <div className="relative flex flex-col  items-center justify-center mr-4">
@@ -488,6 +498,27 @@ export default function Home() {
                 ) : (
                   <p className="text-sm text-zinc-500">Select an audio segment and run search to see the similarity curve.</p>
                 )
+              ) : visualTab === "debug" ? (
+                debugSignals.length > 0 ? (
+                  <div className="space-y-2">
+                    {debugSignals.map((sig) => (
+                      <div key={sig.name} className="border-l-2 border-purple-500 pl-2">
+                        <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">{sig.name}</span>
+                        <SyncedWaveSurferSignal
+                          data={sig.values}
+                          times={sig.times}
+                          viewport={viewport}
+                          cursorTimeSec={mirroredCursorTimeSec}
+                          onCursorTimeChange={setCursorTimeSec}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-zinc-500">
+                    Use <code className="bg-zinc-100 dark:bg-zinc-800 px-1 rounded">dbg.emit(&quot;name&quot;, value)</code> in your script and click the flask icon to extract debug signals.
+                  </p>
+                )
               ) : (
                 <>
                   {visualTab === "spectralCentroid" ||
@@ -513,9 +544,38 @@ export default function Home() {
                         viewport={viewport}
                         cursorTimeSec={mirroredCursorTimeSec}
                         onCursorTimeChange={setCursorTimeSec}
+                        variant="onset"
                       />
                     ) : (
                       <p className="text-sm text-zinc-500">Run Onset Peaks to view output.</p>
+                    )
+                  ) : null}
+
+                  {visualTab === "beatCandidates" ? (
+                    tabResult?.kind === "events" && tabResult.fn === "beatCandidates" ? (
+                      <SparseEventsViewer
+                        events={tabResult.events}
+                        viewport={viewport}
+                        cursorTimeSec={mirroredCursorTimeSec}
+                        onCursorTimeChange={setCursorTimeSec}
+                        variant="beatCandidate"
+                      />
+                    ) : (
+                      <p className="text-sm text-zinc-500">Run Beat Candidates to view output.</p>
+                    )
+                  ) : null}
+
+                  {visualTab === "tempoHypotheses" ? (
+                    tabResult?.kind === "tempoHypotheses" && tabResult.fn === "tempoHypotheses" ? (
+                      <TempoHypothesesViewer
+                        hypotheses={tabResult.hypotheses}
+                        inputCandidateCount={tabResult.inputCandidateCount}
+                        onHypothesisSelect={(hyp) => {
+                          console.log("Selected tempo hypothesis:", hyp);
+                        }}
+                      />
+                    ) : (
+                      <p className="text-sm text-zinc-500">Run Tempo Hypotheses to view output.</p>
                     )
                   ) : null}
 

@@ -37,6 +37,7 @@ export function useMirActions() {
     const peakPickConfig = configStore.getPeakPickConfig();
     const hpssConfig = configStore.getHpssConfig();
     const mfccConfig = configStore.getMfccConfig();
+    const tempoHypothesesConfig = configStore.getTempoHypothesesConfig();
 
     // Cancel any in-flight job before starting a new one.
     if (activeJobRef.current) {
@@ -63,6 +64,7 @@ export function useMirActions() {
       peakPick: peakPickConfig,
       hpss: hpssConfig,
       mfcc: mfccConfig,
+      tempoHypotheses: tempoHypothesesConfig,
     };
 
     try {
@@ -130,6 +132,36 @@ export function useMirActions() {
         return;
       }
 
+      if (result.kind === "beatCandidates") {
+        // Convert beat candidates to the events format for UI rendering.
+        // Beat candidates have a 'source' field but otherwise match the events structure.
+        const r: UiMirResult = {
+          kind: "events",
+          fn: selected,
+          times: result.times,
+          events: result.candidates.map((c, i) => ({
+            time: c.time,
+            strength: c.strength,
+            index: i,
+          })),
+        };
+        mirStore.setMirResult(selected, r);
+        mirStore.setVisualTab(selected);
+        return;
+      }
+
+      if (result.kind === "tempoHypotheses") {
+        const r: UiMirResult = {
+          kind: "tempoHypotheses",
+          fn: selected,
+          hypotheses: result.hypotheses,
+          inputCandidateCount: result.inputCandidateCount,
+        };
+        mirStore.setMirResult(selected, r);
+        mirStore.setVisualTab(selected);
+        return;
+      }
+
       // 2d
       const r: UiMirResult = {
         kind: "2d",
@@ -167,6 +199,8 @@ export function useMirActions() {
     "melSpectrogram",
     "onsetEnvelope",
     "onsetPeaks",
+    "beatCandidates",
+    "tempoHypotheses",
     "hpssHarmonic",
     "hpssPercussive",
     "mfcc",

@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useAudioStore } from "@/lib/stores/audioStore";
 
 const MIN_HEIGHT = 80;
-const MAX_HEIGHT = 400;
+const MAX_HEIGHT = 1200;
 const DEFAULT_HEIGHT = 150;
 
 
@@ -20,6 +20,7 @@ import type { AudioBufferLike } from "@octoseq/mir";
 
 import type { RefinementCandidate } from "@/lib/searchRefinement";
 import type { WaveSurferViewport } from "./types";
+import { AnalysisOverlay } from "./AnalysisOverlay";
 
 // Minimal typing to avoid depending on WaveSurfer's internal plugin registry.
 type RegionLike = {
@@ -120,6 +121,15 @@ type WaveSurferPlayerProps = {
 
   /** Notifies parent when playback state changes (play/pause). */
   onIsPlayingChange?: (isPlaying: boolean) => void;
+
+  /** Whether MIR analysis is currently running (shows overlay). */
+  isAnalysing?: boolean;
+  /** Human-readable name of the current analysis for the overlay. */
+  analysisName?: string;
+  /** Duration of the last completed analysis in milliseconds. */
+  lastAnalysisMs?: number;
+  /** Backend used for last analysis (e.g., "cpu" or "gpu"). */
+  analysisBackend?: string;
 };
 
 /**
@@ -153,6 +163,10 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     onIsPlayingChange,
     toolbarLeft,
     toolbarRight,
+    isAnalysing,
+    analysisName,
+    lastAnalysisMs,
+    analysisBackend,
   }: WaveSurferPlayerProps,
   ref
 ) {
@@ -976,6 +990,12 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
               Add missing match mode
             </div>
           ) : null}
+          <AnalysisOverlay
+            isAnalysing={!!isAnalysing}
+            analysisName={analysisName}
+            lastAnalysisMs={lastAnalysisMs}
+            backend={analysisBackend}
+          />
           <div
             ref={setContainerEl}
             className="w-full overflow-x-auto"

@@ -1,4 +1,4 @@
-import type { MirAudioPayload, MirResult, MirRunRequest } from "../types";
+import type { BeatCandidate, MirAudioPayload, MirResult, MirRunRequest, TempoHypothesis } from "../types";
 
 export type MirWorkerInitMessage = {
     type: "INIT";
@@ -93,6 +93,14 @@ export type MirWorkerResultMessage = {
         values?: ArrayBufferLike;
         data2d?: ArrayBufferLike[];
         events?: Array<{ time: number; strength: number; index: number }>;
+        candidates?: BeatCandidate[];
+        // For tempoHypotheses
+        hypotheses?: TempoHypothesis[];
+        inputCandidateCount?: number;
+        histogram?: {
+            bpmBins: ArrayBufferLike;
+            counts: ArrayBufferLike;
+        };
         meta: MirResult["meta"];
     };
 };

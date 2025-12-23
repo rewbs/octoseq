@@ -1,9 +1,11 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
+use crate::analysis_runner::{run_analysis, AnalysisConfig};
 use crate::gpu::renderer::Renderer;
 use crate::visualiser::VisualiserState;
 use crate::input::InputSignal;
@@ -158,6 +160,77 @@ impl WasmVisualiser {
             }
         }
     }
+
+    /// Run script in analysis mode to collect debug.emit() signals.
+    ///
+    /// This runs the script headlessly across the full track duration,
+    /// collecting all debug.emit() calls without rendering.
+    ///
+    /// Returns a JSON-serialized AnalysisResultJson.
+    pub fn run_analysis(&self, script: &str, duration: f32, time_step: f32) -> String {
+        let inner = self.inner.borrow();
+
+        let config = AnalysisConfig::new(duration, time_step);
+
+        // Run analysis with the current named_signals
+        match run_analysis(script, &inner.named_signals, config) {
+            Ok(result) => {
+                let wasm_signals: Vec<WasmDebugSignal> = result
+                    .debug_signals
+                    .into_iter()
+                    .map(|(name, sig)| {
+                        let (times, values) = sig.to_arrays();
+                        WasmDebugSignal { name, times, values }
+                    })
+                    .collect();
+
+                let wasm_result = WasmAnalysisResult {
+                    success: true,
+                    error: None,
+                    signals: wasm_signals,
+                    step_count: result.step_count,
+                    duration: result.duration,
+                };
+
+                serde_json::to_string(&wasm_result).unwrap_or_else(|e| {
+                    format!(
+                        r#"{{"success":false,"error":"Serialization error: {}","signals":[],"step_count":0,"duration":0}}"#,
+                        e
+                    )
+                })
+            }
+            Err(e) => {
+                let wasm_result = WasmAnalysisResult {
+                    success: false,
+                    error: Some(e),
+                    signals: vec![],
+                    step_count: 0,
+                    duration: 0.0,
+                };
+                serde_json::to_string(&wasm_result).unwrap_or_else(|_| {
+                    r#"{"success":false,"error":"Unknown error","signals":[],"step_count":0,"duration":0}"#.to_string()
+                })
+            }
+        }
+    }
+}
+
+/// A debug signal serialized for JavaScript.
+#[derive(Serialize)]
+struct WasmDebugSignal {
+    name: String,
+    times: Vec<f32>,
+    values: Vec<f32>,
+}
+
+/// Analysis result serialized for JavaScript.
+#[derive(Serialize)]
+struct WasmAnalysisResult {
+    success: bool,
+    error: Option<String>,
+    signals: Vec<WasmDebugSignal>,
+    step_count: usize,
+    duration: f32,
 }
 
 #[wasm_bindgen]

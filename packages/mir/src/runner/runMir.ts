@@ -1,3 +1,5 @@
+import { detectBeatCandidates } from "../dsp/beatCandidates";
+import { generateTempoHypotheses } from "../dsp/tempoHypotheses";
 import { melSpectrogram, type MelConfig, type MelSpectrogram } from "../dsp/mel";
 import { mfcc, delta, deltaDelta } from "../dsp/mfcc";
 import { onsetEnvelopeFromMel, onsetEnvelopeFromMelGpu } from "../dsp/onset";
@@ -280,6 +282,76 @@ export async function runMir(
                 timings: {
                     totalMs: end - t0,
                     cpuMs: cpuAfterSpec - cpuStart + melCpuMs,
+                },
+            },
+        };
+    }
+
+    if (request.fn === "beatCandidates") {
+        // Beat candidate detection requires both mel spectrogram and raw spectrogram.
+        const { mel, cpuExtraMs: melCpuMs } = await computeMel(false);
+
+        const beatOpts = request.beatCandidates ?? {};
+        const result = detectBeatCandidates(mel, spec, {
+            minIntervalSec: beatOpts.minIntervalSec,
+            thresholdFactor: beatOpts.thresholdFactor,
+            smoothMs: beatOpts.smoothMs,
+        });
+
+        const end = nowMs();
+        return {
+            kind: "beatCandidates",
+            times: result.salience.times,
+            candidates: result.candidates,
+            salience: beatOpts.includeSalience ? result.salience : undefined,
+            meta: {
+                backend: "cpu",
+                usedGpu: false,
+                timings: {
+                    totalMs: end - t0,
+                    cpuMs: cpuAfterSpec - cpuStart + melCpuMs,
+                },
+            },
+        };
+    }
+
+    if (request.fn === "tempoHypotheses") {
+        // Tempo hypothesis generation requires beat candidates.
+        // We compute them internally (could accept pre-computed in future).
+        const { mel, cpuExtraMs: melCpuMs } = await computeMel(false);
+
+        const beatOpts = request.beatCandidates ?? {};
+        const beatResult = detectBeatCandidates(mel, spec, {
+            minIntervalSec: beatOpts.minIntervalSec,
+            thresholdFactor: beatOpts.thresholdFactor,
+            smoothMs: beatOpts.smoothMs,
+        });
+
+        const tempoStart = nowMs();
+        const tempoOpts = request.tempoHypotheses ?? {};
+        const result = generateTempoHypotheses(beatResult.candidates, {
+            minBpm: tempoOpts.minBpm,
+            maxBpm: tempoOpts.maxBpm,
+            binSizeBpm: tempoOpts.binSizeBpm,
+            maxHypotheses: tempoOpts.maxHypotheses,
+            minConfidence: tempoOpts.minConfidence,
+            weightByStrength: tempoOpts.weightByStrength,
+            includeHistogram: tempoOpts.includeHistogram,
+        });
+
+        const end = nowMs();
+        return {
+            kind: "tempoHypotheses",
+            times: spec.times,
+            hypotheses: result.hypotheses,
+            inputCandidateCount: result.inputCandidateCount,
+            histogram: result.histogram,
+            meta: {
+                backend: "cpu",
+                usedGpu: false,
+                timings: {
+                    totalMs: end - t0,
+                    cpuMs: cpuAfterSpec - cpuStart + melCpuMs + (end - tempoStart),
                 },
             },
         };

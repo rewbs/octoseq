@@ -185,6 +185,36 @@ export class MirWorkerClient {
                     return;
                 }
 
+                if (m.result.kind === "beatCandidates") {
+                    resolve({
+                        kind: "beatCandidates",
+                        times,
+                        candidates: m.result.candidates ?? [],
+                        meta: m.result.meta,
+                    });
+                    return;
+                }
+
+                if (m.result.kind === "tempoHypotheses") {
+                    let histogram: { bpmBins: Float32Array; counts: Float32Array } | undefined;
+                    if (m.result.histogram) {
+                        histogram = {
+                            bpmBins: new Float32Array(m.result.histogram.bpmBins as ArrayBuffer),
+                            counts: new Float32Array(m.result.histogram.counts as ArrayBuffer),
+                        };
+                    }
+
+                    resolve({
+                        kind: "tempoHypotheses",
+                        times,
+                        hypotheses: m.result.hypotheses ?? [],
+                        inputCandidateCount: m.result.inputCandidateCount ?? 0,
+                        histogram,
+                        meta: m.result.meta,
+                    });
+                    return;
+                }
+
                 const data = (m.result.data2d ?? []).map((b: ArrayBufferLike) => new Float32Array(b as ArrayBuffer));
                 resolve({
                     kind: "2d",

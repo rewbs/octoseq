@@ -5,6 +5,8 @@ pub mod sparkline;
 pub mod scripting;
 pub mod scene_graph;
 pub mod script_log;
+pub mod debug_collector;
+pub mod analysis_runner;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cli;

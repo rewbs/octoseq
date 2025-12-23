@@ -2,11 +2,12 @@
 export { useAudioStore, type AudioStore } from "./audioStore";
 export { usePlaybackStore, getMirroredCursorTime, type PlaybackStore } from "./playbackStore";
 export { useConfigStore, type ConfigStore } from "./configStore";
-export { useMirStore, mirTabDefinitions, type MirStore } from "./mirStore";
+export { useMirStore, mirTabDefinitions, type MirStore, type VisualTabId } from "./mirStore";
 export { useSearchStore, type SearchStore } from "./searchStore";
+export { useDebugSignalStore, type DebugSignalStore } from "./debugSignalStore";
 
 // Types
-export type { UiMirResult, SearchResult, MirTimings } from "./types";
+export type { UiMirResult, SearchResult, MirTimings, DebugSignal, AnalysisResult, RawAnalysisResult } from "./types";
 
 // Action hooks
 export { useMirActions } from "./hooks/useMirActions";
@@ -24,6 +25,8 @@ export {
   useSearchSignal,
   useHasSearchResult,
   useRefinementLabelsAvailable,
+  useHasDebugSignals,
+  useDebugSignals,
   useTabDefs,
   useTabResult,
   useDisplayedHeatmap,

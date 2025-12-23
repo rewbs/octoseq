@@ -24,10 +24,16 @@
 //! - `log.warn(value)` - Log warning message to console/stderr
 //! - `log.error(value)` - Log error message to console/stderr
 //! - Values can be strings, numbers, booleans, or arrays
+//!
+//! Debug signals:
+//! - `dbg.emit(name, value)` - Emit a debug signal for analysis
+//! - Collected during analysis mode; no-op during playback
+//! - Use for inspecting script-derived values (gates, envelopes, etc.)
 
 use std::collections::HashMap;
 use rhai::{Engine, Scope, AST, Dynamic, EvalAltResult};
 
+use crate::debug_collector::debug_emit;
 use crate::scene_graph::{SceneGraph, EntityId, MeshType, LineMode, SceneEntity, LineStrip as SceneLineStrip};
 use crate::script_log::{ScriptLogger, reset_frame_log_count};
 
@@ -59,12 +65,36 @@ impl ScriptEngine {
         engine.set_max_array_size(1_000);
         engine.set_max_map_size(500);
 
-        // Register ScriptLogger type and methods
+        // Register standalone logging functions (these can be called from anywhere)
         engine
-            .register_type_with_name::<ScriptLogger>("ScriptLogger")
-            .register_fn("info", ScriptLogger::info)
-            .register_fn("warn", ScriptLogger::warn)
-            .register_fn("error", ScriptLogger::error);
+            .register_fn("__log_info", |value: Dynamic| {
+                ScriptLogger::new().info(value);
+            })
+            .register_fn("__log_warn", |value: Dynamic| {
+                ScriptLogger::new().warn(value);
+            })
+            .register_fn("__log_error", |value: Dynamic| {
+                ScriptLogger::new().error(value);
+            });
+
+        // Register debug.emit native function
+        // This records signals during analysis mode (when a collector is installed)
+        // In playback mode, it's a no-op (no collector installed)
+        engine.register_fn(
+            "__debug_emit",
+            |name: rhai::ImmutableString, value: Dynamic| {
+                // Convert value to f32
+                let f_value = if let Ok(f) = value.as_float() {
+                    f as f32
+                } else if let Ok(i) = value.as_int() {
+                    i as f32
+                } else {
+                    // Ignore non-numeric values
+                    return;
+                };
+                debug_emit(&name, f_value);
+            },
+        );
 
         Self {
             engine,
@@ -91,9 +121,6 @@ impl ScriptEngine {
 
         // Next entity ID
         self.scope.push("__next_id", 1_i64);
-
-        // Inject the log object for script logging
-        self.scope.push_constant("log", ScriptLogger::new());
     }
 
     /// Load and compile a script.
@@ -204,6 +231,18 @@ scene.remove = |entity| {{
         __scene_ids.remove(idx);
     }}
 }};
+
+// Log module - wraps native logging functions
+let log = #{{}};
+log.info = |msg| {{ __log_info(msg); }};
+log.warn = |msg| {{ __log_warn(msg); }};
+log.error = |msg| {{ __log_error(msg); }};
+
+// Debug module - for emitting debug signals
+// Signals are collected during analysis mode for visualization
+// In playback mode, this is a no-op
+let dbg = #{{}};
+dbg.emit = |name, value| {{ __debug_emit(name, value); }};
 
 // === User Script ===
 {script}
