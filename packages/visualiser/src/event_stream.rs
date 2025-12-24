@@ -174,6 +174,84 @@ impl EventStream {
     pub fn to_signal(&self) -> crate::signal::Signal {
         crate::signal::Signal::from_events(self.events.clone())
     }
+
+    /// Convert this EventStream to a Signal with envelope shaping options.
+    ///
+    /// Each event generates an envelope according to the options (shape, attack,
+    /// decay, etc.), and contributions are combined using the overlap mode.
+    ///
+    /// # Example (Rhai)
+    /// ```rhai
+    /// let events = inputs.energy.pick.events(#{ target_density: 2.0 });
+    /// let envelope = events.to_signal(#{
+    ///     envelope: "attack_decay",
+    ///     attack_beats: 0.05,
+    ///     decay_beats: 0.5,
+    ///     easing: "exponential_out"
+    /// });
+    /// ```
+    pub fn to_signal_with_options(
+        &self,
+        options: crate::signal::ToSignalOptions,
+    ) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_with_options(self.events.clone(), options)
+    }
+
+    // =========================================================================
+    // Filtering Methods
+    // =========================================================================
+
+    /// Filter events to a time range [start, end).
+    ///
+    /// Returns a new EventStream containing only events within the range.
+    pub fn filter_time(&self, start: f32, end: f32) -> EventStream {
+        let filtered: Vec<Event> = self
+            .events
+            .iter()
+            .filter(|e| e.time >= start && e.time < end)
+            .cloned()
+            .collect();
+
+        EventStream {
+            id: EventStreamId::new(),
+            events: Arc::new(filtered),
+            source_description: format!("{} [time {:.2}-{:.2}]", self.source_description, start, end),
+            options: self.options.clone(),
+        }
+    }
+
+    /// Filter events by minimum weight.
+    ///
+    /// Returns a new EventStream containing only events with weight >= min_weight.
+    pub fn filter_weight(&self, min_weight: f32) -> EventStream {
+        let filtered: Vec<Event> = self
+            .events
+            .iter()
+            .filter(|e| e.weight >= min_weight)
+            .cloned()
+            .collect();
+
+        EventStream {
+            id: EventStreamId::new(),
+            events: Arc::new(filtered),
+            source_description: format!("{} [weight>={:.2}]", self.source_description, min_weight),
+            options: self.options.clone(),
+        }
+    }
+
+    /// Limit to the first N events.
+    ///
+    /// Returns a new EventStream with at most max_events events.
+    pub fn limit(&self, max_events: usize) -> EventStream {
+        let limited: Vec<Event> = self.events.iter().take(max_events).cloned().collect();
+
+        EventStream {
+            id: EventStreamId::new(),
+            events: Arc::new(limited),
+            source_description: format!("{} [limit {}]", self.source_description, max_events),
+            options: self.options.clone(),
+        }
+    }
 }
 
 /// A single event in an EventStream.

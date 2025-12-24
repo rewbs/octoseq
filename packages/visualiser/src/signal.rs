@@ -139,6 +139,72 @@ impl Signal {
         })
     }
 
+    // === Math Primitives ===
+
+    /// Clamp the signal to a range [min, max].
+    pub fn clamp(&self, min: f32, max: f32) -> Signal {
+        Signal::new(SignalNode::Clamp {
+            source: self.clone(),
+            min,
+            max,
+        })
+    }
+
+    /// Floor (round down to nearest integer).
+    pub fn floor(&self) -> Signal {
+        Signal::new(SignalNode::Floor {
+            source: self.clone(),
+        })
+    }
+
+    /// Ceiling (round up to nearest integer).
+    pub fn ceil(&self) -> Signal {
+        Signal::new(SignalNode::Ceil {
+            source: self.clone(),
+        })
+    }
+
+    // === Rate and Accumulation ===
+
+    /// Compute the rate of change (derivative approximation).
+    /// Returns (current - previous) / dt.
+    pub fn diff(&self) -> Signal {
+        Signal::new(SignalNode::Diff {
+            source: self.clone(),
+        })
+    }
+
+    /// Integrate (cumulative sum) with optional decay.
+    ///
+    /// - `decay_beats`: Time constant for decay in beats. 0 = no decay.
+    ///   The accumulated value decays by exp(-dt/tau) each frame.
+    pub fn integrate(&self, decay_beats: f32) -> Signal {
+        Signal::new(SignalNode::Integrate {
+            source: self.clone(),
+            decay_beats,
+        })
+    }
+
+    // === Time Shifting ===
+
+    /// Delay the signal by N beats (look back in time).
+    /// Uses a ring buffer to store past values.
+    pub fn delay(&self, beats: f32) -> Signal {
+        Signal::new(SignalNode::Delay {
+            source: self.clone(),
+            beats,
+        })
+    }
+
+    /// Anticipate the signal by N beats (look ahead in time).
+    /// Only works reliably on Input signals; falls back to current value otherwise.
+    pub fn anticipate(&self, beats: f32) -> Signal {
+        Signal::new(SignalNode::Anticipate {
+            source: self.clone(),
+            beats,
+        })
+    }
+
     // === Utility ===
 
     /// Get the underlying input name if this is a simple Input signal.
@@ -194,17 +260,35 @@ impl Signal {
             SignalNode::Debug { source, .. } => {
                 source.collect_normalise_sources(sources);
             }
+            // New primitives that wrap a source
+            SignalNode::Clamp { source, .. }
+            | SignalNode::Floor { source }
+            | SignalNode::Ceil { source }
+            | SignalNode::Diff { source }
+            | SignalNode::Integrate { source, .. }
+            | SignalNode::Delay { source, .. }
+            | SignalNode::Anticipate { source, .. } => {
+                source.collect_normalise_sources(sources);
+            }
             // Leaf nodes don't have children
             SignalNode::Input { .. }
             | SignalNode::Constant(_)
             | SignalNode::Generator(_)
-            | SignalNode::EventStreamSource { .. } => {}
+            | SignalNode::EventStreamSource { .. }
+            | SignalNode::EventStreamEnvelope { .. } => {}
         }
     }
 
     /// Create a signal from event stream data (for to_signal() conversion).
+    /// Produces simple impulses at event times.
     pub fn from_events(events: Arc<Vec<Event>>) -> Signal {
         Signal::new(SignalNode::EventStreamSource { events })
+    }
+
+    /// Create a signal from event stream data with envelope shaping options.
+    /// Produces shaped envelopes at event times.
+    pub fn from_events_with_options(events: Arc<Vec<Event>>, options: ToSignalOptions) -> Signal {
+        Signal::new(SignalNode::EventStreamEnvelope { events, options })
     }
 }
 
@@ -254,6 +338,33 @@ pub enum SignalNode {
     /// Signal generated from an EventStream (impulses at event times).
     /// Each event produces an impulse with height equal to its weight.
     EventStreamSource { events: Arc<Vec<Event>> },
+
+    /// Signal generated from an EventStream with envelope shaping.
+    /// Each event generates an envelope; contributions are combined per overlap_mode.
+    EventStreamEnvelope {
+        events: Arc<Vec<Event>>,
+        options: ToSignalOptions,
+    },
+
+    // === Math Primitives ===
+    /// Clamp signal to a range.
+    Clamp { source: Signal, min: f32, max: f32 },
+    /// Floor (round down).
+    Floor { source: Signal },
+    /// Ceiling (round up).
+    Ceil { source: Signal },
+
+    // === Rate and Accumulation ===
+    /// Rate of change (derivative approximation).
+    Diff { source: Signal },
+    /// Cumulative sum with optional decay.
+    Integrate { source: Signal, decay_beats: f32 },
+
+    // === Time Shifting ===
+    /// Delay by N beats (look back in time).
+    Delay { source: Signal, beats: f32 },
+    /// Anticipate by N beats (look ahead in time).
+    Anticipate { source: Signal, beats: f32 },
 }
 
 /// Generator node for oscillators, noise, and other signal sources.
@@ -294,6 +405,129 @@ pub enum NoiseType {
     White,
     /// Pink noise (1/f spectrum).
     Pink,
+}
+
+// ============================================================================
+// EventStream → Signal Conversion Types
+// ============================================================================
+
+/// Envelope shape for EventStream → Signal conversion.
+///
+/// Defines how each event contributes to the output signal over time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EnvelopeShape {
+    /// Single-frame spike at event time (height = weight).
+    #[default]
+    Impulse,
+    /// Step function: rises at event time and holds indefinitely.
+    Step,
+    /// Attack-decay envelope: rises over attack_beats, falls over decay_beats.
+    AttackDecay,
+    /// Full ADSR envelope with explicit sustain duration.
+    Adsr,
+    /// Gaussian bell curve centered at event time.
+    Gaussian,
+    /// Exponential decay from event time.
+    ExponentialDecay,
+}
+
+/// Easing function for envelope transitions.
+///
+/// Controls the shape of attack/decay/release curves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EasingFunction {
+    /// Linear interpolation.
+    #[default]
+    Linear,
+    /// Quadratic ease-in (slow start).
+    QuadraticIn,
+    /// Quadratic ease-out (slow end).
+    QuadraticOut,
+    /// Quadratic ease-in-out (slow start and end).
+    QuadraticInOut,
+    /// Cubic ease-in.
+    CubicIn,
+    /// Cubic ease-out.
+    CubicOut,
+    /// Cubic ease-in-out.
+    CubicInOut,
+    /// Exponential ease-in.
+    ExponentialIn,
+    /// Exponential ease-out.
+    ExponentialOut,
+    /// Smooth step (Hermite interpolation).
+    SmoothStep,
+    /// Elastic/bouncy effect (overshoots target).
+    Elastic,
+}
+
+/// How to combine overlapping envelopes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OverlapMode {
+    /// Sum all envelope contributions.
+    #[default]
+    Sum,
+    /// Take the maximum of all contributions.
+    Max,
+}
+
+/// How to merge grouped events before envelope generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MergeMode {
+    /// Sum weights of grouped events.
+    #[default]
+    Sum,
+    /// Take maximum weight.
+    Max,
+    /// Average weights.
+    Mean,
+}
+
+/// Options for EventStream.to_signal() conversion.
+///
+/// Controls how discrete events are shaped into a continuous signal.
+#[derive(Debug, Clone)]
+pub struct ToSignalOptions {
+    /// Envelope shape to use for each event.
+    pub envelope: EnvelopeShape,
+    /// Attack time in beats (for AttackDecay, Adsr).
+    pub attack_beats: f32,
+    /// Decay time in beats (for AttackDecay, Adsr).
+    pub decay_beats: f32,
+    /// Sustain level 0-1 (for Adsr).
+    pub sustain_level: f32,
+    /// Sustain duration in beats (for Adsr).
+    pub sustain_beats: f32,
+    /// Release time in beats (for Adsr).
+    pub release_beats: f32,
+    /// Width in beats (for Gaussian - approx 95% of bell curve).
+    pub width_beats: f32,
+    /// Easing function for envelope transitions.
+    pub easing: EasingFunction,
+    /// How to combine overlapping envelopes.
+    pub overlap_mode: OverlapMode,
+    /// Group events within this beat distance before generating envelopes.
+    pub group_within_beats: Option<f32>,
+    /// How to merge grouped events' weights.
+    pub merge_mode: MergeMode,
+}
+
+impl Default for ToSignalOptions {
+    fn default() -> Self {
+        Self {
+            envelope: EnvelopeShape::Impulse,
+            attack_beats: 0.1,
+            decay_beats: 0.5,
+            sustain_level: 0.7,
+            sustain_beats: 0.5,
+            release_beats: 0.3,
+            width_beats: 0.25,
+            easing: EasingFunction::Linear,
+            overlap_mode: OverlapMode::Sum,
+            group_within_beats: None,
+            merge_mode: MergeMode::Sum,
+        }
+    }
 }
 
 /// Parameters for smoothing operations.

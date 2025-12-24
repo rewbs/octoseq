@@ -29,6 +29,21 @@ pub fn register_signal_api(engine: &mut Engine) {
         s.debug(name.as_str())
     });
 
+    // === Math primitives ===
+    engine.register_fn("clamp", |s: &mut Signal, min: f32, max: f32| s.clamp(min, max));
+    engine.register_fn("floor", |s: &mut Signal| s.floor());
+    engine.register_fn("ceil", |s: &mut Signal| s.ceil());
+
+    // === Rate and accumulation ===
+    engine.register_fn("diff", |s: &mut Signal| s.diff());
+    engine.register_fn("integrate", |s: &mut Signal, decay_beats: f32| {
+        s.integrate(decay_beats)
+    });
+
+    // === Time shifting ===
+    engine.register_fn("delay", |s: &mut Signal, beats: f32| s.delay(beats));
+    engine.register_fn("anticipate", |s: &mut Signal, beats: f32| s.anticipate(beats));
+
     // === Fluent namespace getters ===
     // signal.smooth -> SmoothBuilder
     engine.register_type_with_name::<SmoothBuilder>("SmoothBuilder");

@@ -14,7 +14,8 @@ use crate::debug_collector::debug_emit;
 use crate::input::InputSignal;
 use crate::musical_time::{MusicalTimeSegment, MusicalTimeStructure, DEFAULT_BPM};
 use crate::signal::{
-    GateParams, GeneratorNode, NormaliseParams, NoiseType, Signal, SignalNode, SmoothParams,
+    EasingFunction, EnvelopeShape, GateParams, GeneratorNode, NormaliseParams, NoiseType,
+    OverlapMode, Signal, SignalNode, SmoothParams, ToSignalOptions,
 };
 use crate::signal_state::SignalState;
 use crate::signal_stats::StatisticsCache;
@@ -144,6 +145,31 @@ impl Signal {
             // === Event Sources ===
             SignalNode::EventStreamSource { events } => {
                 self.evaluate_event_stream_source(events, ctx)
+            }
+
+            SignalNode::EventStreamEnvelope { events, options } => {
+                self.evaluate_event_stream_envelope(events, options, ctx)
+            }
+
+            // === Math Primitives ===
+            SignalNode::Clamp { source, min, max } => source.evaluate(ctx).clamp(*min, *max),
+
+            SignalNode::Floor { source } => source.evaluate(ctx).floor(),
+
+            SignalNode::Ceil { source } => source.evaluate(ctx).ceil(),
+
+            // === Rate and Accumulation ===
+            SignalNode::Diff { source } => self.evaluate_diff(source, ctx),
+
+            SignalNode::Integrate { source, decay_beats } => {
+                self.evaluate_integrate(source, *decay_beats, ctx)
+            }
+
+            // === Time Shifting ===
+            SignalNode::Delay { source, beats } => self.evaluate_delay(source, *beats, ctx),
+
+            SignalNode::Anticipate { source, beats } => {
+                self.evaluate_anticipate(source, *beats, ctx)
             }
         }
     }
@@ -470,6 +496,327 @@ impl Signal {
                 } else {
                     0.0
                 }
+            }
+        }
+    }
+
+    // =========================================================================
+    // EventStream Envelope Evaluation
+    // =========================================================================
+
+    /// Evaluate an EventStreamEnvelope signal.
+    ///
+    /// Computes the contribution of all events' envelopes at the current time,
+    /// combining them according to the overlap mode.
+    fn evaluate_event_stream_envelope(
+        &self,
+        events: &[crate::event_stream::Event],
+        options: &ToSignalOptions,
+        ctx: &EvalContext,
+    ) -> f32 {
+        if events.is_empty() {
+            return 0.0;
+        }
+
+        let mut result = 0.0f32;
+
+        for event in events {
+            let contribution = self.evaluate_single_envelope(event, options, ctx);
+
+            match options.overlap_mode {
+                OverlapMode::Sum => result += contribution,
+                OverlapMode::Max => result = result.max(contribution),
+            }
+        }
+
+        result
+    }
+
+    /// Evaluate a single event's envelope contribution at the current time.
+    fn evaluate_single_envelope(
+        &self,
+        event: &crate::event_stream::Event,
+        options: &ToSignalOptions,
+        ctx: &EvalContext,
+    ) -> f32 {
+        let time = ctx.time;
+        let event_time = event.time;
+        let weight = event.weight;
+
+        // Time relative to event
+        let dt = time - event_time;
+
+        // Convert beat parameters to seconds
+        let attack_sec = ctx.beats_to_seconds(options.attack_beats);
+        let decay_sec = ctx.beats_to_seconds(options.decay_beats);
+        let sustain_sec = ctx.beats_to_seconds(options.sustain_beats);
+        let release_sec = ctx.beats_to_seconds(options.release_beats);
+        let width_sec = ctx.beats_to_seconds(options.width_beats);
+
+        match options.envelope {
+            EnvelopeShape::Impulse => {
+                // Single-frame spike
+                let impulse_window = ctx.dt * 0.5;
+                if dt.abs() <= impulse_window {
+                    weight
+                } else {
+                    0.0
+                }
+            }
+
+            EnvelopeShape::Step => {
+                // Step up at event time, hold forever
+                if dt >= 0.0 {
+                    weight
+                } else {
+                    0.0
+                }
+            }
+
+            EnvelopeShape::AttackDecay => {
+                if dt < 0.0 {
+                    0.0
+                } else if dt < attack_sec {
+                    // Attack phase
+                    let t = if attack_sec > 0.0 { dt / attack_sec } else { 1.0 };
+                    weight * apply_easing(t, options.easing)
+                } else {
+                    // Decay phase
+                    let decay_dt = dt - attack_sec;
+                    if decay_sec <= 0.0 || decay_dt >= decay_sec {
+                        0.0
+                    } else {
+                        let t = decay_dt / decay_sec;
+                        weight * (1.0 - apply_easing(t, options.easing))
+                    }
+                }
+            }
+
+            EnvelopeShape::Adsr => {
+                if dt < 0.0 {
+                    0.0
+                } else if dt < attack_sec {
+                    // Attack: 0 → 1
+                    let t = if attack_sec > 0.0 { dt / attack_sec } else { 1.0 };
+                    weight * apply_easing(t, options.easing)
+                } else if dt < attack_sec + decay_sec {
+                    // Decay: 1 → sustain_level
+                    let decay_dt = dt - attack_sec;
+                    let t = if decay_sec > 0.0 {
+                        decay_dt / decay_sec
+                    } else {
+                        1.0
+                    };
+                    let decay_amount = 1.0 - options.sustain_level;
+                    weight * (1.0 - decay_amount * apply_easing(t, options.easing))
+                } else if dt < attack_sec + decay_sec + sustain_sec {
+                    // Sustain: hold at sustain_level
+                    weight * options.sustain_level
+                } else {
+                    // Release: sustain_level → 0
+                    let release_dt = dt - attack_sec - decay_sec - sustain_sec;
+                    if release_sec <= 0.0 || release_dt >= release_sec {
+                        0.0
+                    } else {
+                        let t = release_dt / release_sec;
+                        weight * options.sustain_level * (1.0 - apply_easing(t, options.easing))
+                    }
+                }
+            }
+
+            EnvelopeShape::Gaussian => {
+                // Gaussian bell curve centered at event time
+                // width_sec is approximately the 95% width (2 sigma)
+                let sigma = width_sec / 2.0;
+                if sigma <= 0.0 {
+                    if dt.abs() < ctx.dt * 0.5 {
+                        weight
+                    } else {
+                        0.0
+                    }
+                } else {
+                    let exponent = -0.5 * (dt / sigma).powi(2);
+                    weight * exponent.exp()
+                }
+            }
+
+            EnvelopeShape::ExponentialDecay => {
+                if dt < 0.0 {
+                    0.0
+                } else if decay_sec <= 0.0 {
+                    // Instant decay
+                    if dt.abs() < ctx.dt * 0.5 {
+                        weight
+                    } else {
+                        0.0
+                    }
+                } else {
+                    // Exponential decay with time constant tau
+                    // decay_sec is time to reach ~5% (3 tau)
+                    let tau = decay_sec / 3.0;
+                    weight * (-dt / tau).exp()
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Rate and Accumulation Operations
+    // =========================================================================
+
+    /// Evaluate diff (rate of change).
+    fn evaluate_diff(&self, source: &Signal, ctx: &mut EvalContext) -> f32 {
+        let current = source.evaluate(ctx);
+        let last = ctx.state.get_diff_last(self.id, current);
+
+        let diff = if ctx.dt > 0.0 {
+            (current - last) / ctx.dt
+        } else {
+            0.0
+        };
+
+        ctx.state.set_diff_last(self.id, current);
+        diff
+    }
+
+    /// Evaluate integrate (cumulative sum with optional decay).
+    fn evaluate_integrate(
+        &self,
+        source: &Signal,
+        decay_beats: f32,
+        ctx: &mut EvalContext,
+    ) -> f32 {
+        let current = source.evaluate(ctx);
+        let accumulated = ctx.state.get_integrate(self.id, 0.0);
+
+        // Apply decay per frame
+        let decay_factor = if decay_beats > 0.0 {
+            let tau = ctx.beats_to_seconds(decay_beats);
+            (-ctx.dt / tau).exp()
+        } else {
+            1.0 // No decay
+        };
+
+        let new_accumulated = accumulated * decay_factor + current * ctx.dt;
+        ctx.state.set_integrate(self.id, new_accumulated);
+        new_accumulated
+    }
+
+    // =========================================================================
+    // Time Shifting Operations
+    // =========================================================================
+
+    /// Evaluate delay (look back in time using a ring buffer).
+    fn evaluate_delay(&self, source: &Signal, beats: f32, ctx: &mut EvalContext) -> f32 {
+        let current = source.evaluate(ctx);
+
+        if beats <= 0.0 {
+            return current;
+        }
+
+        let delay_sec = ctx.beats_to_seconds(beats);
+        let buffer_size = ((delay_sec / ctx.dt).ceil() as usize).max(1).min(10000);
+
+        let buffer = ctx.state.get_delay_buffer(self.id, buffer_size);
+
+        // Resize if BPM changed
+        if buffer.capacity() != buffer_size {
+            buffer.resize(buffer_size);
+        }
+
+        // Push current value and get delayed value
+        buffer.push(current)
+    }
+
+    /// Evaluate anticipate (look ahead in time).
+    ///
+    /// Only works reliably on Input signals where we can sample at future times.
+    /// For other signals, falls back silently to current value.
+    fn evaluate_anticipate(&self, source: &Signal, beats: f32, ctx: &mut EvalContext) -> f32 {
+        if beats <= 0.0 {
+            return source.evaluate(ctx);
+        }
+
+        let anticipate_sec = ctx.beats_to_seconds(beats);
+        let future_time = ctx.time + anticipate_sec;
+
+        // Try to find the root input signal and sample at future time
+        if let Some(name) = self.find_root_input_name(source) {
+            if let Some(input) = ctx.input_signals.get(&name) {
+                return input.sample(future_time);
+            }
+        }
+
+        // For non-Input signals, fall back to current value silently
+        source.evaluate(ctx)
+    }
+}
+
+// =============================================================================
+// Easing Functions
+// =============================================================================
+
+/// Apply an easing function to a normalized value (0-1).
+fn apply_easing(t: f32, easing: EasingFunction) -> f32 {
+    let t = t.clamp(0.0, 1.0);
+
+    match easing {
+        EasingFunction::Linear => t,
+
+        EasingFunction::QuadraticIn => t * t,
+
+        EasingFunction::QuadraticOut => t * (2.0 - t),
+
+        EasingFunction::QuadraticInOut => {
+            if t < 0.5 {
+                2.0 * t * t
+            } else {
+                -1.0 + (4.0 - 2.0 * t) * t
+            }
+        }
+
+        EasingFunction::CubicIn => t * t * t,
+
+        EasingFunction::CubicOut => {
+            let t1 = t - 1.0;
+            t1 * t1 * t1 + 1.0
+        }
+
+        EasingFunction::CubicInOut => {
+            if t < 0.5 {
+                4.0 * t * t * t
+            } else {
+                let t1 = 2.0 * t - 2.0;
+                0.5 * t1 * t1 * t1 + 1.0
+            }
+        }
+
+        EasingFunction::ExponentialIn => {
+            if t == 0.0 {
+                0.0
+            } else {
+                2.0_f32.powf(10.0 * (t - 1.0))
+            }
+        }
+
+        EasingFunction::ExponentialOut => {
+            if t == 1.0 {
+                1.0
+            } else {
+                1.0 - 2.0_f32.powf(-10.0 * t)
+            }
+        }
+
+        EasingFunction::SmoothStep => t * t * (3.0 - 2.0 * t),
+
+        EasingFunction::Elastic => {
+            if t == 0.0 {
+                0.0
+            } else if t == 1.0 {
+                1.0
+            } else {
+                let c4 = (2.0 * std::f32::consts::PI) / 3.0;
+                2.0_f32.powf(-10.0 * t) * ((t * 10.0 - 0.75) * c4).sin() + 1.0
             }
         }
     }

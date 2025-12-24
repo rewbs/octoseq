@@ -25,7 +25,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::event_stream::{Event, EventStream, PickEventsOptions, WeightMode};
-use crate::signal::Signal;
+use crate::signal::{
+    EasingFunction, EnvelopeShape, MergeMode, OverlapMode, Signal, ToSignalOptions,
+};
 
 // Thread-local storage for pending event extractions
 // These are collected during script execution and processed afterwards
@@ -147,6 +149,29 @@ pub fn register_event_api(engine: &mut Engine) {
 
     // === Register PendingEventExtraction ===
     engine.register_type_with_name::<PendingEventExtraction>("PendingEventExtraction");
+
+    // === EventStream to_signal methods ===
+    // to_signal() - simple impulses (no options)
+    engine.register_fn("to_signal", |es: &mut EventStream| -> Signal { es.to_signal() });
+
+    // to_signal(options) - with envelope shaping options
+    engine.register_fn("to_signal", |es: &mut EventStream, options: Map| -> Signal {
+        let opts = parse_to_signal_options(&options);
+        es.to_signal_with_options(opts)
+    });
+
+    // === EventStream filtering methods ===
+    engine.register_fn("filter_time", |es: &mut EventStream, start: f32, end: f32| {
+        es.filter_time(start, end)
+    });
+
+    engine.register_fn("filter_weight", |es: &mut EventStream, min_weight: f32| {
+        es.filter_weight(min_weight)
+    });
+
+    engine.register_fn("limit", |es: &mut EventStream, max_events: i64| {
+        es.limit(max_events as usize)
+    });
 }
 
 /// Parse PickEventsOptions from a Rhai Map.
@@ -214,6 +239,123 @@ pub fn parse_pick_options(map: &Map) -> PickEventsOptions {
                     window_beats: f,
                 };
             }
+        }
+    }
+
+    opts
+}
+
+/// Parse ToSignalOptions from a Rhai Map.
+///
+/// Supports all envelope options: envelope type, attack/decay/sustain/release times,
+/// easing function, overlap mode, grouping, and merge mode.
+pub fn parse_to_signal_options(map: &Map) -> ToSignalOptions {
+    let mut opts = ToSignalOptions::default();
+
+    fn get_f32(v: &Dynamic) -> Option<f32> {
+        v.as_float()
+            .ok()
+            .or_else(|| v.as_int().ok().map(|i| i as f32))
+    }
+
+    // Envelope shape
+    if let Some(v) = map.get("envelope") {
+        if let Ok(s) = v.clone().into_immutable_string() {
+            opts.envelope = match s.as_str() {
+                "impulse" => EnvelopeShape::Impulse,
+                "step" => EnvelopeShape::Step,
+                "attack_decay" => EnvelopeShape::AttackDecay,
+                "adsr" => EnvelopeShape::Adsr,
+                "gaussian" => EnvelopeShape::Gaussian,
+                "exponential_decay" => EnvelopeShape::ExponentialDecay,
+                _ => EnvelopeShape::Impulse,
+            };
+        }
+    }
+
+    // Easing function
+    if let Some(v) = map.get("easing") {
+        if let Ok(s) = v.clone().into_immutable_string() {
+            opts.easing = match s.as_str() {
+                "linear" => EasingFunction::Linear,
+                "quadratic_in" => EasingFunction::QuadraticIn,
+                "quadratic_out" => EasingFunction::QuadraticOut,
+                "quadratic_in_out" => EasingFunction::QuadraticInOut,
+                "cubic_in" => EasingFunction::CubicIn,
+                "cubic_out" => EasingFunction::CubicOut,
+                "cubic_in_out" => EasingFunction::CubicInOut,
+                "exponential_in" => EasingFunction::ExponentialIn,
+                "exponential_out" => EasingFunction::ExponentialOut,
+                "smoothstep" => EasingFunction::SmoothStep,
+                "elastic" => EasingFunction::Elastic,
+                _ => EasingFunction::Linear,
+            };
+        }
+    }
+
+    // Overlap mode
+    if let Some(v) = map.get("overlap_mode") {
+        if let Ok(s) = v.clone().into_immutable_string() {
+            opts.overlap_mode = match s.as_str() {
+                "sum" => OverlapMode::Sum,
+                "max" => OverlapMode::Max,
+                _ => OverlapMode::Sum,
+            };
+        }
+    }
+
+    // Merge mode (for grouped events)
+    if let Some(v) = map.get("merge_mode") {
+        if let Ok(s) = v.clone().into_immutable_string() {
+            opts.merge_mode = match s.as_str() {
+                "sum" => MergeMode::Sum,
+                "max" => MergeMode::Max,
+                "mean" => MergeMode::Mean,
+                _ => MergeMode::Sum,
+            };
+        }
+    }
+
+    // Numeric parameters
+    if let Some(v) = map.get("attack_beats") {
+        if let Some(f) = get_f32(v) {
+            opts.attack_beats = f;
+        }
+    }
+
+    if let Some(v) = map.get("decay_beats") {
+        if let Some(f) = get_f32(v) {
+            opts.decay_beats = f;
+        }
+    }
+
+    if let Some(v) = map.get("sustain_level") {
+        if let Some(f) = get_f32(v) {
+            opts.sustain_level = f;
+        }
+    }
+
+    if let Some(v) = map.get("sustain_beats") {
+        if let Some(f) = get_f32(v) {
+            opts.sustain_beats = f;
+        }
+    }
+
+    if let Some(v) = map.get("release_beats") {
+        if let Some(f) = get_f32(v) {
+            opts.release_beats = f;
+        }
+    }
+
+    if let Some(v) = map.get("width_beats") {
+        if let Some(f) = get_f32(v) {
+            opts.width_beats = f;
+        }
+    }
+
+    if let Some(v) = map.get("group_within_beats") {
+        if let Some(f) = get_f32(v) {
+            opts.group_within_beats = Some(f);
         }
     }
 

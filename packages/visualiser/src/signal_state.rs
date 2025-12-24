@@ -22,6 +22,15 @@ pub struct SignalState {
     /// State for pink noise generators (Voss-McCartney algorithm).
     pub pink_noise_state: HashMap<SignalId, PinkNoiseState>,
 
+    /// State for diff operation (previous value).
+    pub diff_state: HashMap<SignalId, f32>,
+
+    /// State for integrate operation (accumulated value).
+    pub integrate_state: HashMap<SignalId, f32>,
+
+    /// Ring buffers for delay operation.
+    pub delay_buffers: HashMap<SignalId, DelayBuffer>,
+
     /// Whether a "no musical time" warning has been logged.
     pub warned_no_musical_time: bool,
 }
@@ -38,6 +47,9 @@ impl SignalState {
         self.gate_state.clear();
         self.ma_buffers.clear();
         self.pink_noise_state.clear();
+        self.diff_state.clear();
+        self.integrate_state.clear();
+        self.delay_buffers.clear();
         self.warned_no_musical_time = false;
     }
 
@@ -69,6 +81,33 @@ impl SignalState {
     /// Get or create pink noise state.
     pub fn get_pink_noise(&mut self, id: SignalId) -> &mut PinkNoiseState {
         self.pink_noise_state.entry(id).or_insert_with(PinkNoiseState::new)
+    }
+
+    /// Get previous value for diff operation.
+    pub fn get_diff_last(&mut self, id: SignalId, initial: f32) -> f32 {
+        *self.diff_state.entry(id).or_insert(initial)
+    }
+
+    /// Set previous value for diff operation.
+    pub fn set_diff_last(&mut self, id: SignalId, value: f32) {
+        self.diff_state.insert(id, value);
+    }
+
+    /// Get accumulated value for integrate operation.
+    pub fn get_integrate(&mut self, id: SignalId, initial: f32) -> f32 {
+        *self.integrate_state.entry(id).or_insert(initial)
+    }
+
+    /// Set accumulated value for integrate operation.
+    pub fn set_integrate(&mut self, id: SignalId, value: f32) {
+        self.integrate_state.insert(id, value);
+    }
+
+    /// Get or create a delay buffer.
+    pub fn get_delay_buffer(&mut self, id: SignalId, capacity: usize) -> &mut DelayBuffer {
+        self.delay_buffers
+            .entry(id)
+            .or_insert_with(|| DelayBuffer::new(capacity))
     }
 }
 
@@ -131,6 +170,77 @@ impl RingBuffer {
     pub fn resize(&mut self, new_capacity: usize) {
         self.data = vec![0.0; new_capacity.max(1)];
         self.cursor = 0;
+        self.count = 0;
+    }
+}
+
+/// Ring buffer for delay operation.
+///
+/// Stores past values and returns the oldest value for delay effects.
+pub struct DelayBuffer {
+    data: Vec<f32>,
+    write_cursor: usize,
+    count: usize,
+}
+
+impl DelayBuffer {
+    /// Create a new delay buffer with the given capacity.
+    pub fn new(capacity: usize) -> Self {
+        Self {
+            data: vec![0.0; capacity.max(1)],
+            write_cursor: 0,
+            count: 0,
+        }
+    }
+
+    /// Push a new value and return the oldest value.
+    pub fn push(&mut self, value: f32) -> f32 {
+        let oldest = if self.count >= self.data.len() {
+            self.data[self.write_cursor]
+        } else {
+            value // Not enough history yet, return current
+        };
+
+        self.data[self.write_cursor] = value;
+        self.write_cursor = (self.write_cursor + 1) % self.data.len();
+        if self.count < self.data.len() {
+            self.count += 1;
+        }
+
+        oldest
+    }
+
+    /// Get the oldest value in the buffer without pushing.
+    pub fn oldest(&self) -> f32 {
+        if self.count == 0 {
+            return 0.0;
+        }
+        if self.count < self.data.len() {
+            self.data[0]
+        } else {
+            self.data[self.write_cursor] // Oldest is at write cursor after wraparound
+        }
+    }
+
+    /// Get the current count of values in the buffer.
+    pub fn len(&self) -> usize {
+        self.count
+    }
+
+    /// Check if the buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
+    /// Get the capacity of the buffer.
+    pub fn capacity(&self) -> usize {
+        self.data.len()
+    }
+
+    /// Resize the buffer (clears existing data).
+    pub fn resize(&mut self, new_capacity: usize) {
+        self.data = vec![0.0; new_capacity.max(1)];
+        self.write_cursor = 0;
         self.count = 0;
     }
 }
