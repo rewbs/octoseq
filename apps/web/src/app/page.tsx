@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Github } from "lucide-react";
@@ -12,7 +12,10 @@ import { TimeAlignedHeatmapPixi } from "@/components/heatmap/TimeAlignedHeatmapP
 import { MirConfigModal } from "@/components/mir/MirConfigModal";
 import { SyncedWaveSurferSignal } from "@/components/wavesurfer/SyncedWaveSurferSignal";
 import { SparseEventsViewer } from "@/components/wavesurfer/SparseEventsViewer";
+import { BeatGridOverlay } from "@/components/wavesurfer/BeatGridOverlay";
+import { BeatMarkingOverlay } from "@/components/wavesurfer/BeatMarkingOverlay";
 import { TempoHypothesesViewer } from "@/components/tempo/TempoHypothesesViewer";
+import { MusicalTimePanel } from "@/components/tempo/MusicalTimePanel";
 import { WaveSurferPlayer, type WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
 import { VisualiserPanel } from "@/components/visualiser/VisualiserPanel";
 import { SearchPanel } from "@/components/search/SearchPanel";
@@ -20,9 +23,11 @@ import { DebugPanel } from "@/components/panels/DebugPanel";
 import { useElementSize } from "@/lib/useElementSize";
 import { computeRefinementStats } from "@/lib/searchRefinement";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
+import { useMetronome } from "@/lib/hooks/useMetronome";
 import { DemoAudioModal } from "@/components/DemoAudioModal";
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 import { mirTabDefinitions } from "@/lib/stores/mirStore";
+import { computePhaseHypotheses, type BeatCandidate } from "@octoseq/mir";
 
 // Stores and hooks
 import {
@@ -31,6 +36,9 @@ import {
   useConfigStore,
   useMirStore,
   useSearchStore,
+  useBeatGridStore,
+  useMusicalTimeStore,
+  useManualTempoStore,
   useMirActions,
   useSearchActions,
   useNavigationActions,
@@ -134,6 +142,108 @@ export default function Home() {
     }))
   );
 
+  // Beat grid store
+  const beatGridState = useBeatGridStore(
+    useShallow((s) => ({
+      selectedHypothesis: s.selectedHypothesis,
+      phaseHypotheses: s.phaseHypotheses,
+      activePhaseIndex: s.activePhaseIndex,
+      activeBeatGrid: s.activeBeatGrid,
+      userNudge: s.userNudge,
+      isLocked: s.isLocked,
+      isVisible: s.isVisible,
+      metronomeEnabled: s.metronomeEnabled,
+      config: s.config,
+    }))
+  );
+  const {
+    selectHypothesis: selectBeatGridHypothesis,
+    updateSelectedBpm,
+    setPhaseHypotheses,
+    cyclePhase,
+    nudgePhase,
+    resetNudge,
+    setLocked: setBeatGridLocked,
+    toggleVisibility: toggleBeatGridVisibility,
+    toggleMetronome,
+    clear: clearBeatGrid,
+    canPromote: canPromoteBeatGrid,
+    getPromotableGrid,
+  } = useBeatGridStore(
+    useShallow((s) => ({
+      selectHypothesis: s.selectHypothesis,
+      updateSelectedBpm: s.updateSelectedBpm,
+      setPhaseHypotheses: s.setPhaseHypotheses,
+      cyclePhase: s.cyclePhase,
+      nudgePhase: s.nudgePhase,
+      resetNudge: s.resetNudge,
+      setLocked: s.setLocked,
+      toggleVisibility: s.toggleVisibility,
+      toggleMetronome: s.toggleMetronome,
+      clear: s.clear,
+      canPromote: s.canPromote,
+      getPromotableGrid: s.getPromotableGrid,
+    }))
+  );
+
+  // Musical time store (B4)
+  const musicalTimeStructure = useMusicalTimeStore((s) => s.structure);
+  const musicalTimeSelectedSegmentId = useMusicalTimeStore((s) => s.selectedSegmentId);
+  const {
+    setAudioIdentity,
+    promoteGrid,
+    selectSegment: selectMusicalTimeSegment,
+    removeSegment: removeMusicalTimeSegment,
+    splitSegmentAt: splitMusicalTimeSegmentAt,
+    clearStructure: clearMusicalTime,
+    reset: resetMusicalTime,
+  } = useMusicalTimeStore(
+    useShallow((s) => ({
+      setAudioIdentity: s.setAudioIdentity,
+      promoteGrid: s.promoteGrid,
+      selectSegment: s.selectSegment,
+      removeSegment: s.removeSegment,
+      splitSegmentAt: s.splitSegmentAt,
+      clearStructure: s.clearStructure,
+      reset: s.reset,
+    }))
+  );
+
+  // Manual tempo store
+  const manualHypotheses = useManualTempoStore((s) => s.hypotheses);
+  const beatMarkingActive = useManualTempoStore((s) => s.beatMarkingActive);
+  const beatMark1 = useManualTempoStore((s) => s.beatMark1);
+  const beatMark2 = useManualTempoStore((s) => s.beatMark2);
+  const {
+    createManualHypothesis,
+    duplicateHypothesis,
+    updateHypothesisBpm,
+    deleteHypothesis: deleteManualHypothesis,
+    recordTap,
+    clear: clearManualTempo,
+    startBeatMarking,
+    stopBeatMarking,
+    placeBeatMark,
+    updateBeatMark,
+    resetBeatMarks,
+    getMarkedBpm,
+  } = useManualTempoStore(
+    useShallow((s) => ({
+      createManualHypothesis: s.createManualHypothesis,
+      duplicateHypothesis: s.duplicateHypothesis,
+      updateHypothesisBpm: s.updateHypothesisBpm,
+      deleteHypothesis: s.deleteHypothesis,
+      recordTap: s.recordTap,
+      clear: s.clear,
+      startBeatMarking: s.startBeatMarking,
+      stopBeatMarking: s.stopBeatMarking,
+      placeBeatMark: s.placeBeatMark,
+      updateBeatMark: s.updateBeatMark,
+      resetBeatMarks: s.resetBeatMarks,
+      getMarkedBpm: s.getMarkedBpm,
+    }))
+  );
+
   // ===== ACTION HOOKS =====
   const { runAnalysis, runAllAnalyses, cancelAnalysis } = useMirActions();
   const { runSearch } = useSearchActions();
@@ -152,6 +262,17 @@ export default function Home() {
     jumpToBestUnreviewed,
   } = useNavigationActions({ playerRef });
 
+  // ===== METRONOME =====
+  const activePhaseOffset = beatGridState.phaseHypotheses[beatGridState.activePhaseIndex]?.phaseOffset ?? 0;
+  useMetronome({
+    enabled: beatGridState.metronomeEnabled,
+    isPlaying: isAudioPlaying,
+    playheadTimeSec,
+    bpm: beatGridState.selectedHypothesis?.bpm ?? 0,
+    phaseOffset: activePhaseOffset,
+    userNudge: beatGridState.userNudge,
+  });
+
   // ===== DERIVED STATE HOOKS =====
   const candidatesById = useCandidatesById();
   const activeCandidate = useActiveCandidate();
@@ -169,6 +290,17 @@ export default function Home() {
 
   // ===== COMPUTED VALUES =====
   const canRun = !!audio;
+
+  // Extract beat candidates from MIR results for phase alignment
+  const beatCandidates = useMemo((): BeatCandidate[] => {
+    const result = mirResults?.beatCandidates;
+    if (!result || result.kind !== "events") return [];
+    return result.events.map((e) => ({
+      time: e.time,
+      strength: e.strength,
+      source: "combined" as const,
+    }));
+  }, [mirResults]);
 
   // ===== KEYBOARD SHORTCUTS =====
   useKeyboardShortcuts({
@@ -190,6 +322,135 @@ export default function Home() {
     if (userSetUseRefinementRef.current) return;
     setUseRefinementSearch(refinementLabelsAvailable);
   }, [refinementLabelsAvailable, setUseRefinementSearch]);
+
+  // Compute phase hypotheses when beat grid hypothesis is selected
+  useEffect(() => {
+    if (!beatGridState.selectedHypothesis || beatCandidates.length === 0 || !audioDuration) {
+      if (beatGridState.phaseHypotheses.length > 0) {
+        setPhaseHypotheses([]);
+      }
+      return;
+    }
+
+    const phases = computePhaseHypotheses(
+      beatGridState.selectedHypothesis.bpm,
+      beatCandidates,
+      audioDuration,
+      beatGridState.config
+    );
+    setPhaseHypotheses(phases);
+  }, [
+    beatGridState.selectedHypothesis,
+    beatGridState.config,
+    beatGridState.phaseHypotheses.length,
+    beatCandidates,
+    audioDuration,
+    setPhaseHypotheses,
+  ]);
+
+  // Clear beat grid when audio changes
+  useEffect(() => {
+    if (!audio) {
+      clearBeatGrid();
+    }
+  }, [audio, clearBeatGrid]);
+
+  // Set audio identity for musical time persistence (B4)
+  useEffect(() => {
+    if (audio && audioSampleRate && audioDuration) {
+      const audioFileName = useAudioStore.getState().audioFileName;
+      setAudioIdentity({
+        filename: audioFileName ?? "unknown",
+        duration: audioDuration,
+        sampleRate: audioSampleRate,
+      });
+    } else {
+      setAudioIdentity(null);
+      resetMusicalTime();
+    }
+  }, [audio, audioSampleRate, audioDuration, setAudioIdentity, resetMusicalTime]);
+
+  // Handle promotion of beat grid to musical time
+  const handlePromoteGrid = useCallback(
+    (startTime: number, endTime: number) => {
+      const grid = getPromotableGrid();
+      if (!grid) return;
+      promoteGrid(grid, startTime, endTime);
+    },
+    [getPromotableGrid, promoteGrid]
+  );
+
+  // Handle manual tempo hypothesis creation
+  const handleCreateManualHypothesis = useCallback(
+    (bpm: number) => {
+      const hypothesis = createManualHypothesis(bpm);
+      // Auto-select the newly created hypothesis
+      selectBeatGridHypothesis(hypothesis);
+    },
+    [createManualHypothesis, selectBeatGridHypothesis]
+  );
+
+  // Handle hypothesis duplication for editing
+  const handleDuplicateHypothesis = useCallback(
+    (source: Parameters<typeof duplicateHypothesis>[0]) => {
+      const hypothesis = duplicateHypothesis(source);
+      // Auto-select the duplicated hypothesis
+      selectBeatGridHypothesis(hypothesis);
+    },
+    [duplicateHypothesis, selectBeatGridHypothesis]
+  );
+
+  // Handle BPM update for manual/edited hypotheses
+  const handleUpdateHypothesisBpm = useCallback(
+    (hypothesisId: string, newBpm: number) => {
+      const updated = updateHypothesisBpm(hypothesisId, newBpm);
+      if (updated) {
+        // Update in-place to preserve userNudge and isLocked state
+        updateSelectedBpm(updated);
+      }
+    },
+    [updateHypothesisBpm, updateSelectedBpm]
+  );
+
+  // Handle manual hypothesis deletion
+  const handleDeleteManualHypothesis = useCallback(
+    (hypothesisId: string) => {
+      // If this hypothesis is selected, deselect it first
+      if (beatGridState.selectedHypothesis?.id === hypothesisId) {
+        selectBeatGridHypothesis(null);
+      }
+      deleteManualHypothesis(hypothesisId);
+    },
+    [beatGridState.selectedHypothesis, selectBeatGridHypothesis, deleteManualHypothesis]
+  );
+
+  // Handle tap-to-nudge
+  const handleRecordTap = useCallback(
+    (currentBpm: number) => {
+      return recordTap(currentBpm);
+    },
+    [recordTap]
+  );
+
+  // Handle beat marking - apply the marked tempo as a manual hypothesis
+  const handleApplyBeatMarking = useCallback(() => {
+    const result = getMarkedBpm();
+    if (!result) return;
+
+    // Create a manual hypothesis with the marked BPM
+    const hypothesis = createManualHypothesis(result.bpm);
+    // Select it to trigger phase alignment
+    selectBeatGridHypothesis(hypothesis);
+    // Exit beat marking mode
+    stopBeatMarking();
+  }, [getMarkedBpm, createManualHypothesis, selectBeatGridHypothesis, stopBeatMarking]);
+
+  // Clear manual tempo when audio changes
+  useEffect(() => {
+    if (!audio) {
+      clearManualTempo();
+    }
+  }, [audio, clearManualTempo]);
 
   // Mark search as stale when inputs change
   useEffect(() => {
@@ -363,6 +624,30 @@ export default function Home() {
               analysisName={mirTabDefinitions.find((t) => t.id === selected)?.label}
               lastAnalysisMs={lastTimings?.totalMs}
               analysisBackend={lastTimings?.backend}
+              overlayContent={
+                <>
+                  <BeatGridOverlay
+                    viewport={viewport}
+                    beatGrid={beatGridState.activeBeatGrid}
+                    audioDuration={audioDuration ?? 0}
+                    isVisible={beatGridState.isVisible}
+                    musicalTimeSegments={musicalTimeStructure?.segments ?? []}
+                    selectedSegmentId={musicalTimeSelectedSegmentId}
+                  />
+                  <BeatMarkingOverlay
+                    isActive={beatMarkingActive}
+                    viewport={viewport ? { startSec: viewport.startTime, endSec: viewport.endTime } : null}
+                    beat1TimeSec={beatMark1?.timeSec ?? null}
+                    beat2TimeSec={beatMark2?.timeSec ?? null}
+                    audioDuration={audioDuration ?? 0}
+                    onBeatClick={placeBeatMark}
+                    onBeatDrag={updateBeatMark}
+                    onApply={handleApplyBeatMarking}
+                    onReset={resetBeatMarks}
+                    onCancel={stopBeatMarking}
+                  />
+                </>
+              }
               toolbarLeft={
                 <div className="flex items-center gap-2">
                   <div className="relative flex flex-col  items-center justify-center mr-4">
@@ -553,30 +838,87 @@ export default function Home() {
 
                   {visualTab === "beatCandidates" ? (
                     tabResult?.kind === "events" && tabResult.fn === "beatCandidates" ? (
-                      <SparseEventsViewer
-                        events={tabResult.events}
-                        viewport={viewport}
-                        cursorTimeSec={mirroredCursorTimeSec}
-                        onCursorTimeChange={setCursorTimeSec}
-                        variant="beatCandidate"
-                      />
+                      <div className="relative">
+                        <SparseEventsViewer
+                          events={tabResult.events}
+                          viewport={viewport}
+                          cursorTimeSec={mirroredCursorTimeSec}
+                          onCursorTimeChange={setCursorTimeSec}
+                          variant="beatCandidate"
+                        />
+                        <BeatGridOverlay
+                          viewport={viewport}
+                          beatGrid={beatGridState.activeBeatGrid}
+                          audioDuration={audioDuration ?? 0}
+                          isVisible={beatGridState.isVisible}
+                          musicalTimeSegments={musicalTimeStructure?.segments ?? []}
+                          selectedSegmentId={musicalTimeSelectedSegmentId}
+                        />
+                      </div>
                     ) : (
                       <p className="text-sm text-zinc-500">Run Beat Candidates to view output.</p>
                     )
                   ) : null}
 
                   {visualTab === "tempoHypotheses" ? (
-                    tabResult?.kind === "tempoHypotheses" && tabResult.fn === "tempoHypotheses" ? (
-                      <TempoHypothesesViewer
-                        hypotheses={tabResult.hypotheses}
-                        inputCandidateCount={tabResult.inputCandidateCount}
-                        onHypothesisSelect={(hyp) => {
-                          console.log("Selected tempo hypothesis:", hyp);
-                        }}
+                    <>
+                      {tabResult?.kind === "tempoHypotheses" && tabResult.fn === "tempoHypotheses" ? (
+                        <TempoHypothesesViewer
+                          hypotheses={tabResult.hypotheses}
+                          manualHypotheses={manualHypotheses}
+                          inputCandidateCount={tabResult.inputCandidateCount}
+                          selectedHypothesisId={beatGridState.selectedHypothesis?.id ?? null}
+                          onHypothesisSelect={selectBeatGridHypothesis}
+                          beatGrid={
+                            beatGridState.selectedHypothesis
+                              ? {
+                                  isVisible: beatGridState.isVisible,
+                                  isLocked: beatGridState.isLocked,
+                                  phaseHypotheses: beatGridState.phaseHypotheses,
+                                  activePhaseIndex: beatGridState.activePhaseIndex,
+                                  userNudge: beatGridState.userNudge,
+                                  bpm: beatGridState.selectedHypothesis.bpm,
+                                  phaseOffset: beatGridState.phaseHypotheses[beatGridState.activePhaseIndex]?.phaseOffset ?? 0,
+                                  metronomeEnabled: beatGridState.metronomeEnabled,
+                                }
+                              : null
+                          }
+                          playheadTimeSec={playheadTimeSec}
+                          isPlaying={isAudioPlaying}
+                          onToggleVisibility={toggleBeatGridVisibility}
+                          onCyclePhase={cyclePhase}
+                          onNudge={nudgePhase}
+                          onResetNudge={resetNudge}
+                          onToggleLock={() => setBeatGridLocked(!beatGridState.isLocked)}
+                          onToggleMetronome={toggleMetronome}
+                          // Manual tempo controls
+                          onCreateManualHypothesis={handleCreateManualHypothesis}
+                          onDuplicateHypothesis={handleDuplicateHypothesis}
+                          onUpdateHypothesisBpm={handleUpdateHypothesisBpm}
+                          onDeleteHypothesis={handleDeleteManualHypothesis}
+                          onRecordTap={handleRecordTap}
+                          // Beat marking
+                          beatMarkingActive={beatMarkingActive}
+                          onStartBeatMarking={startBeatMarking}
+                          // Musical Time (B4)
+                          canPromote={canPromoteBeatGrid()}
+                          audioDuration={audioDuration}
+                          musicalTimeSegmentCount={musicalTimeStructure?.segments.length ?? 0}
+                          onPromote={handlePromoteGrid}
+                        />
+                      ) : (
+                        <p className="text-sm text-zinc-500">Run Tempo Hypotheses to view output.</p>
+                      )}
+                      <MusicalTimePanel
+                        structure={musicalTimeStructure}
+                        selectedSegmentId={musicalTimeSelectedSegmentId}
+                        audioDuration={audioDuration ?? 0}
+                        onSelectSegment={selectMusicalTimeSegment}
+                        onRemoveSegment={removeMusicalTimeSegment}
+                        onSplitSegment={splitMusicalTimeSegmentAt}
+                        onClearAll={clearMusicalTime}
                       />
-                    ) : (
-                      <p className="text-sm text-zinc-500">Run Tempo Hypotheses to view output.</p>
-                    )
+                    </>
                   ) : null}
 
                   {visualTab === "melSpectrogram" ||
@@ -618,6 +960,7 @@ export default function Home() {
             mirResults={mirResults as any}
             searchSignal={searchSignal}
             isPlaying={isAudioPlaying}
+            musicalTimeStructure={musicalTimeStructure}
           />
 
         </section>

@@ -1,7 +1,8 @@
 "use client";
 
 import { memo, useEffect, useRef, useState, useMemo, useCallback } from "react";
-import type { AudioBufferLike } from "@octoseq/mir";
+import type { AudioBufferLike, MusicalTimeStructure } from "@octoseq/mir";
+import { computeBeatPosition } from "@octoseq/mir";
 import { GripHorizontal, GripVertical, Rows3, Columns3, FlaskConical, Loader2 } from "lucide-react";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { useDebugSignalStore, type RawAnalysisResult, type DebugSignal } from "@/lib/stores";
@@ -25,6 +26,8 @@ interface VisualiserPanelProps {
   searchSignal?: Float32Array | null; // Search similarity curve
   className?: string;
   isPlaying?: boolean;
+  /** Musical time structure for beat signals (B4). */
+  musicalTimeStructure?: MusicalTimeStructure | null;
 }
 
 const MIN_HEIGHT = 100;
@@ -67,7 +70,7 @@ function normalizeSignal(data: number[] | Float32Array, customRange?: [number, n
   return out;
 }
 
-export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults, searchSignal, className, isPlaying = true }: VisualiserPanelProps) {
+export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults, searchSignal, className, isPlaying = true, musicalTimeStructure }: VisualiserPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const visRef = useRef<WasmVisualiser | null>(null);
   const rafRef = useRef<number>(0);
@@ -177,8 +180,13 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
       signals.push(...ALL_SIGNALS.filter((s) => s.category === "search"));
     }
 
+    // Include musical time signals if segments are authored (B4)
+    if (musicalTimeStructure && musicalTimeStructure.segments.length > 0) {
+      signals.push(...ALL_SIGNALS.filter((s) => s.category === "musical-time"));
+    }
+
     return signals;
-  }, [audio, mirResults, searchSignal]);
+  }, [audio, mirResults, searchSignal, musicalTimeStructure]);
 
   // Handler for Monaco editor initialization
   const handleEditorBeforeMount = useCallback(
@@ -476,7 +484,60 @@ fn update(dt, inputs) {
       const rate = duration > 0 ? norm.length / duration : 0;
       vis.push_signal("searchSimilarity", norm, rate);
     }
-  }, [mirResults, isReady, audio, audioDuration, searchSignal]);
+
+    // Set the musical time structure on the WASM side for beat-aware Signal operations
+    if (typeof vis.set_musical_time === "function") {
+      if (musicalTimeStructure && musicalTimeStructure.segments.length > 0) {
+        vis.set_musical_time(JSON.stringify(musicalTimeStructure));
+      } else {
+        vis.clear_musical_time();
+      }
+    }
+
+    // Push musical time signals (B4)
+    if (musicalTimeStructure && musicalTimeStructure.segments.length > 0 && typeof vis.push_signal === "function") {
+      // Pre-compute beat signals as dense arrays
+      // Use 100 samples per second for smooth interpolation
+      const sampleRate = 100;
+      const numSamples = Math.ceil(duration * sampleRate);
+
+      const beatPositionArray = new Float32Array(numSamples);
+      const beatIndexArray = new Float32Array(numSamples);
+      const beatPhaseArray = new Float32Array(numSamples);
+      const bpmArray = new Float32Array(numSamples);
+
+      // Track last known values for "freeze" behavior outside segments
+      let lastBeatPosition = 0;
+      let lastBeatIndex = 0;
+      let lastBeatPhase = 0;
+      let lastBpm = 120; // Default BPM
+
+      for (let i = 0; i < numSamples; i++) {
+        const time = i / sampleRate;
+        const beatPos = computeBeatPosition(time, musicalTimeStructure.segments);
+
+        if (beatPos) {
+          // Update last known values
+          lastBeatPosition = beatPos.beatPosition;
+          lastBeatIndex = beatPos.beatIndex;
+          lastBeatPhase = beatPos.beatPhase;
+          lastBpm = beatPos.bpm;
+        }
+
+        // Use current or last known values (freeze behavior)
+        beatPositionArray[i] = lastBeatPosition;
+        beatIndexArray[i] = lastBeatIndex;
+        beatPhaseArray[i] = lastBeatPhase;
+        bpmArray[i] = lastBpm;
+      }
+
+      // Push the pre-computed arrays
+      vis.push_signal("beatPosition", beatPositionArray, sampleRate);
+      vis.push_signal("beatIndex", beatIndexArray, sampleRate);
+      vis.push_signal("beatPhase", beatPhaseArray, sampleRate);
+      vis.push_signal("bpm", bpmArray, sampleRate);
+    }
+  }, [mirResults, isReady, audio, audioDuration, searchSignal, musicalTimeStructure]);
 
 
   // Load script when enabled or script changes

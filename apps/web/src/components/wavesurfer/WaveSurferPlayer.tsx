@@ -130,6 +130,8 @@ type WaveSurferPlayerProps = {
   lastAnalysisMs?: number;
   /** Backend used for last analysis (e.g., "cpu" or "gpu"). */
   analysisBackend?: string;
+  /** Additional overlay content to render over the waveform. */
+  overlayContent?: React.ReactNode;
 };
 
 /**
@@ -167,6 +169,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     analysisName,
     lastAnalysisMs,
     analysisBackend,
+    overlayContent,
   }: WaveSurferPlayerProps,
   ref
 ) {
@@ -996,6 +999,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
             lastAnalysisMs={lastAnalysisMs}
             backend={analysisBackend}
           />
+          {overlayContent}
           <div
             ref={setContainerEl}
             className="w-full overflow-x-auto"

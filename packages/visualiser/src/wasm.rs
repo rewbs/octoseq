@@ -5,10 +5,12 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
-use crate::analysis_runner::{run_analysis, AnalysisConfig};
+use crate::analysis_runner::{run_analysis, run_analysis_with_events, AnalysisConfig};
+use crate::event_stream::Event;
 use crate::gpu::renderer::Renderer;
-use crate::visualiser::VisualiserState;
 use crate::input::InputSignal;
+use crate::musical_time::MusicalTimeStructure;
+use crate::visualiser::VisualiserState;
 
 #[wasm_bindgen]
 pub struct WasmVisualiser {
@@ -24,6 +26,8 @@ struct VisualiserContext {
     zoom_signal: Option<InputSignal>,
     /// Named signals for dynamic script inputs (e.g., "spectralCentroid", "onsetEnvelope")
     named_signals: HashMap<String, InputSignal>,
+    /// Musical time structure for beat-aware signal processing
+    musical_time: Option<MusicalTimeStructure>,
 }
 
 #[wasm_bindgen]
@@ -68,6 +72,42 @@ impl WasmVisualiser {
     pub fn clear_signals(&self) {
         let mut inner = self.inner.borrow_mut();
         inner.named_signals.clear();
+    }
+
+    /// Set the musical time structure for beat-aware signal processing.
+    /// The JSON format matches the TypeScript MusicalTimeStructure type.
+    /// Returns true if successful, false if parsing failed.
+    pub fn set_musical_time(&self, json: &str) -> bool {
+        match serde_json::from_str::<MusicalTimeStructure>(json) {
+            Ok(structure) => {
+                log::info!(
+                    "Musical time set: {} segments",
+                    structure.segments.len()
+                );
+                let mut inner = self.inner.borrow_mut();
+                inner.musical_time = Some(structure);
+                true
+            }
+            Err(e) => {
+                log::error!("Failed to parse musical time structure: {}", e);
+                false
+            }
+        }
+    }
+
+    /// Clear the musical time structure.
+    /// Beat-aware operations will fall back to 120 BPM default.
+    pub fn clear_musical_time(&self) {
+        let mut inner = self.inner.borrow_mut();
+        inner.musical_time = None;
+    }
+
+    /// Get the list of available signal names.
+    /// Returns a JSON array of signal names.
+    pub fn get_signal_names(&self) -> String {
+        let inner = self.inner.borrow();
+        let names: Vec<&str> = inner.named_signals.keys().map(|s| s.as_str()).collect();
+        serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
     }
 
     pub fn set_sigmoid_k(&self, k: f32) {
@@ -213,6 +253,76 @@ impl WasmVisualiser {
             }
         }
     }
+
+    /// Run script in analysis mode with event extraction support.
+    ///
+    /// This runs the script headlessly across the full track duration,
+    /// collecting all debug.emit() calls AND extracting events from
+    /// any signal.pick.events() calls.
+    ///
+    /// Returns a JSON-serialized ExtendedAnalysisResultJson.
+    pub fn run_analysis_with_events(&self, script: &str, duration: f32, time_step: f32) -> String {
+        let inner = self.inner.borrow();
+
+        let config = AnalysisConfig::new(duration, time_step);
+
+        match run_analysis_with_events(
+            script,
+            &inner.named_signals,
+            inner.musical_time.as_ref(),
+            config,
+            false, // Don't collect event debug data (reduces payload size)
+        ) {
+            Ok(result) => {
+                let wasm_signals: Vec<WasmDebugSignal> = result
+                    .debug_signals
+                    .into_iter()
+                    .map(|(name, sig)| {
+                        let (times, values) = sig.to_arrays();
+                        WasmDebugSignal { name, times, values }
+                    })
+                    .collect();
+
+                let wasm_event_streams: Vec<WasmEventStream> = result
+                    .event_streams
+                    .into_iter()
+                    .map(|(name, stream)| WasmEventStream {
+                        name,
+                        events: stream.iter().map(WasmEvent::from).collect(),
+                    })
+                    .collect();
+
+                let wasm_result = WasmExtendedAnalysisResult {
+                    success: true,
+                    error: None,
+                    signals: wasm_signals,
+                    event_streams: wasm_event_streams,
+                    step_count: result.step_count,
+                    duration: result.duration,
+                };
+
+                serde_json::to_string(&wasm_result).unwrap_or_else(|e| {
+                    format!(
+                        r#"{{"success":false,"error":"Serialization error: {}","signals":[],"event_streams":[],"step_count":0,"duration":0}}"#,
+                        e
+                    )
+                })
+            }
+            Err(e) => {
+                let wasm_result = WasmExtendedAnalysisResult {
+                    success: false,
+                    error: Some(e),
+                    signals: vec![],
+                    event_streams: vec![],
+                    step_count: 0,
+                    duration: 0.0,
+                };
+                serde_json::to_string(&wasm_result).unwrap_or_else(|_| {
+                    r#"{"success":false,"error":"Unknown error","signals":[],"event_streams":[],"step_count":0,"duration":0}"#.to_string()
+                })
+            }
+        }
+    }
 }
 
 /// A debug signal serialized for JavaScript.
@@ -229,6 +339,46 @@ struct WasmAnalysisResult {
     success: bool,
     error: Option<String>,
     signals: Vec<WasmDebugSignal>,
+    step_count: usize,
+    duration: f32,
+}
+
+/// An event serialized for JavaScript.
+#[derive(Serialize)]
+struct WasmEvent {
+    time: f32,
+    weight: f32,
+    beat_position: Option<f32>,
+    beat_phase: Option<f32>,
+    cluster_id: Option<u32>,
+}
+
+impl From<&Event> for WasmEvent {
+    fn from(e: &Event) -> Self {
+        Self {
+            time: e.time,
+            weight: e.weight,
+            beat_position: e.beat_position,
+            beat_phase: e.beat_phase,
+            cluster_id: e.cluster_id,
+        }
+    }
+}
+
+/// An event stream serialized for JavaScript.
+#[derive(Serialize)]
+struct WasmEventStream {
+    name: String,
+    events: Vec<WasmEvent>,
+}
+
+/// Extended analysis result including event streams.
+#[derive(Serialize)]
+struct WasmExtendedAnalysisResult {
+    success: bool,
+    error: Option<String>,
+    signals: Vec<WasmDebugSignal>,
+    event_streams: Vec<WasmEventStream>,
     step_count: usize,
     duration: f32,
 }
@@ -301,6 +451,7 @@ pub async fn create_visualiser(canvas: HtmlCanvasElement) -> Result<WasmVisualis
             rotation_signal: None,
             zoom_signal: None,
             named_signals: HashMap::new(),
+            musical_time: None,
         })),
     })
 }

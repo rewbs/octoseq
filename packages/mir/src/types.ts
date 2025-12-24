@@ -131,6 +131,154 @@ export type TempoHypothesesResult = {
 
 export type MirResult = Mir1DResult | Mir2DResult | MirEventsResult | BeatCandidatesResult | TempoHypothesesResult;
 
+// ----------------------------
+// Beat Grid Phase Alignment (B3)
+// ----------------------------
+
+/**
+ * A beat grid represents phase-aligned beats for a given BPM.
+ *
+ * Given a BPM and phase offset, the beat times are:
+ *   beat[n] = phaseOffset + userNudge + n * (60 / bpm)
+ *
+ * Beat grids are hypotheses that can be confirmed or adjusted by the user.
+ */
+export type BeatGrid = {
+    /** Unique identifier for this grid (derived from source hypothesis + phase). */
+    id: string;
+    /** BPM of the grid (from the source tempo hypothesis). */
+    bpm: number;
+    /** Phase offset in seconds from track start. First beat occurs at this time. */
+    phaseOffset: number;
+    /** Confidence score [0, 1] for this phase alignment. */
+    confidence: number;
+    /** The tempo hypothesis this grid was derived from. */
+    sourceHypothesisId: string;
+    /** Whether the user has locked this grid (prevents auto-updates). */
+    isLocked: boolean;
+    /** User adjustment to phase offset in seconds (additive). */
+    userNudge: number;
+};
+
+/**
+ * A phase hypothesis represents a candidate phase offset for a given BPM.
+ * Used during phase alignment scoring.
+ */
+export type PhaseHypothesis = {
+    /** Index within the phase candidate list (0 to N-1). */
+    index: number;
+    /** Phase offset in seconds. */
+    phaseOffset: number;
+    /** Alignment score (sum of weighted matches, normalized). */
+    score: number;
+    /** Number of beat candidates matched within tolerance. */
+    matchCount: number;
+    /** Average offset error of matched candidates in seconds. */
+    avgOffsetError: number;
+};
+
+/**
+ * Configuration for beat grid phase alignment.
+ */
+export type PhaseAlignmentConfig = {
+    /** Number of phase candidates to generate per beat period. Default: 16. */
+    phaseResolution?: number;
+    /** Tolerance in seconds for matching candidates to grid lines. Default: 0.05 (50ms). */
+    matchTolerance?: number;
+    /** Number of top phase hypotheses to keep. Default: 3. */
+    topK?: number;
+    /** Weight for systematic offset penalty (0-1). Default: 0.2. */
+    offsetPenaltyWeight?: number;
+};
+
+// ----------------------------
+// Musical Time (B4)
+// ----------------------------
+
+/**
+ * Provenance metadata for a musical time segment.
+ * Tracks how the segment was created for audit and debugging.
+ */
+export type MusicalTimeProvenance = {
+    /** How this segment was created. */
+    source: "promoted_from_hypothesis" | "manual_entry" | "imported";
+    /** Reference to the original TempoHypothesis (if promoted). */
+    sourceHypothesisId?: string;
+    /** ISO timestamp when the segment was created/promoted. */
+    promotedAt: string;
+    /** User nudge value preserved from promotion (for provenance). */
+    userNudge?: number;
+};
+
+/**
+ * A single segment of musical time with explicit boundaries.
+ *
+ * Beat times within a segment are derivable, not stored:
+ *   beat[n] = phaseOffset + n * (60 / bpm)
+ *
+ * Segments are explicit, authored, and stable once committed.
+ * They never change unless explicitly edited or unlocked by the user.
+ */
+export type MusicalTimeSegment = {
+    /** Unique identifier for this segment. */
+    id: string;
+    /** Tempo in beats per minute. */
+    bpm: number;
+    /** Phase offset in seconds - first beat time relative to segment start. */
+    phaseOffset: number;
+    /** Segment start boundary in seconds (inclusive). */
+    startTime: number;
+    /** Segment end boundary in seconds (exclusive). */
+    endTime: number;
+    /** Confidence score frozen at lock time (optional, for display). */
+    confidence?: number;
+    /** Provenance metadata. */
+    provenance: MusicalTimeProvenance;
+};
+
+/**
+ * The authoritative musical time structure for a track.
+ *
+ * Once authored, this becomes the source of truth for musical time.
+ * Rendering, scripts, and offline execution rely on this structure.
+ *
+ * Design constraints:
+ * - Musical time is explicitly authored, not inferred silently
+ * - Segments are non-overlapping and ordered by startTime
+ * - Beat times are derivable from segment properties
+ * - Gaps between segments are intentional (no musical time defined)
+ */
+export type MusicalTimeStructure = {
+    /** Schema version for future migrations. */
+    version: 1;
+    /** Ordered list of musical time segments (by startTime ascending). */
+    segments: MusicalTimeSegment[];
+    /** ISO timestamp when the structure was created. */
+    createdAt: string;
+    /** ISO timestamp when the structure was last modified. */
+    modifiedAt: string;
+};
+
+/**
+ * Computed beat position at a given time.
+ *
+ * beat_position = beat_index + beat_phase
+ *
+ * This is a read-only computed value, not stored.
+ */
+export type BeatPosition = {
+    /** The segment this position is within. */
+    segmentId: string;
+    /** Integer beat number from segment start (0, 1, 2, ...). */
+    beatIndex: number;
+    /** Phase within the current beat (0-1, exclusive). */
+    beatPhase: number;
+    /** Continuous beat position (beatIndex + beatPhase). */
+    beatPosition: number;
+    /** BPM of the containing segment. */
+    bpm: number;
+};
+
 // (moved above)
 
 export type MirFunctionId =

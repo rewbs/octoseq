@@ -8,7 +8,14 @@ use std::collections::HashMap;
 use crate::debug_collector::{
     install_collector, remove_collector, set_collector_time, DebugCollector, DebugSignal,
 };
+use crate::event_extractor::EventExtractor;
+use crate::event_rhai::{
+    clear_extracted_streams, clear_pending_extractions, store_extracted_stream,
+    take_pending_extractions,
+};
+use crate::event_stream::{EventExtractionDebug, EventStream};
 use crate::input::InputSignal;
+use crate::musical_time::MusicalTimeStructure;
 use crate::scripting::ScriptEngine;
 
 /// Configuration for an analysis run.
@@ -135,6 +142,148 @@ pub fn run_analysis(
 
     Ok(AnalysisResult {
         debug_signals,
+        step_count,
+        duration: config.duration,
+    })
+}
+
+/// Extended result of an analysis run including event streams.
+#[derive(Debug)]
+pub struct ExtendedAnalysisResult {
+    /// Debug signals collected during analysis.
+    pub debug_signals: HashMap<String, DebugSignal>,
+    /// Event streams extracted from signals.
+    pub event_streams: HashMap<String, EventStream>,
+    /// Debug data from event extraction (if enabled).
+    pub event_debug: HashMap<String, EventExtractionDebug>,
+    /// Number of time steps executed.
+    pub step_count: usize,
+    /// Total duration analyzed.
+    pub duration: f32,
+}
+
+/// Run script in analysis mode with event extraction support.
+///
+/// This function:
+/// 1. Creates a fresh script engine
+/// 2. Loads the script
+/// 3. Installs debug and event collection
+/// 4. Runs the analysis loop
+/// 5. Processes pending event extractions
+/// 6. Returns debug signals AND event streams
+pub fn run_analysis_with_events(
+    script: &str,
+    signals: &HashMap<String, InputSignal>,
+    musical_time: Option<&MusicalTimeStructure>,
+    config: AnalysisConfig,
+    collect_event_debug: bool,
+) -> Result<ExtendedAnalysisResult, String> {
+    // Validate config
+    if config.duration <= 0.0 {
+        return Err("Duration must be positive".to_string());
+    }
+    if config.time_step <= 0.0 {
+        return Err("Time step must be positive".to_string());
+    }
+
+    // Clear any previous pending extractions
+    clear_pending_extractions();
+    clear_extracted_streams();
+
+    // Create fresh script engine
+    let mut engine = ScriptEngine::new();
+
+    // Load script
+    if !engine.load_script(script) {
+        return Err(engine
+            .last_error
+            .clone()
+            .unwrap_or_else(|| "Unknown script error".to_string()));
+    }
+
+    // Install debug collector
+    let collector = DebugCollector::new();
+    install_collector(collector);
+
+    // Calculate steps
+    let step_count = ((config.duration / config.time_step).ceil() as usize).max(1);
+    let dt = config.time_step;
+
+    // Run init at time=0
+    set_collector_time(0.0);
+    engine.call_init();
+
+    // Run update loop
+    for step in 0..step_count {
+        let time = step as f32 * dt;
+        set_collector_time(time);
+
+        // Sample all input signals at this time
+        let mut sampled: HashMap<String, f32> = HashMap::new();
+        sampled.insert("time".to_string(), time);
+        sampled.insert("dt".to_string(), dt);
+
+        for (name, signal) in signals {
+            let value = signal.sample_window(time, dt);
+            sampled.insert(name.clone(), value);
+        }
+
+        // Call update
+        engine.update(dt, &sampled);
+    }
+
+    // Collect debug signals
+    let mut collector = remove_collector().unwrap_or_default();
+    let debug_signals = collector.take_signals();
+
+    // Process pending event extractions
+    let pending = take_pending_extractions();
+    let mut event_streams = HashMap::new();
+    let mut event_debug = HashMap::new();
+
+    for pending_extraction in pending {
+        let mut extractor = EventExtractor::new(
+            pending_extraction.source,
+            pending_extraction.options,
+            musical_time,
+            config.duration,
+            config.time_step,
+        );
+
+        if collect_event_debug {
+            extractor = extractor.with_debug();
+        }
+
+        match extractor.extract(signals) {
+            Ok((stream, debug)) => {
+                let name = pending_extraction.name.clone();
+
+                // Store for potential second pass (if script queries events)
+                store_extracted_stream(name.clone(), stream.clone());
+
+                event_streams.insert(name.clone(), stream);
+
+                if let Some(d) = debug {
+                    event_debug.insert(name, d);
+                }
+            }
+            Err(e) => {
+                log::warn!("Event extraction failed for {}: {}", pending_extraction.name, e);
+            }
+        }
+    }
+
+    log::info!(
+        "Extended analysis complete: {} steps, {} signals, {} event streams",
+        step_count,
+        debug_signals.len(),
+        event_streams.len()
+    );
+
+    Ok(ExtendedAnalysisResult {
+        debug_signals,
+        event_streams,
+        event_debug,
         step_count,
         duration: config.duration,
     })

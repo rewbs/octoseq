@@ -36,6 +36,7 @@ use rhai::{Engine, Scope, AST, Dynamic, EvalAltResult};
 use crate::debug_collector::debug_emit;
 use crate::scene_graph::{SceneGraph, EntityId, MeshType, LineMode, SceneEntity, LineStrip as SceneLineStrip};
 use crate::script_log::{ScriptLogger, reset_frame_log_count};
+use crate::signal_rhai::{register_signal_api, generate_inputs_namespace, SIGNAL_API_RHAI};
 
 /// Scripting engine that manages Rhai VM lifecycle and scene graph.
 pub struct ScriptEngine {
@@ -50,6 +51,8 @@ pub struct ScriptEngine {
     pub last_error: Option<String>,
     /// Whether init() has been called
     init_called: bool,
+    /// Available signal names for the inputs namespace
+    available_signal_names: Vec<String>,
 }
 
 impl ScriptEngine {
@@ -96,6 +99,9 @@ impl ScriptEngine {
             },
         );
 
+        // Register Signal API types and functions
+        register_signal_api(&mut engine);
+
         Self {
             engine,
             ast: None,
@@ -104,7 +110,14 @@ impl ScriptEngine {
             entity_maps: HashMap::new(),
             last_error: None,
             init_called: false,
+            available_signal_names: Vec::new(),
         }
+    }
+
+    /// Set the available signal names for the inputs namespace.
+    /// Call this before load_script to make signals available.
+    pub fn set_available_signals(&mut self, names: Vec<String>) {
+        self.available_signal_names = names;
     }
 
     /// Initialize scope with API modules and empty entity tracking.
@@ -132,6 +145,10 @@ impl ScriptEngine {
         self.entity_maps.clear();
         self.last_error = None;
         self.init_called = false;
+
+        // Generate inputs namespace based on available signals
+        let signal_names: Vec<&str> = self.available_signal_names.iter().map(|s| s.as_str()).collect();
+        let inputs_namespace = generate_inputs_namespace(&signal_names);
 
         // Wrap user script with API definitions
         // Note: Rhai Maps require string keys, so we convert IDs to strings using `"" + id`
@@ -243,6 +260,12 @@ log.error = |msg| {{ __log_error(msg); }};
 // In playback mode, this is a no-op
 let dbg = #{{}};
 dbg.emit = |name, value| {{ __debug_emit(name, value); }};
+
+// === Signal API ===
+{SIGNAL_API_RHAI}
+
+// === Inputs Namespace (Signal accessors) ===
+{inputs_namespace}
 
 // === User Script ===
 {script}

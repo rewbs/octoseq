@@ -16,6 +16,14 @@ export type {
   TempoHypothesis,
   TempoHypothesisEvidence,
   TempoHypothesesResult,
+  BeatGrid,
+  PhaseHypothesis,
+  PhaseAlignmentConfig,
+  // Musical Time (B4)
+  MusicalTimeProvenance,
+  MusicalTimeSegment,
+  MusicalTimeStructure,
+  BeatPosition,
 } from "./types";
 
 export const MIR_VERSION: MirVersion = "0.1.0";
@@ -78,6 +86,29 @@ export { detectBeatCandidates, beatSalienceFromMel } from "./dsp/beatCandidates"
 
 export type { TempoHypothesesOptions, TempoHypothesesOutput } from "./dsp/tempoHypotheses";
 export { generateTempoHypotheses } from "./dsp/tempoHypotheses";
+
+// ----------------------------
+// Phase Alignment (Beat Grid)
+// ----------------------------
+
+export { computePhaseHypotheses, generateBeatTimes } from "./dsp/phaseAlignment";
+
+// ----------------------------
+// Musical Time (B4)
+// ----------------------------
+
+export {
+    findSegmentAtTime,
+    computeBeatPosition,
+    computeBeatPositionFromStructure,
+    generateSegmentId,
+    createSegmentFromGrid,
+    createMusicalTimeStructure,
+    validateSegments,
+    sortSegments,
+    splitSegment,
+    generateSegmentBeatTimes,
+} from "./dsp/musicalTime";
 
 // ----------------------------
 // HPSS
