@@ -1,11 +1,16 @@
 "use client";
 
-import { memo, useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { memo, useEffect, useRef, useState, useCallback } from "react";
 import type { AudioBufferLike, MusicalTimeStructure } from "@octoseq/mir";
 import { computeBeatPosition } from "@octoseq/mir";
 import { GripHorizontal, GripVertical, Rows3, Columns3, FlaskConical, Loader2 } from "lucide-react";
 import Editor, { type Monaco } from "@monaco-editor/react";
+import { useHotkeysContext } from "react-hotkeys-hook";
 import { useDebugSignalStore, type RawAnalysisResult, type DebugSignal } from "@/lib/stores";
+import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
+import { useBandMirStore } from "@/lib/stores/bandMirStore";
+import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
+import type { BandMirFunctionId } from "@octoseq/mir";
 
 // We import the mock type if the real package isn't built yet, preventing TS errors.
 // In a real build, this would import from @octoseq/visualiser.
@@ -14,9 +19,20 @@ import type { WasmVisualiser } from "@octoseq/visualiser";
 import {
   registerRhaiLanguage,
   RHAI_LANGUAGE_ID,
-  ALL_SIGNALS,
-  type SignalMetadata,
+  type ScriptApiMetadata,
+  type ScriptDiagnostic,
+  parseScriptApiMetadata,
+  parseScriptDiagnosticsJson,
 } from "@/lib/scripting";
+
+type MonacoDisposable = { dispose: () => void };
+
+type MonacoEditorLike = {
+  getModel?: () => unknown;
+  onDidFocusEditorText: (callback: () => void) => MonacoDisposable;
+  onDidBlurEditorText: (callback: () => void) => MonacoDisposable;
+  hasTextFocus?: () => boolean;
+};
 
 interface VisualiserPanelProps {
   audio: AudioBufferLike | null;
@@ -150,43 +166,14 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   const [webGpuError, setWebGpuError] = useState<string | null>(null);
   const timeRef = useRef(playbackTime);
   const [scriptError, setScriptError] = useState<string | null>(null);
+  const [scriptDiagnostics, setScriptDiagnostics] = useState<ScriptDiagnostic[]>([]);
   const monacoDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
-
-  // Compute available signals based on current data
-  const availableSignals = useMemo((): SignalMetadata[] => {
-    const signals: SignalMetadata[] = [];
-
-    // Always include timing signals
-    signals.push(...ALL_SIGNALS.filter((s) => s.category === "timing"));
-
-    // Include audio signals if we have audio
-    if (audio) {
-      signals.push(...ALL_SIGNALS.filter((s) => s.category === "audio"));
-    }
-
-    // Include MIR signals that are actually computed
-    if (mirResults) {
-      const availableMirKeys = Object.keys(mirResults);
-      const mirSignals = ALL_SIGNALS.filter(
-        (s) =>
-          (s.category === "spectral" || s.category === "onset") &&
-          availableMirKeys.includes(s.name)
-      );
-      signals.push(...mirSignals);
-    }
-
-    // Include search signals if we have search results
-    if (searchSignal && searchSignal.length > 0) {
-      signals.push(...ALL_SIGNALS.filter((s) => s.category === "search"));
-    }
-
-    // Include musical time signals if segments are authored (B4)
-    if (musicalTimeStructure && musicalTimeStructure.segments.length > 0) {
-      signals.push(...ALL_SIGNALS.filter((s) => s.category === "musical-time"));
-    }
-
-    return signals;
-  }, [audio, mirResults, searchSignal, musicalTimeStructure]);
+  const hotkeysScopeDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
+  const scriptApiRef = useRef<ScriptApiMetadata | null>(null);
+  const editorRef = useRef<MonacoEditorLike | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
+  const availableBandsRef = useRef<Array<{ id: string; label: string }>>([]);
+  const { disableScope, enableScope } = useHotkeysContext();
 
   // Handler for Monaco editor initialization
   const handleEditorBeforeMount = useCallback(
@@ -194,18 +181,63 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
       // Clean up any previous registrations
       monacoDisposablesRef.current.forEach((d) => d.dispose());
 
-      // Register Rhai language with dynamic signal list
-      monacoDisposablesRef.current = registerRhaiLanguage(monaco, () => availableSignals);
+      // Register Rhai language using host-defined Script API metadata.
+      // Callbacks read from refs so they stay current without re-registration.
+      monacoDisposablesRef.current = registerRhaiLanguage(
+        monaco,
+        () => scriptApiRef.current,
+        () => availableBandsRef.current
+      );
     },
-    [availableSignals]
+    []
   );
+
+  const handleEditorMount = useCallback((editor: MonacoEditorLike, monaco: Monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+
+    // Disable global app hotkeys while the script editor has focus so typing
+    // isn't hijacked by single-letter shortcuts.
+    hotkeysScopeDisposablesRef.current.forEach((d) => d.dispose());
+    hotkeysScopeDisposablesRef.current = [
+      editor.onDidFocusEditorText(() => disableScope(HOTKEY_SCOPE_APP)),
+      editor.onDidBlurEditorText(() => enableScope(HOTKEY_SCOPE_APP)),
+    ];
+
+    if (editor.hasTextFocus?.()) {
+      disableScope(HOTKEY_SCOPE_APP);
+    }
+  }, [disableScope, enableScope]);
+
+  const applyDiagnosticsToEditor = useCallback((diags: ScriptDiagnostic[]) => {
+    const monaco = monacoRef.current;
+    const editor = editorRef.current;
+    if (!monaco || !editor) return;
+    const model = editor.getModel?.();
+    if (!model) return;
+
+    const markers = diags
+      .filter((d) => d.location && typeof d.location.line === "number" && typeof d.location.column === "number")
+      .map((d) => ({
+        severity: monaco.MarkerSeverity.Error,
+        message: `[${d.phase}] ${d.message}`,
+        startLineNumber: d.location!.line,
+        startColumn: d.location!.column,
+        endLineNumber: d.location!.line,
+        endColumn: d.location!.column + 1,
+      }));
+
+    monaco.editor.setModelMarkers(model as unknown as monaco.editor.ITextModel, "octoseq-rhai", markers);
+  }, []);
 
   // Cleanup Monaco disposables on unmount
   useEffect(() => {
     return () => {
       monacoDisposablesRef.current.forEach((d) => d.dispose());
+      hotkeysScopeDisposablesRef.current.forEach((d) => d.dispose());
+      enableScope(HOTKEY_SCOPE_APP);
     };
-  }, []);
+  }, [enableScope]);
 
   // Script editor resizable height state
   const [scriptHeight, setScriptHeight] = useState(SCRIPT_DEFAULT_HEIGHT);
@@ -361,6 +393,18 @@ fn update(dt, inputs) {
         // Initialize WASM module using default export
         if (typeof pkg.default === "function") {
           await pkg.default();
+        }
+
+        // Load host-defined Script API metadata for editor UX (autocomplete/hover/docs)
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const anyPkg = pkg as any;
+          if (typeof anyPkg.get_script_api_metadata_json === "function") {
+            const json = anyPkg.get_script_api_metadata_json();
+            scriptApiRef.current = parseScriptApiMetadata(json);
+          }
+        } catch (e) {
+          console.warn("Failed to load script API metadata:", e);
         }
 
         if (canvasRef.current) {
@@ -539,6 +583,76 @@ fn update(dt, inputs) {
     }
   }, [mirResults, isReady, audio, audioDuration, searchSignal, musicalTimeStructure]);
 
+  // Get band MIR results and frequency bands for the band signals effect
+  const bandMirResults = useBandMirStore((state) => state.cache);
+  const getAllBandMirResults = useBandMirStore((state) => state.getAllResults);
+  const bandEventCache = useBandMirStore((state) => state.eventCache);
+  const getAllEventResults = useBandMirStore((state) => state.getAllEventResults);
+  const frequencyBands = useFrequencyBandStore((state) => state.structure?.bands);
+  const getBandById = useFrequencyBandStore((state) => state.getBandById);
+
+  // Keep available bands for editor completions in a ref (avoids stale closures)
+  useEffect(() => {
+    const bands = frequencyBands ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    availableBandsRef.current = bands.map((b: any) => ({ id: b.id, label: b.label }));
+  }, [frequencyBands]);
+
+  // Push band MIR signals to WASM (F4)
+  useEffect(() => {
+    if (!visRef.current || !isReady) return;
+    // Use type assertion for new WASM methods not yet in generated types
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vis = visRef.current as any;
+    const duration = audioDuration ?? 0;
+
+    // Clear previous band signals
+    if (typeof vis.clear_band_signals === "function") {
+      vis.clear_band_signals();
+    }
+
+    // Get all band MIR results
+    const allResults = getAllBandMirResults();
+    if (allResults.length === 0) return;
+
+    // Map function IDs to script feature names
+    const featureMap: Record<BandMirFunctionId, string> = {
+      bandAmplitudeEnvelope: "energy",
+      bandOnsetStrength: "onset",
+      bandSpectralFlux: "flux",
+    };
+
+    // Push each band signal
+    for (const result of allResults) {
+      const band = getBandById(result.bandId);
+      if (!band) continue;
+
+      const feature = featureMap[result.fn];
+      if (!feature) continue;
+
+      if (typeof vis.push_band_signal === "function" && result.values.length > 0) {
+        // Normalize to 0-1
+        const norm = normalizeSignal(result.values);
+        const rate = duration > 0 ? result.times.length / duration : 0;
+        vis.push_band_signal(result.bandId, band.label, feature, norm, rate);
+      }
+    }
+
+    // Push band events for script access
+    if (typeof vis.clear_band_events === "function") {
+      vis.clear_band_events();
+    }
+
+    const allEventResults = getAllEventResults();
+    for (const eventData of allEventResults) {
+      if (typeof vis.push_band_events === "function" && eventData.events.length > 0) {
+        // Convert to JSON format expected by WASM
+        const eventsJson = JSON.stringify(eventData.events);
+        vis.push_band_events(eventData.bandId, eventsJson);
+      }
+    }
+  }, [bandMirResults, bandEventCache, frequencyBands, isReady, audioDuration, getAllBandMirResults, getAllEventResults, getBandById]);
+
 
   // Load script when enabled or script changes
   useEffect(() => {
@@ -546,14 +660,23 @@ fn update(dt, inputs) {
     const vis = visRef.current;
 
     if (script.trim()) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const visAny = vis as any;
       const success = vis.load_script(script);
+      const diagJson =
+        typeof visAny.take_script_diagnostics_json === "function"
+          ? visAny.take_script_diagnostics_json()
+          : "[]";
+      const diags = parseScriptDiagnosticsJson(diagJson);
+
+      setScriptDiagnostics(diags);
+      applyDiagnosticsToEditor(diags);
+
       if (success) {
-        setScriptError(null);
-        console.log("Script loaded successfully");
+        setScriptError(diags[0]?.message ?? null);
       } else {
-        const err = vis.get_script_error() ?? "Unknown script error";
+        const err = diags[0]?.message ?? vis.get_script_error() ?? "Unknown script error";
         setScriptError(err);
-        console.error("Script error:", err);
       }
     }
   }, [script, isReady]);
@@ -575,6 +698,19 @@ fn update(dt, inputs) {
       lastTimeRef.current = now;
 
       vis.render(dt);
+
+      // Poll script diagnostics (runtime errors during update/render)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const visAny = vis as any;
+      if (typeof visAny.take_script_diagnostics_json === "function") {
+        const diagJson = visAny.take_script_diagnostics_json();
+        const diags = parseScriptDiagnosticsJson(diagJson);
+        if (diags.length > 0) {
+          setScriptDiagnostics(diags);
+          applyDiagnosticsToEditor(diags);
+          setScriptError(diags[0]?.message ?? null);
+        }
+      }
       rafRef.current = requestAnimationFrame(loop);
 
       // Poll debug values
@@ -745,23 +881,41 @@ fn update(dt, inputs) {
               className="shrink-0 rounded-l-md border border-r-0 border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col"
               style={{ width: `${scriptWidthPercent}%` }}
             >
-              <Editor
-                height="100%"
-                defaultLanguage={RHAI_LANGUAGE_ID}
-                theme="vs-dark"
-                value={script}
-                onChange={(value) => setScript(value ?? "")}
-                beforeMount={handleEditorBeforeMount}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 12,
-                  lineNumbers: "on",
-                  scrollBeyondLastLine: false,
-                  wordWrap: "on",
-                  automaticLayout: true,
-                  tabSize: 2,
-                }}
-              />
+              <div className="flex-1 min-h-0">
+                <Editor
+                  height="100%"
+                  defaultLanguage={RHAI_LANGUAGE_ID}
+                  theme="vs-dark"
+                  value={script}
+                  onChange={(value) => setScript(value ?? "")}
+                  beforeMount={handleEditorBeforeMount}
+                  onMount={handleEditorMount}
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 12,
+                    lineNumbers: "on",
+                    scrollBeyondLastLine: false,
+                    wordWrap: "on",
+                    automaticLayout: true,
+                    tabSize: 2,
+                  }}
+                />
+              </div>
+              {scriptDiagnostics.length > 0 && (
+                <div className="border-t border-zinc-800 bg-zinc-950/40 p-2 text-[11px] text-red-200 overflow-auto max-h-40">
+                  <div className="font-semibold mb-1">Script errors</div>
+                  <div className="font-mono whitespace-pre-wrap">
+                    {scriptDiagnostics.map((d, i) => (
+                      <div key={i}>
+                        {(d.location && typeof d.location.line === "number" && typeof d.location.column === "number")
+                          ? `L${d.location.line}:C${d.location.column} `
+                          : ""}
+                        [{d.phase}] {d.message}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Horizontal Resize Handle */}
@@ -777,24 +931,42 @@ fn update(dt, inputs) {
         {/* Script Editor - vertical mode (stacked above) */}
         {layoutMode === 'vertical' && (
           <div className="mb-1 rounded-md border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-            <div style={{ height: scriptHeight }}>
-              <Editor
-                height="100%"
-                defaultLanguage={RHAI_LANGUAGE_ID}
-                theme="vs-dark"
-                value={script}
-                onChange={(value) => setScript(value ?? "")}
-                beforeMount={handleEditorBeforeMount}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 12,
-                  lineNumbers: "on",
-                  scrollBeyondLastLine: false,
-                  wordWrap: "on",
-                  automaticLayout: true,
-                  tabSize: 2,
-                }}
-              />
+            <div style={{ height: scriptHeight }} className="flex flex-col">
+              <div className="flex-1 min-h-0">
+                <Editor
+                  height="100%"
+                  defaultLanguage={RHAI_LANGUAGE_ID}
+                  theme="vs-dark"
+                  value={script}
+                  onChange={(value) => setScript(value ?? "")}
+                  beforeMount={handleEditorBeforeMount}
+                  onMount={handleEditorMount}
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 12,
+                    lineNumbers: "on",
+                    scrollBeyondLastLine: false,
+                    wordWrap: "on",
+                    automaticLayout: true,
+                    tabSize: 2,
+                  }}
+                />
+              </div>
+              {scriptDiagnostics.length > 0 && (
+                <div className="border-t border-zinc-800 bg-zinc-950/40 p-2 text-[11px] text-red-200 overflow-auto max-h-40">
+                  <div className="font-semibold mb-1">Script errors</div>
+                  <div className="font-mono whitespace-pre-wrap">
+                    {scriptDiagnostics.map((d, i) => (
+                      <div key={i}>
+                        {(d.location && typeof d.location.line === "number" && typeof d.location.column === "number")
+                          ? `L${d.location.line}:C${d.location.column} `
+                          : ""}
+                        [{d.phase}] {d.message}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             {/* Script Resize Handle */}
             <div

@@ -5,6 +5,9 @@ pub mod sparkline;
 pub mod scripting;
 pub mod scene_graph;
 pub mod script_log;
+pub mod script_api;
+pub mod script_diagnostics;
+pub mod script_introspection;
 pub mod debug_collector;
 pub mod analysis_runner;
 
@@ -15,6 +18,7 @@ pub mod signal_state;
 pub mod signal_eval;
 pub mod signal_rhai;
 pub mod musical_time;
+pub mod frequency_band;
 
 // Event extraction modules
 pub mod event_stream;

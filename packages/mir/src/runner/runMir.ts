@@ -8,8 +8,10 @@ import { hpss } from "../dsp/hpss";
 import { hpssGpu } from "../dsp/hpssGpu";
 import { spectralCentroid, spectralFlux } from "../dsp/spectral";
 import { spectrogram, type AudioBufferLike, type Spectrogram, type SpectrogramConfig } from "../dsp/spectrogram";
+import { cqtSpectrogram, withCqtDefaults } from "../dsp/cqt";
+import { harmonicEnergy, bassPitchMotion, tonalStability } from "../dsp/cqtSignals";
 import type { MirGPU } from "../gpu/context";
-import type { MirAudioPayload, MirBackend, MirResult, MirRunRequest } from "../types";
+import type { CqtConfig, MirAudioPayload, MirBackend, MirResult, MirRunRequest } from "../types";
 
 function nowMs(): number {
     return typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -477,6 +479,49 @@ export async function runMir(
                 timings: {
                     totalMs: end - t0,
                     cpuMs: mfccCpuMs + (end - mfccStart),
+                },
+            },
+        };
+    }
+
+    // ----------------------------
+    // CQT-derived signals (F5)
+    // ----------------------------
+
+    if (request.fn === "cqtHarmonicEnergy" || request.fn === "cqtBassPitchMotion" || request.fn === "cqtTonalStability") {
+        // CQT signals bypass the STFT we computed above and compute their own CQT.
+        // This is intentional: CQT has different frequency resolution requirements.
+        const cqtStart = nowMs();
+
+        const cqtConfig: CqtConfig = withCqtDefaults(request.cqt);
+        const cqt = await cqtSpectrogram(asAudioBufferLike(audio), cqtConfig, {
+            isCancelled: options.isCancelled,
+        });
+
+        const cqtEnd = nowMs();
+
+        // Compute the requested signal
+        let signal;
+        if (request.fn === "cqtHarmonicEnergy") {
+            signal = harmonicEnergy(cqt);
+        } else if (request.fn === "cqtBassPitchMotion") {
+            signal = bassPitchMotion(cqt);
+        } else {
+            signal = tonalStability(cqt);
+        }
+
+        const end = nowMs();
+
+        return {
+            kind: "1d",
+            times: signal.times,
+            values: signal.values,
+            meta: {
+                backend: "cpu",
+                usedGpu: false,
+                timings: {
+                    totalMs: end - t0,
+                    cpuMs: (cqtEnd - cqtStart) + (end - cqtEnd),
                 },
             },
         };

@@ -279,7 +279,195 @@ export type BeatPosition = {
     bpm: number;
 };
 
-// (moved above)
+// ----------------------------
+// Frequency Bands (F1)
+// ----------------------------
+
+/**
+ * Time scope for a frequency band.
+ * - "global": Band applies to entire track
+ * - "sectioned": Band applies only to explicit start/end times
+ */
+export type FrequencyBandTimeScope =
+    | { kind: "global" }
+    | { kind: "sectioned"; startTime: number; endTime: number };
+
+/**
+ * A single time segment of a piecewise-linear frequency range.
+ *
+ * Segments define how the band's frequency boundaries vary over time.
+ * Between segment boundaries, linear interpolation is used.
+ *
+ * Invariants:
+ * - lowHzStart < highHzStart and lowHzEnd < highHzEnd
+ * - All frequency values >= 0
+ * - startTime < endTime
+ * - Segments don't overlap in time (within a band)
+ * - For sectioned bands, segments must fully cover the time scope
+ */
+export type FrequencySegment = {
+    /** Start time of this segment in seconds (inclusive). */
+    startTime: number;
+    /** End time of this segment in seconds (exclusive). */
+    endTime: number;
+    /** Lower frequency bound in Hz at segment start. */
+    lowHzStart: number;
+    /** Upper frequency bound in Hz at segment start. */
+    highHzStart: number;
+    /** Lower frequency bound in Hz at segment end. */
+    lowHzEnd: number;
+    /** Upper frequency bound in Hz at segment end. */
+    highHzEnd: number;
+};
+
+/**
+ * Provenance metadata for a frequency band.
+ * Tracks how the band was created for audit and debugging.
+ */
+export type FrequencyBandProvenance = {
+    /** How this band was created. */
+    source: "manual" | "imported" | "preset";
+    /** ISO timestamp when the band was created. */
+    createdAt: string;
+    /** Optional preset name if source is "preset". */
+    presetName?: string;
+};
+
+/**
+ * A frequency band definition.
+ *
+ * Bands define semantic frequency regions for band-isolated analysis
+ * (e.g., bass, mids, highs, or "kick-like", "snare-like").
+ *
+ * Bands can have constant or time-varying frequency boundaries via
+ * the piecewise-linear frequencyShape.
+ *
+ * Bands are immutable unless explicitly edited by the user.
+ */
+export type FrequencyBand = {
+    /** Unique identifier for this band. */
+    id: string;
+    /** Human-readable label (editable). */
+    label: string;
+    /** Whether the band is currently active for processing. */
+    enabled: boolean;
+    /** Time scope for this band. */
+    timeScope: FrequencyBandTimeScope;
+    /** Piecewise-linear frequency shape over time. */
+    frequencyShape: FrequencySegment[];
+    /** Stable sort order (not insertion order). */
+    sortOrder: number;
+    /** Provenance metadata. */
+    provenance: FrequencyBandProvenance;
+};
+
+/**
+ * The authoritative frequency band structure for a track.
+ *
+ * Once authored, this becomes the source of truth for frequency bands.
+ * Band-scoped MIR passes will rely on this structure.
+ *
+ * Design constraints:
+ * - Bands are explicitly authored, not inferred
+ * - Bands can overlap in frequency (intentional for semantic regions)
+ * - Each band's frequencyShape segments are non-overlapping and ordered
+ * - Bands are sorted by sortOrder for stable ordering
+ */
+export type FrequencyBandStructure = {
+    /** Schema version for future migrations. */
+    version: 1;
+    /** Ordered list of frequency bands (by sortOrder). */
+    bands: FrequencyBand[];
+    /** ISO timestamp when the structure was created. */
+    createdAt: string;
+    /** ISO timestamp when the structure was last modified. */
+    modifiedAt: string;
+};
+
+/**
+ * Computed frequency bounds at a given time.
+ * Result of querying a band at a specific time point.
+ */
+export type FrequencyBoundsAtTime = {
+    /** The band ID this belongs to. */
+    bandId: string;
+    /** Lower frequency in Hz at this time. */
+    lowHz: number;
+    /** Upper frequency in Hz at this time. */
+    highHz: number;
+    /** Whether the band is enabled. */
+    enabled: boolean;
+};
+
+/**
+ * A keyframe for UI display and editing.
+ *
+ * Keyframes are a UI abstraction over the segment model.
+ * Each segment boundary (start or end) can be represented as a keyframe.
+ * This makes it easier to display and edit time-varying frequency bands.
+ */
+export type FrequencyKeyframe = {
+    /** Time in seconds. */
+    time: number;
+    /** Lower frequency bound in Hz at this time. */
+    lowHz: number;
+    /** Upper frequency bound in Hz at this time. */
+    highHz: number;
+    /** Index of the segment this keyframe belongs to. */
+    segmentIndex: number;
+    /** Whether this is the start or end of the segment. */
+    edge: "start" | "end";
+};
+
+// ----------------------------
+// Band-Scoped MIR (F3)
+// ----------------------------
+
+/**
+ * Band MIR function identifiers.
+ */
+export type BandMirFunctionId =
+    | "bandAmplitudeEnvelope"
+    | "bandOnsetStrength"
+    | "bandSpectralFlux";
+
+/**
+ * Diagnostics for band MIR computation.
+ * Provides information about energy retention and potential issues.
+ */
+export type BandMirDiagnostics = {
+    /** Average energy retention across all frames (0-1). */
+    meanEnergyRetained: number;
+    /** Number of frames with < 1% energy (weak band). */
+    weakFrameCount: number;
+    /** Number of frames with 0 energy (empty band). */
+    emptyFrameCount: number;
+    /** Total frames processed. */
+    totalFrames: number;
+    /** Warning messages (informational, not blocking). */
+    warnings: string[];
+};
+
+/**
+ * Result of a band-scoped MIR computation.
+ */
+export type BandMir1DResult = {
+    kind: "bandMir1d";
+    /** ID of the band this result is for. */
+    bandId: string;
+    /** Label of the band (for display). */
+    bandLabel: string;
+    /** The MIR function that produced this result. */
+    fn: BandMirFunctionId;
+    /** Frame times aligned to spectrogram timebase. */
+    times: Float32Array;
+    /** Signal values per frame. */
+    values: Float32Array;
+    /** Execution metadata. */
+    meta: MirRunMeta;
+    /** Diagnostics about energy retention and potential issues. */
+    diagnostics: BandMirDiagnostics;
+};
 
 export type MirFunctionId =
     | "spectralCentroid"
@@ -293,7 +481,11 @@ export type MirFunctionId =
     | "hpssPercussive"
     | "mfcc"
     | "mfccDelta"
-    | "mfccDeltaDelta";
+    | "mfccDeltaDelta"
+    // CQT-derived signals (F5)
+    | "cqtHarmonicEnergy"
+    | "cqtBassPitchMotion"
+    | "cqtTonalStability";
 
 export type MirRunRequest = {
     fn: MirFunctionId;
@@ -363,9 +555,151 @@ export type MirRunRequest = {
         /** Include histogram in output for debugging. Default: false. */
         includeHistogram?: boolean;
     };
+
+    // CQT configuration (F5)
+    cqt?: {
+        /** Number of bins per octave. Default: 24 (quarter-tone). */
+        binsPerOctave?: number;
+        /** Minimum frequency in Hz. Default: 32.7 Hz (C1). */
+        fMin?: number;
+        /** Maximum frequency in Hz. Default: 8372 Hz (C9). */
+        fMax?: number;
+        /** Hop size in samples. Auto-computed if not specified. */
+        hopSize?: number;
+    };
 };
 
 export type MirAudioPayload = {
     sampleRate: number;
     mono: Float32Array;
+};
+
+// ----------------------------
+// Constant-Q Transform (F5)
+// ----------------------------
+
+/**
+ * Configuration for CQT (Constant-Q Transform) computation.
+ *
+ * CQT provides log-frequency resolution aligned to musical pitch ratios.
+ * It is an internal spectral view, not a user-facing spectrogram.
+ */
+export type CqtConfig = {
+    /** Number of bins per octave. Default: 24 (quarter-tone resolution). */
+    binsPerOctave: number;
+    /** Minimum frequency in Hz. Default: 32.7 Hz (C1). */
+    fMin: number;
+    /** Maximum frequency in Hz. Default: 8372 Hz (C9). */
+    fMax: number;
+    /** Hop size in samples. If not specified, auto-computed based on resolution. */
+    hopSize?: number;
+};
+
+/**
+ * Result of CQT computation.
+ *
+ * CQT produces a time-frequency representation with logarithmic frequency spacing.
+ * Each bin corresponds to a specific frequency based on the musical pitch scale.
+ */
+export type CqtSpectrogram = {
+    /** Sample rate of source audio. */
+    sampleRate: number;
+    /** Configuration used for this computation. */
+    config: CqtConfig;
+    /** Time axis (frame centers in seconds). */
+    times: Float32Array;
+    /** CQT magnitudes [frame][bin], log-frequency ordered from fMin to fMax. */
+    magnitudes: Float32Array[];
+    /** Number of octaves covered. */
+    nOctaves: number;
+    /** Number of bins per octave. */
+    binsPerOctave: number;
+    /** Center frequency of each bin in Hz. */
+    binFrequencies: Float32Array;
+};
+
+/**
+ * Identifier for CQT-derived 1D signals.
+ */
+export type CqtSignalId = "harmonicEnergy" | "bassPitchMotion" | "tonalStability";
+
+/**
+ * Result of a CQT-derived 1D signal computation.
+ */
+export type CqtSignalResult = {
+    kind: "cqt1d";
+    signalId: CqtSignalId;
+    times: Float32Array;
+    values: Float32Array;
+    meta: MirRunMeta;
+};
+
+// ----------------------------
+// Band Proposals (F5)
+// ----------------------------
+
+/**
+ * Source algorithm that generated a band proposal.
+ */
+export type BandProposalSource =
+    /** Persistent spectral peak detected across time. */
+    | "spectral_peak"
+    /** Frequency region with distinct onset pattern. */
+    | "onset_band"
+    /** Concentrated energy cluster in frequency region. */
+    | "energy_cluster"
+    /** Detected harmonic series structure. */
+    | "harmonic_structure"
+    /** High harmonic energy from CQT analysis. */
+    | "cqt_harmonic"
+    /** Significant bass pitch motion from CQT analysis. */
+    | "cqt_bass_motion"
+    /** Low tonal stability region from CQT analysis. */
+    | "cqt_tonal_instability";
+
+/**
+ * A band proposal is an ephemeral suggestion for a frequency band.
+ *
+ * Proposals are generated by automated analysis and presented to the user
+ * for review. They are never auto-persisted - explicit user action
+ * (promotion) is required to convert them to real FrequencyBands.
+ *
+ * Design principle: Automation is advisory, not authoritative.
+ */
+export type BandProposal = {
+    /** Unique ephemeral identifier for this proposal. */
+    id: string;
+    /** Proposed frequency band (same structure as FrequencyBand). */
+    band: FrequencyBand;
+    /** Salience score [0, 1] indicating how "interesting" this band is. */
+    salience: number;
+    /** Human-readable reason for this proposal. */
+    reason: string;
+    /** Algorithm that generated this proposal. */
+    source: BandProposalSource;
+    /** ISO timestamp when this proposal was generated. */
+    generatedAt: string;
+};
+
+/**
+ * Configuration for band proposal generation.
+ */
+export type BandProposalConfig = {
+    /** Maximum number of proposals to generate. Default: 8. */
+    maxProposals?: number;
+    /** Minimum salience threshold for proposals [0, 1]. Default: 0.3. */
+    minSalience?: number;
+    /** Minimum separation in octaves between proposals. Default: 0.5. */
+    minSeparationOctaves?: number;
+    /** Time window for analysis in seconds (0 = full track). Default: 0. */
+    analysisWindow?: number;
+};
+
+/**
+ * Result of band proposal generation.
+ */
+export type BandProposalResult = {
+    kind: "bandProposals";
+    proposals: BandProposal[];
+    meta: MirRunMeta;
 };

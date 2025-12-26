@@ -57,8 +57,46 @@ impl Signal {
     }
 
     /// Create an input signal that reads from a named source.
+    /// Uses peak-preserving sampling with frame dt as window by default.
     pub fn input(name: impl Into<String>) -> Self {
-        Self::new(SignalNode::Input { name: name.into() })
+        Self::new(SignalNode::Input {
+            name: name.into(),
+            sampling: SamplingConfig::default(),
+        })
+    }
+
+    /// Create an input signal with custom sampling configuration.
+    pub fn input_with_sampling(name: impl Into<String>, sampling: SamplingConfig) -> Self {
+        Self::new(SignalNode::Input {
+            name: name.into(),
+            sampling,
+        })
+    }
+
+    /// Create a band-scoped input signal.
+    /// Uses peak-preserving sampling with frame dt as window by default.
+    ///
+    /// - `band_key`: The frequency band ID or label (both are supported).
+    /// - `feature`: Signal type ("energy", "onset", "flux", "amplitude").
+    pub fn band_input(band_key: impl Into<String>, feature: impl Into<String>) -> Self {
+        Self::new(SignalNode::BandInput {
+            band_key: band_key.into(),
+            feature: feature.into(),
+            sampling: SamplingConfig::default(),
+        })
+    }
+
+    /// Create a band-scoped input signal with custom sampling configuration.
+    pub fn band_input_with_sampling(
+        band_key: impl Into<String>,
+        feature: impl Into<String>,
+        sampling: SamplingConfig,
+    ) -> Self {
+        Self::new(SignalNode::BandInput {
+            band_key: band_key.into(),
+            feature: feature.into(),
+            sampling,
+        })
     }
 
     /// Create a constant signal.
@@ -132,7 +170,7 @@ impl Signal {
 
     /// Attach a debug probe to this signal.
     /// The probe emits values during analysis mode but doesn't affect the signal value.
-    pub fn debug(&self, name: impl Into<String>) -> Signal {
+    pub fn probe(&self, name: impl Into<String>) -> Signal {
         Signal::new(SignalNode::Debug {
             source: self.clone(),
             name: name.into(),
@@ -207,10 +245,68 @@ impl Signal {
 
     // === Utility ===
 
+    // === Sampling Configuration ===
+
+    /// Use linear interpolation sampling instead of peak-preserving.
+    /// This samples at exactly the requested time without windowing.
+    /// Use for signals where smoothness matters more than peak accuracy.
+    pub fn interpolate(&self) -> Signal {
+        self.with_sampling(SamplingConfig {
+            strategy: SamplingStrategy::Interpolate,
+            window: SamplingWindow::FrameDt, // Not used for interpolation
+        })
+    }
+
+    /// Use peak-preserving sampling with frame dt as window.
+    /// This is the default, but can be used to explicitly override.
+    pub fn peak(&self) -> Signal {
+        self.with_sampling(SamplingConfig {
+            strategy: SamplingStrategy::Peak,
+            window: SamplingWindow::FrameDt,
+        })
+    }
+
+    /// Use peak-preserving sampling with a custom window size in beats.
+    pub fn peak_window_beats(&self, beats: f32) -> Signal {
+        self.with_sampling(SamplingConfig {
+            strategy: SamplingStrategy::Peak,
+            window: SamplingWindow::Beats(beats),
+        })
+    }
+
+    /// Use peak-preserving sampling with a custom window size in seconds.
+    pub fn peak_window_seconds(&self, seconds: f32) -> Signal {
+        self.with_sampling(SamplingConfig {
+            strategy: SamplingStrategy::Peak,
+            window: SamplingWindow::Seconds(seconds),
+        })
+    }
+
+    /// Apply a custom sampling configuration to this signal.
+    /// Only affects Input and BandInput nodes; other nodes are returned unchanged.
+    fn with_sampling(&self, sampling: SamplingConfig) -> Signal {
+        match &*self.node {
+            SignalNode::Input { name, .. } => Signal::new(SignalNode::Input {
+                name: name.clone(),
+                sampling,
+            }),
+            SignalNode::BandInput {
+                band_key, feature, ..
+            } => Signal::new(SignalNode::BandInput {
+                band_key: band_key.clone(),
+                feature: feature.clone(),
+                sampling,
+            }),
+            // For non-input signals, return a clone unchanged
+            // (sampling config only applies to input sources)
+            _ => self.clone(),
+        }
+    }
+
     /// Get the underlying input name if this is a simple Input signal.
     pub fn get_input_name(&self) -> Option<&str> {
         match &*self.node {
-            SignalNode::Input { name } => Some(name),
+            SignalNode::Input { name, .. } => Some(name),
             _ => None,
         }
     }
@@ -272,10 +368,20 @@ impl Signal {
             }
             // Leaf nodes don't have children
             SignalNode::Input { .. }
+            | SignalNode::BandInput { .. }
             | SignalNode::Constant(_)
             | SignalNode::Generator(_)
             | SignalNode::EventStreamSource { .. }
             | SignalNode::EventStreamEnvelope { .. } => {}
+        }
+    }
+
+    /// Get the sampling configuration if this is an Input or BandInput signal.
+    pub fn get_sampling_config(&self) -> Option<SamplingConfig> {
+        match &*self.node {
+            SignalNode::Input { sampling, .. } => Some(*sampling),
+            SignalNode::BandInput { sampling, .. } => Some(*sampling),
+            _ => None,
         }
     }
 
@@ -306,7 +412,18 @@ impl std::fmt::Debug for Signal {
 pub enum SignalNode {
     // === Sources ===
     /// Reference to a named input signal (e.g., "onsetEnvelope", "spectralCentroid").
-    Input { name: String },
+    Input {
+        name: String,
+        sampling: SamplingConfig,
+    },
+    /// Reference to a band-scoped input signal.
+    /// - `band_key`: The frequency band ID or label.
+    /// - `feature`: Signal type ("energy", "onset", "flux").
+    BandInput {
+        band_key: String,
+        feature: String,
+        sampling: SamplingConfig,
+    },
     /// Constant value.
     Constant(f32),
     /// Generator function (oscillators, noise, etc.).
@@ -573,6 +690,50 @@ pub enum GateParams {
     Hysteresis { on_threshold: f32, off_threshold: f32 },
 }
 
+/// Sampling strategy for input signals.
+///
+/// Controls how input signal values are sampled when evaluated at a given time.
+/// Peak-preserving sampling is important for transient signals (onsets, energy)
+/// to avoid aliasing when the evaluation rate is lower than the signal rate.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum SamplingStrategy {
+    /// Peak-preserving: returns the max absolute value within a window.
+    /// Window size is determined by `SamplingWindow`.
+    /// This is the default to preserve transients when downsampling.
+    #[default]
+    Peak,
+
+    /// Linear interpolation between adjacent samples.
+    /// No windowing - samples at exactly the requested time.
+    /// Use for signals where smoothness matters more than peak accuracy.
+    Interpolate,
+}
+
+/// Window size for peak-preserving sampling.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum SamplingWindow {
+    /// Use the frame delta time (dt) as the window.
+    /// This is the default and adapts to the evaluation frame rate.
+    #[default]
+    FrameDt,
+
+    /// Use a fixed window size in beats.
+    /// Converts to seconds using current BPM.
+    Beats(f32),
+
+    /// Use a fixed window size in seconds.
+    Seconds(f32),
+}
+
+/// Combined sampling configuration for input signals.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct SamplingConfig {
+    /// The sampling strategy to use.
+    pub strategy: SamplingStrategy,
+    /// The window size (only used for Peak strategy).
+    pub window: SamplingWindow,
+}
+
 // === Builder types for fluent API ===
 
 /// Builder for smoothing operations, returned by `signal.smooth`.
@@ -735,9 +896,9 @@ mod tests {
     #[test]
     fn test_debug_probe() {
         let energy = Signal::input("energy");
-        let debug = energy.debug("my_probe");
+        let probed = energy.probe("my_probe");
 
-        assert!(matches!(&*debug.node, SignalNode::Debug { name, .. } if name == "my_probe"));
+        assert!(matches!(&*probed.node, SignalNode::Debug { name, .. } if name == "my_probe"));
     }
 
     #[test]
@@ -747,5 +908,15 @@ mod tests {
             phase: 0.0,
         });
         assert!(matches!(&*sin.node, SignalNode::Generator(GeneratorNode::Sin { .. })));
+    }
+
+    #[test]
+    fn test_band_input() {
+        let band_signal = Signal::band_input("Bass", "energy");
+        assert!(matches!(
+            &*band_signal.node,
+            SignalNode::BandInput { band_key, feature, .. }
+            if band_key == "Bass" && feature == "energy"
+        ));
     }
 }

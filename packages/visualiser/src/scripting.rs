@@ -33,10 +33,47 @@
 use std::collections::HashMap;
 use rhai::{Engine, Scope, AST, Dynamic, EvalAltResult};
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
 use crate::debug_collector::debug_emit;
 use crate::scene_graph::{SceneGraph, EntityId, MeshType, LineMode, SceneEntity, LineStrip as SceneLineStrip};
 use crate::script_log::{ScriptLogger, reset_frame_log_count};
-use crate::signal_rhai::{register_signal_api, generate_inputs_namespace, SIGNAL_API_RHAI};
+use crate::script_diagnostics::{from_eval_error, from_parse_error, ScriptDiagnostic, ScriptPhase};
+use crate::script_introspection::register_introspection_api;
+use crate::signal_rhai::{register_signal_api, generate_inputs_namespace, generate_bands_namespace, SIGNAL_API_RHAI};
+
+/// Global debug options set by scripts.
+/// These are read by the visualiser after each update.
+static DEBUG_WIREFRAME: AtomicBool = AtomicBool::new(false);
+static DEBUG_BOUNDING_BOXES: AtomicBool = AtomicBool::new(false);
+/// 0 means no isolation, any other value is the entity ID to isolate.
+static DEBUG_ISOLATED_ENTITY: AtomicU64 = AtomicU64::new(0);
+
+/// Debug options requested by the script.
+#[derive(Debug, Clone, Default)]
+pub struct ScriptDebugOptions {
+    pub wireframe: bool,
+    pub bounding_boxes: bool,
+    /// None means render all entities, Some(id) means only render that entity.
+    pub isolated_entity: Option<u64>,
+}
+
+/// Get the current debug options set by scripts.
+pub fn get_script_debug_options() -> ScriptDebugOptions {
+    let isolated = DEBUG_ISOLATED_ENTITY.load(Ordering::Relaxed);
+    ScriptDebugOptions {
+        wireframe: DEBUG_WIREFRAME.load(Ordering::Relaxed),
+        bounding_boxes: DEBUG_BOUNDING_BOXES.load(Ordering::Relaxed),
+        isolated_entity: if isolated == 0 { None } else { Some(isolated) },
+    }
+}
+
+/// Reset script debug options to defaults.
+pub fn reset_script_debug_options() {
+    DEBUG_WIREFRAME.store(false, Ordering::Relaxed);
+    DEBUG_BOUNDING_BOXES.store(false, Ordering::Relaxed);
+    DEBUG_ISOLATED_ENTITY.store(0, Ordering::Relaxed);
+}
 
 /// Scripting engine that manages Rhai VM lifecycle and scene graph.
 pub struct ScriptEngine {
@@ -49,10 +86,16 @@ pub struct ScriptEngine {
     entity_maps: HashMap<u64, rhai::Map>,
     /// Last error message (for display/debugging)
     pub last_error: Option<String>,
+    /// Structured diagnostics for UI consumption.
+    diagnostics: Vec<ScriptDiagnostic>,
+    /// Number of prelude lines before the user script.
+    user_line_offset: usize,
     /// Whether init() has been called
     init_called: bool,
     /// Available signal names for the inputs namespace
     available_signal_names: Vec<String>,
+    /// Available frequency bands: (id, label) pairs
+    available_bands: Vec<(String, String)>,
 }
 
 impl ScriptEngine {
@@ -99,8 +142,28 @@ impl ScriptEngine {
             },
         );
 
+        // Register debug visualization control functions
+        engine.register_fn("__debug_wireframe", |enabled: bool| {
+            DEBUG_WIREFRAME.store(enabled, Ordering::Relaxed);
+        });
+
+        engine.register_fn("__debug_bounding_boxes", |enabled: bool| {
+            DEBUG_BOUNDING_BOXES.store(enabled, Ordering::Relaxed);
+        });
+
+        engine.register_fn("__debug_isolate", |entity_id: i64| {
+            DEBUG_ISOLATED_ENTITY.store(entity_id as u64, Ordering::Relaxed);
+        });
+
+        engine.register_fn("__debug_clear_isolation", || {
+            DEBUG_ISOLATED_ENTITY.store(0, Ordering::Relaxed);
+        });
+
         // Register Signal API types and functions
         register_signal_api(&mut engine);
+
+        // Register host-assisted introspection helpers (describe/help/doc)
+        register_introspection_api(&mut engine);
 
         Self {
             engine,
@@ -109,8 +172,23 @@ impl ScriptEngine {
             scene_graph: SceneGraph::new(),
             entity_maps: HashMap::new(),
             last_error: None,
+            diagnostics: Vec::new(),
+            user_line_offset: 0,
             init_called: false,
             available_signal_names: Vec::new(),
+            available_bands: Vec::new(),
+        }
+    }
+
+    fn push_diagnostic(&mut self, diag: ScriptDiagnostic) {
+        // Keep a bounded queue so repeated runtime errors don't grow without limit.
+        const MAX_DIAGNOSTICS: usize = 32;
+
+        self.last_error = Some(diag.message.clone());
+        self.diagnostics.push(diag);
+        if self.diagnostics.len() > MAX_DIAGNOSTICS {
+            let excess = self.diagnostics.len() - MAX_DIAGNOSTICS;
+            self.diagnostics.drain(0..excess);
         }
     }
 
@@ -118,6 +196,14 @@ impl ScriptEngine {
     /// Call this before load_script to make signals available.
     pub fn set_available_signals(&mut self, names: Vec<String>) {
         self.available_signal_names = names;
+    }
+
+    /// Set the available frequency bands for the inputs.bands namespace.
+    /// Call this before load_script to make band signals available.
+    ///
+    /// Each band is represented as a tuple of (id, label).
+    pub fn set_available_bands(&mut self, bands: Vec<(String, String)>) {
+        self.available_bands = bands;
     }
 
     /// Initialize scope with API modules and empty entity tracking.
@@ -144,19 +230,27 @@ impl ScriptEngine {
         self.scene_graph.clear();
         self.entity_maps.clear();
         self.last_error = None;
+        self.diagnostics.clear();
         self.init_called = false;
 
         // Generate inputs namespace based on available signals
         let signal_names: Vec<&str> = self.available_signal_names.iter().map(|s| s.as_str()).collect();
         let inputs_namespace = generate_inputs_namespace(&signal_names);
 
-        // Wrap user script with API definitions
-        // Note: Rhai Maps require string keys, so we convert IDs to strings using `"" + id`
-        let full_script = format!(r#"
+        // Generate bands namespace based on available frequency bands
+        let bands_namespace = generate_bands_namespace(&self.available_bands);
+
+        // Wrap user script with API definitions.
+        // Note: Rhai Maps require string keys, so we convert IDs to strings using `"" + id`.
+        //
+        // Important: we track the number of prelude lines so we can map Rhai error
+        // positions back onto the user's script for UI reporting.
+        let prelude = format!(r#"
 // === API Modules ===
 
 // Mesh module
 let mesh = #{{}};
+mesh.__type = "mesh_namespace";
 mesh.cube = || {{
     let id = __next_id;
     __next_id += 1;
@@ -169,6 +263,7 @@ mesh.cube = || {{
     entity.rotation = #{{ x: 0.0, y: 0.0, z: 0.0 }};
     entity.scale = 1.0;
     entity.visible = true;
+    entity.color = #{{ r: 1.0, g: 1.0, b: 1.0, a: 1.0 }};
 
     __entities["" + id] = entity;
     entity
@@ -186,6 +281,25 @@ mesh.plane = || {{
     entity.rotation = #{{ x: 0.0, y: 0.0, z: 0.0 }};
     entity.scale = 1.0;
     entity.visible = true;
+    entity.color = #{{ r: 1.0, g: 1.0, b: 1.0, a: 1.0 }};
+
+    __entities["" + id] = entity;
+    entity
+}};
+
+mesh.sphere = || {{
+    let id = __next_id;
+    __next_id += 1;
+
+    let entity = #{{}};
+    entity.__id = id;
+    entity.__type = "mesh_sphere";
+
+    entity.position = #{{ x: 0.0, y: 0.0, z: 0.0 }};
+    entity.rotation = #{{ x: 0.0, y: 0.0, z: 0.0 }};
+    entity.scale = 1.0;
+    entity.visible = true;
+    entity.color = #{{ r: 1.0, g: 1.0, b: 1.0, a: 1.0 }};
 
     __entities["" + id] = entity;
     entity
@@ -193,6 +307,7 @@ mesh.plane = || {{
 
 // Line module
 let line = #{{}};
+line.__type = "line_namespace";
 line.strip = |options| {{
     let id = __next_id;
     __next_id += 1;
@@ -234,6 +349,7 @@ line.strip = |options| {{
 
 // Scene module
 let scene = #{{}};
+scene.__type = "scene_namespace";
 scene.add = |entity| {{
     let id = entity.__id;
     if !__scene_ids.contains(id) {{
@@ -249,17 +365,66 @@ scene.remove = |entity| {{
     }}
 }};
 
+scene.group = || {{
+    let id = __next_id;
+    __next_id += 1;
+
+    let entity = #{{}};
+    entity.__id = id;
+    entity.__type = "group";
+    entity.__children = [];
+
+    entity.position = #{{ x: 0.0, y: 0.0, z: 0.0 }};
+    entity.rotation = #{{ x: 0.0, y: 0.0, z: 0.0 }};
+    entity.scale = 1.0;
+    entity.visible = true;
+
+    // Add child to group
+    entity.add = |child| {{
+        let child_id = child.__id;
+        // Set parent reference on child
+        child.__parent_id = this.__id;
+        // Add to children list if not already there
+        if !this.__children.contains(child_id) {{
+            this.__children.push(child_id);
+        }}
+        // Update global entity registry
+        __entities["" + child_id] = child;
+    }};
+
+    // Remove child from group
+    entity.remove = |child| {{
+        let child_id = child.__id;
+        let idx = this.__children.index_of(child_id);
+        if idx >= 0 {{
+            this.__children.remove(idx);
+        }}
+        // Clear parent reference
+        child.__parent_id = ();
+        __entities["" + child_id] = child;
+    }};
+
+    __entities["" + id] = entity;
+    entity
+}};
+
 // Log module - wraps native logging functions
 let log = #{{}};
+log.__type = "log_namespace";
 log.info = |msg| {{ __log_info(msg); }};
 log.warn = |msg| {{ __log_warn(msg); }};
 log.error = |msg| {{ __log_error(msg); }};
 
-// Debug module - for emitting debug signals
+// Debug module - for emitting debug signals and controlling debug visualization
 // Signals are collected during analysis mode for visualization
-// In playback mode, this is a no-op
+// In playback mode, emit is a no-op
 let dbg = #{{}};
+dbg.__type = "dbg_namespace";
 dbg.emit = |name, value| {{ __debug_emit(name, value); }};
+dbg.wireframe = |enabled| {{ __debug_wireframe(enabled); }};
+dbg.boundingBoxes = |enabled| {{ __debug_bounding_boxes(enabled); }};
+dbg.isolate = |entity| {{ __debug_isolate(entity.__id); }};
+dbg.clearIsolation = || {{ __debug_clear_isolation(); }};
 
 // === Signal API ===
 {SIGNAL_API_RHAI}
@@ -267,24 +432,30 @@ dbg.emit = |name, value| {{ __debug_emit(name, value); }};
 // === Inputs Namespace (Signal accessors) ===
 {inputs_namespace}
 
+// === Bands Namespace (Band-scoped signal accessors) ===
+{bands_namespace}
+
 // === User Script ===
-{script}
 "#);
+
+        // Count prelude lines so we can map errors back to user code.
+        self.user_line_offset = prelude.matches('\n').count();
+        let full_script = format!("{prelude}{script}");
 
         match self.engine.compile(&full_script) {
             Ok(ast) => {
                 // Run the script once to initialize global state and API
                 if let Err(e) = self.engine.run_ast_with_scope(&mut self.scope, &ast) {
-                    self.last_error = Some(format!("Script init error: {}", e));
-                    log::error!("Script initialization error: {}", e);
+                    let diag = from_eval_error(ScriptPhase::Init, &e, self.user_line_offset);
+                    self.push_diagnostic(diag);
                     return false;
                 }
                 self.ast = Some(ast);
                 true
             }
             Err(e) => {
-                self.last_error = Some(format!("Compile error: {}", e));
-                log::error!("Script compilation error: {}", e);
+                let diag = from_parse_error(&e, self.user_line_offset);
+                self.push_diagnostic(diag);
                 false
             }
         }
@@ -304,7 +475,8 @@ dbg.emit = |name, value| {{ __debug_emit(name, value); }};
         };
 
         // Create a simple context Map (can be extended later)
-        let ctx = rhai::Map::new();
+        let mut ctx = rhai::Map::new();
+        ctx.insert("__type".into(), Dynamic::from("init_ctx"));
 
         // Call init if it exists
         let result: Result<(), Box<EvalAltResult>> = self.engine.call_fn(
@@ -317,8 +489,8 @@ dbg.emit = |name, value| {{ __debug_emit(name, value); }};
         if let Err(e) = result {
             let err_str = e.to_string();
             if !err_str.contains("Function not found") {
-                self.last_error = Some(format!("Init error: {}", e));
-                log::error!("Script init() error: {}", e);
+                let diag = from_eval_error(ScriptPhase::Init, &e, self.user_line_offset);
+                self.push_diagnostic(diag);
             } else {
                 log::info!("Script has no init() function");
             }
@@ -356,6 +528,7 @@ dbg.emit = |name, value| {{ __debug_emit(name, value); }};
         // Create inputs map from the signals HashMap
         // Note: Rhai is compiled with f32_float feature, so use f32
         let mut inputs_map = rhai::Map::new();
+        inputs_map.insert("__type".into(), Dynamic::from("frame_inputs"));
         for (name, value) in signals {
             inputs_map.insert(name.clone().into(), Dynamic::from(*value));
         }
@@ -379,8 +552,8 @@ dbg.emit = |name, value| {{ __debug_emit(name, value); }};
         if let Err(e) = result {
             let err_str = e.to_string();
             if !err_str.contains("Function not found") {
-                self.last_error = Some(format!("Update error: {}", e));
-                log::error!("Script update error: {}", e);
+                let diag = from_eval_error(ScriptPhase::Update, &e, self.user_line_offset);
+                self.push_diagnostic(diag);
             }
         }
 
@@ -416,12 +589,32 @@ dbg.emit = |name, value| {{ __debug_emit(name, value); }};
             }
 
             // Check if this is an entity Map
-            if let Some(entity_map) = value.clone().try_cast::<rhai::Map>() {
-                if let Some(id_dyn) = entity_map.get("__id") {
+            if let Some(mut scope_entity_map) = value.clone().try_cast::<rhai::Map>() {
+                if let Some(id_dyn) = scope_entity_map.get("__id") {
                     if let Ok(id) = id_dyn.as_int() {
-                        // Update the central __entities map with this copy
                         let key = format!("{}", id);
-                        entities.insert(key.into(), Dynamic::from(entity_map.clone()));
+
+                        // Preserve internal fields from the existing entry (like __parent_id)
+                        // that are managed by group methods rather than user code
+                        if let Some(existing_dyn) = entities.get(key.as_str()) {
+                            if let Some(existing_map) = existing_dyn.clone().try_cast::<rhai::Map>() {
+                                // Preserve __parent_id if the scope variable doesn't have it
+                                if scope_entity_map.get("__parent_id").is_none() {
+                                    if let Some(parent_id) = existing_map.get("__parent_id") {
+                                        scope_entity_map.insert("__parent_id".into(), parent_id.clone());
+                                    }
+                                }
+                                // Preserve __children if the scope variable doesn't have it
+                                if scope_entity_map.get("__children").is_none() {
+                                    if let Some(children) = existing_map.get("__children") {
+                                        scope_entity_map.insert("__children".into(), children.clone());
+                                    }
+                                }
+                            }
+                        }
+
+                        // Update the central __entities map with this merged copy
+                        entities.insert(key.into(), Dynamic::from(scope_entity_map));
                     }
                 }
             }
@@ -459,6 +652,9 @@ dbg.emit = |name, value| {{ __debug_emit(name, value); }};
                     "mesh_plane" => {
                         self.create_entity_with_id(entity_id, MeshType::Plane);
                     }
+                    "mesh_sphere" => {
+                        self.create_entity_with_id(entity_id, MeshType::Sphere);
+                    }
                     "line_strip" => {
                         let max_points = entity_map.get("__max_points")
                             .and_then(|d| d.as_int().ok())
@@ -468,6 +664,9 @@ dbg.emit = |name, value| {{ __debug_emit(name, value); }};
                             .unwrap_or_else(|| "line".into());
                         let mode = if mode_str == "points" { LineMode::Points } else { LineMode::Line };
                         self.create_line_with_id(entity_id, max_points, mode);
+                    }
+                    "group" => {
+                        self.create_group_with_id(entity_id);
                     }
                     _ => continue,
                 }
@@ -516,6 +715,16 @@ dbg.emit = |name, value| {{ __debug_emit(name, value); }};
                     entity.set_visible(visible);
                 }
 
+                // Mesh-specific: sync color
+                if let SceneEntity::Mesh(mesh) = entity {
+                    if let Some(color) = entity_map.get("color").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                        mesh.color[0] = color.get("r").and_then(|d| d.as_float().ok()).unwrap_or(1.0) as f32;
+                        mesh.color[1] = color.get("g").and_then(|d| d.as_float().ok()).unwrap_or(1.0) as f32;
+                        mesh.color[2] = color.get("b").and_then(|d| d.as_float().ok()).unwrap_or(1.0) as f32;
+                        mesh.color[3] = color.get("a").and_then(|d| d.as_float().ok()).unwrap_or(1.0) as f32;
+                    }
+                }
+
                 // Line-specific: sync points
                 if let SceneEntity::Line(line) = entity {
                     // Sync color
@@ -539,6 +748,20 @@ dbg.emit = |name, value| {{ __debug_emit(name, value); }};
                         }
                     }
                 }
+            }
+
+            // Sync parent-child relationships
+            if let Some(parent_id_dyn) = entity_map.get("__parent_id") {
+                if let Ok(parent_id_val) = parent_id_dyn.as_int() {
+                    let parent_id = EntityId(parent_id_val as u64);
+                    self.scene_graph.set_parent(entity_id, parent_id);
+                } else {
+                    // No parent (unit/empty value)
+                    self.scene_graph.clear_parent(entity_id);
+                }
+            } else {
+                // No __parent_id field means no parent
+                self.scene_graph.clear_parent(entity_id);
             }
 
             // Add/remove from scene based on scene_ids
@@ -566,15 +789,28 @@ dbg.emit = |name, value| {{ __debug_emit(name, value); }};
 
     /// Create a line with a specific ID (for syncing from script).
     fn create_line_with_id(&mut self, id: EntityId, max_points: usize, mode: LineMode) {
-        use crate::scene_graph::{SceneEntity};
+        use crate::scene_graph::SceneEntity;
 
         let line = SceneLineStrip::new(max_points, mode);
         self.scene_graph.entities.insert(id, SceneEntity::Line(line));
     }
 
+    /// Create a group with a specific ID (for syncing from script).
+    fn create_group_with_id(&mut self, id: EntityId) {
+        use crate::scene_graph::{Group, SceneEntity};
+
+        let group = Group::new();
+        self.scene_graph.entities.insert(id, SceneEntity::Group(group));
+    }
+
     /// Check if a script is loaded.
     pub fn has_script(&self) -> bool {
         self.ast.is_some()
+    }
+
+    /// Drain and return all pending diagnostics.
+    pub fn take_diagnostics(&mut self) -> Vec<ScriptDiagnostic> {
+        std::mem::take(&mut self.diagnostics)
     }
 }
 
@@ -852,5 +1088,220 @@ mod tests {
         let signals = make_signals(1.5, 0.016, 0.5, 0.3);
         engine.update(0.016, &signals);
         // No assertions needed - just verify it doesn't panic
+    }
+
+    #[test]
+    fn test_diagnostic_locations_map_to_user_script() {
+        let mut engine = ScriptEngine::new();
+        engine.set_available_signals(vec!["time".to_string()]);
+
+        // Deliberate syntax error on line 2.
+        let script = "fn update(dt, inputs) {\n  let x = ;\n}\n";
+        assert!(!engine.load_script(script));
+
+        let diags = engine.take_diagnostics();
+        assert!(!diags.is_empty());
+        let d = &diags[0];
+        assert_eq!(d.phase, ScriptPhase::Compile);
+        assert!(d.location.is_some());
+        let loc = d.location.as_ref().unwrap();
+        assert_eq!(loc.line, 2);
+
+        // Runtime error mapping: undefined variable on line 2.
+        let script = "fn update(dt, inputs) {\n  y = 1;\n}\n";
+        assert!(engine.load_script(script));
+        engine.update(0.016, &make_signals(0.0, 0.016, 0.0, 0.0));
+        let diags = engine.take_diagnostics();
+        assert!(!diags.is_empty());
+        let d = &diags[0];
+        assert_eq!(d.phase, ScriptPhase::Update);
+        assert!(d.location.is_some());
+        let loc = d.location.as_ref().unwrap();
+        assert_eq!(loc.line, 2);
+    }
+
+    #[test]
+    fn test_sphere_creation() {
+        let mut engine = ScriptEngine::new();
+
+        let script = r#"
+            let sphere;
+
+            fn init(ctx) {
+                sphere = mesh.sphere();
+                sphere.position = #{ x: 1.0, y: 2.0, z: 3.0 };
+                scene.add(sphere);
+            }
+
+            fn update(dt, inputs) {
+                sphere.scale = 2.0;
+            }
+        "#;
+
+        assert!(engine.load_script(script));
+
+        let signals = make_signals(0.0, 0.016, 0.0, 0.0);
+        engine.update(0.016, &signals);
+
+        // Check sphere was created
+        assert_eq!(engine.scene_graph.meshes().count(), 1);
+
+        let (_, entity) = engine.scene_graph.scene_entities().next().unwrap();
+
+        // Check position
+        assert!((entity.transform().position.x - 1.0).abs() < 0.01);
+        assert!((entity.transform().position.y - 2.0).abs() < 0.01);
+        assert!((entity.transform().position.z - 3.0).abs() < 0.01);
+
+        // Check scale
+        assert!((entity.transform().scale.x - 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_mesh_color() {
+        use crate::scene_graph::SceneEntity;
+
+        let mut engine = ScriptEngine::new();
+
+        let script = r#"
+            let cube;
+
+            fn init(ctx) {
+                cube = mesh.cube();
+                cube.color = #{ r: 1.0, g: 0.5, b: 0.25, a: 0.8 };
+                scene.add(cube);
+            }
+
+            fn update(dt, inputs) {
+            }
+        "#;
+
+        assert!(engine.load_script(script));
+
+        let signals = make_signals(0.0, 0.016, 0.0, 0.0);
+        engine.update(0.016, &signals);
+
+        // Check color was synced
+        let (_, entity) = engine.scene_graph.scene_entities().next().unwrap();
+        if let SceneEntity::Mesh(mesh) = entity {
+            assert!((mesh.color[0] - 1.0).abs() < 0.01);
+            assert!((mesh.color[1] - 0.5).abs() < 0.01);
+            assert!((mesh.color[2] - 0.25).abs() < 0.01);
+            assert!((mesh.color[3] - 0.8).abs() < 0.01);
+        } else {
+            panic!("Expected mesh entity");
+        }
+    }
+
+    #[test]
+    fn test_group_hierarchy() {
+        use crate::scene_graph::SceneEntity;
+
+        let mut engine = ScriptEngine::new();
+
+        let script = r#"
+            let group;
+            let child1;
+            let child2;
+
+            fn init(ctx) {
+                group = scene.group();
+                group.position = #{ x: 5.0, y: 0.0, z: 0.0 };
+
+                child1 = mesh.cube();
+                child1.position = #{ x: 1.0, y: 0.0, z: 0.0 };
+
+                child2 = mesh.sphere();
+                child2.position = #{ x: -1.0, y: 0.0, z: 0.0 };
+
+                group.add(child1);
+                group.add(child2);
+
+                scene.add(group);
+            }
+
+            fn update(dt, inputs) {
+            }
+        "#;
+
+        assert!(engine.load_script(script));
+
+        let signals = make_signals(0.0, 0.016, 0.0, 0.0);
+        engine.update(0.016, &signals);
+
+        // Check group was created and added to scene
+        assert_eq!(engine.scene_graph.groups().count(), 1);
+
+        // Children are not directly in the scene (only the group is),
+        // but they exist in the scene graph with parent references
+        let mut mesh_count = 0;
+        let mut children_with_parent = 0;
+
+        for (id, entity) in &engine.scene_graph.entities {
+            if let SceneEntity::Mesh(_) = entity {
+                mesh_count += 1;
+                if engine.scene_graph.get_parent(*id).is_some() {
+                    children_with_parent += 1;
+                }
+            }
+        }
+
+        assert_eq!(mesh_count, 2, "Should have 2 mesh entities");
+        assert_eq!(children_with_parent, 2, "Both meshes should have parent");
+
+        // Verify the group's position was set
+        let (_, group_entity) = engine.scene_graph.groups().next().unwrap();
+        assert!((group_entity.transform.position.x - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_debug_modes() {
+        // Reset debug options before test
+        reset_script_debug_options();
+
+        let mut engine = ScriptEngine::new();
+
+        let script = r#"
+            let cube;
+
+            fn init(ctx) {
+                cube = mesh.cube();
+                scene.add(cube);
+
+                dbg.wireframe(true);
+                dbg.boundingBoxes(true);
+                dbg.isolate(cube);
+            }
+
+            fn update(dt, inputs) {
+                if inputs.time > 0.5 {
+                    dbg.clearIsolation();
+                    dbg.wireframe(false);
+                }
+            }
+        "#;
+
+        assert!(engine.load_script(script));
+
+        // First update - debug options should be set
+        let signals = make_signals(0.1, 0.016, 0.0, 0.0);
+        engine.update(0.016, &signals);
+
+        let debug_opts = get_script_debug_options();
+        assert!(debug_opts.wireframe, "wireframe should be enabled");
+        assert!(debug_opts.bounding_boxes, "bounding_boxes should be enabled");
+        assert!(debug_opts.isolated_entity.is_some(), "isolation should be set");
+
+        // Second update after threshold - isolation and wireframe should be cleared
+        let signals = make_signals(0.6, 0.016, 0.0, 0.0);
+        engine.update(0.016, &signals);
+
+        let debug_opts = get_script_debug_options();
+        assert!(!debug_opts.wireframe, "wireframe should be disabled");
+        assert!(debug_opts.bounding_boxes, "bounding_boxes should still be enabled");
+        assert!(debug_opts.isolated_entity.is_none(), "isolation should be cleared");
+
+        // Reset for other tests
+        reset_script_debug_options();
     }
 }

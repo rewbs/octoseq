@@ -14,6 +14,7 @@ pub struct EntityId(pub u64);
 pub enum MeshType {
     Cube,
     Plane,
+    Sphere,
 }
 
 /// 3D position/vector.
@@ -58,6 +59,8 @@ pub struct MeshInstance {
     pub mesh_type: MeshType,
     pub transform: Transform,
     pub visible: bool,
+    /// RGBA color tint (multiplied with vertex colors). Default is white (no tint).
+    pub color: [f32; 4],
 }
 
 impl MeshInstance {
@@ -66,6 +69,7 @@ impl MeshInstance {
             mesh_type,
             transform: Transform::default(),
             visible: true,
+            color: [1.0, 1.0, 1.0, 1.0], // Default: no tint (white)
         }
     }
 }
@@ -169,11 +173,36 @@ impl LineStrip {
     }
 }
 
-/// A scene entity - either a mesh instance or a line strip.
+/// A group entity that contains other entities with a parent transform.
+#[derive(Debug, Clone)]
+pub struct Group {
+    pub transform: Transform,
+    pub children: Vec<EntityId>,
+    pub visible: bool,
+}
+
+impl Group {
+    pub fn new() -> Self {
+        Self {
+            transform: Transform::default(),
+            children: Vec::new(),
+            visible: true,
+        }
+    }
+}
+
+impl Default for Group {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A scene entity - mesh, line, or group.
 #[derive(Debug, Clone)]
 pub enum SceneEntity {
     Mesh(MeshInstance),
     Line(LineStrip),
+    Group(Group),
 }
 
 impl SceneEntity {
@@ -182,6 +211,7 @@ impl SceneEntity {
         match self {
             SceneEntity::Mesh(m) => &m.transform,
             SceneEntity::Line(l) => &l.transform,
+            SceneEntity::Group(g) => &g.transform,
         }
     }
 
@@ -190,6 +220,7 @@ impl SceneEntity {
         match self {
             SceneEntity::Mesh(m) => &mut m.transform,
             SceneEntity::Line(l) => &mut l.transform,
+            SceneEntity::Group(g) => &mut g.transform,
         }
     }
 
@@ -198,6 +229,7 @@ impl SceneEntity {
         match self {
             SceneEntity::Mesh(m) => m.visible,
             SceneEntity::Line(l) => l.visible,
+            SceneEntity::Group(g) => g.visible,
         }
     }
 
@@ -206,6 +238,7 @@ impl SceneEntity {
         match self {
             SceneEntity::Mesh(m) => m.visible = visible,
             SceneEntity::Line(l) => l.visible = visible,
+            SceneEntity::Group(g) => g.visible = visible,
         }
     }
 }
@@ -220,6 +253,9 @@ pub struct SceneGraph {
     scene_entities: Vec<EntityId>,
     /// Next entity ID to assign.
     next_id: u64,
+    /// Parent-child relationships for hierarchical transforms.
+    /// Maps child ID -> parent ID.
+    parent_ids: HashMap<EntityId, EntityId>,
 }
 
 impl SceneGraph {
@@ -228,6 +264,7 @@ impl SceneGraph {
             entities: HashMap::new(),
             scene_entities: Vec::new(),
             next_id: 1,
+            parent_ids: HashMap::new(),
         }
     }
 
@@ -254,6 +291,35 @@ impl SceneGraph {
         let line = LineStrip::new(max_points, mode);
         self.entities.insert(id, SceneEntity::Line(line));
         id
+    }
+
+    /// Create a new group and return its ID.
+    /// The group is NOT added to the scene automatically.
+    pub fn create_group(&mut self) -> EntityId {
+        let id = self.new_id();
+        let group = Group::new();
+        self.entities.insert(id, SceneEntity::Group(group));
+        id
+    }
+
+    /// Set the parent of an entity (for hierarchical transforms).
+    /// Returns true if successful, false if either ID doesn't exist.
+    pub fn set_parent(&mut self, child_id: EntityId, parent_id: EntityId) -> bool {
+        if !self.entities.contains_key(&child_id) || !self.entities.contains_key(&parent_id) {
+            return false;
+        }
+        self.parent_ids.insert(child_id, parent_id);
+        true
+    }
+
+    /// Clear the parent of an entity.
+    pub fn clear_parent(&mut self, child_id: EntityId) {
+        self.parent_ids.remove(&child_id);
+    }
+
+    /// Get the parent of an entity.
+    pub fn get_parent(&self, child_id: EntityId) -> Option<EntityId> {
+        self.parent_ids.get(&child_id).copied()
     }
 
     /// Add an entity to the scene (make it renderable).
@@ -327,10 +393,23 @@ impl SceneGraph {
             })
     }
 
+    /// Get all groups in the scene.
+    pub fn groups(&self) -> impl Iterator<Item = (EntityId, &Group)> {
+        self.scene_entities()
+            .filter_map(|(id, entity)| {
+                if let SceneEntity::Group(group) = entity {
+                    Some((id, group))
+                } else {
+                    None
+                }
+            })
+    }
+
     /// Clear all entities and the scene.
     pub fn clear(&mut self) {
         self.entities.clear();
         self.scene_entities.clear();
+        self.parent_ids.clear();
     }
 
     /// Check if an entity exists.

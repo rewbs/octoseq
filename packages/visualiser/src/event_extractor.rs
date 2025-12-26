@@ -35,6 +35,8 @@ pub struct EventExtractor {
     duration: f32,
     time_step: f32,
     collect_debug: bool,
+    /// Band-scoped input signals (optional).
+    band_signals: HashMap<String, HashMap<String, InputSignal>>,
 }
 
 impl EventExtractor {
@@ -53,7 +55,17 @@ impl EventExtractor {
             duration,
             time_step,
             collect_debug: false,
+            band_signals: HashMap::new(),
         }
+    }
+
+    /// Set band-scoped input signals for evaluation.
+    pub fn with_band_signals(
+        mut self,
+        band_signals: HashMap<String, HashMap<String, InputSignal>>,
+    ) -> Self {
+        self.band_signals = band_signals;
+        self
     }
 
     /// Enable debug data collection.
@@ -155,6 +167,7 @@ impl EventExtractor {
                 self.time_step,
                 self.musical_time.as_ref(),
                 signals,
+                &self.band_signals,
                 &stats,
                 &mut state,
             );
@@ -669,7 +682,8 @@ mod tests {
             .collect();
 
         let signals = make_test_signal(values, 100.0);
-        let signal = Signal::input("test");
+        // Use interpolate() for peak detection tests since we want exact signal values
+        let signal = Signal::input("test").interpolate();
         let options = PickEventsOptions {
             min_threshold: 0.0,
             adaptive_factor: 0.0,
@@ -701,7 +715,8 @@ mod tests {
             .collect();
 
         let signals = make_test_signal(values, 100.0);
-        let signal = Signal::input("test");
+        // Use interpolate() for peak detection tests since we want exact signal values
+        let signal = Signal::input("test").interpolate();
         let options = PickEventsOptions {
             min_threshold: 0.0,
             adaptive_factor: 0.0,

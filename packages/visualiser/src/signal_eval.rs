@@ -15,7 +15,8 @@ use crate::input::InputSignal;
 use crate::musical_time::{MusicalTimeSegment, MusicalTimeStructure, DEFAULT_BPM};
 use crate::signal::{
     EasingFunction, EnvelopeShape, GateParams, GeneratorNode, NormaliseParams, NoiseType,
-    OverlapMode, Signal, SignalNode, SmoothParams, ToSignalOptions,
+    OverlapMode, SamplingConfig, SamplingStrategy, SamplingWindow, Signal, SignalNode,
+    SmoothParams, ToSignalOptions,
 };
 use crate::signal_state::SignalState;
 use crate::signal_stats::StatisticsCache;
@@ -36,6 +37,9 @@ pub struct EvalContext<'a> {
     /// Input signals (raw sample data).
     pub input_signals: &'a HashMap<String, InputSignal>,
 
+    /// Band-scoped input signals: band_key -> feature -> InputSignal
+    pub band_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
+
     /// Pre-computed statistics for normalization.
     pub statistics: &'a StatisticsCache,
 
@@ -50,6 +54,7 @@ impl<'a> EvalContext<'a> {
         dt: f32,
         musical_time: Option<&'a MusicalTimeStructure>,
         input_signals: &'a HashMap<String, InputSignal>,
+        band_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
         statistics: &'a StatisticsCache,
         state: &'a mut SignalState,
     ) -> Self {
@@ -58,6 +63,7 @@ impl<'a> EvalContext<'a> {
             dt,
             musical_time,
             input_signals,
+            band_signals,
             statistics,
             state,
         }
@@ -103,11 +109,26 @@ impl Signal {
     pub fn evaluate(&self, ctx: &mut EvalContext) -> f32 {
         match &*self.node {
             // === Sources ===
-            SignalNode::Input { name } => ctx
+            SignalNode::Input { name, sampling } => ctx
                 .input_signals
                 .get(name)
-                .map(|sig| sig.sample(ctx.time))
+                .map(|sig| self.sample_with_config(sig, *sampling, ctx))
                 .unwrap_or(0.0),
+
+            SignalNode::BandInput {
+                band_key,
+                feature,
+                sampling,
+            } => ctx
+                .band_signals
+                .get(band_key)
+                .and_then(|features| features.get(feature))
+                .map(|sig| self.sample_with_config(sig, *sampling, ctx))
+                .unwrap_or_else(|| {
+                    // Log warning once for this band/feature combination
+                    ctx.state.warn_missing_band(band_key, feature);
+                    0.0
+                }),
 
             SignalNode::Constant(v) => *v,
 
@@ -171,6 +192,29 @@ impl Signal {
             SignalNode::Anticipate { source, beats } => {
                 self.evaluate_anticipate(source, *beats, ctx)
             }
+        }
+    }
+
+    /// Sample an input signal using the specified sampling configuration.
+    ///
+    /// - `Peak` strategy: Uses `sample_window` to find max absolute value within the window.
+    /// - `Interpolate` strategy: Uses `sample` for linear interpolation at exact time.
+    fn sample_with_config(
+        &self,
+        sig: &InputSignal,
+        config: SamplingConfig,
+        ctx: &EvalContext,
+    ) -> f32 {
+        match config.strategy {
+            SamplingStrategy::Peak => {
+                let window = match config.window {
+                    SamplingWindow::FrameDt => ctx.dt,
+                    SamplingWindow::Beats(beats) => ctx.beats_to_seconds(beats),
+                    SamplingWindow::Seconds(secs) => secs,
+                };
+                sig.sample_window(ctx.time, window)
+            }
+            SamplingStrategy::Interpolate => sig.sample(ctx.time),
         }
     }
 
@@ -408,7 +452,7 @@ impl Signal {
     /// Find the root input signal name by traversing the graph.
     fn find_root_input_name(&self, signal: &Signal) -> Option<String> {
         match &*signal.node {
-            SignalNode::Input { name } => Some(name.clone()),
+            SignalNode::Input { name, .. } => Some(name.clone()),
             SignalNode::Smooth { source, .. } => self.find_root_input_name(source),
             SignalNode::Normalise { source, .. } => self.find_root_input_name(source),
             SignalNode::Gate { source, .. } => self.find_root_input_name(source),
@@ -830,18 +874,20 @@ mod tests {
         time: f32,
         dt: f32,
         input_signals: &'a HashMap<String, InputSignal>,
+        band_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
         statistics: &'a StatisticsCache,
         state: &'a mut SignalState,
     ) -> EvalContext<'a> {
-        EvalContext::new(time, dt, None, input_signals, statistics, state)
+        EvalContext::new(time, dt, None, input_signals, band_signals, statistics, state)
     }
 
     #[test]
     fn test_evaluate_constant() {
         let inputs = HashMap::new();
+        let band_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stats, &mut state);
 
         let signal = Signal::constant(42.0);
         assert!((signal.evaluate(&mut ctx) - 42.0).abs() < 0.001);
@@ -855,9 +901,10 @@ mod tests {
             InputSignal::new(vec![0.5; 100], 100.0),
         );
 
+        let band_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.5, 0.016, &inputs, &stats, &mut state);
+        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stats, &mut state);
 
         let signal = Signal::input("energy");
         assert!((signal.evaluate(&mut ctx) - 0.5).abs() < 0.001);
@@ -868,11 +915,42 @@ mod tests {
     }
 
     #[test]
-    fn test_evaluate_arithmetic() {
+    fn test_evaluate_band_input() {
         let inputs = HashMap::new();
+        let mut band_signals = HashMap::new();
+
+        // Set up a band signal
+        let mut bass_features = HashMap::new();
+        bass_features.insert(
+            "energy".to_string(),
+            InputSignal::new(vec![0.75; 100], 100.0),
+        );
+        band_signals.insert("Bass".to_string(), bass_features);
+
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &stats, &mut state);
+        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stats, &mut state);
+
+        // Access by label
+        let bass_energy = Signal::band_input("Bass", "energy");
+        assert!((bass_energy.evaluate(&mut ctx) - 0.75).abs() < 0.001);
+
+        // Unknown band returns 0
+        let unknown = Signal::band_input("Unknown", "energy");
+        assert!((unknown.evaluate(&mut ctx) - 0.0).abs() < 0.001);
+
+        // Unknown feature returns 0
+        let unknown_feature = Signal::band_input("Bass", "unknown");
+        assert!((unknown_feature.evaluate(&mut ctx) - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_evaluate_arithmetic() {
+        let inputs = HashMap::new();
+        let band_signals = HashMap::new();
+        let stats = StatisticsCache::new();
+        let mut state = SignalState::new();
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stats, &mut state);
 
         let a = Signal::constant(3.0);
         let b = Signal::constant(4.0);
@@ -897,9 +975,10 @@ mod tests {
     #[test]
     fn test_evaluate_gate_threshold() {
         let inputs = HashMap::new();
+        let band_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stats, &mut state);
 
         let high = Signal::constant(0.8);
         let low = Signal::constant(0.2);
@@ -914,11 +993,12 @@ mod tests {
     #[test]
     fn test_evaluate_generator_sin() {
         let inputs = HashMap::new();
+        let band_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
 
         // At time 0, beat position 0, sin(0) = 0
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stats, &mut state);
         let sin = Signal::generator(GeneratorNode::Sin {
             freq_beats: 1.0,
             phase: 0.0,
@@ -927,7 +1007,7 @@ mod tests {
 
         // At beat position 0.25, sin(0.25 * 2pi) = 1
         // With default 120 BPM, beat 0.25 is at 0.125 seconds
-        let mut ctx = make_test_context(0.125, 0.016, &inputs, &stats, &mut state);
+        let mut ctx = make_test_context(0.125, 0.016, &inputs, &band_signals, &stats, &mut state);
         let value = sin.evaluate(&mut ctx);
         assert!((value - 1.0).abs() < 0.1);
     }
@@ -935,9 +1015,10 @@ mod tests {
     #[test]
     fn test_beat_position_default() {
         let inputs = HashMap::new();
+        let band_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let ctx = make_test_context(1.0, 0.016, &inputs, &stats, &mut state);
+        let ctx = make_test_context(1.0, 0.016, &inputs, &band_signals, &stats, &mut state);
 
         // At 120 BPM, 1 second = 2 beats
         assert!((ctx.beat_position() - 2.0).abs() < 0.001);
@@ -946,9 +1027,10 @@ mod tests {
     #[test]
     fn test_beats_to_seconds_default() {
         let inputs = HashMap::new();
+        let band_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let ctx = make_test_context(0.0, 0.016, &inputs, &stats, &mut state);
+        let ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stats, &mut state);
 
         // At default 120 BPM, 1 beat = 0.5 seconds
         assert!((ctx.beats_to_seconds(1.0) - 0.5).abs() < 0.001);

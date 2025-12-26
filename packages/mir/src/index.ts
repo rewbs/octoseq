@@ -24,6 +24,29 @@ export type {
   MusicalTimeSegment,
   MusicalTimeStructure,
   BeatPosition,
+  // Frequency Bands (F1)
+  FrequencyBandTimeScope,
+  FrequencySegment,
+  FrequencyBandProvenance,
+  FrequencyBand,
+  FrequencyBandStructure,
+  FrequencyBoundsAtTime,
+  // Frequency Bands (F2)
+  FrequencyKeyframe,
+  // Band-Scoped MIR (F3)
+  BandMirFunctionId,
+  BandMirDiagnostics,
+  BandMir1DResult,
+  // CQT (F5)
+  CqtConfig,
+  CqtSpectrogram,
+  CqtSignalId,
+  CqtSignalResult,
+  // Band Proposals (F5)
+  BandProposalSource,
+  BandProposal,
+  BandProposalConfig,
+  BandProposalResult,
 } from "./types";
 
 export const MIR_VERSION: MirVersion = "0.1.0";
@@ -111,6 +134,68 @@ export {
 } from "./dsp/musicalTime";
 
 // ----------------------------
+// Frequency Bands (F1)
+// ----------------------------
+
+export {
+    // ID generation
+    generateBandId,
+    // Validation
+    validateFrequencySegments,
+    validateFrequencyBand,
+    validateBandStructure,
+    // Creation
+    createBandStructure,
+    createConstantBand,
+    createSectionedBand,
+    createStandardBands,
+    // Queries
+    bandsActiveAt,
+    frequencyBoundsAt,
+    allFrequencyBoundsAt,
+    findBandById,
+    // Sorting
+    sortBands,
+    sortFrequencySegments,
+    // Modification
+    touchStructure,
+    addBandToStructure,
+    removeBandFromStructure,
+    updateBandInStructure,
+    // Keyframe Helpers (F2)
+    keyframesFromBand,
+    segmentsFromKeyframes,
+    splitBandSegmentAt,
+    mergeAdjacentSegments,
+    removeKeyframe,
+    updateKeyframe,
+    moveKeyframeTime,
+} from "./dsp/frequencyBand";
+
+// ----------------------------
+// Band-Scoped MIR (F3)
+// ----------------------------
+
+export type { BandMaskOptions, MaskedSpectrogram } from "./dsp/bandMask";
+export {
+    binToHz,
+    hzToBin,
+    computeBandMaskAtTime,
+    applyBandMaskToSpectrogram,
+    computeFrameEnergy,
+    computeFrameAmplitude,
+} from "./dsp/bandMask";
+
+export type { BandMirOptions, BandMirBatchRequest, BandMirBatchResult } from "./dsp/bandMir";
+export {
+    bandAmplitudeEnvelope,
+    bandOnsetStrength,
+    bandSpectralFlux,
+    runBandMirBatch,
+    getBandMirFunctionLabel,
+} from "./dsp/bandMir";
+
+// ----------------------------
 // HPSS
 // ----------------------------
 
@@ -128,8 +213,40 @@ export { mfcc, delta, deltaDelta } from "./dsp/mfcc";
 // Mel spectrogram
 // ----------------------------
 
-export type { MelConfig, MelSpectrogram } from "./dsp/mel";
-export { melSpectrogram } from "./dsp/mel";
+export type { MelConfig, MelSpectrogram, MelConversionConfig } from "./dsp/mel";
+export { melSpectrogram, hzToMel, melToHz, hzToFeatureIndex, featureIndexToHz } from "./dsp/mel";
+
+// ----------------------------
+// CQT (F5)
+// ----------------------------
+
+export type { CqtOptions } from "./dsp/cqt";
+export {
+    cqtSpectrogram,
+    computeCqt,
+    cqtBinToHz,
+    hzToCqtBin,
+    getNumOctaves,
+    getNumBins,
+    getCqtBinFrequencies,
+    withCqtDefaults,
+    CQT_DEFAULTS,
+} from "./dsp/cqt";
+
+export {
+    harmonicEnergy,
+    bassPitchMotion,
+    tonalStability,
+    computeCqtSignal,
+    computeAllCqtSignals,
+} from "./dsp/cqtSignals";
+
+// ----------------------------
+// Band Proposals (F5)
+// ----------------------------
+
+export type { BandProposalOptions } from "./dsp/bandProposal";
+export { generateBandProposals } from "./dsp/bandProposal";
 
 // ----------------------------
 // Visualisation utilities

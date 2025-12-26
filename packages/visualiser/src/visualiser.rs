@@ -7,8 +7,20 @@
 
 use std::collections::HashMap;
 use crate::input::InputSignal;
-use crate::scripting::ScriptEngine;
-use crate::scene_graph::SceneGraph;
+use crate::script_diagnostics::ScriptDiagnostic;
+use crate::scripting::{ScriptEngine, get_script_debug_options, reset_script_debug_options};
+use crate::scene_graph::{EntityId, SceneGraph};
+
+/// Debug visualization options.
+#[derive(Debug, Clone, Default)]
+pub struct DebugOptions {
+    /// Enable wireframe rendering (not supported in WebGL2, falls back to normal).
+    pub wireframe: bool,
+    /// Show bounding boxes around entities.
+    pub bounding_boxes: bool,
+    /// Only render this entity (if Some).
+    pub isolated_entity: Option<EntityId>,
+}
 
 pub struct VisualiserConfig {
     pub base_rotation_speed: f32, // Radians per second
@@ -33,6 +45,8 @@ pub struct VisualiserState {
     pub config: VisualiserConfig,
     /// Script engine manages scripts and the scene graph
     script_engine: ScriptEngine,
+    /// Debug visualization options
+    pub debug_options: DebugOptions,
 }
 
 impl VisualiserState {
@@ -41,12 +55,27 @@ impl VisualiserState {
             time: 0.0,
             config: VisualiserConfig::default(),
             script_engine: ScriptEngine::new(),
+            debug_options: DebugOptions::default(),
         }
     }
 
     /// Load a Rhai script. Returns true if successful.
     pub fn load_script(&mut self, script: &str) -> bool {
+        reset_script_debug_options();
+        self.debug_options = DebugOptions::default();
         self.script_engine.load_script(script)
+    }
+
+    /// Configure which input signal names should be available in the global `inputs` Signal namespace.
+    /// This must be called before `load_script()` for the `inputs.<name>` accessors to exist.
+    pub fn set_available_signals(&mut self, names: Vec<String>) {
+        self.script_engine.set_available_signals(names);
+    }
+
+    /// Configure which frequency bands should be available in the global `inputs.bands` namespace.
+    /// This must be called before `load_script()` for the `inputs.bands["..."]` accessors to exist.
+    pub fn set_available_bands(&mut self, bands: Vec<(String, String)>) {
+        self.script_engine.set_available_bands(bands);
     }
 
     /// Check if a script is loaded.
@@ -59,6 +88,11 @@ impl VisualiserState {
         self.script_engine.last_error.as_deref()
     }
 
+    /// Drain and return any structured script diagnostics since the last call.
+    pub fn take_script_diagnostics(&mut self) -> Vec<ScriptDiagnostic> {
+        self.script_engine.take_diagnostics()
+    }
+
     /// Get a reference to the scene graph for rendering.
     pub fn scene_graph(&self) -> &SceneGraph {
         &self.script_engine.scene_graph
@@ -67,10 +101,28 @@ impl VisualiserState {
     pub fn reset(&mut self) {
         self.time = 0.0;
         self.script_engine = ScriptEngine::new();
+        self.debug_options = DebugOptions::default();
+        reset_script_debug_options();
     }
 
     pub fn set_time(&mut self, time: f32) {
         self.time = time;
+    }
+
+    /// Set debug visualization options.
+    pub fn set_debug_options(&mut self, wireframe: bool, bounding_boxes: bool) {
+        self.debug_options.wireframe = wireframe;
+        self.debug_options.bounding_boxes = bounding_boxes;
+    }
+
+    /// Isolate a single entity for rendering (useful for debugging).
+    pub fn isolate_entity(&mut self, entity_id: u64) {
+        self.debug_options.isolated_entity = Some(EntityId(entity_id));
+    }
+
+    /// Clear entity isolation, resume normal rendering.
+    pub fn clear_isolation(&mut self) {
+        self.debug_options.isolated_entity = None;
     }
 
     /// Update the visualiser state for one frame.
@@ -134,6 +186,12 @@ impl VisualiserState {
 
         // Update script engine (this also syncs the scene graph)
         self.script_engine.update(dt, &sampled_signals);
+
+        // Apply script debug options (these are set via dbg.wireframe(), dbg.isolate(), etc.)
+        let script_debug = get_script_debug_options();
+        self.debug_options.wireframe = script_debug.wireframe;
+        self.debug_options.bounding_boxes = script_debug.bounding_boxes;
+        self.debug_options.isolated_entity = script_debug.isolated_entity.map(EntityId);
     }
 }
 

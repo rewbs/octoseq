@@ -55,6 +55,9 @@ interface ConfigState {
   heatmapScheme: HeatmapColorScheme;
   isConfigOpen: boolean;
   isDebugOpen: boolean;
+
+  // Band MIR (F3)
+  bandMirAutoCompute: boolean;
 }
 
 interface ConfigActions {
@@ -110,6 +113,9 @@ interface ConfigActions {
   setHeatmapScheme: (v: HeatmapColorScheme) => void;
   setIsConfigOpen: (v: boolean) => void;
   setIsDebugOpen: (v: boolean) => void;
+
+  // Band MIR (F3) setters
+  setBandMirAutoCompute: (v: boolean) => void;
 
   // Utility
   parseOptionalNumber: (v: string) => number | undefined;
@@ -177,6 +183,9 @@ const initialState: ConfigState = {
   heatmapScheme: "grayscale",
   isConfigOpen: false,
   isDebugOpen: false,
+
+  // Band MIR (F3)
+  bandMirAutoCompute: false,
 };
 
 export const useConfigStore = create<ConfigStore>()(
@@ -237,6 +246,9 @@ export const useConfigStore = create<ConfigStore>()(
         setHeatmapScheme: (v) => set({ heatmapScheme: v }, false, "setHeatmapScheme"),
         setIsConfigOpen: (v) => set({ isConfigOpen: v }, false, "setIsConfigOpen"),
         setIsDebugOpen: (v) => set({ isDebugOpen: v }, false, "setIsDebugOpen"),
+
+        // Band MIR (F3) setters
+        setBandMirAutoCompute: (v) => set({ bandMirAutoCompute: v }, false, "setBandMirAutoCompute"),
 
         // Utility
         parseOptionalNumber: (v: string): number | undefined => {
@@ -352,6 +364,7 @@ export const useConfigStore = create<ConfigStore>()(
           showDcBin: state.showDcBin,
           showMfccC0: state.showMfccC0,
           heatmapScheme: state.heatmapScheme,
+          bandMirAutoCompute: state.bandMirAutoCompute,
         }),
       }
     ),

@@ -1,4 +1,5 @@
 import { useHotkeys } from "react-hotkeys-hook";
+import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
 
 interface KeyboardShortcutCallbacks {
   onPrevCandidate: () => void;
@@ -16,9 +17,8 @@ interface KeyboardShortcutCallbacks {
 /**
  * Hook that handles keyboard shortcuts for the search refinement workflow.
  *
- * Uses react-hotkeys-hook which automatically disables shortcuts when:
- * - Focus is in contentEditable elements (like Monaco editor)
- * - Focus is in form elements (input, textarea, select)
+ * Uses react-hotkeys-hook + scopes so shortcuts can be disabled when the script editor is focused.
+ * (Form fields/contentEditable are also ignored by default.)
  *
  * Shortcuts:
  * - ArrowLeft/j: Previous candidate
@@ -43,23 +43,25 @@ export function useKeyboardShortcuts({
   onJumpToBestUnreviewed,
   canDeleteManual,
 }: KeyboardShortcutCallbacks) {
+  const baseOptions = { preventDefault: true, scopes: [HOTKEY_SCOPE_APP] as const };
+
   // Navigation shortcuts
-  useHotkeys("left, j", onPrevCandidate, { preventDefault: true }, [onPrevCandidate]);
-  useHotkeys("right, k", onNextCandidate, { preventDefault: true }, [onNextCandidate]);
+  useHotkeys("left, j", onPrevCandidate, baseOptions, [onPrevCandidate]);
+  useHotkeys("right, k", onNextCandidate, baseOptions, [onNextCandidate]);
 
   // Action shortcuts
-  useHotkeys("a", onAccept, { preventDefault: true }, [onAccept]);
-  useHotkeys("r", onReject, { preventDefault: true }, [onReject]);
-  useHotkeys("space", onTogglePlay, { preventDefault: true }, [onTogglePlay]);
-  useHotkeys("q", onPlayQuery, { preventDefault: true }, [onPlayQuery]);
-  useHotkeys("m", onToggleAddMissingMode, { preventDefault: true }, [onToggleAddMissingMode]);
-  useHotkeys("b", onJumpToBestUnreviewed, { preventDefault: true }, [onJumpToBestUnreviewed]);
+  useHotkeys("a", onAccept, baseOptions, [onAccept]);
+  useHotkeys("r", onReject, baseOptions, [onReject]);
+  useHotkeys("space", onTogglePlay, baseOptions, [onTogglePlay]);
+  useHotkeys("q", onPlayQuery, baseOptions, [onPlayQuery]);
+  useHotkeys("m", onToggleAddMissingMode, baseOptions, [onToggleAddMissingMode]);
+  useHotkeys("b", onJumpToBestUnreviewed, baseOptions, [onJumpToBestUnreviewed]);
 
   // Conditional delete shortcut
   useHotkeys(
     "delete, backspace",
     onDeleteManual,
-    { preventDefault: true, enabled: canDeleteManual },
+    { ...baseOptions, enabled: canDeleteManual },
     [onDeleteManual, canDeleteManual]
   );
 }

@@ -1,4 +1,5 @@
 /// Represents a 1D signal over time.
+#[derive(Clone)]
 pub struct InputSignal {
     samples: Vec<f32>,
     sample_rate: f32,

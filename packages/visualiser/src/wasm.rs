@@ -7,9 +7,11 @@ use web_sys::HtmlCanvasElement;
 
 use crate::analysis_runner::{run_analysis, run_analysis_with_events, AnalysisConfig};
 use crate::event_stream::Event;
+use crate::frequency_band::{FrequencyBandStructure, FrequencyBoundsAtTime};
 use crate::gpu::renderer::Renderer;
 use crate::input::InputSignal;
 use crate::musical_time::MusicalTimeStructure;
+use crate::script_api::script_api_metadata_json;
 use crate::visualiser::VisualiserState;
 
 #[wasm_bindgen]
@@ -26,14 +28,31 @@ struct VisualiserContext {
     zoom_signal: Option<InputSignal>,
     /// Named signals for dynamic script inputs (e.g., "spectralCentroid", "onsetEnvelope")
     named_signals: HashMap<String, InputSignal>,
+    /// Band-scoped signals: band_key -> feature -> InputSignal
+    /// band_key can be either band ID or label for lookup flexibility
+    band_signals: HashMap<String, HashMap<String, InputSignal>>,
+    /// Band ID -> label (for script namespace generation + editor UX).
+    band_id_to_label: HashMap<String, String>,
     /// Musical time structure for beat-aware signal processing
     musical_time: Option<MusicalTimeStructure>,
+    /// Frequency band structure for band-aware processing
+    frequency_bands: Option<FrequencyBandStructure>,
 }
 
 #[wasm_bindgen]
 pub fn init_panic_hook() {
     console_error_panic_hook::set_once();
     let _ = console_log::init_with_level(log::Level::Info);
+}
+
+/// Get the host-defined Script API metadata as a JSON string.
+///
+/// This is a stable, versioned description of the scripting API surface and is
+/// intended to drive editor UX (autocomplete/hover/docs) and future language
+/// bindings.
+#[wasm_bindgen]
+pub fn get_script_api_metadata_json() -> String {
+    script_api_metadata_json()
 }
 
 #[wasm_bindgen]
@@ -102,12 +121,212 @@ impl WasmVisualiser {
         inner.musical_time = None;
     }
 
+    /// Set the frequency band structure for band-aware processing.
+    /// The JSON format matches the TypeScript FrequencyBandStructure type.
+    /// Returns true if successful, false if parsing failed.
+    pub fn set_frequency_bands(&self, json: &str) -> bool {
+        match serde_json::from_str::<FrequencyBandStructure>(json) {
+            Ok(structure) => {
+                log::info!(
+                    "Frequency bands set: {} bands",
+                    structure.bands.len()
+                );
+                let mut inner = self.inner.borrow_mut();
+                inner.frequency_bands = Some(structure);
+                true
+            }
+            Err(e) => {
+                log::error!("Failed to parse frequency band structure: {}", e);
+                false
+            }
+        }
+    }
+
+    /// Clear the frequency band structure.
+    pub fn clear_frequency_bands(&self) {
+        let mut inner = self.inner.borrow_mut();
+        inner.frequency_bands = None;
+    }
+
+    /// Get frequency bounds for all active bands at a given time.
+    /// Returns a JSON array of { bandId, label, lowHz, highHz, enabled } objects.
+    pub fn get_band_bounds_at(&self, time: f32) -> String {
+        let inner = self.inner.borrow();
+
+        if let Some(ref structure) = inner.frequency_bands {
+            let bounds: Vec<FrequencyBoundsAtTime> = structure.all_bounds_at(time);
+            serde_json::to_string(&bounds).unwrap_or_else(|_| "[]".to_string())
+        } else {
+            "[]".to_string()
+        }
+    }
+
+    /// Check if frequency bands are currently set.
+    pub fn has_frequency_bands(&self) -> bool {
+        let inner = self.inner.borrow();
+        inner.frequency_bands.is_some()
+    }
+
+    /// Get the number of frequency bands.
+    pub fn get_frequency_band_count(&self) -> usize {
+        let inner = self.inner.borrow();
+        inner.frequency_bands
+            .as_ref()
+            .map(|s| s.bands.len())
+            .unwrap_or(0)
+    }
+
     /// Get the list of available signal names.
     /// Returns a JSON array of signal names.
     pub fn get_signal_names(&self) -> String {
         let inner = self.inner.borrow();
         let names: Vec<&str> = inner.named_signals.keys().map(|s| s.as_str()).collect();
         serde_json::to_string(&names).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    /// Push a band-scoped signal for use in scripts.
+    /// The signal will be available as `inputs.bands[band_id].{feature}` in Rhai scripts.
+    /// Stores under both band_id and band_label for dual-access support.
+    ///
+    /// - `band_id`: The unique ID of the frequency band.
+    /// - `band_label`: The user-visible label of the band.
+    /// - `feature`: Signal type ("energy", "onset", "flux").
+    /// - `samples`: Signal data.
+    /// - `sample_rate`: Sample rate of the signal.
+    pub fn push_band_signal(
+        &self,
+        band_id: &str,
+        band_label: &str,
+        feature: &str,
+        samples: &[f32],
+        sample_rate: f32,
+    ) {
+        log::info!(
+            "Rust received band signal '{}' / '{}' / '{}': {} samples, rate {}",
+            band_id,
+            band_label,
+            feature,
+            samples.len(),
+            sample_rate
+        );
+        let mut inner = self.inner.borrow_mut();
+        let signal = InputSignal::new(samples.to_vec(), sample_rate);
+
+        // Store under band ID
+        inner
+            .band_signals
+            .entry(band_id.to_string())
+            .or_default()
+            .insert(feature.to_string(), signal.clone());
+        inner
+            .band_id_to_label
+            .insert(band_id.to_string(), band_label.to_string());
+
+        // Also store under label if different from ID
+        if band_label != band_id {
+            inner
+                .band_signals
+                .entry(band_label.to_string())
+                .or_default()
+                .insert(feature.to_string(), signal);
+        }
+    }
+
+    /// Clear all band signals.
+    pub fn clear_band_signals(&self) {
+        let mut inner = self.inner.borrow_mut();
+        inner.band_signals.clear();
+        inner.band_id_to_label.clear();
+    }
+
+    /// Get list of band keys (IDs and labels) that have signals.
+    /// Returns a JSON array of strings.
+    pub fn get_band_signal_keys(&self) -> String {
+        let inner = self.inner.borrow();
+        let keys: Vec<&str> = inner.band_signals.keys().map(|s| s.as_str()).collect();
+        serde_json::to_string(&keys).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    // === Band Event Methods ===
+    // These methods handle pre-extracted events for frequency bands.
+    // Events are extracted in TypeScript and pushed here for script access.
+
+    /// Push pre-extracted events for a band.
+    ///
+    /// Events are extracted by the TypeScript layer using the existing peak picker,
+    /// then pushed here for script access via `inputs.bands[id].events`.
+    ///
+    /// The JSON format should be an array of event objects with:
+    /// - time: f32
+    /// - weight: f32
+    /// - beat_position: Option<f32>
+    /// - beat_phase: Option<f32>
+    /// - cluster_id: Option<u32>
+    ///
+    /// Returns true if successful, false if parsing failed.
+    pub fn push_band_events(&self, band_id: &str, events_json: &str) -> bool {
+        use crate::event_rhai::store_band_event_stream;
+        use crate::event_stream::{EventStream, PickEventsOptions};
+
+        #[derive(serde::Deserialize)]
+        struct EventInput {
+            time: f32,
+            weight: f32,
+            beat_position: Option<f32>,
+            beat_phase: Option<f32>,
+            cluster_id: Option<u32>,
+        }
+
+        match serde_json::from_str::<Vec<EventInput>>(events_json) {
+            Ok(inputs) => {
+                let events: Vec<Event> = inputs
+                    .into_iter()
+                    .map(|e| Event {
+                        time: e.time,
+                        weight: e.weight,
+                        beat_position: e.beat_position,
+                        beat_phase: e.beat_phase,
+                        cluster_id: e.cluster_id,
+                        source: Some(format!("band:{}", band_id)),
+                    })
+                    .collect();
+
+                let event_count = events.len();
+                let stream = EventStream::new(
+                    events,
+                    format!("band_events:{}", band_id),
+                    PickEventsOptions::default(),
+                );
+
+                store_band_event_stream(band_id.to_string(), stream);
+                log::info!(
+                    "Pushed {} events for band '{}'",
+                    event_count,
+                    band_id
+                );
+                true
+            }
+            Err(e) => {
+                log::error!("Failed to parse band events for '{}': {}", band_id, e);
+                false
+            }
+        }
+    }
+
+    /// Clear all band event streams.
+    pub fn clear_band_events(&self) {
+        use crate::event_rhai::clear_band_event_streams;
+        clear_band_event_streams();
+        log::info!("Cleared all band event streams");
+    }
+
+    /// Get the number of events for a specific band.
+    /// Returns 0 if no events are stored for this band.
+    pub fn get_band_event_count(&self, band_id: &str) -> usize {
+        use crate::event_rhai::get_band_event_stream;
+        get_band_event_stream(band_id)
+            .map(|s| s.len())
+            .unwrap_or(0)
     }
 
     pub fn set_sigmoid_k(&self, k: f32) {
@@ -119,6 +338,24 @@ impl WasmVisualiser {
     /// Returns true if the script was loaded successfully.
     pub fn load_script(&self, script: &str) -> bool {
         let mut inner = self.inner.borrow_mut();
+
+        // Configure the script environment before compiling:
+        // - The global `inputs` signal namespace needs to know which names exist.
+        // - The global `inputs.bands[...]` namespace needs the (id,label) list.
+        let mut signal_names: Vec<String> = inner.named_signals.keys().cloned().collect();
+        signal_names.extend(["time", "dt", "amplitude", "flux"].into_iter().map(|s| s.to_string()));
+        signal_names.sort();
+        signal_names.dedup();
+        inner.state.set_available_signals(signal_names);
+
+        let mut bands: Vec<(String, String)> = inner
+            .band_id_to_label
+            .iter()
+            .map(|(id, label)| (id.clone(), label.clone()))
+            .collect();
+        bands.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+        inner.state.set_available_bands(bands);
+
         let result = inner.state.load_script(script);
         if !result {
             log::error!("Failed to load script: {:?}", inner.state.get_script_error());
@@ -138,6 +375,16 @@ impl WasmVisualiser {
         inner.state.get_script_error().map(|s| s.to_string())
     }
 
+    /// Drain and return any pending structured script diagnostics as JSON.
+    ///
+    /// Intended for UI consumption. Calling this clears the pending diagnostics
+    /// queue so repeated polling does not duplicate messages.
+    pub fn take_script_diagnostics_json(&self) -> String {
+        let mut inner = self.inner.borrow_mut();
+        let diags = inner.state.take_script_diagnostics();
+        serde_json::to_string(&diags).unwrap_or_else(|_| "[]".to_string())
+    }
+
     pub fn resize(&self, width: u32, height: u32) {
         if width == 0 || height == 0 { return; }
 
@@ -154,6 +401,25 @@ impl WasmVisualiser {
     pub fn set_time(&self, time: f32) {
         let mut inner = self.inner.borrow_mut();
         inner.state.set_time(time);
+    }
+
+    /// Set debug visualization options.
+    pub fn set_debug_options(&self, wireframe: bool, bounding_boxes: bool) {
+        let mut inner = self.inner.borrow_mut();
+        inner.state.set_debug_options(wireframe, bounding_boxes);
+    }
+
+    /// Isolate a single entity for rendering (useful for debugging).
+    /// Only this entity will be rendered.
+    pub fn isolate_entity(&self, entity_id: u64) {
+        let mut inner = self.inner.borrow_mut();
+        inner.state.isolate_entity(entity_id);
+    }
+
+    /// Clear entity isolation, resume normal rendering.
+    pub fn clear_isolation(&self) {
+        let mut inner = self.inner.borrow_mut();
+        inner.state.clear_isolation();
     }
 
     /// Get current state values for debugging.
@@ -451,7 +717,10 @@ pub async fn create_visualiser(canvas: HtmlCanvasElement) -> Result<WasmVisualis
             rotation_signal: None,
             zoom_signal: None,
             named_signals: HashMap::new(),
+            band_signals: HashMap::new(),
+            band_id_to_label: HashMap::new(),
             musical_time: None,
+            frequency_bands: None,
         })),
     })
 }

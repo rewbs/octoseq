@@ -94,3 +94,65 @@ pub fn create_plane_geometry() -> (Vec<Vertex>, Vec<u16>) {
 
     (vertices, indices)
 }
+
+/// Create a UV sphere centered at origin with radius 0.5.
+/// Uses 16 latitude rings and 32 longitude segments.
+pub fn create_sphere_geometry() -> (Vec<Vertex>, Vec<u16>) {
+    let lat_segments = 16;
+    let lon_segments = 32;
+    let radius = 0.5;
+
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    // Generate vertices
+    for lat in 0..=lat_segments {
+        let theta = std::f32::consts::PI * (lat as f32) / (lat_segments as f32);
+        let sin_theta = theta.sin();
+        let cos_theta = theta.cos();
+
+        for lon in 0..=lon_segments {
+            let phi = 2.0 * std::f32::consts::PI * (lon as f32) / (lon_segments as f32);
+            let sin_phi = phi.sin();
+            let cos_phi = phi.cos();
+
+            let x = cos_phi * sin_theta;
+            let y = cos_theta;
+            let z = sin_phi * sin_theta;
+
+            let position = [x * radius, y * radius, z * radius];
+
+            // Color gradient: poles are cool (blue), equator is warm (orange/red)
+            let t = (y + 1.0) / 2.0; // 0 at bottom, 1 at top
+            let equator_dist = (0.5 - t).abs() * 2.0; // 0 at equator, 1 at poles
+
+            // Interpolate: equator (warm orange) -> poles (cool blue)
+            let color = [
+                1.0 - equator_dist * 0.7,  // R: high at equator, lower at poles
+                0.4 + equator_dist * 0.4,  // G: medium everywhere
+                0.2 + equator_dist * 0.8,  // B: low at equator, high at poles
+            ];
+
+            vertices.push(Vertex::new(position, color));
+        }
+    }
+
+    // Generate indices
+    for lat in 0..lat_segments {
+        for lon in 0..lon_segments {
+            let first = (lat * (lon_segments + 1) + lon) as u16;
+            let second = first + lon_segments as u16 + 1;
+
+            // Two triangles per quad
+            indices.push(first);
+            indices.push(second);
+            indices.push(first + 1);
+
+            indices.push(second);
+            indices.push(second + 1);
+            indices.push(first + 1);
+        }
+    }
+
+    (vertices, indices)
+}

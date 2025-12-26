@@ -2,6 +2,7 @@
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type MouseEvent, type RefObject } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
+import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
 
 import WaveSurfer from "wavesurfer.js";
 import Timeline from "wavesurfer.js/dist/plugins/timeline.esm.js";
@@ -132,6 +133,9 @@ type WaveSurferPlayerProps = {
   analysisBackend?: string;
   /** Additional overlay content to render over the waveform. */
   overlayContent?: React.ReactNode;
+
+  /** Mute the main audio output (for band auditioning). */
+  muted?: boolean;
 };
 
 /**
@@ -170,6 +174,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     lastAnalysisMs,
     analysisBackend,
     overlayContent,
+    muted,
   }: WaveSurferPlayerProps,
   ref
 ) {
@@ -249,8 +254,10 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         const ws = wsRef.current;
         if (!ws) return;
 
-        // Set pending filename in store before loading
-        useAudioStore.getState().setPendingFileName(fileName);
+        // Set pending filename and URL in store before loading
+        const audioStore = useAudioStore.getState();
+        audioStore.setPendingFileName(fileName);
+        audioStore.setAudioUrl(url);
 
         // Clear existing refs (similar to onPickFile)
         regionsPluginRef.current?.clearRegions();
@@ -299,8 +306,8 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     onSelectCandidateId,
   ]);
 
-  // Global hotkey: Shift+Space to play from cursor (hover position)
-  // Uses react-hotkeys-hook which auto-disables in contentEditable (Monaco) and form elements
+  // Global hotkey: Shift+Space to play from cursor (hover position).
+  // Scoped so it can be disabled while the script editor is focused.
   useHotkeys(
     "shift+space",
     () => {
@@ -317,7 +324,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       }
       void ws.play();
     },
-    { preventDefault: true },
+    { preventDefault: true, scopes: [HOTKEY_SCOPE_APP] },
     [cursorTimeSec]
   );
 
@@ -387,6 +394,13 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       document.removeEventListener('mouseup', handleMouseUp);
     };
   }, []);
+
+  // Apply muted state to WaveSurfer volume
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!ws) return;
+    ws.setVolume(muted ? 0 : 1);
+  }, [muted]);
 
   function cleanupObjectUrl() {
     if (objectUrlRef.current) {
@@ -887,6 +901,9 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     cleanupObjectUrl();
     const url = URL.createObjectURL(file);
     objectUrlRef.current = url;
+
+    // Store URL for band auditioning
+    useAudioStore.getState().setAudioUrl(url);
 
     setIsReady(false);
     setIsPlaying(false);

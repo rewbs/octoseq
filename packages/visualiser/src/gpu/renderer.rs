@@ -18,6 +18,7 @@ const MAX_POINTS_PER_LINE: usize = 1024;
 struct Uniforms {
     view_proj: [[f32; 4]; 4],
     model: [[f32; 4]; 4],
+    instance_color: [f32; 4],
 }
 
 impl Uniforms {
@@ -25,6 +26,7 @@ impl Uniforms {
         Self {
             view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
             model: glam::Mat4::IDENTITY.to_cols_array_2d(),
+            instance_color: [1.0, 1.0, 1.0, 1.0], // Default: no tint
         }
     }
 
@@ -73,6 +75,84 @@ impl Uniforms {
         // Model = Translation * Rotation * Scale
         self.model = (translation * rotation * scale).to_cols_array_2d();
     }
+
+    fn update_model_with_parent(&mut self, local_transform: &Transform, parent_model: glam::Mat4) {
+        // Compute local model matrix
+        let translation = glam::Mat4::from_translation(glam::Vec3::new(
+            local_transform.position.x,
+            local_transform.position.y,
+            local_transform.position.z,
+        ));
+        let rotation = glam::Mat4::from_euler(
+            glam::EulerRot::XYZ,
+            local_transform.rotation.x,
+            local_transform.rotation.y,
+            local_transform.rotation.z,
+        );
+        let scale = glam::Mat4::from_scale(glam::Vec3::new(
+            local_transform.scale.x,
+            local_transform.scale.y,
+            local_transform.scale.z,
+        ));
+        let local_model = translation * rotation * scale;
+
+        // World = Parent * Local
+        self.model = (parent_model * local_model).to_cols_array_2d();
+    }
+}
+
+/// Compute the world transform matrix for an entity, walking up the parent chain.
+fn compute_world_matrix(entity_id: crate::scene_graph::EntityId, scene_graph: &crate::scene_graph::SceneGraph) -> glam::Mat4 {
+    let entity = match scene_graph.get(entity_id) {
+        Some(e) => e,
+        None => return glam::Mat4::IDENTITY,
+    };
+
+    let local_transform = entity.transform();
+    let translation = glam::Mat4::from_translation(glam::Vec3::new(
+        local_transform.position.x,
+        local_transform.position.y,
+        local_transform.position.z,
+    ));
+    let rotation = glam::Mat4::from_euler(
+        glam::EulerRot::XYZ,
+        local_transform.rotation.x,
+        local_transform.rotation.y,
+        local_transform.rotation.z,
+    );
+    let scale = glam::Mat4::from_scale(glam::Vec3::new(
+        local_transform.scale.x,
+        local_transform.scale.y,
+        local_transform.scale.z,
+    ));
+    let local_matrix = translation * rotation * scale;
+
+    // Check for parent
+    if let Some(parent_id) = scene_graph.get_parent(entity_id) {
+        let parent_matrix = compute_world_matrix(parent_id, scene_graph);
+        parent_matrix * local_matrix
+    } else {
+        local_matrix
+    }
+}
+
+/// Check if an entity or any of its ancestors is invisible.
+fn is_entity_visible(entity_id: crate::scene_graph::EntityId, scene_graph: &crate::scene_graph::SceneGraph) -> bool {
+    let entity = match scene_graph.get(entity_id) {
+        Some(e) => e,
+        None => return false,
+    };
+
+    if !entity.visible() {
+        return false;
+    }
+
+    // Check parent visibility
+    if let Some(parent_id) = scene_graph.get_parent(entity_id) {
+        is_entity_visible(parent_id, scene_graph)
+    } else {
+        true
+    }
 }
 
 #[repr(C)]
@@ -109,6 +189,7 @@ pub struct Renderer {
     // Shared geometry
     cube_geometry: MeshGeometry,
     plane_geometry: MeshGeometry,
+    sphere_geometry: MeshGeometry,
 
     // Line rendering
     line_pipeline: wgpu::RenderPipeline,
@@ -210,6 +291,24 @@ impl Renderer {
             num_indices: plane_indices.len() as u32,
         };
 
+        // Sphere geometry
+        let (sphere_vertices, sphere_indices) = mesh::create_sphere_geometry();
+        let sphere_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sphere Vertex Buffer"),
+            contents: bytemuck::cast_slice(&sphere_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let sphere_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sphere Index Buffer"),
+            contents: bytemuck::cast_slice(&sphere_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let sphere_geometry = MeshGeometry {
+            vertex_buffer: sphere_vertex_buffer,
+            index_buffer: sphere_index_buffer,
+            num_indices: sphere_indices.len() as u32,
+        };
+
         // === Line Pipeline Setup ===
 
         let line_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -278,6 +377,7 @@ impl Renderer {
             uniforms,
             cube_geometry,
             plane_geometry,
+            sphere_geometry,
             line_pipeline,
             line_bind_group_layout,
             line_vertex_buffer,
@@ -305,6 +405,7 @@ impl Renderer {
         match mesh_type {
             MeshType::Cube => &self.cube_geometry,
             MeshType::Plane => &self.plane_geometry,
+            MeshType::Sphere => &self.sphere_geometry,
         }
     }
 
@@ -342,13 +443,23 @@ impl Renderer {
             // Render meshes
             render_pass.set_pipeline(&self.mesh_pipeline);
 
-            for (_, mesh) in scene_graph.meshes() {
-                if !mesh.visible {
+            for (entity_id, mesh) in scene_graph.meshes() {
+                // Check isolation mode
+                if let Some(isolated_id) = state.debug_options.isolated_entity {
+                    if entity_id != isolated_id {
+                        continue;
+                    }
+                }
+
+                // Check visibility (including parent visibility)
+                if !is_entity_visible(entity_id, scene_graph) {
                     continue;
                 }
 
-                // Update model matrix for this instance
-                self.uniforms.update_model(&mesh.transform);
+                // Compute world transform (including parent transforms)
+                let world_matrix = compute_world_matrix(entity_id, scene_graph);
+                self.uniforms.model = world_matrix.to_cols_array_2d();
+                self.uniforms.instance_color = mesh.color;
                 self.queue.write_buffer(
                     &self.uniform_buffer,
                     0,
@@ -366,8 +477,16 @@ impl Renderer {
             // Render line strips
             render_pass.set_pipeline(&self.line_pipeline);
 
-            for (idx, (_, line)) in scene_graph.lines().enumerate() {
-                if !line.visible || line.count == 0 {
+            for (idx, (entity_id, line)) in scene_graph.lines().enumerate() {
+                // Check isolation mode
+                if let Some(isolated_id) = state.debug_options.isolated_entity {
+                    if entity_id != isolated_id {
+                        continue;
+                    }
+                }
+
+                // Check visibility (including parent visibility)
+                if !is_entity_visible(entity_id, scene_graph) || line.count == 0 {
                     continue;
                 }
 

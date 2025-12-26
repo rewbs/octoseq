@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { Github } from "lucide-react";
@@ -8,7 +8,8 @@ import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 
-import { TimeAlignedHeatmapPixi } from "@/components/heatmap/TimeAlignedHeatmapPixi";
+import { FrequencyBandSidebar, HeatmapWithBandOverlay } from "@/components/frequencyBand";
+import { BandMirSignalViewer, BandAmplitudeSelector, useBandAmplitudeData } from "@/components/bandMir";
 import { MirConfigModal } from "@/components/mir/MirConfigModal";
 import { SyncedWaveSurferSignal } from "@/components/wavesurfer/SyncedWaveSurferSignal";
 import { SparseEventsViewer } from "@/components/wavesurfer/SparseEventsViewer";
@@ -24,6 +25,7 @@ import { useElementSize } from "@/lib/useElementSize";
 import { computeRefinementStats } from "@/lib/searchRefinement";
 import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useMetronome } from "@/lib/hooks/useMetronome";
+import { useBandAuditioning } from "@/lib/hooks/useBandAuditioning";
 import { DemoAudioModal } from "@/components/DemoAudioModal";
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 import { mirTabDefinitions } from "@/lib/stores/mirStore";
@@ -39,10 +41,13 @@ import {
   useBeatGridStore,
   useMusicalTimeStore,
   useManualTempoStore,
+  useFrequencyBandStore,
+  useBandMirStore,
   useMirActions,
   useSearchActions,
   useNavigationActions,
   useAudioActions,
+  useBandMirActions,
   useCandidatesById,
   useActiveCandidate,
   useSearchSignal,
@@ -244,8 +249,22 @@ export default function Home() {
     }))
   );
 
+  // Frequency band store
+  const hasBands = useFrequencyBandStore((s) => (s.structure?.bands.length ?? 0) > 0);
+  const { structure: bandStructure, soloedBandId, mutedBandIds } = useFrequencyBandStore(
+    useShallow((s) => ({
+      structure: s.structure,
+      soloedBandId: s.soloedBandId,
+      mutedBandIds: s.mutedBandIds,
+    }))
+  );
+
+  // Audio URL for band auditioning
+  const audioUrl = useAudioStore((s) => s.audioUrl);
+
   // ===== ACTION HOOKS =====
   const { runAnalysis, runAllAnalyses, cancelAnalysis } = useMirActions();
+  const { runBandAnalysis } = useBandMirActions();
   const { runSearch } = useSearchActions();
   const { handleAudioDecoded, triggerFileInput } = useAudioActions({
     fileInputRef,
@@ -272,6 +291,31 @@ export default function Home() {
     phaseOffset: activePhaseOffset,
     userNudge: beatGridState.userNudge,
   });
+
+  // ===== BAND AUDITIONING =====
+  const [mainPlayerMuted, setMainPlayerMuted] = useState(false);
+  useBandAuditioning({
+    audioUrl,
+    enabled: true,
+    soloedBandId,
+    mutedBandIds,
+    structure: bandStructure,
+    playheadTimeSec,
+    isMainPlaying: isAudioPlaying,
+    mainVolume: 1,
+    onSetMainMuted: setMainPlayerMuted,
+  });
+
+  // ===== BAND AMPLITUDE VIEW =====
+  const [selectedBandAmplitudeId, setSelectedBandAmplitudeId] = useState<string | null>(null);
+  const bandAmplitudeData = useBandAmplitudeData(selectedBandAmplitudeId);
+
+  // Auto-compute amplitude envelope when band is selected but data missing
+  useEffect(() => {
+    if (selectedBandAmplitudeId && !bandAmplitudeData && audio) {
+      void runBandAnalysis([selectedBandAmplitudeId], ["bandAmplitudeEnvelope"]);
+    }
+  }, [selectedBandAmplitudeId, bandAmplitudeData, audio, runBandAnalysis]);
 
   // ===== DERIVED STATE HOOKS =====
   const candidatesById = useCandidatesById();
@@ -354,6 +398,36 @@ export default function Home() {
       clearBeatGrid();
     }
   }, [audio, clearBeatGrid]);
+
+  // Invalidate band MIR cache when bands change
+  useEffect(() => {
+    const unsubscribe = useFrequencyBandStore.getState().onBandInvalidation(
+      "bandMirCache",
+      (event) => {
+        const bandMirStore = useBandMirStore.getState();
+        switch (event.kind) {
+          case "band_updated":
+            // Invalidate if frequency-related fields changed
+            if (
+              event.changedFields.some((f) =>
+                ["frequencyShape", "lowHz", "highHz", "enabled"].includes(f)
+              )
+            ) {
+              bandMirStore.invalidateBand(event.bandId);
+            }
+            break;
+          case "band_removed":
+            bandMirStore.invalidateBand(event.bandId);
+            break;
+          case "structure_cleared":
+          case "structure_imported":
+            bandMirStore.invalidateAll();
+            break;
+        }
+      }
+    );
+    return unsubscribe;
+  }, []);
 
   // Set audio identity for musical time persistence (B4)
   useEffect(() => {
@@ -577,8 +651,12 @@ export default function Home() {
   // ===== RENDER =====
   return (
     <div className="page-bg px-20 flex flex-col min-h-screen items-center bg-zinc-50 font-sans dark:bg-zinc-950">
-      <main className="main-bg w-full flex-1 bg-white p-2 shadow dark:bg-zinc-950">
-        <section>
+      <div className="w-full flex-1 flex">
+        {/* Frequency Band Sidebar */}
+        <FrequencyBandSidebar audioDuration={audioDuration} />
+
+        <main className="main-bg flex-1 min-w-0 overflow-hidden bg-white p-2 shadow dark:bg-zinc-950">
+          <section>
           <div className="space-y-1.5">
             <WaveSurferPlayer
               ref={playerRef}
@@ -624,6 +702,7 @@ export default function Home() {
               analysisName={mirTabDefinitions.find((t) => t.id === selected)?.label}
               lastAnalysisMs={lastTimings?.totalMs}
               analysisBackend={lastTimings?.backend}
+              muted={mainPlayerMuted}
               overlayContent={
                 <>
                   <BeatGridOverlay
@@ -681,6 +760,12 @@ export default function Home() {
               }
               toolbarRight={
                 <div className="flex flex-wrap items-center gap-2 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
+                  {hasBands && (
+                    <BandAmplitudeSelector
+                      selectedBandId={selectedBandAmplitudeId}
+                      onSelectBand={setSelectedBandAmplitudeId}
+                    />
+                  )}
                   <select
                     value={visualTab}
                     onChange={(e) => {
@@ -766,6 +851,30 @@ export default function Home() {
               }
             />
 
+            {/* Band Amplitude Envelope Display */}
+            {bandAmplitudeData && (
+              <div className="mt-1.5">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    {bandAmplitudeData.bandLabel} Amplitude
+                  </span>
+                  {bandAmplitudeData.diagnostics.warnings.length > 0 && (
+                    <span className="text-xs text-amber-500" title={bandAmplitudeData.diagnostics.warnings.join("; ")}>
+                      ⚠
+                    </span>
+                  )}
+                </div>
+                <SyncedWaveSurferSignal
+                  data={bandAmplitudeData.values}
+                  times={bandAmplitudeData.times}
+                  viewport={viewport}
+                  cursorTimeSec={mirroredCursorTimeSec}
+                  onCursorTimeChange={setCursorTimeSec}
+                  initialHeight={80}
+                />
+              </div>
+            )}
+
             <div className="mt-1.5">
 
               {visualTab === "search" ? (
@@ -810,13 +919,39 @@ export default function Home() {
                     visualTab === "spectralFlux" ||
                     visualTab === "onsetEnvelope" ? (
                     tabResult?.kind === "1d" && tabResult.fn === visualTab ? (
-                      <SyncedWaveSurferSignal
-                        data={tabResult.values}
-                        times={tabResult.times}
-                        viewport={viewport}
-                        cursorTimeSec={mirroredCursorTimeSec}
-                        onCursorTimeChange={setCursorTimeSec}
-                      />
+                      <>
+                        <SyncedWaveSurferSignal
+                          data={tabResult.values}
+                          times={tabResult.times}
+                          viewport={viewport}
+                          cursorTimeSec={mirroredCursorTimeSec}
+                          onCursorTimeChange={setCursorTimeSec}
+                        />
+                        {/* Band MIR signals for relevant 1D tabs */}
+                        {hasBands && (visualTab === "onsetEnvelope" || visualTab === "spectralFlux") && (
+                          <div className="mt-2">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const fn = visualTab === "onsetEnvelope" ? "bandOnsetStrength" : "bandSpectralFlux";
+                                  void runBandAnalysis(undefined, [fn]);
+                                }}
+                                disabled={isRunning}
+                              >
+                                Run Band Analysis
+                              </Button>
+                            </div>
+                            <BandMirSignalViewer
+                              fn={visualTab === "onsetEnvelope" ? "bandOnsetStrength" : "bandSpectralFlux"}
+                              viewport={viewport}
+                              cursorTimeSec={mirroredCursorTimeSec}
+                              onCursorTimeChange={setCursorTimeSec}
+                            />
+                          </div>
+                        )}
+                      </>
                     ) : (
                       <p className="text-sm text-zinc-500">Run {visualTab} to view output.</p>
                     )
@@ -933,7 +1068,7 @@ export default function Home() {
                         onMouseMove={handleCursorHoverFromViewport}
                         onMouseLeave={handleCursorLeave}
                       >
-                        <TimeAlignedHeatmapPixi
+                        <HeatmapWithBandOverlay
                           input={displayedHeatmap}
                           startTime={visibleRange.startTime}
                           endTime={visibleRange.endTime}
@@ -941,6 +1076,11 @@ export default function Home() {
                           valueRange={heatmapValueRange}
                           yLabel={heatmapYAxisLabel}
                           colorScheme={heatmapScheme}
+                          melConfig={{
+                            nMels: 128,
+                            fMin: 0,
+                            fMax: audioSampleRate ? audioSampleRate / 2 : 22050,
+                          }}
                         />
                       </div>
                     ) : (
@@ -967,7 +1107,8 @@ export default function Home() {
         <MirConfigModal />
         <DebugPanel />
 
-      </main>
+        </main>
+      </div>
 
       <footer className="mt-6 flex items-center justify-center pb-4 text-xs text-zinc-500 dark:text-zinc-400 divide-x-2 divide-zinc-300 dark:divide-zinc-700">
         <p>&nbsp;</p>

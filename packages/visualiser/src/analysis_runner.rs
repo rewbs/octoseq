@@ -78,6 +78,19 @@ pub fn run_analysis(
     signals: &HashMap<String, InputSignal>,
     config: AnalysisConfig,
 ) -> Result<AnalysisResult, String> {
+    // Call the extended version with empty bands
+    run_analysis_with_bands(script, signals, &[], config)
+}
+
+/// Run script in analysis mode with band support.
+///
+/// This is the extended version that accepts available bands for namespace generation.
+pub fn run_analysis_with_bands(
+    script: &str,
+    signals: &HashMap<String, InputSignal>,
+    bands: &[(String, String)],
+    config: AnalysisConfig,
+) -> Result<AnalysisResult, String> {
     // Validate config
     if config.duration <= 0.0 {
         return Err("Duration must be positive".to_string());
@@ -88,6 +101,11 @@ pub fn run_analysis(
 
     // Create fresh script engine
     let mut engine = ScriptEngine::new();
+
+    // Set available signals and bands for namespace generation
+    let signal_names: Vec<String> = signals.keys().cloned().collect();
+    engine.set_available_signals(signal_names);
+    engine.set_available_bands(bands.to_vec());
 
     // Load script
     if !engine.load_script(script) {
@@ -178,6 +196,19 @@ pub fn run_analysis_with_events(
     config: AnalysisConfig,
     collect_event_debug: bool,
 ) -> Result<ExtendedAnalysisResult, String> {
+    // Call the extended version with empty bands
+    run_analysis_with_events_and_bands(script, signals, &[], musical_time, config, collect_event_debug)
+}
+
+/// Run script in analysis mode with event extraction and band support.
+pub fn run_analysis_with_events_and_bands(
+    script: &str,
+    signals: &HashMap<String, InputSignal>,
+    bands: &[(String, String)],
+    musical_time: Option<&MusicalTimeStructure>,
+    config: AnalysisConfig,
+    collect_event_debug: bool,
+) -> Result<ExtendedAnalysisResult, String> {
     // Validate config
     if config.duration <= 0.0 {
         return Err("Duration must be positive".to_string());
@@ -192,6 +223,11 @@ pub fn run_analysis_with_events(
 
     // Create fresh script engine
     let mut engine = ScriptEngine::new();
+
+    // Set available signals and bands for namespace generation
+    let signal_names: Vec<String> = signals.keys().cloned().collect();
+    engine.set_available_signals(signal_names);
+    engine.set_available_bands(bands.to_vec());
 
     // Load script
     if !engine.load_script(script) {

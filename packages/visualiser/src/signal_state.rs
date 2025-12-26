@@ -3,7 +3,7 @@
 //! Some signal operations (smoothing, hysteresis gates) require state
 //! that persists across frames. This module provides the state containers.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::signal::SignalId;
 
@@ -33,6 +33,10 @@ pub struct SignalState {
 
     /// Whether a "no musical time" warning has been logged.
     pub warned_no_musical_time: bool,
+
+    /// Tracks band/feature combinations that have been warned about being missing.
+    /// Format: "band_key:feature"
+    pub warned_missing_bands: HashSet<String>,
 }
 
 impl SignalState {
@@ -51,6 +55,20 @@ impl SignalState {
         self.integrate_state.clear();
         self.delay_buffers.clear();
         self.warned_no_musical_time = false;
+        self.warned_missing_bands.clear();
+    }
+
+    /// Warn once about a missing band/feature combination.
+    /// Logs a warning if this band/feature hasn't been warned about yet.
+    pub fn warn_missing_band(&mut self, band_key: &str, feature: &str) {
+        let key = format!("{}:{}", band_key, feature);
+        if self.warned_missing_bands.insert(key) {
+            log::warn!(
+                "Band signal not found: inputs.bands[\"{}\"].{} - returning 0.0",
+                band_key,
+                feature
+            );
+        }
     }
 
     /// Get or create exponential smoother state.

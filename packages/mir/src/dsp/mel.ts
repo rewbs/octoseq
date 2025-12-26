@@ -24,13 +24,66 @@ function assertPositiveInt(name: string, value: number): void {
     }
 }
 
-function hzToMel(hz: number): number {
-    // Slaney-style mel approximation (HTK-like).
+/**
+ * Convert frequency in Hz to mel scale.
+ * Uses Slaney-style (HTK-like) approximation.
+ */
+export function hzToMel(hz: number): number {
     return 2595 * Math.log10(1 + hz / 700);
 }
 
-function melToHz(mel: number): number {
+/**
+ * Convert mel scale value to frequency in Hz.
+ * Inverse of hzToMel.
+ */
+export function melToHz(mel: number): number {
     return 700 * (Math.pow(10, mel / 2595) - 1);
+}
+
+/**
+ * Configuration for mel frequency conversions.
+ */
+export type MelConversionConfig = {
+    nMels: number;
+    fMin: number;
+    fMax: number;
+};
+
+/**
+ * Convert a frequency in Hz to a feature index (0 to nMels-1).
+ * The mapping is linear in mel space.
+ *
+ * @param hz - Frequency in Hz
+ * @param config - Mel configuration with nMels, fMin, fMax
+ * @returns Feature index as a continuous value (may be fractional)
+ */
+export function hzToFeatureIndex(hz: number, config: MelConversionConfig): number {
+    const melMin = hzToMel(config.fMin);
+    const melMax = hzToMel(config.fMax);
+    const melHz = hzToMel(hz);
+
+    // Map mel value to 0..1 range, then to 0..(nMels-1)
+    const normalized = (melHz - melMin) / (melMax - melMin);
+    return normalized * (config.nMels - 1);
+}
+
+/**
+ * Convert a feature index (0 to nMels-1) to frequency in Hz.
+ * Inverse of hzToFeatureIndex.
+ *
+ * @param index - Feature index (can be fractional)
+ * @param config - Mel configuration with nMels, fMin, fMax
+ * @returns Frequency in Hz
+ */
+export function featureIndexToHz(index: number, config: MelConversionConfig): number {
+    const melMin = hzToMel(config.fMin);
+    const melMax = hzToMel(config.fMax);
+
+    // Map index from 0..(nMels-1) to mel space
+    const normalized = index / (config.nMels - 1);
+    const mel = melMin + normalized * (melMax - melMin);
+
+    return melToHz(mel);
 }
 
 function buildMelFilterBank(

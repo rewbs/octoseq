@@ -25,8 +25,8 @@ pub fn register_signal_api(engine: &mut Engine) {
     });
 
     // === Debug method ===
-    engine.register_fn("debug", |s: &mut Signal, name: ImmutableString| {
-        s.debug(name.as_str())
+    engine.register_fn("probe", |s: &mut Signal, name: ImmutableString| {
+        s.probe(name.as_str())
     });
 
     // === Math primitives ===
@@ -43,6 +43,20 @@ pub fn register_signal_api(engine: &mut Engine) {
     // === Time shifting ===
     engine.register_fn("delay", |s: &mut Signal, beats: f32| s.delay(beats));
     engine.register_fn("anticipate", |s: &mut Signal, beats: f32| s.anticipate(beats));
+
+    // === Sampling configuration ===
+    // Change from default peak-preserving to linear interpolation
+    engine.register_fn("interpolate", |s: &mut Signal| s.interpolate());
+    // Explicitly use peak-preserving with frame dt (same as default)
+    engine.register_fn("peak", |s: &mut Signal| s.peak());
+    // Peak-preserving with custom window in beats
+    engine.register_fn("peak_window", |s: &mut Signal, beats: f32| {
+        s.peak_window_beats(beats)
+    });
+    // Peak-preserving with custom window in seconds
+    engine.register_fn("peak_window_sec", |s: &mut Signal, seconds: f32| {
+        s.peak_window_seconds(seconds)
+    });
 
     // === Fluent namespace getters ===
     // signal.smooth -> SmoothBuilder
@@ -147,6 +161,29 @@ pub fn register_signal_api(engine: &mut Engine) {
         Signal::input(name.as_str())
     });
 
+    // === Band input signal accessor ===
+    engine.register_fn(
+        "__band_signal_input",
+        |band_key: ImmutableString, feature: ImmutableString| {
+            Signal::band_input(band_key.as_str(), feature.as_str())
+        },
+    );
+
+    // === Band events accessor ===
+    // Returns pre-extracted EventStream for a band, or empty if not available.
+    engine.register_fn("__band_events_get", |band_id: ImmutableString| {
+        use crate::event_rhai::get_band_event_stream;
+        use crate::event_stream::{EventStream, PickEventsOptions};
+
+        get_band_event_stream(band_id.as_str()).unwrap_or_else(|| {
+            EventStream::new(
+                Vec::new(),
+                format!("band_events:{}", band_id),
+                PickEventsOptions::default(),
+            )
+        })
+    });
+
     // === Constant signal ===
     engine.register_fn("__signal_constant", |value: f32| Signal::constant(value));
 }
@@ -157,12 +194,14 @@ pub fn register_signal_api(engine: &mut Engine) {
 pub const SIGNAL_API_RHAI: &str = r#"
 // === Signal Generators Namespace ===
 let gen = #{};
+gen.__type = "gen_namespace";
 gen.sin = |freq, phase| __gen_sin(freq, phase);
 gen.square = |freq, phase, duty| __gen_square(freq, phase, duty);
 gen.triangle = |freq, phase| __gen_triangle(freq, phase);
 gen.saw = |freq, phase| __gen_saw(freq, phase);
 gen.noise = |noise_type, seed| __gen_noise(noise_type, seed);
 gen.perlin = |scale, seed| __gen_perlin(scale, seed);
+gen.constant = |value| __signal_constant(value);
 
 // === Inputs Namespace ===
 // This object provides Signal-returning accessors for input signals.
@@ -178,13 +217,60 @@ gen.perlin = |scale, seed| __gen_perlin(scale, seed);
 /// inputs.spectralCentroid = __signal_input("spectralCentroid");
 /// ```
 pub fn generate_inputs_namespace(signal_names: &[&str]) -> String {
-    let mut code = String::from("let inputs = #{};\n");
+    let mut code = String::from("let inputs = #{};\ninputs.__type = \"inputs_signals\";\n");
 
     for name in signal_names {
         code.push_str(&format!(
             "inputs.{} = __signal_input(\"{}\");\n",
             name, name
         ));
+    }
+
+    code
+}
+
+/// Generate Rhai code for the inputs.bands namespace.
+///
+/// Creates entries for both band IDs and labels for dual-access support.
+/// Each band has energy, onset, flux, amplitude (alias for energy), and events properties.
+///
+/// This generates code like:
+/// ```rhai
+/// inputs.bands = #{};
+/// inputs.bands["band-abc123"] = #{};
+/// inputs.bands["band-abc123"].energy = __band_signal_input("band-abc123", "energy");
+/// inputs.bands["band-abc123"].onset = __band_signal_input("band-abc123", "onset");
+/// inputs.bands["band-abc123"].flux = __band_signal_input("band-abc123", "flux");
+/// inputs.bands["band-abc123"].amplitude = __band_signal_input("band-abc123", "energy");
+/// inputs.bands["band-abc123"].events = __band_events_get("band-abc123");
+/// inputs.bands["Bass"] = inputs.bands["band-abc123"];
+/// ```
+pub fn generate_bands_namespace(bands: &[(String, String)]) -> String {
+    let mut code = String::from("inputs.bands = #{};\ninputs.bands.__type = \"bands_namespace\";\n");
+
+    for (id, label) in bands {
+        // Create band object with signal accessors (keyed by ID)
+        code.push_str(&format!(
+            r#"inputs.bands["{id}"] = #{{}};
+inputs.bands["{id}"].__type = "band_signals";
+inputs.bands["{id}"].energy = __band_signal_input("{id}", "energy");
+inputs.bands["{id}"].onset = __band_signal_input("{id}", "onset");
+inputs.bands["{id}"].flux = __band_signal_input("{id}", "flux");
+inputs.bands["{id}"].amplitude = __band_signal_input("{id}", "energy");
+inputs.bands["{id}"].events = __band_events_get("{id}");
+"#,
+            id = id
+        ));
+
+        // Also register by label if different from ID
+        if label != id {
+            code.push_str(&format!(
+                r#"inputs.bands["{label}"] = inputs.bands["{id}"];
+"#,
+                label = label,
+                id = id
+            ));
+        }
     }
 
     code
@@ -213,5 +299,45 @@ mod tests {
         // Should compile without error - basic validation that types are registered
         let result = engine.compile("let s = __signal_constant(1.0);");
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_generate_bands_namespace() {
+        let bands = vec![
+            ("band-123".to_string(), "Bass".to_string()),
+            ("band-456".to_string(), "Mids".to_string()),
+        ];
+        let code = generate_bands_namespace(&bands);
+
+        // Check structure
+        assert!(code.contains("inputs.bands = #{};"));
+
+        // Check band-123 / Bass
+        assert!(code.contains(r#"inputs.bands["band-123"] = #{};"#));
+        assert!(code.contains(r#"inputs.bands["band-123"].energy = __band_signal_input("band-123", "energy");"#));
+        assert!(code.contains(r#"inputs.bands["band-123"].onset = __band_signal_input("band-123", "onset");"#));
+        assert!(code.contains(r#"inputs.bands["band-123"].flux = __band_signal_input("band-123", "flux");"#));
+        assert!(code.contains(r#"inputs.bands["band-123"].amplitude = __band_signal_input("band-123", "energy");"#));
+        assert!(code.contains(r#"inputs.bands["band-123"].events = __band_events_get("band-123");"#));
+        assert!(code.contains(r#"inputs.bands["Bass"] = inputs.bands["band-123"];"#));
+
+        // Check band-456 / Mids
+        assert!(code.contains(r#"inputs.bands["band-456"] = #{};"#));
+        assert!(code.contains(r#"inputs.bands["Mids"] = inputs.bands["band-456"];"#));
+    }
+
+    #[test]
+    fn test_generate_bands_namespace_same_id_and_label() {
+        // Edge case: if ID and label are the same, don't duplicate
+        let bands = vec![("MyBand".to_string(), "MyBand".to_string())];
+        let code = generate_bands_namespace(&bands);
+
+        // Should have the band object
+        assert!(code.contains(r#"inputs.bands["MyBand"] = #{};"#));
+        assert!(code.contains(r#"inputs.bands["MyBand"].energy"#));
+
+        // Should NOT have a duplicate alias line
+        let alias_count = code.matches(r#"inputs.bands["MyBand"] = inputs.bands["MyBand"]"#).count();
+        assert_eq!(alias_count, 0);
     }
 }

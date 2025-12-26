@@ -8,6 +8,8 @@ interface AudioState {
   audioSampleRate: number | null;
   audioTotalSamples: number | null;
   audioDuration: number;
+  /** URL for the current audio (blob URL or direct URL) for auditioning */
+  audioUrl: string | null;
   /** Used to pass filename when loading from URL (not file input) */
   pendingFileName: string | null;
 }
@@ -20,6 +22,7 @@ interface AudioActions {
     totalSamples: number;
     duration: number;
   }) => void;
+  setAudioUrl: (url: string | null) => void;
   setPendingFileName: (fileName: string | null) => void;
   resetAudio: () => void;
 }
@@ -32,6 +35,7 @@ const initialState: AudioState = {
   audioSampleRate: null,
   audioTotalSamples: null,
   audioDuration: 0,
+  audioUrl: null,
   pendingFileName: null,
 };
 
@@ -53,6 +57,8 @@ export const useAudioStore = create<AudioStore>()(
           false,
           "setAudioMetadata"
         ),
+
+      setAudioUrl: (url) => set({ audioUrl: url }, false, "setAudioUrl"),
 
       setPendingFileName: (fileName) =>
         set({ pendingFileName: fileName }, false, "setPendingFileName"),

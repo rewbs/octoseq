@@ -34,6 +34,9 @@ use crate::signal::{
 thread_local! {
     static PENDING_EXTRACTIONS: RefCell<Vec<PendingEventExtraction>> = const { RefCell::new(Vec::new()) };
     static EXTRACTED_STREAMS: RefCell<HashMap<String, EventStream>> = RefCell::new(HashMap::new());
+    /// Band-scoped event streams, keyed by band ID.
+    /// Pre-extracted events pushed from TypeScript for script access.
+    static BAND_EVENT_STREAMS: RefCell<HashMap<String, EventStream>> = RefCell::new(HashMap::new());
 }
 
 /// A pending event extraction request.
@@ -390,6 +393,24 @@ pub fn get_extracted_stream(name: &str) -> Option<EventStream> {
 /// Clear all extracted streams.
 pub fn clear_extracted_streams() {
     EXTRACTED_STREAMS.with(|s| s.borrow_mut().clear());
+}
+
+// === Band Event Streams ===
+// These are pre-extracted events for frequency bands, pushed from TypeScript.
+
+/// Store a band event stream for script access via `inputs.bands[id].events`.
+pub fn store_band_event_stream(band_id: String, stream: EventStream) {
+    BAND_EVENT_STREAMS.with(|s| s.borrow_mut().insert(band_id, stream));
+}
+
+/// Get a band event stream by band ID.
+pub fn get_band_event_stream(band_id: &str) -> Option<EventStream> {
+    BAND_EVENT_STREAMS.with(|s| s.borrow().get(band_id).cloned())
+}
+
+/// Clear all band event streams.
+pub fn clear_band_event_streams() {
+    BAND_EVENT_STREAMS.with(|s| s.borrow_mut().clear());
 }
 
 /// Rhai API documentation for injection into scripts.
