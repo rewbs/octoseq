@@ -3,6 +3,7 @@ import { useAudioStore } from "../audioStore";
 import { usePlaybackStore } from "../playbackStore";
 import { useMirStore } from "../mirStore";
 import { useSearchStore } from "../searchStore";
+import { useBandProposalStore } from "../bandProposalStore";
 
 interface AudioActionsOptions {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
@@ -20,6 +21,7 @@ export function useAudioActions({ fileInputRef, onAudioLoaded }: AudioActionsOpt
       const playbackStore = usePlaybackStore.getState();
       const mirStore = useMirStore.getState();
       const searchStore = useSearchStore.getState();
+      const bandProposalStore = useBandProposalStore.getState();
 
       // Set audio buffer
       audioStore.setAudio(a as AudioBuffer);
@@ -47,6 +49,9 @@ export function useAudioActions({ fileInputRef, onAudioLoaded }: AudioActionsOpt
 
       // Reset search state
       searchStore.resetSearch();
+
+      // Reset band proposals (F5) — proposals are ephemeral and scoped to the current audio.
+      bandProposalStore.reset();
 
       // Reset playback state
       playbackStore.setWaveformSeekTo(null);

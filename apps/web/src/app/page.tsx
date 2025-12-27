@@ -43,6 +43,7 @@ import {
   useManualTempoStore,
   useFrequencyBandStore,
   useBandMirStore,
+  setupBandMirInvalidation,
   useMirActions,
   useSearchActions,
   useNavigationActions,
@@ -251,6 +252,7 @@ export default function Home() {
 
   // Frequency band store
   const hasBands = useFrequencyBandStore((s) => (s.structure?.bands.length ?? 0) > 0);
+  const setFrequencyBandAudioIdentity = useFrequencyBandStore((s) => s.setAudioIdentity);
   const { structure: bandStructure, soloedBandId, mutedBandIds } = useFrequencyBandStore(
     useShallow((s) => ({
       structure: s.structure,
@@ -401,48 +403,33 @@ export default function Home() {
 
   // Invalidate band MIR cache when bands change
   useEffect(() => {
-    const unsubscribe = useFrequencyBandStore.getState().onBandInvalidation(
-      "bandMirCache",
-      (event) => {
-        const bandMirStore = useBandMirStore.getState();
-        switch (event.kind) {
-          case "band_updated":
-            // Invalidate if frequency-related fields changed
-            if (
-              event.changedFields.some((f) =>
-                ["frequencyShape", "lowHz", "highHz", "enabled"].includes(f)
-              )
-            ) {
-              bandMirStore.invalidateBand(event.bandId);
-            }
-            break;
-          case "band_removed":
-            bandMirStore.invalidateBand(event.bandId);
-            break;
-          case "structure_cleared":
-          case "structure_imported":
-            bandMirStore.invalidateAll();
-            break;
-        }
-      }
-    );
-    return unsubscribe;
+    return setupBandMirInvalidation();
   }, []);
 
   // Set audio identity for musical time persistence (B4)
   useEffect(() => {
     if (audio && audioSampleRate && audioDuration) {
       const audioFileName = useAudioStore.getState().audioFileName;
-      setAudioIdentity({
+      const identity = {
         filename: audioFileName ?? "unknown",
         duration: audioDuration,
         sampleRate: audioSampleRate,
-      });
+      };
+      setAudioIdentity(identity);
+      setFrequencyBandAudioIdentity(identity);
     } else {
       setAudioIdentity(null);
+      setFrequencyBandAudioIdentity(null);
       resetMusicalTime();
     }
-  }, [audio, audioSampleRate, audioDuration, setAudioIdentity, resetMusicalTime]);
+  }, [
+    audio,
+    audioSampleRate,
+    audioDuration,
+    setAudioIdentity,
+    setFrequencyBandAudioIdentity,
+    resetMusicalTime,
+  ]);
 
   // Handle promotion of beat grid to musical time
   const handlePromoteGrid = useCallback(
@@ -657,356 +644,356 @@ export default function Home() {
 
         <main className="main-bg flex-1 min-w-0 overflow-hidden bg-white p-2 shadow dark:bg-zinc-950">
           <section>
-          <div className="space-y-1.5">
-            <WaveSurferPlayer
-              ref={playerRef}
-              fileInputRef={fileInputRef}
-              cursorTimeSec={mirroredCursorTimeSec}
-              onCursorTimeChange={setCursorTimeSec}
-              viewport={viewport}
-              seekToTimeSec={waveformSeekTo}
-              onIsPlayingChange={setIsAudioPlaying}
-              candidateCurveKind={searchResult?.curveKind}
-              queryRegion={
-                refinement.queryRegion
-                  ? { startSec: refinement.queryRegion.startSec, endSec: refinement.queryRegion.endSec }
-                  : null
-              }
-              candidates={refinement.candidates}
-              activeCandidateId={refinement.activeCandidateId}
-              addMissingMode={addMissingMode}
-              onSelectCandidateId={(candidateId) => {
-                setRefinement((prevState) => ({ ...prevState, activeCandidateId: candidateId }));
-                const c = candidateId ? candidatesById.get(candidateId) : null;
-                if (c) setWaveformSeekTo(c.startSec);
-              }}
-              onManualCandidateCreate={(c) => {
-                addManualCandidate({
-                  id: c.id,
-                  startSec: c.startSec,
-                  endSec: c.endSec,
-                  score: 1.0,
-                  status: "accepted",
-                  source: "manual",
-                });
-                setWaveformSeekTo(c.startSec);
-              }}
-              onManualCandidateUpdate={(u) => {
-                updateManualCandidate(u);
-              }}
-              onAudioDecoded={handleAudioDecoded}
-              onViewportChange={(vp) => setViewport(normalizeViewport(vp, audioDuration))}
-              onPlaybackTime={(t) => setPlayheadTimeSec(t)}
-              onRegionChange={handleRegionChange}
-              isAnalysing={isRunning}
-              analysisName={mirTabDefinitions.find((t) => t.id === selected)?.label}
-              lastAnalysisMs={lastTimings?.totalMs}
-              analysisBackend={lastTimings?.backend}
-              muted={mainPlayerMuted}
-              overlayContent={
-                <>
-                  <BeatGridOverlay
-                    viewport={viewport}
-                    beatGrid={beatGridState.activeBeatGrid}
-                    audioDuration={audioDuration ?? 0}
-                    isVisible={beatGridState.isVisible}
-                    musicalTimeSegments={musicalTimeStructure?.segments ?? []}
-                    selectedSegmentId={musicalTimeSelectedSegmentId}
-                  />
-                  <BeatMarkingOverlay
-                    isActive={beatMarkingActive}
-                    viewport={viewport ? { startSec: viewport.startTime, endSec: viewport.endTime } : null}
-                    beat1TimeSec={beatMark1?.timeSec ?? null}
-                    beat2TimeSec={beatMark2?.timeSec ?? null}
-                    audioDuration={audioDuration ?? 0}
-                    onBeatClick={placeBeatMark}
-                    onBeatDrag={updateBeatMark}
-                    onApply={handleApplyBeatMarking}
-                    onReset={resetBeatMarks}
-                    onCancel={stopBeatMarking}
-                  />
-                </>
-              }
-              toolbarLeft={
-                <div className="flex items-center gap-2">
-                  <div className="relative flex flex-col  items-center justify-center mr-4">
-                    <Image
-                      src="/SquidPlain.png"
-                      alt="Octoseq"
-                      width={36}
-                      height={36}
-                      className="h-14 w-14 rounded-3xl bg-stone-200 p-1 dark:bg-stone-800"
-                    />
-                    <div className="absolute top-8 inset-0 flex items-center justify-center">
-                      <p className="w-full text-tiny tracking-[0.25em] font font-mono  text-zinc-900 dark:text-zinc-100 text-shadow-lg text-shadow-stone-500/50 dark:text-shadow-stone-100/50 text-center backdrop-blur-lg backdrop-opacity-20 ">
-                        octoseq
-                      </p>
-                    </div>
-
-                  </div>
-                  <Button
-                    className={`${!audio ? "animate-pulse-glow-red" : ""}`}
-                    size="sm"
-                    onClick={triggerFileInput}
-                  >
-                    {!audio ? "Load audio" : "Change audio"}
-                  </Button>
-                  <DemoAudioModal
-                    onSelectDemo={async (demo) => {
-                      await playerRef.current?.loadUrl(demo.path, demo.name);
-                    }}
-                  />
-                </div>
-              }
-              toolbarRight={
-                <div className="flex flex-wrap items-center gap-2 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
-                  {hasBands && (
-                    <BandAmplitudeSelector
-                      selectedBandId={selectedBandAmplitudeId}
-                      onSelectBand={setSelectedBandAmplitudeId}
-                    />
-                  )}
-                  <select
-                    value={visualTab}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      setVisualTab(id as MirFunctionId | "search");
-                      if (id !== "search") setSelected(id as MirFunctionId);
-                    }}
-                    className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
-                  >
-                    {tabDefs.map(({ id, label, hasData }) => (
-                      <option key={id} value={id}>
-                        {label} {hasData ? "✓" : ""}
-                      </option>
-                    ))}
-                  </select>
-
-                  {visualTab !== 'search' && <>
-                    <Button
-                      onClick={() => void runAnalysis()}
-                      disabled={!canRun || isRunning}
-                      size="sm"
-                      variant="default"
-                    >
-                      {isRunning ? "Analysing..." : "Analyse"}
-                    </Button>
-                    {isRunning && (
-                      <Button onClick={cancelAnalysis} size="sm" variant="outline">
-                        Cancel
-                      </Button>
-                    )}
-                  </>}
-                  {visualTab === 'search' && <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => {
-                        if (refinement.queryRegion)
-                          void runSearch(refinement.queryRegion, searchControls).catch((e) => {
-                            if ((e as Error)?.message === "cancelled") return;
-                            console.error("[SEARCH] failed", e);
-                          });
-                      }}
-                      disabled={!audio || !refinement.queryRegion || isSearchRunning}
-                    >
-                      Search
-                    </Button>
-                    {searchDirty && searchResult ? (
-                      <span className="text-xs text-amber-600 dark:text-amber-400">
-                        Parameters changed — rerun search
-                      </span>
-                    ) : null}
-                    {isSearchRunning ? (
-                      <span className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
-                        <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                        Running search…
-                      </span>
-                    ) : null}
-                  </div>}
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => void runAllAnalyses()}
-                      disabled={!canRun || isRunning}
-                      size="sm"
-                      variant="outline"
-                    >
-                      {isRunning ? "Analysing..." : "Run All"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsConfigOpen(true)}
-                    >
-                      Configure
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsDebugOpen(true)}
-                    >
-                      Debug
-                    </Button>
-                  </div>
-                </div>
-              }
-            />
-
-            {/* Band Amplitude Envelope Display */}
-            {bandAmplitudeData && (
-              <div className="mt-1.5">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                    {bandAmplitudeData.bandLabel} Amplitude
-                  </span>
-                  {bandAmplitudeData.diagnostics.warnings.length > 0 && (
-                    <span className="text-xs text-amber-500" title={bandAmplitudeData.diagnostics.warnings.join("; ")}>
-                      ⚠
-                    </span>
-                  )}
-                </div>
-                <SyncedWaveSurferSignal
-                  data={bandAmplitudeData.values}
-                  times={bandAmplitudeData.times}
-                  viewport={viewport}
-                  cursorTimeSec={mirroredCursorTimeSec}
-                  onCursorTimeChange={setCursorTimeSec}
-                  initialHeight={80}
-                />
-              </div>
-            )}
-
-            <div className="mt-1.5">
-
-              {visualTab === "search" ? (
-                hasSearchResult ? (
-                  <div className="space-y-2">
-                    <SyncedWaveSurferSignal
-                      data={searchSignal!}
-                      times={searchResult!.times}
+            <div className="space-y-1.5">
+              <WaveSurferPlayer
+                ref={playerRef}
+                fileInputRef={fileInputRef}
+                cursorTimeSec={mirroredCursorTimeSec}
+                onCursorTimeChange={setCursorTimeSec}
+                viewport={viewport}
+                seekToTimeSec={waveformSeekTo}
+                onIsPlayingChange={setIsAudioPlaying}
+                candidateCurveKind={searchResult?.curveKind}
+                queryRegion={
+                  refinement.queryRegion
+                    ? { startSec: refinement.queryRegion.startSec, endSec: refinement.queryRegion.endSec }
+                    : null
+                }
+                candidates={refinement.candidates}
+                activeCandidateId={refinement.activeCandidateId}
+                addMissingMode={addMissingMode}
+                onSelectCandidateId={(candidateId) => {
+                  setRefinement((prevState) => ({ ...prevState, activeCandidateId: candidateId }));
+                  const c = candidateId ? candidatesById.get(candidateId) : null;
+                  if (c) setWaveformSeekTo(c.startSec);
+                }}
+                onManualCandidateCreate={(c) => {
+                  addManualCandidate({
+                    id: c.id,
+                    startSec: c.startSec,
+                    endSec: c.endSec,
+                    score: 1.0,
+                    status: "accepted",
+                    source: "manual",
+                  });
+                  setWaveformSeekTo(c.startSec);
+                }}
+                onManualCandidateUpdate={(u) => {
+                  updateManualCandidate(u);
+                }}
+                onAudioDecoded={handleAudioDecoded}
+                onViewportChange={(vp) => setViewport(normalizeViewport(vp, audioDuration))}
+                onPlaybackTime={(t) => setPlayheadTimeSec(t)}
+                onRegionChange={handleRegionChange}
+                isAnalysing={isRunning}
+                analysisName={mirTabDefinitions.find((t) => t.id === selected)?.label}
+                lastAnalysisMs={lastTimings?.totalMs}
+                analysisBackend={lastTimings?.backend}
+                muted={mainPlayerMuted}
+                overlayContent={
+                  <>
+                    <BeatGridOverlay
                       viewport={viewport}
-                      cursorTimeSec={mirroredCursorTimeSec}
-                      onCursorTimeChange={setCursorTimeSec}
-                      overlayThreshold={searchControls.threshold}
+                      beatGrid={beatGridState.activeBeatGrid}
+                      audioDuration={audioDuration ?? 0}
+                      isVisible={beatGridState.isVisible}
+                      musicalTimeSegments={musicalTimeStructure?.segments ?? []}
+                      selectedSegmentId={musicalTimeSelectedSegmentId}
+                    />
+                    <BeatMarkingOverlay
+                      isActive={beatMarkingActive}
+                      viewport={viewport ? { startSec: viewport.startTime, endSec: viewport.endTime } : null}
+                      beat1TimeSec={beatMark1?.timeSec ?? null}
+                      beat2TimeSec={beatMark2?.timeSec ?? null}
+                      audioDuration={audioDuration ?? 0}
+                      onBeatClick={placeBeatMark}
+                      onBeatDrag={updateBeatMark}
+                      onApply={handleApplyBeatMarking}
+                      onReset={resetBeatMarks}
+                      onCancel={stopBeatMarking}
+                    />
+                  </>
+                }
+                toolbarLeft={
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex flex-col  items-center justify-center mr-4">
+                      <Image
+                        src="/SquidPlain.png"
+                        alt="Octoseq"
+                        width={36}
+                        height={36}
+                        className="h-14 w-14 rounded-3xl bg-stone-200 p-1 dark:bg-stone-800"
+                      />
+                      <div className="absolute top-8 inset-0 flex items-center justify-center">
+                        <p className="w-full text-tiny tracking-[0.25em] font font-mono  text-zinc-900 dark:text-zinc-100 text-shadow-lg text-shadow-stone-500/50 dark:text-shadow-stone-100/50 text-center backdrop-blur-lg backdrop-opacity-20 ">
+                          octoseq
+                        </p>
+                      </div>
+
+                    </div>
+                    <Button
+                      className={`${!audio ? "animate-pulse-glow-red" : ""}`}
+                      size="sm"
+                      onClick={triggerFileInput}
+                    >
+                      {!audio ? "Load audio" : "Change audio"}
+                    </Button>
+                    <DemoAudioModal
+                      onSelectDemo={async (demo) => {
+                        await playerRef.current?.loadUrl(demo.path, demo.name);
+                      }}
                     />
                   </div>
-                ) : (
-                  <p className="text-sm text-zinc-500">Select an audio segment and run search to see the similarity curve.</p>
-                )
-              ) : visualTab === "debug" ? (
-                debugSignals.length > 0 ? (
-                  <div className="space-y-2">
-                    {debugSignals.map((sig) => (
-                      <div key={sig.name} className="border-l-2 border-purple-500 pl-2">
-                        <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">{sig.name}</span>
-                        <SyncedWaveSurferSignal
-                          data={sig.values}
-                          times={sig.times}
-                          viewport={viewport}
-                          cursorTimeSec={mirroredCursorTimeSec}
-                          onCursorTimeChange={setCursorTimeSec}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-zinc-500">
-                    Use <code className="bg-zinc-100 dark:bg-zinc-800 px-1 rounded">dbg.emit(&quot;name&quot;, value)</code> in your script and click the flask icon to extract debug signals.
-                  </p>
-                )
-              ) : (
-                <>
-                  {visualTab === "spectralCentroid" ||
-                    visualTab === "spectralFlux" ||
-                    visualTab === "onsetEnvelope" ? (
-                    tabResult?.kind === "1d" && tabResult.fn === visualTab ? (
-                      <>
-                        <SyncedWaveSurferSignal
-                          data={tabResult.values}
-                          times={tabResult.times}
-                          viewport={viewport}
-                          cursorTimeSec={mirroredCursorTimeSec}
-                          onCursorTimeChange={setCursorTimeSec}
-                        />
-                        {/* Band MIR signals for relevant 1D tabs */}
-                        {hasBands && (visualTab === "onsetEnvelope" || visualTab === "spectralFlux") && (
-                          <div className="mt-2">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  const fn = visualTab === "onsetEnvelope" ? "bandOnsetStrength" : "bandSpectralFlux";
-                                  void runBandAnalysis(undefined, [fn]);
-                                }}
-                                disabled={isRunning}
-                              >
-                                Run Band Analysis
-                              </Button>
-                            </div>
-                            <BandMirSignalViewer
-                              fn={visualTab === "onsetEnvelope" ? "bandOnsetStrength" : "bandSpectralFlux"}
-                              viewport={viewport}
-                              cursorTimeSec={mirroredCursorTimeSec}
-                              onCursorTimeChange={setCursorTimeSec}
-                            />
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-sm text-zinc-500">Run {visualTab} to view output.</p>
-                    )
-                  ) : null}
+                }
+                toolbarRight={
+                  <div className="flex flex-wrap items-center gap-2 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
+                    {hasBands && (
+                      <BandAmplitudeSelector
+                        selectedBandId={selectedBandAmplitudeId}
+                        onSelectBand={setSelectedBandAmplitudeId}
+                      />
+                    )}
+                    <select
+                      value={visualTab}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        setVisualTab(id as MirFunctionId | "search");
+                        if (id !== "search") setSelected(id as MirFunctionId);
+                      }}
+                      className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-100"
+                    >
+                      {tabDefs.map(({ id, label, hasData }) => (
+                        <option key={id} value={id}>
+                          {label} {hasData ? "✓" : ""}
+                        </option>
+                      ))}
+                    </select>
 
-                  {visualTab === "onsetPeaks" ? (
-                    tabResult?.kind === "events" && tabResult.fn === "onsetPeaks" ? (
-                      <SparseEventsViewer
-                        events={tabResult.events}
+                    {visualTab !== 'search' && <>
+                      <Button
+                        onClick={() => void runAnalysis()}
+                        disabled={!canRun || isRunning}
+                        size="sm"
+                        variant="default"
+                      >
+                        {isRunning ? "Analysing..." : "Analyse"}
+                      </Button>
+                      {isRunning && (
+                        <Button onClick={cancelAnalysis} size="sm" variant="outline">
+                          Cancel
+                        </Button>
+                      )}
+                    </>}
+                    {visualTab === 'search' && <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          if (refinement.queryRegion)
+                            void runSearch(refinement.queryRegion, searchControls).catch((e) => {
+                              if ((e as Error)?.message === "cancelled") return;
+                              console.error("[SEARCH] failed", e);
+                            });
+                        }}
+                        disabled={!audio || !refinement.queryRegion || isSearchRunning}
+                      >
+                        Search
+                      </Button>
+                      {searchDirty && searchResult ? (
+                        <span className="text-xs text-amber-600 dark:text-amber-400">
+                          Parameters changed — rerun search
+                        </span>
+                      ) : null}
+                      {isSearchRunning ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
+                          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                          Running search…
+                        </span>
+                      ) : null}
+                    </div>}
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => void runAllAnalyses()}
+                        disabled={!canRun || isRunning}
+                        size="sm"
+                        variant="outline"
+                      >
+                        {isRunning ? "Analysing..." : "Run All"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsConfigOpen(true)}
+                      >
+                        Configure
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsDebugOpen(true)}
+                      >
+                        Debug
+                      </Button>
+                    </div>
+                  </div>
+                }
+              />
+
+              {/* Band Amplitude Envelope Display */}
+              {bandAmplitudeData && (
+                <div className="mt-1.5">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                      {bandAmplitudeData.bandLabel} Amplitude
+                    </span>
+                    {bandAmplitudeData.diagnostics.warnings.length > 0 && (
+                      <span className="text-xs text-amber-500" title={bandAmplitudeData.diagnostics.warnings.join("; ")}>
+                        ⚠
+                      </span>
+                    )}
+                  </div>
+                  <SyncedWaveSurferSignal
+                    data={bandAmplitudeData.values}
+                    times={bandAmplitudeData.times}
+                    viewport={viewport}
+                    cursorTimeSec={mirroredCursorTimeSec}
+                    onCursorTimeChange={setCursorTimeSec}
+                    initialHeight={80}
+                  />
+                </div>
+              )}
+
+              <div className="mt-1.5">
+
+                {visualTab === "search" ? (
+                  hasSearchResult ? (
+                    <div className="space-y-2">
+                      <SyncedWaveSurferSignal
+                        data={searchSignal!}
+                        times={searchResult!.times}
                         viewport={viewport}
                         cursorTimeSec={mirroredCursorTimeSec}
                         onCursorTimeChange={setCursorTimeSec}
-                        variant="onset"
+                        overlayThreshold={searchControls.threshold}
                       />
-                    ) : (
-                      <p className="text-sm text-zinc-500">Run Onset Peaks to view output.</p>
-                    )
-                  ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-zinc-500">Select an audio segment and run search to see the similarity curve.</p>
+                  )
+                ) : visualTab === "debug" ? (
+                  debugSignals.length > 0 ? (
+                    <div className="space-y-2">
+                      {debugSignals.map((sig) => (
+                        <div key={sig.name} className="border-l-2 border-purple-500 pl-2">
+                          <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">{sig.name}</span>
+                          <SyncedWaveSurferSignal
+                            data={sig.values}
+                            times={sig.times}
+                            viewport={viewport}
+                            cursorTimeSec={mirroredCursorTimeSec}
+                            onCursorTimeChange={setCursorTimeSec}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-zinc-500">
+                      Use <code className="bg-zinc-100 dark:bg-zinc-800 px-1 rounded">dbg.emit(&quot;name&quot;, value)</code> in your script and click the flask icon to extract debug signals.
+                    </p>
+                  )
+                ) : (
+                  <>
+                    {visualTab === "spectralCentroid" ||
+                      visualTab === "spectralFlux" ||
+                      visualTab === "onsetEnvelope" ? (
+                      tabResult?.kind === "1d" && tabResult.fn === visualTab ? (
+                        <>
+                          <SyncedWaveSurferSignal
+                            data={tabResult.values}
+                            times={tabResult.times}
+                            viewport={viewport}
+                            cursorTimeSec={mirroredCursorTimeSec}
+                            onCursorTimeChange={setCursorTimeSec}
+                          />
+                          {/* Band MIR signals for relevant 1D tabs */}
+                          {hasBands && (visualTab === "onsetEnvelope" || visualTab === "spectralFlux") && (
+                            <div className="mt-2">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const fn = visualTab === "onsetEnvelope" ? "bandOnsetStrength" : "bandSpectralFlux";
+                                    void runBandAnalysis(undefined, [fn]);
+                                  }}
+                                  disabled={isRunning}
+                                >
+                                  Run Band Analysis
+                                </Button>
+                              </div>
+                              <BandMirSignalViewer
+                                fn={visualTab === "onsetEnvelope" ? "bandOnsetStrength" : "bandSpectralFlux"}
+                                viewport={viewport}
+                                cursorTimeSec={mirroredCursorTimeSec}
+                                onCursorTimeChange={setCursorTimeSec}
+                              />
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-sm text-zinc-500">Run {visualTab} to view output.</p>
+                      )
+                    ) : null}
 
-                  {visualTab === "beatCandidates" ? (
-                    tabResult?.kind === "events" && tabResult.fn === "beatCandidates" ? (
-                      <div className="relative">
+                    {visualTab === "onsetPeaks" ? (
+                      tabResult?.kind === "events" && tabResult.fn === "onsetPeaks" ? (
                         <SparseEventsViewer
                           events={tabResult.events}
                           viewport={viewport}
                           cursorTimeSec={mirroredCursorTimeSec}
                           onCursorTimeChange={setCursorTimeSec}
-                          variant="beatCandidate"
+                          variant="onset"
                         />
-                        <BeatGridOverlay
-                          viewport={viewport}
-                          beatGrid={beatGridState.activeBeatGrid}
-                          audioDuration={audioDuration ?? 0}
-                          isVisible={beatGridState.isVisible}
-                          musicalTimeSegments={musicalTimeStructure?.segments ?? []}
-                          selectedSegmentId={musicalTimeSelectedSegmentId}
-                        />
-                      </div>
-                    ) : (
-                      <p className="text-sm text-zinc-500">Run Beat Candidates to view output.</p>
-                    )
-                  ) : null}
+                      ) : (
+                        <p className="text-sm text-zinc-500">Run Onset Peaks to view output.</p>
+                      )
+                    ) : null}
 
-                  {visualTab === "tempoHypotheses" ? (
-                    <>
-                      {tabResult?.kind === "tempoHypotheses" && tabResult.fn === "tempoHypotheses" ? (
-                        <TempoHypothesesViewer
-                          hypotheses={tabResult.hypotheses}
-                          manualHypotheses={manualHypotheses}
-                          inputCandidateCount={tabResult.inputCandidateCount}
-                          selectedHypothesisId={beatGridState.selectedHypothesis?.id ?? null}
-                          onHypothesisSelect={selectBeatGridHypothesis}
-                          beatGrid={
-                            beatGridState.selectedHypothesis
-                              ? {
+                    {visualTab === "beatCandidates" ? (
+                      tabResult?.kind === "events" && tabResult.fn === "beatCandidates" ? (
+                        <div className="relative">
+                          <SparseEventsViewer
+                            events={tabResult.events}
+                            viewport={viewport}
+                            cursorTimeSec={mirroredCursorTimeSec}
+                            onCursorTimeChange={setCursorTimeSec}
+                            variant="beatCandidate"
+                          />
+                          <BeatGridOverlay
+                            viewport={viewport}
+                            beatGrid={beatGridState.activeBeatGrid}
+                            audioDuration={audioDuration ?? 0}
+                            isVisible={beatGridState.isVisible}
+                            musicalTimeSegments={musicalTimeStructure?.segments ?? []}
+                            selectedSegmentId={musicalTimeSelectedSegmentId}
+                          />
+                        </div>
+                      ) : (
+                        <p className="text-sm text-zinc-500">Run Beat Candidates to view output.</p>
+                      )
+                    ) : null}
+
+                    {visualTab === "tempoHypotheses" ? (
+                      <>
+                        {tabResult?.kind === "tempoHypotheses" && tabResult.fn === "tempoHypotheses" ? (
+                          <TempoHypothesesViewer
+                            hypotheses={tabResult.hypotheses}
+                            manualHypotheses={manualHypotheses}
+                            inputCandidateCount={tabResult.inputCandidateCount}
+                            selectedHypothesisId={beatGridState.selectedHypothesis?.id ?? null}
+                            onHypothesisSelect={selectBeatGridHypothesis}
+                            beatGrid={
+                              beatGridState.selectedHypothesis
+                                ? {
                                   isVisible: beatGridState.isVisible,
                                   isLocked: beatGridState.isLocked,
                                   phaseHypotheses: beatGridState.phaseHypotheses,
@@ -1016,96 +1003,96 @@ export default function Home() {
                                   phaseOffset: beatGridState.phaseHypotheses[beatGridState.activePhaseIndex]?.phaseOffset ?? 0,
                                   metronomeEnabled: beatGridState.metronomeEnabled,
                                 }
-                              : null
-                          }
-                          playheadTimeSec={playheadTimeSec}
-                          isPlaying={isAudioPlaying}
-                          onToggleVisibility={toggleBeatGridVisibility}
-                          onCyclePhase={cyclePhase}
-                          onNudge={nudgePhase}
-                          onResetNudge={resetNudge}
-                          onToggleLock={() => setBeatGridLocked(!beatGridState.isLocked)}
-                          onToggleMetronome={toggleMetronome}
-                          // Manual tempo controls
-                          onCreateManualHypothesis={handleCreateManualHypothesis}
-                          onDuplicateHypothesis={handleDuplicateHypothesis}
-                          onUpdateHypothesisBpm={handleUpdateHypothesisBpm}
-                          onDeleteHypothesis={handleDeleteManualHypothesis}
-                          onRecordTap={handleRecordTap}
-                          // Beat marking
-                          beatMarkingActive={beatMarkingActive}
-                          onStartBeatMarking={startBeatMarking}
-                          // Musical Time (B4)
-                          canPromote={canPromoteBeatGrid()}
-                          audioDuration={audioDuration}
-                          musicalTimeSegmentCount={musicalTimeStructure?.segments.length ?? 0}
-                          onPromote={handlePromoteGrid}
+                                : null
+                            }
+                            playheadTimeSec={playheadTimeSec}
+                            isPlaying={isAudioPlaying}
+                            onToggleVisibility={toggleBeatGridVisibility}
+                            onCyclePhase={cyclePhase}
+                            onNudge={nudgePhase}
+                            onResetNudge={resetNudge}
+                            onToggleLock={() => setBeatGridLocked(!beatGridState.isLocked)}
+                            onToggleMetronome={toggleMetronome}
+                            // Manual tempo controls
+                            onCreateManualHypothesis={handleCreateManualHypothesis}
+                            onDuplicateHypothesis={handleDuplicateHypothesis}
+                            onUpdateHypothesisBpm={handleUpdateHypothesisBpm}
+                            onDeleteHypothesis={handleDeleteManualHypothesis}
+                            onRecordTap={handleRecordTap}
+                            // Beat marking
+                            beatMarkingActive={beatMarkingActive}
+                            onStartBeatMarking={startBeatMarking}
+                            // Musical Time (B4)
+                            canPromote={canPromoteBeatGrid()}
+                            audioDuration={audioDuration}
+                            musicalTimeSegmentCount={musicalTimeStructure?.segments.length ?? 0}
+                            onPromote={handlePromoteGrid}
+                          />
+                        ) : (
+                          <p className="text-sm text-zinc-500">Run Tempo Hypotheses to view output.</p>
+                        )}
+                        <MusicalTimePanel
+                          structure={musicalTimeStructure}
+                          selectedSegmentId={musicalTimeSelectedSegmentId}
+                          audioDuration={audioDuration ?? 0}
+                          onSelectSegment={selectMusicalTimeSegment}
+                          onRemoveSegment={removeMusicalTimeSegment}
+                          onSplitSegment={splitMusicalTimeSegmentAt}
+                          onClearAll={clearMusicalTime}
                         />
+                      </>
+                    ) : null}
+
+                    {visualTab === "melSpectrogram" ||
+                      visualTab === "hpssHarmonic" ||
+                      visualTab === "hpssPercussive" ||
+                      visualTab === "mfcc" ||
+                      visualTab === "mfccDelta" ||
+                      visualTab === "mfccDeltaDelta" ? (
+                      tabResult?.kind === "2d" && tabResult.fn === visualTab ? (
+                        <div
+                          ref={heatmapHostRef}
+                          onMouseMove={handleCursorHoverFromViewport}
+                          onMouseLeave={handleCursorLeave}
+                        >
+                          <HeatmapWithBandOverlay
+                            input={displayedHeatmap}
+                            startTime={visibleRange.startTime}
+                            endTime={visibleRange.endTime}
+                            width={Math.floor(heatmapHostSize.width || 0)}
+                            valueRange={heatmapValueRange}
+                            yLabel={heatmapYAxisLabel}
+                            colorScheme={heatmapScheme}
+                            melConfig={{
+                              nMels: 128,
+                              fMin: 0,
+                              fMax: audioSampleRate ? audioSampleRate / 2 : 22050,
+                            }}
+                          />
+                        </div>
                       ) : (
-                        <p className="text-sm text-zinc-500">Run Tempo Hypotheses to view output.</p>
-                      )}
-                      <MusicalTimePanel
-                        structure={musicalTimeStructure}
-                        selectedSegmentId={musicalTimeSelectedSegmentId}
-                        audioDuration={audioDuration ?? 0}
-                        onSelectSegment={selectMusicalTimeSegment}
-                        onRemoveSegment={removeMusicalTimeSegment}
-                        onSplitSegment={splitMusicalTimeSegmentAt}
-                        onClearAll={clearMusicalTime}
-                      />
-                    </>
-                  ) : null}
-
-                  {visualTab === "melSpectrogram" ||
-                    visualTab === "hpssHarmonic" ||
-                    visualTab === "hpssPercussive" ||
-                    visualTab === "mfcc" ||
-                    visualTab === "mfccDelta" ||
-                    visualTab === "mfccDeltaDelta" ? (
-                    tabResult?.kind === "2d" && tabResult.fn === visualTab ? (
-                      <div
-                        ref={heatmapHostRef}
-                        onMouseMove={handleCursorHoverFromViewport}
-                        onMouseLeave={handleCursorLeave}
-                      >
-                        <HeatmapWithBandOverlay
-                          input={displayedHeatmap}
-                          startTime={visibleRange.startTime}
-                          endTime={visibleRange.endTime}
-                          width={Math.floor(heatmapHostSize.width || 0)}
-                          valueRange={heatmapValueRange}
-                          yLabel={heatmapYAxisLabel}
-                          colorScheme={heatmapScheme}
-                          melConfig={{
-                            nMels: 128,
-                            fMin: 0,
-                            fMax: audioSampleRate ? audioSampleRate / 2 : 22050,
-                          }}
-                        />
-                      </div>
-                    ) : (
-                      <p className="text-sm text-zinc-500">Run {visualTab} to view output.</p>
-                    )
-                  ) : null}
-                </>
-              )}
+                        <p className="text-sm text-zinc-500">Run {visualTab} to view output.</p>
+                      )
+                    ) : null}
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-          {visualTab === "search" && <SearchPanel playerRef={playerRef} />}
-          <VisualiserPanel
-            audio={audio}
-            playbackTime={playheadTimeSec}
-            audioDuration={audioDuration}
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            mirResults={mirResults as any}
-            searchSignal={searchSignal}
-            isPlaying={isAudioPlaying}
-            musicalTimeStructure={musicalTimeStructure}
-          />
+            {visualTab === "search" && <SearchPanel playerRef={playerRef} />}
+            <VisualiserPanel
+              audio={audio}
+              playbackTime={playheadTimeSec}
+              audioDuration={audioDuration}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              mirResults={mirResults as any}
+              searchSignal={searchSignal}
+              isPlaying={isAudioPlaying}
+              musicalTimeStructure={musicalTimeStructure}
+            />
 
-        </section>
-        <MirConfigModal />
-        <DebugPanel />
+          </section>
+          <MirConfigModal />
+          <DebugPanel />
 
         </main>
       </div>

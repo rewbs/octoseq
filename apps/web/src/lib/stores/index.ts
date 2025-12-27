@@ -9,7 +9,7 @@ export { useBeatGridStore, type BeatGridStore } from "./beatGridStore";
 export { useMusicalTimeStore, type MusicalTimeStore, type AudioIdentity } from "./musicalTimeStore";
 export { useManualTempoStore, type ManualTempoStore, type ExtendedTempoHypothesis, type TempoHypothesisSource, type BeatMark } from "./manualTempoStore";
 export { useFrequencyBandStore, type FrequencyBandStore, type BandInvalidationEvent, type BandInvalidationCallback } from "./frequencyBandStore";
-export { useBandMirStore, type BandMirStore } from "./bandMirStore";
+export { useBandMirStore, setupBandMirInvalidation, type BandMirStore } from "./bandMirStore";
 export { useBandProposalStore, type BandProposalStore } from "./bandProposalStore";
 
 // Types

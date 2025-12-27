@@ -204,10 +204,16 @@ The Signal API provides a **declarative, lazy computation graph** for audio-reac
 
 ### Accessing Input Signals
 
-There are two related “inputs” concepts:
+There are two distinct input surfaces:
 
 - `frame` (the second `update()` parameter): per-frame sampled values (numbers)
-- `inputs` (global): Signal graph accessors (returns `Signal` objects for building graphs/events)
+- `inputs` (global): Signal graph accessors (`inputs.<name>` returns a `Signal` for building graphs/events)
+
+Tip: avoid naming the second `update()` parameter `inputs` if you plan to use the Signal API, since it will shadow the global `inputs`.
+
+Signals are **not** automatically coerced into numbers inside Rhai. Use:
+- `frame.*` when you need a number for control-flow or arbitrary math (e.g. `if`, `sin()`, loops)
+- `inputs.*` when you want to build a `Signal` graph and assign it to a numeric entity property
 
 Per-frame sampled values are accessed from the map passed to `update()`:
 
@@ -218,6 +224,67 @@ fn update(dt, frame) {
     let onset = frame.onsetEnvelope;
     // Signal names depend on the audio analysis package
 }
+```
+
+### Using Signals in Entity Properties
+
+Numeric entity fields can be authored as either numbers or `Signal` graphs. When a `Signal` is assigned, the engine evaluates it each frame at the current `time`/`dt` during scene sync.
+
+Supported (signals allowed):
+- `position.{x,y,z}`, `rotation.{x,y,z}`, `scale`
+- `color.{r,g,b,a}`, `wireframeColor.{r,g,b,a}`
+
+Not supported (signals are treated as plain values and won’t evaluate):
+- `visible` (expects `bool`)
+- `line.strip()` point data (`push(x, y)` expects numbers)
+
+```rhai
+fn update(dt, frame) {
+    // Declarative: assign a Signal graph (evaluated by the engine each frame)
+    cube.scale = inputs.amplitude
+        .smooth.exponential(0.05, 0.2)
+        .normalise.robust()
+        .scale(0.5)
+        .add(1.0);
+
+    // Imperative: use numeric per-frame samples for arbitrary math/control flow
+    cube.rotation.x = (frame.time * 2.0).sin() * 0.1;
+}
+```
+
+### Band-Scoped Inputs (Frequency Bands)
+
+If frequency bands are available, scripts get a band-scoped namespace at `inputs.bands[...]`.
+
+- Keys are populated at **script load time**, and include both band IDs and human labels.
+- Use `log.info(inputs.bands)` to inspect available keys (and `describe(inputs.bands)` for the API shape).
+
+Each band entry is a `BandSignals` object with:
+- `energy`, `onset`, `flux`, `amplitude` (alias of `energy`) → `Signal`
+- `events` → `EventStream`
+
+```rhai
+// Drive visuals from a band’s energy signal
+let bass = inputs.bands["Bass"].energy
+    .smooth.exponential(0.05, 0.2)
+    .normalise.robust();
+
+cube.position.y = bass.scale(2.0);
+
+// Turn band-scoped events into an envelope signal
+let hits = inputs.bands["Bass"].events.to_signal(#{
+    envelope: "attack_decay",
+    attack_beats: 0.01,
+    decay_beats: 0.25,
+    easing: "exponential_out"
+});
+
+cube.color = #{
+    r: hits.scale(0.8).add(0.2),
+    g: 0.2,
+    b: 0.2,
+    a: 1.0
+};
 ```
 
 ### Arithmetic Operations
@@ -474,16 +541,16 @@ A minimal example showing reactive rotation and scaling.
 ```rhai
 let phase = 0.0;
 
-fn update(dt, inputs) {
+fn update(dt, frame) {
     // Spin faster with more spectral flux
-    phase += dt * (0.5 + inputs.spectralFlux * 2.0);
+    phase += dt * (0.5 + frame.spectralFlux * 2.0);
     cube.rotation.y = phase;
 
     // Subtle wobble using time-based sine
-    cube.rotation.x = 0.1 * (inputs.time * 2.0).sin();
+    cube.rotation.x = 0.1 * (frame.time * 2.0).sin();
 
     // Pulse with amplitude
-    cube.scale = 1.0 + inputs.amplitude * 0.5;
+    cube.scale = 1.0 + frame.amplitude * 0.5;
 }
 ```
 
@@ -494,7 +561,7 @@ fn update(dt, inputs) {
 Extract discrete events from the onset envelope and convert them back to shaped envelopes.
 
 ```rhai
-fn update(dt, inputs) {
+fn update(dt, frame) {
     // Extract onset events with preprocessing
     let onsets = inputs.onsetEnvelope
         .smooth.exponential(0.05, 0.3)  // Quick attack, slower release
@@ -513,7 +580,7 @@ fn update(dt, inputs) {
     });
 
     // Apply to cube scale
-    cube.scale = 1.0 + flash * 0.5;
+    cube.scale = flash.scale(0.5).add(1.0);
 }
 ```
 
@@ -529,19 +596,24 @@ let sparkline = line.strip(#{
     mode: "line"
 });
 
+let energy_smooth = 0.0;
+
 fn init(ctx) {
     sparkline.color = #{ r: 0.0, g: 1.0, b: 0.5, a: 1.0 };
     sparkline.position = #{ x: -2.0, y: 0.0, z: 0.0 };
     scene.add(sparkline);
 }
 
-fn update(dt, inputs) {
-    // Push smoothed energy values
-    let energy = inputs.amplitude
-        .smooth.exponential(0.1, 0.3)
-        .normalise.robust();
+fn update(dt, frame) {
+    // Line strips are immediate-mode: push numeric per-frame samples.
+    // (If you want to inspect a Signal graph, attach `.probe("name")` instead.)
+    let raw = frame.amplitude;
 
-    sparkline.push(inputs.time, energy);
+    // Simple smoothing using script state (0..1, higher = more responsive)
+    let smoothing = 0.15;
+    energy_smooth += (raw - energy_smooth) * smoothing;
+
+    sparkline.push(frame.time, energy_smooth);
 }
 ```
 
@@ -552,7 +624,7 @@ fn update(dt, inputs) {
 Combine generated oscillators with audio input for musically-aware animation.
 
 ```rhai
-fn update(dt, inputs) {
+fn update(dt, frame) {
     // Generate sine wave at 1 cycle per beat
     let pulse = gen.sin(1.0, 0.0)
         .add(1.0)     // Shift from [-1,1] to [0,2]
@@ -565,7 +637,7 @@ fn update(dt, inputs) {
 
     let combined = pulse.mix(onset, 0.5);
 
-    cube.scale = 0.5 + combined * 0.5;
+    cube.scale = combined.scale(0.5).add(0.5);
 }
 ```
 
@@ -584,7 +656,6 @@ let floor_plane = mesh.plane();
 
 // Persistent animation state
 let orbit_phase = 0.0;
-let color_hue = 0.0;
 
 fn init(ctx) {
     // Position floor
@@ -599,37 +670,37 @@ fn init(ctx) {
     scene.add(floor_plane);
 }
 
-fn update(dt, inputs) {
-    // === CENTER CUBE: React to low frequencies ===
-    let bass = inputs.amplitude
+fn update(dt, frame) {
+    // === CENTER CUBE: Declarative reactivity (assign a Signal to a numeric field) ===
+    center_cube.scale = inputs.amplitude
         .smooth.exponential(0.05, 0.2)
-        .normalise.robust();
+        .normalise.robust()
+        .scale(0.6)
+        .add(0.8);
 
-    center_cube.scale = 0.8 + bass * 0.6;
+    // Imperative rotation using numeric dt
     center_cube.rotation.y += dt * 0.5;
 
-    // === ORBITING CUBES: React to onsets ===
-    let onset_signal = inputs.onsetEnvelope
-        .smooth.exponential(0.02, 0.15)
-        .normalise.robust();
+    // === ORBITING CUBES: Imperative motion (use numeric per-frame samples) ===
+    let onset = frame.onsetEnvelope;
 
     // Orbit speed increases with spectral flux
-    let flux = inputs.spectralFlux.normalise.robust();
+    let flux = frame.spectralFlux;
     orbit_phase += dt * (1.0 + flux * 2.0);
 
     // First orbiter
-    let radius1 = 2.0 + onset_signal * 0.5;
+    let radius1 = 2.0 + onset * 0.5;
     orbit_cube_1.position = #{
         x: radius1 * orbit_phase.cos(),
-        y: 0.5 + onset_signal * 0.3,
+        y: 0.5 + onset * 0.3,
         z: radius1 * orbit_phase.sin()
     };
-    orbit_cube_1.scale = 0.3 + onset_signal * 0.2;
+    orbit_cube_1.scale = 0.3 + onset * 0.2;
     orbit_cube_1.rotation.x = orbit_phase * 2.0;
 
     // Second orbiter (opposite phase)
     let phase2 = orbit_phase + 3.14159;
-    let radius2 = 2.5 + onset_signal * 0.3;
+    let radius2 = 2.5 + onset * 0.3;
     orbit_cube_2.position = #{
         x: radius2 * phase2.cos(),
         y: 0.3,
@@ -638,13 +709,9 @@ fn update(dt, inputs) {
     orbit_cube_2.scale = 0.25;
     orbit_cube_2.rotation.z = orbit_phase * -1.5;
 
-    // === FLOOR: Subtle brightness pulse ===
-    let brightness = inputs.spectralCentroid
-        .smooth.moving_average(0.5)
-        .normalise.global();
-
-    // Floor visibility pulses with spectral centroid
-    floor_plane.visible = brightness > 0.3;
+    // === FLOOR: Control flow from numeric samples ===
+    // (visible expects a bool, so use per-frame numeric values here)
+    floor_plane.visible = frame.spectralCentroid > 0.3;
 }
 ```
 
@@ -655,36 +722,34 @@ fn update(dt, inputs) {
 Demonstrate complex signal chaining with comparison between raw and processed signals.
 
 ```rhai
-let raw_line = line.strip(#{ max_points: 512, mode: "line" });
-let processed_line = line.strip(#{ max_points: 512, mode: "line" });
-let gated_line = line.strip(#{ max_points: 512, mode: "line" });
+let raw_cube = mesh.cube();
+let processed_cube = mesh.cube();
+let gated_cube = mesh.cube();
 
 fn init(ctx) {
-    // Raw signal - red
-    raw_line.color = #{ r: 1.0, g: 0.3, b: 0.3, a: 0.8 };
-    raw_line.position = #{ x: 0.0, y: 1.5, z: 0.0 };
+    // Raw signal - red (left)
+    raw_cube.color = #{ r: 1.0, g: 0.3, b: 0.3, a: 1.0 };
+    raw_cube.position = #{ x: -2.0, y: 0.0, z: 0.0 };
 
-    // Processed signal - green
-    processed_line.color = #{ r: 0.3, g: 1.0, b: 0.3, a: 0.8 };
-    processed_line.position = #{ x: 0.0, y: 0.0, z: 0.0 };
+    // Processed signal - green (center)
+    processed_cube.color = #{ r: 0.3, g: 1.0, b: 0.3, a: 1.0 };
+    processed_cube.position = #{ x: 0.0, y: 0.0, z: 0.0 };
 
-    // Gated signal - blue
-    gated_line.color = #{ r: 0.3, g: 0.3, b: 1.0, a: 0.8 };
-    gated_line.position = #{ x: 0.0, y: -1.5, z: 0.0 };
+    // Gated signal - blue (right)
+    gated_cube.color = #{ r: 0.3, g: 0.3, b: 1.0, a: 1.0 };
+    gated_cube.position = #{ x: 2.0, y: 0.0, z: 0.0 };
 
-    scene.add(raw_line);
-    scene.add(processed_line);
-    scene.add(gated_line);
+    scene.add(raw_cube);
+    scene.add(processed_cube);
+    scene.add(gated_cube);
 }
 
-fn update(dt, inputs) {
-    let time = inputs.time;
-
+fn update(dt, frame) {
     // === RAW SIGNAL ===
-    // Just normalise for display
+    // Just normalise for display, and attach a debug probe.
     let raw = inputs.onsetEnvelope
         .normalise.global()
-        .probe("raw_onset");  // Emit for debugging
+        .probe("raw_onset");
 
     // === PROCESSED SIGNAL ===
     // Full processing pipeline
@@ -700,10 +765,10 @@ fn update(dt, inputs) {
         .gate.hysteresis(0.6, 0.3)  // On at 0.6, off at 0.3
         .probe("gated_onset");
 
-    // Push all signals to their respective sparklines
-    raw_line.push(time, raw);
-    processed_line.push(time, processed);
-    gated_line.push(time, gated);
+    // Compare by mapping each signal to vertical position.
+    raw_cube.position.y = raw.scale(2.0);
+    processed_cube.position.y = processed.scale(2.0);
+    gated_cube.position.y = gated.scale(2.0);
 }
 ```
 
@@ -735,7 +800,7 @@ fn init(ctx) {
     }
 }
 
-fn update(dt, inputs) {
+fn update(dt, frame) {
     // Extract strong onset events
     let events = inputs.onsetEnvelope
         .smooth.exponential(0.02, 0.15)
@@ -772,9 +837,9 @@ fn update(dt, inputs) {
         let delayed_burst = burst.delay(dist * 0.1);
 
         // Apply to particle
-        p.scale = 0.1 + delayed_burst * 0.4;
-        p.position.y = delayed_burst * 0.5;
-        p.rotation.y += dt * (1.0 + delayed_burst * 3.0);
+        p.scale = delayed_burst.scale(0.4).add(0.1);
+        p.position.y = delayed_burst.scale(0.5);
+        p.rotation.y = inputs.time.scale(0.5).add(delayed_burst.scale(3.0));
     }
 }
 ```
@@ -783,77 +848,69 @@ fn update(dt, inputs) {
 
 ### Example 8: Spectrum Analyzer with Frequency Bands
 
-Visualize different frequency bands using multiple line strips.
+Drive entities from authored frequency bands (`inputs.bands[...]`), including band-scoped events.
 
 ```rhai
-// Create sparklines for different frequency bands
-let bass_line = line.strip(#{ max_points: 256, mode: "line" });
-let mid_line = line.strip(#{ max_points: 256, mode: "line" });
-let high_line = line.strip(#{ max_points: 256, mode: "line" });
-
-// Create reactive cubes
+// Requires bands labeled "Bass", "Mids", "Highs" (adjust keys as needed).
 let bass_cube = mesh.cube();
 let mid_cube = mesh.cube();
 let high_cube = mesh.cube();
 
 fn init(ctx) {
     // Bass - red, left
-    bass_line.color = #{ r: 1.0, g: 0.2, b: 0.2, a: 1.0 };
-    bass_line.position = #{ x: -3.0, y: 1.0, z: 0.0 };
+    bass_cube.color = #{ r: 1.0, g: 0.2, b: 0.2, a: 1.0 };
     bass_cube.position = #{ x: -2.0, y: 0.0, z: 0.0 };
 
     // Mid - green, center
-    mid_line.color = #{ r: 0.2, g: 1.0, b: 0.2, a: 1.0 };
-    mid_line.position = #{ x: 0.0, y: 1.0, z: 0.0 };
+    mid_cube.color = #{ r: 0.2, g: 1.0, b: 0.2, a: 1.0 };
     mid_cube.position = #{ x: 0.0, y: 0.0, z: 0.0 };
 
     // High - blue, right
-    high_line.color = #{ r: 0.2, g: 0.2, b: 1.0, a: 1.0 };
-    high_line.position = #{ x: 3.0, y: 1.0, z: 0.0 };
+    high_cube.color = #{ r: 0.2, g: 0.2, b: 1.0, a: 1.0 };
     high_cube.position = #{ x: 2.0, y: 0.0, z: 0.0 };
 
-    scene.add(bass_line);
-    scene.add(mid_line);
-    scene.add(high_line);
     scene.add(bass_cube);
     scene.add(mid_cube);
     scene.add(high_cube);
 }
 
-fn update(dt, inputs) {
-    let time = inputs.time;
-
-    // Access frequency band data (requires configured bands)
-    // Using spectral features as proxies for demonstration
-    let bass = inputs.amplitude
-        .smooth.exponential(0.05, 0.3)
+fn update(dt, frame) {
+    let bass = inputs.bands["Bass"].energy
+        .smooth.exponential(0.05, 0.2)
         .normalise.robust();
 
-    let mid = inputs.spectralCentroid
-        .smooth.exponential(0.08, 0.2)
+    let mids = inputs.bands["Mids"].energy
+        .smooth.exponential(0.05, 0.2)
         .normalise.robust();
 
-    let high = inputs.spectralFlux
-        .smooth.exponential(0.03, 0.15)
+    let highs = inputs.bands["Highs"].energy
+        .smooth.exponential(0.05, 0.2)
         .normalise.robust();
-
-    // Update sparklines
-    bass_line.push(time, bass);
-    mid_line.push(time, mid);
-    high_line.push(time, high);
 
     // Update cubes - scale and vertical position
-    bass_cube.scale = 0.5 + bass * 0.8;
-    bass_cube.position.y = bass * 0.5;
-    bass_cube.rotation.y += dt * 0.5;
+    bass_cube.scale = bass.scale(0.8).add(0.3);
+    bass_cube.position.y = bass.scale(1.5);
 
-    mid_cube.scale = 0.4 + mid * 0.6;
-    mid_cube.position.y = mid * 0.5;
-    mid_cube.rotation.x += dt * 0.7;
+    mid_cube.scale = mids.scale(0.8).add(0.3);
+    mid_cube.position.y = mids.scale(1.5);
 
-    high_cube.scale = 0.3 + high * 0.5;
-    high_cube.position.y = high * 0.5;
-    high_cube.rotation.z += dt * 1.0;
+    high_cube.scale = highs.scale(0.8).add(0.3);
+    high_cube.position.y = highs.scale(1.5);
+
+    // Band-scoped events → envelope flash
+    let bass_hit = inputs.bands["Bass"].events.to_signal(#{
+        envelope: "attack_decay",
+        attack_beats: 0.01,
+        decay_beats: 0.25,
+        easing: "exponential_out"
+    });
+
+    bass_cube.color = #{
+        r: bass_hit.scale(0.8).add(0.2),
+        g: bass.scale(0.6).add(0.2),
+        b: 0.2,
+        a: 1.0
+    };
 }
 ```
 
@@ -881,7 +938,7 @@ fn init(ctx) {
     scene.add(anticipator);
 }
 
-fn update(dt, inputs) {
+fn update(dt, frame) {
     // Base signal from onset envelope
     let base = inputs.onsetEnvelope
         .smooth.exponential(0.02, 0.2)
@@ -900,10 +957,10 @@ fn update(dt, inputs) {
     let anticipator_signal = base.anticipate(0.25);
 
     // Apply to vertical position
-    leader.position.y = leader_signal * 2.0;
-    follower1.position.y = follower1_signal * 2.0;
-    follower2.position.y = follower2_signal * 2.0;
-    anticipator.position.y = anticipator_signal * 2.0;
+    leader.position.y = leader_signal.scale(2.0);
+    follower1.position.y = follower1_signal.scale(2.0);
+    follower2.position.y = follower2_signal.scale(2.0);
+    anticipator.position.y = anticipator_signal.scale(2.0);
 
     // Visual feedback: scale indicates timing role
     leader.scale = 0.5;
@@ -938,7 +995,7 @@ fn init(ctx) {
     }
 }
 
-fn update(dt, inputs) {
+fn update(dt, frame) {
     // Audio reactivity
     let energy = inputs.amplitude
         .smooth.exponential(0.1, 0.3)
@@ -960,22 +1017,22 @@ fn update(dt, inputs) {
         let base_z = (row - 1.0) * 2.0;
 
         // Apply noise offset, scaled by energy
-        let noise_amount = 0.3 + energy * 0.7;
+        let noise_amount = energy.scale(0.7).add(0.3);
         c.position = #{
-            x: base_x + noise_x * noise_amount,
-            y: noise_y * noise_amount * 0.5,
-            z: base_z + noise_z * noise_amount
+            x: noise_x.mul(noise_amount).add(base_x),
+            y: noise_y.mul(noise_amount).scale(0.5),
+            z: noise_z.mul(noise_amount).add(base_z)
         };
 
         // Rotation driven by noise
         c.rotation = #{
-            x: noise_x * 1.5,
-            y: noise_y * 1.5,
-            z: noise_z * 1.5
+            x: noise_x.scale(1.5),
+            y: noise_y.scale(1.5),
+            z: noise_z.scale(1.5)
         };
 
         // Scale pulses with energy
-        c.scale = 0.3 + energy * 0.3;
+        c.scale = energy.scale(0.3).add(0.3);
     }
 }
 ```
@@ -989,24 +1046,16 @@ Use `integrate()` and `diff()` for physics-like and cumulative effects.
 ```rhai
 let velocity_cube = mesh.cube();
 let energy_cube = mesh.cube();
-let decay_line = line.strip(#{ max_points: 256, mode: "line" });
-
-let accumulated_rotation = 0.0;
 
 fn init(ctx) {
     velocity_cube.position = #{ x: -2.0, y: 0.0, z: 0.0 };
     energy_cube.position = #{ x: 2.0, y: 0.0, z: 0.0 };
-    decay_line.position = #{ x: 0.0, y: 2.0, z: 0.0 };
-    decay_line.color = #{ r: 1.0, g: 0.8, b: 0.2, a: 1.0 };
 
     scene.add(velocity_cube);
     scene.add(energy_cube);
-    scene.add(decay_line);
 }
 
-fn update(dt, inputs) {
-    let time = inputs.time;
-
+fn update(dt, frame) {
     // === VELOCITY CUBE: React to rate of change ===
     // diff() gives us the derivative (velocity) of the signal
     let onset_velocity = inputs.onsetEnvelope
@@ -1017,7 +1066,10 @@ fn update(dt, inputs) {
 
     // Positive velocity = rising, negative = falling
     velocity_cube.position.y = onset_velocity;
-    velocity_cube.scale = 0.5 + onset_velocity.clamp(0.0, 1.0) * 0.3;
+    velocity_cube.scale = onset_velocity
+        .clamp(0.0, 1.0)
+        .scale(0.3)
+        .add(0.5);
 
     // === ENERGY CUBE: Accumulated energy with decay ===
     // integrate() accumulates the signal over time
@@ -1028,13 +1080,8 @@ fn update(dt, inputs) {
         .clamp(0.0, 3.0)                  // Prevent runaway growth
         .probe("accumulated_energy");
 
-    energy_cube.scale = 0.3 + accumulated * 0.3;
-    accumulated_rotation += dt * accumulated;
-    energy_cube.rotation.y = accumulated_rotation;
-
-    // === DECAY LINE: Visualize the accumulation ===
-    let normalized_accum = accumulated.scale(0.33);  // Scale to 0-1 range
-    decay_line.push(time, normalized_accum);
+    energy_cube.scale = accumulated.scale(0.3).add(0.3);
+    energy_cube.rotation.y = accumulated.scale(1.5);
 }
 ```
 
@@ -1048,19 +1095,49 @@ A comprehensive example combining multiple techniques for a full music visualiza
 // === SCENE ENTITIES ===
 let main_cube = mesh.cube();
 let floor = mesh.plane();
+let beat_ring = scene.group();
 let beat_indicators = [];
-let sparklines = [];
 
-// === STATE ===
-let main_rotation = 0.0;
-let beat_flash_decay = 0.0;
+// === SIGNALS (computed once, evaluated every frame) ===
+let amplitude = inputs.amplitude
+    .smooth.exponential(0.05, 0.2)
+    .normalise.robust()
+    .probe("vis_amplitude");
+
+let onset = inputs.onsetEnvelope
+    .smooth.exponential(0.02, 0.15)
+    .normalise.robust();
+
+let centroid = inputs.spectralCentroid
+    .smooth.moving_average(0.25)
+    .normalise.robust()
+    .probe("vis_centroid");
+
+let flux = inputs.spectralFlux
+    .smooth.exponential(0.03, 0.1)
+    .normalise.robust();
+
+let beat_events = onset.pick.events(#{
+    hysteresis_beats: 0.4,
+    target_density: 2.0,
+    min_threshold: 0.3,
+    phase_bias: 0.4
+});
+
+let beat_envelope = beat_events.to_signal(#{
+    envelope: "attack_decay",
+    attack_beats: 0.01,
+    decay_beats: 0.2,
+    easing: "exponential_out"
+}).probe("vis_beat");
+
+// A slowly-accumulating spin signal driven by flux
+let spin = flux.scale(2.0).add(0.5).integrate(0.0);
 
 fn init(ctx) {
-    // Main reactive cube
     main_cube.position = #{ x: 0.0, y: 0.5, z: 0.0 };
     scene.add(main_cube);
 
-    // Floor plane
     floor.position = #{ x: 0.0, y: -1.0, z: 0.0 };
     floor.rotation = #{ x: -1.5708, y: 0.0, z: 0.0 };
     floor.scale = 8.0;
@@ -1077,111 +1154,36 @@ fn init(ctx) {
         };
         indicator.scale = 0.2;
         beat_indicators.push(indicator);
-        scene.add(indicator);
+        beat_ring.add(indicator);
     }
 
-    // Create sparklines for different signals
-    let onset_line = line.strip(#{ max_points: 128, mode: "line" });
-    onset_line.color = #{ r: 1.0, g: 0.3, b: 0.3, a: 0.8 };
-    onset_line.position = #{ x: -5.0, y: 2.0, z: -3.0 };
-    sparklines.push(onset_line);
-    scene.add(onset_line);
-
-    let centroid_line = line.strip(#{ max_points: 128, mode: "line" });
-    centroid_line.color = #{ r: 0.3, g: 1.0, b: 0.3, a: 0.8 };
-    centroid_line.position = #{ x: -5.0, y: 1.0, z: -3.0 };
-    sparklines.push(centroid_line);
-    scene.add(centroid_line);
-
-    let flux_line = line.strip(#{ max_points: 128, mode: "line" });
-    flux_line.color = #{ r: 0.3, g: 0.3, b: 1.0, a: 0.8 };
-    flux_line.position = #{ x: -5.0, y: 0.0, z: -3.0 };
-    sparklines.push(flux_line);
-    scene.add(flux_line);
+    scene.add(beat_ring);
 }
 
-fn update(dt, inputs) {
-    let time = inputs.time;
+fn update(dt, frame) {
+    // === MAIN CUBE ===
+    main_cube.scale = amplitude
+        .scale(0.4)
+        .add(0.8)
+        .add(beat_envelope.scale(0.3));
 
-    // === SIGNAL PROCESSING ===
-    let amplitude = inputs.amplitude
-        .smooth.exponential(0.05, 0.2)
-        .normalise.robust();
+    main_cube.rotation.y = spin;
+    main_cube.position.y = centroid.add(0.5);
+    main_cube.rotation.x = centroid.scale(0.3);
+    main_cube.rotation.z = flux.scale(0.2);
 
-    let onset = inputs.onsetEnvelope
-        .smooth.exponential(0.02, 0.15)
-        .normalise.robust();
-
-    let centroid = inputs.spectralCentroid
-        .smooth.moving_average(0.25)
-        .normalise.robust();
-
-    let flux = inputs.spectralFlux
-        .smooth.exponential(0.03, 0.1)
-        .normalise.robust();
-
-    // === BEAT DETECTION ===
-    let beat_events = onset
-        .pick.events(#{
-            hysteresis_beats: 0.4,
-            target_density: 2.0,
-            min_threshold: 0.3,
-            phase_bias: 0.4
-        });
-
-    let beat_envelope = beat_events.to_signal(#{
-        envelope: "attack_decay",
-        attack_beats: 0.01,
-        decay_beats: 0.2,
-        easing: "exponential_out"
-    });
-
-    // === MAIN CUBE ANIMATION ===
-    // Scale reacts to amplitude with beat punch
-    main_cube.scale = 0.8 + amplitude * 0.4 + beat_envelope * 0.3;
-
-    // Rotation speed based on flux
-    main_rotation += dt * (0.5 + flux * 2.0);
-    main_cube.rotation.y = main_rotation;
-
-    // Vertical position follows centroid (brightness)
-    main_cube.position.y = 0.5 + centroid * 1.0;
-
-    // Subtle wobble
-    main_cube.rotation.x = centroid * 0.3;
-    main_cube.rotation.z = flux * 0.2;
+    // Spin the whole ring a bit
+    beat_ring.rotation.y = spin.scale(0.2);
 
     // === BEAT INDICATOR RING ===
     for i in 0..8 {
         let indicator = beat_indicators[i];
-        let angle = i * 0.785398 + main_rotation * 0.2;
-
-        // Radius pulses with beat
-        let radius = 3.0 + beat_envelope * 0.5;
-
-        indicator.position = #{
-            x: radius * angle.cos(),
-            y: -0.5 + beat_envelope * 0.3,
-            z: radius * angle.sin()
-        };
-
-        // Staggered scale animation
         let phase_offset = i * 0.125;  // 1/8 beat offset per indicator
-        let delayed_beat = beat_envelope.delay(phase_offset);
-        indicator.scale = 0.15 + delayed_beat * 0.25;
+        let delayed = beat_envelope.delay(phase_offset);
+
+        indicator.scale = delayed.scale(0.25).add(0.15);
+        indicator.position.y = delayed.scale(0.3).add(-0.5);
     }
-
-    // === SPARKLINES ===
-    // Update each signal visualization
-    sparklines[0].push(time, onset);
-    sparklines[1].push(time, centroid);
-    sparklines[2].push(time, flux);
-
-    // === DEBUG OUTPUT ===
-    // Emit key signals for debugging
-    amplitude.probe("vis_amplitude");
-    beat_envelope.probe("vis_beat");
-    centroid.probe("vis_centroid");
 }
 ```
 
@@ -1203,62 +1205,49 @@ let SCALE_MULTIPLIER = 0.5;
 // === ENTITIES ===
 let debug_cube = mesh.cube();
 let raw_line = line.strip(#{ max_points: 256, mode: "line" });
-let processed_line = line.strip(#{ max_points: 256, mode: "line" });
 
 fn init(ctx) {
     raw_line.color = #{ r: 1.0, g: 0.0, b: 0.0, a: 0.5 };
     raw_line.position = #{ x: -3.0, y: 1.0, z: 0.0 };
 
-    processed_line.color = #{ r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
-    processed_line.position = #{ x: -3.0, y: -1.0, z: 0.0 };
-
     scene.add(debug_cube);
     scene.add(raw_line);
-    scene.add(processed_line);
 
     log.info("Script initialized");
     log.info("Debug mode: " + DEBUG_MODE);
 }
 
-fn update(dt, inputs) {
-    let time = inputs.time;
-
-    // === RAW SIGNAL ===
-    let raw = inputs.onsetEnvelope
-        .normalise.global();
+fn update(dt, frame) {
+    let time = frame.time;
 
     // === PROCESSED SIGNAL ===
     let processed = inputs.onsetEnvelope
         .smooth.exponential(SMOOTHING_ATTACK, SMOOTHING_RELEASE)
-        .normalise.robust();
+        .normalise.robust()
+        .probe("dbg_processed");
 
     // === EVENT EXTRACTION ===
-    let events = processed
-        .pick.events(#{
-            hysteresis_beats: 0.25,
-            target_density: EVENT_DENSITY
-        });
+    let events = processed.pick.events(#{
+        hysteresis_beats: 0.25,
+        target_density: EVENT_DENSITY
+    });
 
     let envelope = events.to_signal(#{
         envelope: "attack_decay",
         attack_beats: 0.01,
         decay_beats: 0.3,
         easing: "exponential_out"
-    });
+    }).probe("dbg_envelope");
 
     // === APPLY TO VISUALS ===
-    debug_cube.scale = 0.5 + envelope * SCALE_MULTIPLIER;
+    debug_cube.scale = envelope.scale(SCALE_MULTIPLIER).add(0.5);
+    debug_cube.position.y = processed.scale(2.0);
     debug_cube.rotation.y += dt;
 
     // === DEBUG VISUALIZATION ===
     if DEBUG_MODE {
-        raw_line.push(time, raw);
-        processed_line.push(time, processed);
-
-        // Emit signals for external debugging
-        raw.probe("dbg_raw");
-        processed.probe("dbg_processed");
-        envelope.probe("dbg_envelope");
+        // Line strips are numeric-only: use the per-frame sampled values.
+        raw_line.push(time, frame.onsetEnvelope);
 
         // Log event count periodically (every ~60 frames)
         if (time * 60.0).floor() % 60 == 0 {
@@ -1272,7 +1261,7 @@ This pattern allows you to:
 
 1. Toggle debug visualizations on/off
 2. Tune parameters at the top of the file
-3. Compare raw vs processed signals visually
+3. Compare raw (frame) vs processed/envelope (Signal) output
 4. Emit signals for the debug UI
 5. Log periodic information without flooding the console
 

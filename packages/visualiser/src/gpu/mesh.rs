@@ -156,3 +156,64 @@ pub fn create_sphere_geometry() -> (Vec<Vertex>, Vec<u16>) {
 
     (vertices, indices)
 }
+
+/// 8 corners of a unit cube for debug bounding box rendering.
+/// Order: 4 corners on Z- face, then 4 corners on Z+ face.
+pub const DEBUG_CUBE_VERTICES: [[f32; 3]; 8] = [
+    [-0.5, -0.5, -0.5], // 0: left-bottom-back
+    [ 0.5, -0.5, -0.5], // 1: right-bottom-back
+    [ 0.5,  0.5, -0.5], // 2: right-top-back
+    [-0.5,  0.5, -0.5], // 3: left-top-back
+    [-0.5, -0.5,  0.5], // 4: left-bottom-front
+    [ 0.5, -0.5,  0.5], // 5: right-bottom-front
+    [ 0.5,  0.5,  0.5], // 6: right-top-front
+    [-0.5,  0.5,  0.5], // 7: left-top-front
+];
+
+/// 12 edges of a cube as vertex index pairs (24 indices for LineList topology).
+/// Edges: 4 on back face, 4 on front face, 4 connecting front to back.
+pub const DEBUG_CUBE_EDGES: [u16; 24] = [
+    // Back face (Z-)
+    0, 1, 1, 2, 2, 3, 3, 0,
+    // Front face (Z+)
+    4, 5, 5, 6, 6, 7, 7, 4,
+    // Connecting edges
+    0, 4, 1, 5, 2, 6, 3, 7,
+];
+
+/// Create debug cube geometry for bounding box visualization.
+/// Returns vertices (with yellow color for visibility) and edge indices.
+pub fn create_debug_cube_geometry() -> (Vec<Vertex>, Vec<u16>) {
+    let color = [1.0, 0.9, 0.0]; // Yellow for debug bounds
+    let vertices: Vec<Vertex> = DEBUG_CUBE_VERTICES
+        .iter()
+        .map(|&pos| Vertex::new(pos, color))
+        .collect();
+    let indices = DEBUG_CUBE_EDGES.to_vec();
+    (vertices, indices)
+}
+
+/// Extract unique edges from triangle indices for wireframe rendering.
+///
+/// Returns a flat array of vertex index pairs: [a0, b0, a1, b1, ...]
+pub fn extract_edges(indices: &[u16]) -> Vec<u16> {
+    use std::collections::HashSet;
+
+    let mut edges: HashSet<(u16, u16)> = HashSet::new();
+
+    // Process each triangle
+    for tri in indices.chunks(3) {
+        if tri.len() != 3 {
+            continue;
+        }
+
+        // Add three edges per triangle, normalized to ensure uniqueness
+        for (a, b) in [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])] {
+            let edge = if a < b { (a, b) } else { (b, a) };
+            edges.insert(edge);
+        }
+    }
+
+    // Flatten to index array
+    edges.into_iter().flat_map(|(a, b)| [a, b]).collect()
+}

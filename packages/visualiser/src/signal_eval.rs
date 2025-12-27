@@ -109,11 +109,18 @@ impl Signal {
     pub fn evaluate(&self, ctx: &mut EvalContext) -> f32 {
         match &*self.node {
             // === Sources ===
-            SignalNode::Input { name, sampling } => ctx
-                .input_signals
-                .get(name)
-                .map(|sig| self.sample_with_config(sig, *sampling, ctx))
-                .unwrap_or(0.0),
+            SignalNode::Input { name, sampling } => {
+                // Special-cased built-ins (not backed by InputSignal sample arrays)
+                match name.as_str() {
+                    "time" => ctx.time,
+                    "dt" => ctx.dt,
+                    _ => ctx
+                        .input_signals
+                        .get(name)
+                        .map(|sig| self.sample_with_config(sig, *sampling, ctx))
+                        .unwrap_or(0.0),
+                }
+            }
 
             SignalNode::BandInput {
                 band_key,

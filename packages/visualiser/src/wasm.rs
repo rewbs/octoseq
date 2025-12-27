@@ -422,6 +422,44 @@ impl WasmVisualiser {
         inner.state.clear_isolation();
     }
 
+    // === Mesh Asset Methods ===
+
+    /// Register a mesh asset from OBJ content.
+    /// The asset will be available as `mesh.load(asset_id)` in scripts.
+    /// Returns true if successful, false if parsing failed.
+    pub fn register_mesh_asset(&self, asset_id: &str, obj_content: &str) -> bool {
+        let mut inner = self.inner.borrow_mut();
+        match inner.state.register_mesh_asset(asset_id, obj_content) {
+            Ok(()) => {
+                log::info!("Registered mesh asset '{}'", asset_id);
+                true
+            }
+            Err(e) => {
+                log::error!("Failed to register mesh asset '{}': {}", asset_id, e);
+                false
+            }
+        }
+    }
+
+    /// Unregister a mesh asset.
+    /// Returns true if the asset was unregistered, false if it didn't exist.
+    pub fn unregister_mesh_asset(&self, asset_id: &str) -> bool {
+        let mut inner = self.inner.borrow_mut();
+        let result = inner.state.unregister_mesh_asset(asset_id);
+        if result {
+            log::info!("Unregistered mesh asset '{}'", asset_id);
+        }
+        result
+    }
+
+    /// Get a list of all registered mesh asset IDs.
+    /// Returns a JSON array of asset IDs.
+    pub fn list_mesh_assets(&self) -> String {
+        let inner = self.inner.borrow();
+        let ids: Vec<&str> = inner.state.mesh_asset_ids();
+        serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string())
+    }
+
     /// Get current state values for debugging.
     /// Returns [time, scene_entity_count, mesh_count, line_count]
     pub fn get_current_vals(&self) -> Vec<f32> {
@@ -444,7 +482,9 @@ impl WasmVisualiser {
             dt,
             ctx.rotation_signal.as_ref(),
             ctx.zoom_signal.as_ref(),
-            &ctx.named_signals
+            &ctx.named_signals,
+            &ctx.band_signals,
+            ctx.musical_time.as_ref(),
         );
 
         // Render

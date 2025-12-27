@@ -3,12 +3,24 @@
 //! Renders meshes and line strips from the script-driven scene graph.
 
 use wgpu::util::DeviceExt;
-use crate::gpu::mesh;
+use crate::gpu::mesh::{self, Vertex};
 use crate::gpu::pipeline;
+use crate::gpu::material_pipeline::{MaterialPipelineManager, GlobalUniforms};
+use crate::gpu::post_processor::PostProcessor;
 use crate::visualiser::VisualiserState;
-use crate::scene_graph::{MeshType, Transform};
+use crate::scene_graph::{MeshType, RenderMode, Transform};
+use crate::deformation::apply_deformations;
+use crate::mesh_asset::{MeshAsset, BoundingBox, CUBE_BOUNDS, PLANE_BOUNDS, SPHERE_BOUNDS};
+use crate::material::{MaterialRegistry, ParamValue};
+use crate::particle_eval::GpuMeshParticleInstance;
+use crate::post_processing::PostEffectRegistry;
 use bytemuck::{Pod, Zeroable};
+use std::collections::HashMap;
 use std::iter;
+use std::sync::Arc;
+
+/// Maximum number of mesh particle instances per draw call.
+const MAX_MESH_PARTICLE_INSTANCES: usize = 500;
 
 /// Maximum points per line strip.
 const MAX_POINTS_PER_LINE: usize = 1024;
@@ -136,6 +148,37 @@ fn compute_world_matrix(entity_id: crate::scene_graph::EntityId, scene_graph: &c
     }
 }
 
+/// Compute world-space bounding box vertices from local bounds and world transform.
+/// Returns 8 vertices with the given color.
+fn compute_world_bounds_vertices(
+    local_bounds: &BoundingBox,
+    world_matrix: glam::Mat4,
+    color: [f32; 3],
+) -> [Vertex; 8] {
+    let min = local_bounds.min;
+    let max = local_bounds.max;
+
+    // 8 corners of the local AABB (same order as DEBUG_CUBE_VERTICES)
+    let local_corners = [
+        glam::Vec3::new(min[0], min[1], min[2]),
+        glam::Vec3::new(max[0], min[1], min[2]),
+        glam::Vec3::new(max[0], max[1], min[2]),
+        glam::Vec3::new(min[0], max[1], min[2]),
+        glam::Vec3::new(min[0], min[1], max[2]),
+        glam::Vec3::new(max[0], min[1], max[2]),
+        glam::Vec3::new(max[0], max[1], max[2]),
+        glam::Vec3::new(min[0], max[1], max[2]),
+    ];
+
+    // Transform each corner to world space
+    let mut vertices = [Vertex { position: [0.0; 3], color }; 8];
+    for (i, corner) in local_corners.iter().enumerate() {
+        let world_pos = world_matrix.transform_point3(*corner);
+        vertices[i].position = [world_pos.x, world_pos.y, world_pos.z];
+    }
+    vertices
+}
+
 /// Check if an entity or any of its ancestors is invisible.
 fn is_entity_visible(entity_id: crate::scene_graph::EntityId, scene_graph: &crate::scene_graph::SceneGraph) -> bool {
     let entity = match scene_graph.get(entity_id) {
@@ -171,6 +214,18 @@ struct MeshGeometry {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    /// Edge indices for wireframe rendering.
+    wireframe_index_buffer: Option<wgpu::Buffer>,
+    num_edges: u32,
+}
+
+/// Buffers for a loaded mesh asset.
+struct LoadedMeshBuffers {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    wireframe_index_buffer: wgpu::Buffer,
+    num_indices: u32,
+    num_edges: u32,
 }
 
 pub struct Renderer {
@@ -180,6 +235,7 @@ pub struct Renderer {
 
     // Mesh rendering
     mesh_pipeline: wgpu::RenderPipeline,
+    wireframe_pipeline: wgpu::RenderPipeline,
     #[allow(dead_code)]
     mesh_bind_group_layout: wgpu::BindGroupLayout,
     uniform_buffer: wgpu::Buffer,
@@ -191,6 +247,16 @@ pub struct Renderer {
     plane_geometry: MeshGeometry,
     sphere_geometry: MeshGeometry,
 
+    // Debug bounding box geometry (8-vertex cube with 12 edges)
+    debug_cube_geometry: MeshGeometry,
+    debug_bounds_vertex_buffer: wgpu::Buffer,
+
+    // Loaded mesh assets (created on demand)
+    loaded_mesh_buffers: HashMap<String, LoadedMeshBuffers>,
+
+    // Staging buffer for deformed vertices (reused each frame)
+    deformed_vertex_staging: wgpu::Buffer,
+
     // Line rendering
     line_pipeline: wgpu::RenderPipeline,
     #[allow(dead_code)]
@@ -200,6 +266,24 @@ pub struct Renderer {
     line_vertex_buffer: wgpu::Buffer,
     line_uniform_buffer: wgpu::Buffer,
     line_bind_group: wgpu::BindGroup,
+
+    // Mesh particle rendering
+    mesh_particle_pipeline: wgpu::RenderPipeline,
+    mesh_particle_instance_buffer: wgpu::Buffer,
+    mesh_particle_view_buffer: wgpu::Buffer,
+    /// Bind group for mesh particles (uses view_proj only)
+    mesh_particle_bind_group: wgpu::BindGroup,
+
+    // Material system
+    material_registry: MaterialRegistry,
+    material_pipeline_manager: MaterialPipelineManager,
+    /// Global uniforms for material pipelines (time, dt, etc.)
+    material_global_uniforms: GlobalUniforms,
+
+    // Post-processing and feedback
+    post_processor: PostProcessor,
+    post_effect_registry: PostEffectRegistry,
+    format: wgpu::TextureFormat,
 }
 
 impl Renderer {
@@ -252,11 +336,13 @@ impl Renderer {
         });
 
         let mesh_pipeline = pipeline::create_render_pipeline(&device, &mesh_pipeline_layout, format);
+        let wireframe_pipeline = pipeline::create_wireframe_pipeline(&device, &mesh_pipeline_layout, format);
 
         // === Geometry Setup ===
 
         // Cube geometry
         let (cube_vertices, cube_indices) = mesh::create_cube_geometry();
+        let cube_edge_indices = mesh::extract_edges(&cube_indices);
         let cube_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Cube Vertex Buffer"),
             contents: bytemuck::cast_slice(&cube_vertices),
@@ -267,14 +353,22 @@ impl Renderer {
             contents: bytemuck::cast_slice(&cube_indices),
             usage: wgpu::BufferUsages::INDEX,
         });
+        let cube_wireframe_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cube Wireframe Index Buffer"),
+            contents: bytemuck::cast_slice(&cube_edge_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
         let cube_geometry = MeshGeometry {
             vertex_buffer: cube_vertex_buffer,
             index_buffer: cube_index_buffer,
             num_indices: cube_indices.len() as u32,
+            wireframe_index_buffer: Some(cube_wireframe_index_buffer),
+            num_edges: cube_edge_indices.len() as u32,
         };
 
         // Plane geometry
         let (plane_vertices, plane_indices) = mesh::create_plane_geometry();
+        let plane_edge_indices = mesh::extract_edges(&plane_indices);
         let plane_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Plane Vertex Buffer"),
             contents: bytemuck::cast_slice(&plane_vertices),
@@ -285,14 +379,22 @@ impl Renderer {
             contents: bytemuck::cast_slice(&plane_indices),
             usage: wgpu::BufferUsages::INDEX,
         });
+        let plane_wireframe_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Plane Wireframe Index Buffer"),
+            contents: bytemuck::cast_slice(&plane_edge_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
         let plane_geometry = MeshGeometry {
             vertex_buffer: plane_vertex_buffer,
             index_buffer: plane_index_buffer,
             num_indices: plane_indices.len() as u32,
+            wireframe_index_buffer: Some(plane_wireframe_index_buffer),
+            num_edges: plane_edge_indices.len() as u32,
         };
 
         // Sphere geometry
         let (sphere_vertices, sphere_indices) = mesh::create_sphere_geometry();
+        let sphere_edge_indices = mesh::extract_edges(&sphere_indices);
         let sphere_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Sphere Vertex Buffer"),
             contents: bytemuck::cast_slice(&sphere_vertices),
@@ -303,11 +405,57 @@ impl Renderer {
             contents: bytemuck::cast_slice(&sphere_indices),
             usage: wgpu::BufferUsages::INDEX,
         });
+        let sphere_wireframe_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Sphere Wireframe Index Buffer"),
+            contents: bytemuck::cast_slice(&sphere_edge_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
         let sphere_geometry = MeshGeometry {
             vertex_buffer: sphere_vertex_buffer,
             index_buffer: sphere_index_buffer,
             num_indices: sphere_indices.len() as u32,
+            wireframe_index_buffer: Some(sphere_wireframe_index_buffer),
+            num_edges: sphere_edge_indices.len() as u32,
         };
+
+        // Debug cube geometry (8 vertices, 12 edges for wireframe bounding box)
+        let (debug_cube_vertices, debug_cube_edges) = mesh::create_debug_cube_geometry();
+        let debug_cube_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Debug Cube Vertex Buffer"),
+            contents: bytemuck::cast_slice(&debug_cube_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let debug_cube_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Debug Cube Index Buffer"),
+            contents: bytemuck::cast_slice(&debug_cube_edges),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let debug_cube_geometry = MeshGeometry {
+            vertex_buffer: debug_cube_vertex_buffer,
+            index_buffer: debug_cube_index_buffer,
+            num_indices: 0, // Not used for debug cube (we only draw wireframe)
+            wireframe_index_buffer: None, // We use index_buffer directly for edges
+            num_edges: debug_cube_edges.len() as u32,
+        };
+
+        // Staging buffer for transformed debug bounding box vertices
+        // 8 vertices per bounding box
+        let debug_bounds_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Debug Bounds Vertex Buffer"),
+            size: (8 * std::mem::size_of::<Vertex>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Deformed vertex staging buffer (for CPU-side deformations)
+        // Size to hold up to 65536 vertices (maximum for u16 indices)
+        let max_deformed_vertices = 65536;
+        let deformed_vertex_staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Deformed Vertex Staging Buffer"),
+            size: (max_deformed_vertices * std::mem::size_of::<Vertex>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         // === Line Pipeline Setup ===
 
@@ -366,11 +514,70 @@ impl Renderer {
             label: Some("line_bind_group"),
         });
 
+        // === Mesh Particle Pipeline Setup ===
+
+        // Create a view-only uniform buffer for mesh particles (just view_proj matrix)
+        let mesh_particle_view_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Mesh Particle View Buffer"),
+            contents: bytemuck::cast_slice(&uniforms.view_proj),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // Create bind group layout for mesh particles (view_proj only)
+        let mesh_particle_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("mesh_particle_bind_group_layout"),
+        });
+
+        let mesh_particle_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &mesh_particle_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: mesh_particle_view_buffer.as_entire_binding(),
+            }],
+            label: Some("mesh_particle_bind_group"),
+        });
+
+        let mesh_particle_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Mesh Particle Pipeline Layout"),
+            bind_group_layouts: &[&mesh_particle_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let mesh_particle_pipeline = pipeline::create_mesh_particle_pipeline(&device, &mesh_particle_pipeline_layout, format);
+
+        // Instance buffer for mesh particles
+        let mesh_particle_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Mesh Particle Instance Buffer"),
+            size: (MAX_MESH_PARTICLE_INSTANCES * std::mem::size_of::<GpuMeshParticleInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // === Material System Setup ===
+        let material_registry = MaterialRegistry::new();
+        let material_pipeline_manager = MaterialPipelineManager::new(&device, format, &material_registry);
+        let material_global_uniforms = GlobalUniforms::default();
+
+        // === Post-processing and Feedback ===
+        let post_effect_registry = PostEffectRegistry::new();
+        let post_processor = PostProcessor::new(&device, format, width, height, &post_effect_registry);
+
         Self {
             device,
             queue,
             size,
             mesh_pipeline,
+            wireframe_pipeline,
             mesh_bind_group_layout,
             uniform_buffer,
             mesh_bind_group,
@@ -378,11 +585,25 @@ impl Renderer {
             cube_geometry,
             plane_geometry,
             sphere_geometry,
+            debug_cube_geometry,
+            debug_bounds_vertex_buffer,
+            loaded_mesh_buffers: HashMap::new(),
+            deformed_vertex_staging,
             line_pipeline,
             line_bind_group_layout,
             line_vertex_buffer,
             line_uniform_buffer,
             line_bind_group,
+            mesh_particle_pipeline,
+            mesh_particle_instance_buffer,
+            mesh_particle_view_buffer,
+            mesh_particle_bind_group,
+            material_registry,
+            material_pipeline_manager,
+            material_global_uniforms,
+            post_processor,
+            post_effect_registry,
+            format,
         }
     }
 
@@ -394,19 +615,85 @@ impl Renderer {
         &self.queue
     }
 
+    /// Get the material registry.
+    pub fn material_registry(&self) -> &MaterialRegistry {
+        &self.material_registry
+    }
+
+    /// Get the material pipeline manager.
+    pub fn material_pipeline_manager(&self) -> &MaterialPipelineManager {
+        &self.material_pipeline_manager
+    }
+
+    /// Evaluate material parameters from a mesh instance.
+    /// Resolves parameters in the order defined by the material schema,
+    /// using mesh overrides where provided, falling back to defaults.
+    fn evaluate_material_params(
+        &self,
+        material_id: &str,
+        mesh_params: &crate::scene_graph::MaterialParams,
+    ) -> Vec<ParamValue> {
+        let material = match self.material_registry.get(material_id) {
+            Some(m) => m,
+            None => return vec![],
+        };
+
+        let mut values = Vec::new();
+        for param_def in &material.params {
+            // Check if mesh provides an override
+            let value = mesh_params.values.get(&param_def.name)
+                .cloned()
+                .unwrap_or_else(|| param_def.default_value.clone());
+            values.push(value);
+        }
+        values
+    }
+
     pub fn resize(&mut self, width: u32, height: u32, state: &VisualiserState) {
         if width > 0 && height > 0 {
             self.size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
             self.uniforms.update_view_proj(self.size, state);
+            self.post_processor.resize(&self.device, width, height);
         }
     }
 
-    fn get_geometry(&self, mesh_type: MeshType) -> &MeshGeometry {
+    fn get_geometry(&self, mesh_type: &MeshType) -> Option<&MeshGeometry> {
         match mesh_type {
-            MeshType::Cube => &self.cube_geometry,
-            MeshType::Plane => &self.plane_geometry,
-            MeshType::Sphere => &self.sphere_geometry,
+            MeshType::Cube => Some(&self.cube_geometry),
+            MeshType::Plane => Some(&self.plane_geometry),
+            MeshType::Sphere => Some(&self.sphere_geometry),
+            MeshType::Asset(_) => None, // Loaded mesh assets handled separately
         }
+    }
+
+    /// Get or create GPU buffers for a loaded mesh asset.
+    fn get_or_create_loaded_mesh_buffers(&mut self, asset: &Arc<MeshAsset>) -> &LoadedMeshBuffers {
+        if !self.loaded_mesh_buffers.contains_key(&asset.id) {
+            let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("Loaded Mesh Vertex Buffer: {}", asset.id)),
+                contents: bytemuck::cast_slice(&asset.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("Loaded Mesh Index Buffer: {}", asset.id)),
+                contents: bytemuck::cast_slice(&asset.indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+            let wireframe_index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("Loaded Mesh Wireframe Index Buffer: {}", asset.id)),
+                contents: bytemuck::cast_slice(&asset.edge_indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+
+            self.loaded_mesh_buffers.insert(asset.id.clone(), LoadedMeshBuffers {
+                vertex_buffer,
+                index_buffer,
+                wireframe_index_buffer,
+                num_indices: asset.indices.len() as u32,
+                num_edges: asset.edge_indices.len() as u32,
+            });
+        }
+        self.loaded_mesh_buffers.get(&asset.id).unwrap()
     }
 
     pub fn render(&mut self, view: &wgpu::TextureView, state: &VisualiserState) {
@@ -415,15 +702,49 @@ impl Renderer {
         // Update view projection
         self.uniforms.update_view_proj(self.size, state);
 
+        // Collect meshes to render (we need to clone data to avoid borrow conflicts)
+        // Include entity_id for debug bounds checking
+        let meshes_to_render: Vec<_> = scene_graph.meshes()
+            .filter(|(entity_id, _mesh)| {
+                // Check isolation mode
+                if let Some(isolated_id) = state.debug_options.isolated_entity {
+                    if *entity_id != isolated_id {
+                        return false;
+                    }
+                }
+                // Check visibility
+                is_entity_visible(*entity_id, scene_graph)
+            })
+            .map(|(entity_id, mesh)| {
+                let world_matrix = compute_world_matrix(entity_id, scene_graph);
+                (entity_id, mesh.clone(), world_matrix)
+            })
+            .collect();
+
+        // Collect lines to render
+        let lines_to_render: Vec<_> = scene_graph.lines()
+            .enumerate()
+            .filter(|(_, (entity_id, line))| {
+                if let Some(isolated_id) = state.debug_options.isolated_entity {
+                    if *entity_id != isolated_id {
+                        return false;
+                    }
+                }
+                is_entity_visible(*entity_id, scene_graph) && line.count > 0
+            })
+            .map(|(idx, (_entity_id, line))| (idx, line.clone()))
+            .collect();
+
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
         });
 
+        // Render scene to post-processor's scene texture
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
+                label: Some("Scene Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view,
+                    view: self.post_processor.scene_view(),
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
@@ -441,55 +762,344 @@ impl Renderer {
             });
 
             // Render meshes
-            render_pass.set_pipeline(&self.mesh_pipeline);
+            for (_entity_id, mesh, world_matrix) in &meshes_to_render {
+                self.uniforms.model = world_matrix.to_cols_array_2d();
 
-            for (entity_id, mesh) in scene_graph.meshes() {
-                // Check isolation mode
-                if let Some(isolated_id) = state.debug_options.isolated_entity {
-                    if entity_id != isolated_id {
-                        continue;
+                match &mesh.mesh_type {
+                    MeshType::Asset(asset_id) => {
+                        // Look up the loaded mesh asset
+                        if let Some(asset) = state.asset_registry.get(asset_id) {
+                            // Apply deformations if any
+                            let deformed_vertices = if mesh.deformations.is_empty() {
+                                None
+                            } else {
+                                Some(apply_deformations(&asset.vertices, &mesh.deformations))
+                            };
+
+                            // Ensure buffers exist for this asset
+                            let _buffers = self.get_or_create_loaded_mesh_buffers(&asset);
+                            let buffers = self.loaded_mesh_buffers.get(asset_id).unwrap();
+
+                            // Determine which vertex buffer to use
+                            let use_deformed = deformed_vertices.is_some();
+                            if let Some(ref vertices) = deformed_vertices {
+                                self.queue.write_buffer(
+                                    &self.deformed_vertex_staging,
+                                    0,
+                                    bytemuck::cast_slice(vertices),
+                                );
+                            }
+
+                            // Render based on mode
+                            match mesh.render_mode {
+                                RenderMode::Solid => {
+                                    // Check if mesh has a material
+                                    let material_id = mesh.material_id.as_ref()
+                                        .filter(|id| self.material_registry.exists(id));
+
+                                    if let Some(mat_id) = material_id {
+                                        // Use material pipeline
+                                        if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
+                                            // Update global uniforms
+                                            self.material_global_uniforms.view_proj = self.uniforms.view_proj;
+                                            self.material_global_uniforms.model = world_matrix.to_cols_array_2d();
+                                            self.material_global_uniforms.time = state.time;
+                                            self.material_global_uniforms.dt = 0.016; // ~60fps default
+                                            self.material_pipeline_manager.update_global_uniforms(
+                                                &self.queue,
+                                                &self.material_global_uniforms,
+                                            );
+
+                                            // Evaluate and update material params
+                                            let params = self.evaluate_material_params(mat_id, &mesh.material_params);
+                                            self.material_pipeline_manager.update_material_uniforms(
+                                                &self.queue,
+                                                mat_id,
+                                                &params,
+                                            );
+
+                                            // Draw with material
+                                            render_pass.set_pipeline(&resources.pipeline);
+                                            render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[]);
+                                            render_pass.set_bind_group(1, &resources.bind_group, &[]);
+                                            if use_deformed {
+                                                render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
+                                            } else {
+                                                render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
+                                            }
+                                            render_pass.set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                            render_pass.draw_indexed(0..buffers.num_indices, 0, 0..1);
+                                        }
+                                    } else {
+                                        // Fallback to legacy pipeline
+                                        self.uniforms.instance_color = mesh.color;
+                                        self.queue.write_buffer(
+                                            &self.uniform_buffer,
+                                            0,
+                                            bytemuck::cast_slice(&[self.uniforms]),
+                                        );
+                                        render_pass.set_pipeline(&self.mesh_pipeline);
+                                        render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                                        if use_deformed {
+                                            render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
+                                        } else {
+                                            render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
+                                        }
+                                        render_pass.set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                        render_pass.draw_indexed(0..buffers.num_indices, 0, 0..1);
+                                    }
+                                }
+                                RenderMode::Wireframe => {
+                                    self.uniforms.instance_color = mesh.wireframe_color;
+                                    self.queue.write_buffer(
+                                        &self.uniform_buffer,
+                                        0,
+                                        bytemuck::cast_slice(&[self.uniforms]),
+                                    );
+                                    render_pass.set_pipeline(&self.wireframe_pipeline);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                                    if use_deformed {
+                                        render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
+                                    } else {
+                                        render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
+                                    }
+                                    render_pass.set_index_buffer(buffers.wireframe_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.draw_indexed(0..buffers.num_edges, 0, 0..1);
+                                }
+                                RenderMode::SolidWithWireframe => {
+                                    // First pass: solid
+                                    self.uniforms.instance_color = mesh.color;
+                                    self.queue.write_buffer(
+                                        &self.uniform_buffer,
+                                        0,
+                                        bytemuck::cast_slice(&[self.uniforms]),
+                                    );
+                                    render_pass.set_pipeline(&self.mesh_pipeline);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                                    if use_deformed {
+                                        render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
+                                    } else {
+                                        render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
+                                    }
+                                    render_pass.set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.draw_indexed(0..buffers.num_indices, 0, 0..1);
+
+                                    // Second pass: wireframe overlay
+                                    self.uniforms.instance_color = mesh.wireframe_color;
+                                    self.queue.write_buffer(
+                                        &self.uniform_buffer,
+                                        0,
+                                        bytemuck::cast_slice(&[self.uniforms]),
+                                    );
+                                    render_pass.set_pipeline(&self.wireframe_pipeline);
+                                    if use_deformed {
+                                        render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
+                                    } else {
+                                        render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
+                                    }
+                                    render_pass.set_index_buffer(buffers.wireframe_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.draw_indexed(0..buffers.num_edges, 0, 0..1);
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        // Primitive mesh types (Cube, Plane, Sphere)
+                        // Get geometry reference based on type, avoiding borrow conflicts
+                        let geometry = match &mesh.mesh_type {
+                            MeshType::Cube => &self.cube_geometry,
+                            MeshType::Plane => &self.plane_geometry,
+                            MeshType::Sphere => &self.sphere_geometry,
+                            MeshType::Asset(_) => continue, // Already handled above
+                        };
+
+                        let num_indices = geometry.num_indices;
+                        let num_edges = geometry.num_edges;
+
+                        match mesh.render_mode {
+                            RenderMode::Solid => {
+                                let geometry = match &mesh.mesh_type {
+                                    MeshType::Cube => &self.cube_geometry,
+                                    MeshType::Plane => &self.plane_geometry,
+                                    MeshType::Sphere => &self.sphere_geometry,
+                                    _ => continue,
+                                };
+
+                                // Check if mesh has a material
+                                let material_id = mesh.material_id.as_ref()
+                                    .filter(|id| self.material_registry.exists(id));
+
+                                if let Some(mat_id) = material_id {
+                                    // Use material pipeline
+                                    if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
+                                        // Update global uniforms
+                                        self.material_global_uniforms.view_proj = self.uniforms.view_proj;
+                                        self.material_global_uniforms.model = world_matrix.to_cols_array_2d();
+                                        self.material_global_uniforms.time = state.time;
+                                        self.material_global_uniforms.dt = 0.016; // ~60fps default
+                                        self.material_pipeline_manager.update_global_uniforms(
+                                            &self.queue,
+                                            &self.material_global_uniforms,
+                                        );
+
+                                        // Evaluate and update material params
+                                        let params = self.evaluate_material_params(mat_id, &mesh.material_params);
+                                        self.material_pipeline_manager.update_material_uniforms(
+                                            &self.queue,
+                                            mat_id,
+                                            &params,
+                                        );
+
+                                        // Draw with material
+                                        render_pass.set_pipeline(&resources.pipeline);
+                                        render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[]);
+                                        render_pass.set_bind_group(1, &resources.bind_group, &[]);
+                                        render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                        render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                        render_pass.draw_indexed(0..num_indices, 0, 0..1);
+                                    }
+                                } else {
+                                    // Fallback to legacy pipeline
+                                    self.uniforms.instance_color = mesh.color;
+                                    self.queue.write_buffer(
+                                        &self.uniform_buffer,
+                                        0,
+                                        bytemuck::cast_slice(&[self.uniforms]),
+                                    );
+                                    render_pass.set_pipeline(&self.mesh_pipeline);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                                    render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                    render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.draw_indexed(0..num_indices, 0, 0..1);
+                                }
+                            }
+                            RenderMode::Wireframe => {
+                                self.uniforms.instance_color = mesh.wireframe_color;
+                                self.queue.write_buffer(
+                                    &self.uniform_buffer,
+                                    0,
+                                    bytemuck::cast_slice(&[self.uniforms]),
+                                );
+                                let geometry = match &mesh.mesh_type {
+                                    MeshType::Cube => &self.cube_geometry,
+                                    MeshType::Plane => &self.plane_geometry,
+                                    MeshType::Sphere => &self.sphere_geometry,
+                                    _ => continue,
+                                };
+                                if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
+                                    render_pass.set_pipeline(&self.wireframe_pipeline);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                                    render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                    render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.draw_indexed(0..num_edges, 0, 0..1);
+                                }
+                            }
+                            RenderMode::SolidWithWireframe => {
+                                // First pass: solid
+                                self.uniforms.instance_color = mesh.color;
+                                self.queue.write_buffer(
+                                    &self.uniform_buffer,
+                                    0,
+                                    bytemuck::cast_slice(&[self.uniforms]),
+                                );
+                                let geometry = match &mesh.mesh_type {
+                                    MeshType::Cube => &self.cube_geometry,
+                                    MeshType::Plane => &self.plane_geometry,
+                                    MeshType::Sphere => &self.sphere_geometry,
+                                    _ => continue,
+                                };
+                                render_pass.set_pipeline(&self.mesh_pipeline);
+                                render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                                render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                render_pass.draw_indexed(0..num_indices, 0, 0..1);
+
+                                // Second pass: wireframe overlay
+                                self.uniforms.instance_color = mesh.wireframe_color;
+                                self.queue.write_buffer(
+                                    &self.uniform_buffer,
+                                    0,
+                                    bytemuck::cast_slice(&[self.uniforms]),
+                                );
+                                let geometry = match &mesh.mesh_type {
+                                    MeshType::Cube => &self.cube_geometry,
+                                    MeshType::Plane => &self.plane_geometry,
+                                    MeshType::Sphere => &self.sphere_geometry,
+                                    _ => continue,
+                                };
+                                if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
+                                    render_pass.set_pipeline(&self.wireframe_pipeline);
+                                    render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                    render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.draw_indexed(0..num_edges, 0, 0..1);
+                                }
+                            }
+                        }
                     }
                 }
+            }
 
-                // Check visibility (including parent visibility)
-                if !is_entity_visible(entity_id, scene_graph) {
-                    continue;
-                }
+            // Render debug bounding boxes
+            // Show if: global bounding_boxes enabled OR per-entity debug bounds enabled
+            let show_all_bounds = state.debug_options.bounding_boxes;
+            let per_entity_bounds = &state.debug_options.debug_bounds_entities;
 
-                // Compute world transform (including parent transforms)
-                let world_matrix = compute_world_matrix(entity_id, scene_graph);
-                self.uniforms.model = world_matrix.to_cols_array_2d();
-                self.uniforms.instance_color = mesh.color;
-                self.queue.write_buffer(
-                    &self.uniform_buffer,
-                    0,
-                    bytemuck::cast_slice(&[self.uniforms]),
-                );
-
-                let geometry = self.get_geometry(mesh.mesh_type);
-
+            if show_all_bounds || !per_entity_bounds.is_empty() {
+                render_pass.set_pipeline(&self.wireframe_pipeline);
                 render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
-                render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                render_pass.draw_indexed(0..geometry.num_indices, 0, 0..1);
+
+                // Debug bounds color: yellow
+                let debug_color = [1.0f32, 0.9, 0.0];
+
+                for (entity_id, mesh, world_matrix) in &meshes_to_render {
+                    // Check if we should render bounds for this mesh
+                    let should_show = show_all_bounds || per_entity_bounds.contains(&entity_id.0);
+                    if !should_show {
+                        continue;
+                    }
+
+                    // Get local bounds based on mesh type
+                    let local_bounds = match &mesh.mesh_type {
+                        MeshType::Cube => CUBE_BOUNDS,
+                        MeshType::Plane => PLANE_BOUNDS,
+                        MeshType::Sphere => SPHERE_BOUNDS,
+                        MeshType::Asset(asset_id) => {
+                            state.asset_registry.get(asset_id)
+                                .map(|a| a.bounds)
+                                .unwrap_or_default()
+                        }
+                    };
+
+                    // Compute world-space bounding box vertices
+                    let vertices = compute_world_bounds_vertices(&local_bounds, *world_matrix, debug_color);
+
+                    // Upload vertices to staging buffer
+                    self.queue.write_buffer(
+                        &self.debug_bounds_vertex_buffer,
+                        0,
+                        bytemuck::cast_slice(&vertices),
+                    );
+
+                    // Set identity model matrix (vertices are already in world space)
+                    self.uniforms.model = glam::Mat4::IDENTITY.to_cols_array_2d();
+                    self.uniforms.instance_color = [debug_color[0], debug_color[1], debug_color[2], 1.0];
+                    self.queue.write_buffer(
+                        &self.uniform_buffer,
+                        0,
+                        bytemuck::cast_slice(&[self.uniforms]),
+                    );
+
+                    // Draw wireframe cube
+                    render_pass.set_vertex_buffer(0, self.debug_bounds_vertex_buffer.slice(..));
+                    render_pass.set_index_buffer(self.debug_cube_geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                    render_pass.draw_indexed(0..self.debug_cube_geometry.num_edges, 0, 0..1);
+                }
             }
 
             // Render line strips
             render_pass.set_pipeline(&self.line_pipeline);
 
-            for (idx, (entity_id, line)) in scene_graph.lines().enumerate() {
-                // Check isolation mode
-                if let Some(isolated_id) = state.debug_options.isolated_entity {
-                    if entity_id != isolated_id {
-                        continue;
-                    }
-                }
-
-                // Check visibility (including parent visibility)
-                if !is_entity_visible(entity_id, scene_graph) || line.count == 0 {
-                    continue;
-                }
-
+            for (idx, line) in &lines_to_render {
                 // Upload line points
                 let points_data = line.to_gpu_data();
                 self.queue.write_buffer(
@@ -499,7 +1109,7 @@ impl Renderer {
                 );
 
                 // Calculate vertical offset for multiple lines
-                let base_y = 0.5 - (idx as f32 * 0.3);
+                let base_y = 0.5 - (*idx as f32 * 0.3);
 
                 // Update line uniforms
                 let line_uniforms = LineUniforms {
@@ -520,6 +1130,111 @@ impl Renderer {
                 render_pass.set_vertex_buffer(0, self.line_vertex_buffer.slice(..));
                 render_pass.draw(0..line.count as u32, 0..1);
             }
+        }
+
+        // Apply frame feedback (V7)
+        let feedback_config = state.feedback_config();
+        self.post_processor.process_feedback(
+            &self.device,
+            &mut encoder,
+            &self.queue,
+            feedback_config,
+        );
+
+        // Apply post-processing chain
+        let post_chain = state.post_chain();
+        let evaluated_params = post_chain.build_params_map(&self.post_effect_registry);
+        self.post_processor.process(
+            &self.device,
+            &mut encoder,
+            &self.queue,
+            view,
+            post_chain,
+            &evaluated_params,
+        );
+
+        self.queue.submit(iter::once(encoder.finish()));
+    }
+
+    /// Render mesh particles as instanced geometry.
+    ///
+    /// This method renders a batch of mesh particles using GPU instancing.
+    /// Each particle is rendered as an instance of the specified mesh asset.
+    ///
+    /// # Arguments
+    /// * `view` - The texture view to render to
+    /// * `instances` - GPU-ready particle instance data
+    /// * `asset` - The mesh asset to instance
+    /// * `state` - Visualiser state for view projection
+    pub fn render_mesh_particles(
+        &mut self,
+        view: &wgpu::TextureView,
+        instances: &[GpuMeshParticleInstance],
+        asset: &Arc<MeshAsset>,
+        state: &VisualiserState,
+    ) {
+        if instances.is_empty() {
+            return;
+        }
+
+        // Clamp to max instances
+        let instance_count = instances.len().min(MAX_MESH_PARTICLE_INSTANCES);
+        let instances = &instances[..instance_count];
+
+        // Ensure mesh buffers exist
+        let _ = self.get_or_create_loaded_mesh_buffers(asset);
+        let buffers = match self.loaded_mesh_buffers.get(&asset.id) {
+            Some(b) => b,
+            None => return,
+        };
+
+        // Update view projection matrix
+        self.uniforms.update_view_proj(self.size, state);
+        self.queue.write_buffer(
+            &self.mesh_particle_view_buffer,
+            0,
+            bytemuck::cast_slice(&self.uniforms.view_proj),
+        );
+
+        // Upload instance data
+        self.queue.write_buffer(
+            &self.mesh_particle_instance_buffer,
+            0,
+            bytemuck::cast_slice(instances),
+        );
+
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Mesh Particle Encoder"),
+        });
+
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Mesh Particle Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load, // Don't clear, render on top of existing content
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            render_pass.set_pipeline(&self.mesh_particle_pipeline);
+            render_pass.set_bind_group(0, &self.mesh_particle_bind_group, &[]);
+
+            // Slot 0: Mesh vertices
+            render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
+            // Slot 1: Instance data
+            render_pass.set_vertex_buffer(1, self.mesh_particle_instance_buffer.slice(..));
+
+            render_pass.set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            // Draw instanced
+            render_pass.draw_indexed(0..buffers.num_indices, 0, 0..instance_count as u32);
         }
 
         self.queue.submit(iter::once(encoder.finish()));

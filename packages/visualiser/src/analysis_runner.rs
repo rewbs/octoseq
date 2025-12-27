@@ -127,6 +127,8 @@ pub fn run_analysis_with_bands(
     set_collector_time(0.0);
     engine.call_init();
 
+    let empty_band_signals: HashMap<String, HashMap<String, InputSignal>> = HashMap::new();
+
     // Run update loop
     for step in 0..step_count {
         let time = step as f32 * dt;
@@ -144,7 +146,7 @@ pub fn run_analysis_with_bands(
         }
 
         // Call update (scene graph changes are ignored)
-        engine.update(dt, &sampled);
+        engine.update(time, dt, &sampled, signals, &empty_band_signals, None);
     }
 
     // Collect results
@@ -249,6 +251,8 @@ pub fn run_analysis_with_events_and_bands(
     set_collector_time(0.0);
     engine.call_init();
 
+    let empty_band_signals: HashMap<String, HashMap<String, InputSignal>> = HashMap::new();
+
     // Run update loop
     for step in 0..step_count {
         let time = step as f32 * dt;
@@ -265,7 +269,7 @@ pub fn run_analysis_with_events_and_bands(
         }
 
         // Call update
-        engine.update(dt, &sampled);
+        engine.update(time, dt, &sampled, signals, &empty_band_signals, musical_time);
     }
 
     // Collect debug signals

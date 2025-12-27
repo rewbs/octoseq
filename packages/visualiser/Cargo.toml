@@ -21,6 +21,7 @@ pollster = "0.3"
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+tobj = { version = "4.0", default-features = false }
 
 # Native only (includes scripting engine)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -28,6 +29,8 @@ winit = "0.29"
 clap = { version = "4.5", features = ["derive"] }
 image = "0.25"
 rhai = { version = "1.20", features = ["no_module", "no_custom_syntax", "f32_float"] }
+sha2 = "0.10"
+chrono = { version = "0.4", features = ["serde"] }
 
 # WASM only
 [target.'cfg(target_arch = "wasm32")'.dependencies]

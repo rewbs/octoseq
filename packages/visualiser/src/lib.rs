@@ -25,8 +25,34 @@ pub mod event_stream;
 pub mod event_extractor;
 pub mod event_rhai;
 
+// Mesh asset modules
+pub mod mesh_asset;
+pub mod deformation;
+
+// Material system
+pub mod material;
+
+// Post-processing
+pub mod post_processing;
+
+// Frame feedback (V7)
+pub mod feedback;
+
+// Debug visualization
+pub mod debug_markers;
+
+// Particle system modules
+pub mod particle;
+pub mod particle_eval;
+pub mod particle_rhai;
+
+// Native-only modules (CLI, rendering, video encoding)
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cli;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod render_job;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod video_encode;
 
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;

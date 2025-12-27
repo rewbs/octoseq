@@ -134,6 +134,12 @@ fn test_all_rhai_blocks_parse() {
 
         // Set up common signal names so inputs.xxx works
         engine.set_available_signals(signal_names.clone());
+        // Provide a few dummy bands so docs snippets using `inputs.bands["Bass"]` parse/execute.
+        engine.set_available_bands(vec![
+            ("band-123".to_string(), "Bass".to_string()),
+            ("band-456".to_string(), "Mids".to_string()),
+            ("band-789".to_string(), "Highs".to_string()),
+        ]);
 
         let script = wrap_snippet_for_execution(block);
 

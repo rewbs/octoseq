@@ -282,12 +282,49 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
             // ----------------------------
 
             setAudioIdentity: (identity) => {
-                set({ audioIdentity: identity }, false, "setAudioIdentity");
+                const prev = get().audioIdentity;
+                const invalidationListeners = get().invalidationListeners;
+
+                const isSameAudio =
+                    prev &&
+                    identity &&
+                    prev.filename === identity.filename &&
+                    Math.abs(prev.duration - identity.duration) <= 0.1 &&
+                    prev.sampleRate === identity.sampleRate;
+
+                // On audio change (or clearing), reset authored/UI state but preserve invalidation listeners.
+                // This prevents bands from leaking across tracks while keeping derived-cache wiring intact.
+                if (!identity) {
+                    set(
+                        {
+                            ...initialState,
+                            invalidationListeners,
+                            audioIdentity: null,
+                        },
+                        false,
+                        "setAudioIdentity"
+                    );
+                    get()._emitInvalidation({ kind: "structure_cleared" });
+                    return;
+                }
+
+                if (!isSameAudio) {
+                    set(
+                        {
+                            ...initialState,
+                            invalidationListeners,
+                            audioIdentity: identity,
+                        },
+                        false,
+                        "setAudioIdentity"
+                    );
+                    get()._emitInvalidation({ kind: "structure_cleared" });
+                } else {
+                    set({ audioIdentity: identity }, false, "setAudioIdentity");
+                }
 
                 // Try to load persisted data for this audio
-                if (identity) {
-                    get().loadFromLocalStorage();
-                }
+                get().loadFromLocalStorage();
             },
 
             // ----------------------------
@@ -660,7 +697,9 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
             // ----------------------------
 
             reset: () => {
-                set(initialState, false, "reset");
+                const invalidationListeners = get().invalidationListeners;
+                set({ ...initialState, invalidationListeners }, false, "reset");
+                get()._emitInvalidation({ kind: "structure_cleared" });
             },
 
             // ----------------------------

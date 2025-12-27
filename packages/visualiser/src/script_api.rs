@@ -1657,6 +1657,13 @@ pub fn script_api_metadata() -> ScriptApiMetadata {
                         readonly: true,
                         optional: false,
                     },
+                    ApiProperty {
+                        name: "events".to_string(),
+                        type_name: "EventStream".to_string(),
+                        description: "Band-scoped events (may be empty).".to_string(),
+                        readonly: true,
+                        optional: false,
+                    },
                 ],
                 methods: vec![],
             },

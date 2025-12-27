@@ -3,18 +3,35 @@
 //! This module provides the data structures for a dynamic scene graph where
 //! all entities are created and managed by Rhai scripts.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use crate::deformation::Deformation;
+use crate::material::ParamValue;
 
 /// Unique identifier for scene entities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EntityId(pub u64);
 
 /// Types of meshes available for instantiation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MeshType {
     Cube,
     Plane,
     Sphere,
+    /// Reference to a loaded mesh asset by ID.
+    Asset(String),
+}
+
+/// Rendering mode for meshes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RenderMode {
+    /// Render as solid geometry (default).
+    #[default]
+    Solid,
+    /// Render as wireframe only.
+    Wireframe,
+    /// Render both solid and wireframe overlaid.
+    SolidWithWireframe,
 }
 
 /// 3D position/vector.
@@ -53,6 +70,35 @@ impl Default for Transform {
     }
 }
 
+/// Material parameter bindings for a mesh instance.
+/// Contains the resolved parameter values ready for rendering.
+#[derive(Debug, Clone, Default)]
+pub struct MaterialParams {
+    /// Parameter values keyed by parameter name.
+    pub values: HashMap<String, ParamValue>,
+}
+
+impl MaterialParams {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set a parameter value.
+    pub fn set(&mut self, name: impl Into<String>, value: ParamValue) {
+        self.values.insert(name.into(), value);
+    }
+
+    /// Get a parameter value.
+    pub fn get(&self, name: &str) -> Option<&ParamValue> {
+        self.values.get(name)
+    }
+
+    /// Clear all parameter bindings.
+    pub fn clear(&mut self) {
+        self.values.clear();
+    }
+}
+
 /// A mesh instance - references shared geometry with its own transform.
 #[derive(Debug, Clone)]
 pub struct MeshInstance {
@@ -61,6 +107,16 @@ pub struct MeshInstance {
     pub visible: bool,
     /// RGBA color tint (multiplied with vertex colors). Default is white (no tint).
     pub color: [f32; 4],
+    /// Rendering mode (solid, wireframe, or both).
+    pub render_mode: RenderMode,
+    /// Wireframe color (used when render_mode includes wireframe).
+    pub wireframe_color: [f32; 4],
+    /// Deformations to apply to this mesh instance.
+    pub deformations: Vec<Deformation>,
+    /// Material ID (None = use default material).
+    pub material_id: Option<String>,
+    /// Material parameter bindings (evaluated each frame).
+    pub material_params: MaterialParams,
 }
 
 impl MeshInstance {
@@ -70,6 +126,11 @@ impl MeshInstance {
             transform: Transform::default(),
             visible: true,
             color: [1.0, 1.0, 1.0, 1.0], // Default: no tint (white)
+            render_mode: RenderMode::default(),
+            wireframe_color: [1.0, 1.0, 1.0, 1.0], // Default: white wireframe
+            deformations: Vec::new(),
+            material_id: None, // Use default material
+            material_params: MaterialParams::new(),
         }
     }
 }
@@ -256,6 +317,8 @@ pub struct SceneGraph {
     /// Parent-child relationships for hierarchical transforms.
     /// Maps child ID -> parent ID.
     parent_ids: HashMap<EntityId, EntityId>,
+    /// Entities with debug bounding box visualization enabled.
+    debug_bounds_entities: HashSet<EntityId>,
 }
 
 impl SceneGraph {
@@ -265,6 +328,7 @@ impl SceneGraph {
             scene_entities: Vec::new(),
             next_id: 1,
             parent_ids: HashMap::new(),
+            debug_bounds_entities: HashSet::new(),
         }
     }
 
@@ -405,11 +469,34 @@ impl SceneGraph {
             })
     }
 
+    /// Toggle debug bounding box visualization for an entity.
+    /// Returns the new state (true = showing, false = hidden).
+    pub fn toggle_debug_bounds(&mut self, id: EntityId) -> bool {
+        if self.debug_bounds_entities.contains(&id) {
+            self.debug_bounds_entities.remove(&id);
+            false
+        } else {
+            self.debug_bounds_entities.insert(id);
+            true
+        }
+    }
+
+    /// Check if an entity has debug bounding box visualization enabled.
+    pub fn has_debug_bounds(&self, id: EntityId) -> bool {
+        self.debug_bounds_entities.contains(&id)
+    }
+
+    /// Get all entities with debug bounding boxes enabled.
+    pub fn debug_bounds_entities(&self) -> &HashSet<EntityId> {
+        &self.debug_bounds_entities
+    }
+
     /// Clear all entities and the scene.
     pub fn clear(&mut self) {
         self.entities.clear();
         self.scene_entities.clear();
         self.parent_ids.clear();
+        self.debug_bounds_entities.clear();
     }
 
     /// Check if an entity exists.

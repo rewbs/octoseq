@@ -5,8 +5,12 @@
 //! - Input signal processing
 //! - Frame updates
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use crate::debug_markers::DebugMarkerLayer;
+use crate::feedback::FeedbackConfig;
 use crate::input::InputSignal;
+use crate::mesh_asset::MeshAssetRegistry;
+use crate::musical_time::MusicalTimeStructure;
 use crate::script_diagnostics::ScriptDiagnostic;
 use crate::scripting::{ScriptEngine, get_script_debug_options, reset_script_debug_options};
 use crate::scene_graph::{EntityId, SceneGraph};
@@ -20,6 +24,8 @@ pub struct DebugOptions {
     pub bounding_boxes: bool,
     /// Only render this entity (if Some).
     pub isolated_entity: Option<EntityId>,
+    /// Per-entity debug bounding box toggles (via dbg.showBounds()).
+    pub debug_bounds_entities: HashSet<u64>,
 }
 
 pub struct VisualiserConfig {
@@ -47,6 +53,15 @@ pub struct VisualiserState {
     script_engine: ScriptEngine,
     /// Debug visualization options
     pub debug_options: DebugOptions,
+    /// Mesh asset registry for loaded OBJ meshes
+    pub asset_registry: MeshAssetRegistry,
+    /// Debug marker layer for event visualization
+    debug_marker_layer: DebugMarkerLayer,
+    /// Current BPM for beat-based calculations
+    current_bpm: f32,
+    /// Global seed for deterministic particle systems.
+    /// This is used as a base seed when particle systems don't specify their own seed.
+    global_seed: u64,
 }
 
 impl VisualiserState {
@@ -56,7 +71,40 @@ impl VisualiserState {
             config: VisualiserConfig::default(),
             script_engine: ScriptEngine::new(),
             debug_options: DebugOptions::default(),
+            asset_registry: MeshAssetRegistry::new(),
+            debug_marker_layer: DebugMarkerLayer::new(),
+            current_bpm: 120.0,
+            global_seed: 0,
         }
+    }
+
+    /// Set the global random seed for particle systems.
+    /// This should be called before loading scripts for deterministic rendering.
+    /// The seed is passed to the script engine and used as a base for particle system seeds.
+    pub fn set_global_seed(&mut self, seed: u64) {
+        self.global_seed = seed;
+        self.script_engine.set_global_seed(seed);
+    }
+
+    /// Get the current global seed.
+    pub fn global_seed(&self) -> u64 {
+        self.global_seed
+    }
+
+    /// Register a mesh asset from OBJ content.
+    /// Returns Ok(()) if successful, Err(message) if parsing failed.
+    pub fn register_mesh_asset(&mut self, asset_id: &str, obj_content: &str) -> Result<(), String> {
+        self.asset_registry.register_from_obj(asset_id, obj_content)
+    }
+
+    /// Unregister a mesh asset.
+    pub fn unregister_mesh_asset(&mut self, asset_id: &str) -> bool {
+        self.asset_registry.unregister(asset_id)
+    }
+
+    /// Get all registered mesh asset IDs.
+    pub fn mesh_asset_ids(&self) -> Vec<&str> {
+        self.asset_registry.asset_ids()
     }
 
     /// Load a Rhai script. Returns true if successful.
@@ -98,11 +146,40 @@ impl VisualiserState {
         &self.script_engine.scene_graph
     }
 
+    /// Get a reference to the debug marker layer for rendering.
+    pub fn debug_marker_layer(&self) -> &DebugMarkerLayer {
+        &self.debug_marker_layer
+    }
+
+    /// Get the current frame feedback configuration.
+    pub fn feedback_config(&self) -> &FeedbackConfig {
+        &self.script_engine.feedback_config
+    }
+
+    /// Get the current post-processing chain.
+    pub fn post_chain(&self) -> &crate::post_processing::PostProcessingChain {
+        &self.script_engine.post_chain
+    }
+
+    /// Set the current BPM for beat-based calculations.
+    pub fn set_bpm(&mut self, bpm: f32) {
+        self.current_bpm = bpm;
+    }
+
+    /// Get the current BPM.
+    pub fn bpm(&self) -> f32 {
+        self.current_bpm
+    }
+
     pub fn reset(&mut self) {
         self.time = 0.0;
         self.script_engine = ScriptEngine::new();
         self.debug_options = DebugOptions::default();
+        self.asset_registry.clear();
+        self.debug_marker_layer.clear();
         reset_script_debug_options();
+        // Preserve global_seed across reset - if user set it, they want it to persist
+        self.script_engine.set_global_seed(self.global_seed);
     }
 
     pub fn set_time(&mut self, time: f32) {
@@ -132,6 +209,8 @@ impl VisualiserState {
         rotation_signal: Option<&InputSignal>,
         zoom_signal: Option<&InputSignal>,
         named_signals: &HashMap<String, InputSignal>,
+        band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+        musical_time: Option<&MusicalTimeStructure>,
     ) {
         self.time += dt;
 
@@ -185,13 +264,25 @@ impl VisualiserState {
         }
 
         // Update script engine (this also syncs the scene graph)
-        self.script_engine.update(dt, &sampled_signals);
+        self.script_engine.update(
+            self.time,
+            dt,
+            &sampled_signals,
+            named_signals,
+            band_signals,
+            musical_time,
+        );
 
         // Apply script debug options (these are set via dbg.wireframe(), dbg.isolate(), etc.)
         let script_debug = get_script_debug_options();
         self.debug_options.wireframe = script_debug.wireframe;
         self.debug_options.bounding_boxes = script_debug.bounding_boxes;
         self.debug_options.isolated_entity = script_debug.isolated_entity.map(EntityId);
+        self.debug_options.debug_bounds_entities = script_debug.debug_bounds_entities;
+
+        // Update debug marker layer (processes pending marker requests from scripts)
+        let current_beat = self.time * self.current_bpm / 60.0;
+        self.debug_marker_layer.update(current_beat, self.current_bpm);
     }
 }
 

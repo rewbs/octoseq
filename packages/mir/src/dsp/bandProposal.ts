@@ -33,6 +33,7 @@ const PROPOSAL_DEFAULTS: Required<BandProposalConfig> = {
     maxProposals: 8,
     minSalience: 0.3,
     minSeparationOctaves: 0.5,
+    minBandwidthHz: 20,
     analysisWindow: 0, // 0 = full track
 };
 
@@ -133,7 +134,8 @@ function findLocalMaxima(
 function computeBandwidth(
     values: Float32Array,
     peakBin: number,
-    cqt: CqtSpectrogram
+    cqt: CqtSpectrogram,
+    minBandwidthHz: number
 ): { lowBin: number; highBin: number; lowHz: number; highHz: number; bandwidthOctaves: number } {
     const peakMag = values[peakBin] ?? 0;
     const threshold = peakMag * 0.707; // -3dB
@@ -148,6 +150,31 @@ function computeBandwidth(
     let highBin = peakBin;
     while (highBin < values.length - 1 && (values[highBin + 1] ?? 0) >= threshold) {
         highBin++;
+    }
+
+    // Enforce a minimum bandwidth in Hz to avoid implausibly narrow bands (e.g. ~1 Hz at low freqs).
+    // Expand symmetrically around the peak when possible, otherwise expand toward the available side.
+    if (minBandwidthHz > 0) {
+        // Avoid infinite loops if something goes wrong
+        const maxExpansions = values.length;
+        for (let i = 0; i < maxExpansions; i++) {
+            const lowHzTmp = cqtBinToHz(lowBin, cqt.config);
+            const highHzTmp = cqtBinToHz(highBin, cqt.config);
+            if (highHzTmp - lowHzTmp >= minBandwidthHz) break;
+
+            const canExpandLow = lowBin > 0;
+            const canExpandHigh = highBin < values.length - 1;
+            if (!canExpandLow && !canExpandHigh) break;
+
+            if (canExpandLow && canExpandHigh) {
+                lowBin--;
+                highBin++;
+            } else if (canExpandLow) {
+                lowBin--;
+            } else {
+                highBin++;
+            }
+        }
     }
 
     const lowHz = cqtBinToHz(lowBin, cqt.config);
@@ -221,7 +248,7 @@ function detectSpectralPeaks(
     const peaks: SpectralPeak[] = [];
 
     for (const binIndex of peakIndices) {
-        const bw = computeBandwidth(avgSpectrum, binIndex, cqt);
+        const bw = computeBandwidth(avgSpectrum, binIndex, cqt, config.minBandwidthHz);
 
         peaks.push({
             binIndex,

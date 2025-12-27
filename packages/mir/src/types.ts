@@ -691,6 +691,8 @@ export type BandProposalConfig = {
     minSalience?: number;
     /** Minimum separation in octaves between proposals. Default: 0.5. */
     minSeparationOctaves?: number;
+    /** Minimum band width (Hz). Prevents implausibly narrow proposals. Default: 20. */
+    minBandwidthHz?: number;
     /** Time window for analysis in seconds (0 = full track). Default: 0. */
     analysisWindow?: number;
 };
