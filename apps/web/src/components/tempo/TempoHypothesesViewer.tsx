@@ -419,11 +419,10 @@ export function TempoHypothesesViewer({
               type="button"
               onClick={onStartBeatMarking}
               disabled={beatMarkingActive}
-              className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-                beatMarkingActive
+              className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${beatMarkingActive
                   ? "bg-blue-600 text-white"
                   : "bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300"
-              }`}
+                }`}
               title="Click two beats on the waveform to set tempo"
             >
               <MousePointerClick className="w-3 h-3" />
@@ -465,7 +464,7 @@ export function TempoHypothesesViewer({
                   onClick={() => toggleFamily(familyId)}
                 >
                   <div
-                    className="w-3 h-3 rounded-full flex-shrink-0"
+                    className="w-3 h-3 rounded-full shrink-0"
                     style={{ backgroundColor: familyColor }}
                   />
                   <span className="font-medium text-sm">
@@ -495,7 +494,7 @@ export function TempoHypothesesViewer({
                             className={`px-3 py-2 transition-colors ${isSelected
                               ? "bg-blue-50 dark:bg-blue-900/30"
                               : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                            }`}
+                              }`}
                           >
                             <button
                               type="button"
@@ -642,7 +641,7 @@ export function TempoHypothesesViewer({
                 className={`px-2 py-1 text-xs rounded transition-colors ${beatGrid.isVisible
                   ? "bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300"
                   : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-500"
-                }`}
+                  }`}
               >
                 {beatGrid.isVisible ? "Visible" : "Hidden"}
               </button>
@@ -652,7 +651,7 @@ export function TempoHypothesesViewer({
                 className={`px-2 py-1 text-xs rounded transition-colors ${beatGrid.isLocked
                   ? "bg-green-200 dark:bg-green-800/50 text-green-800 dark:text-green-200"
                   : "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300"
-                }`}
+                  }`}
               >
                 {beatGrid.isLocked ? "Locked" : "Provisional"}
               </button>
@@ -723,11 +722,10 @@ export function TempoHypothesesViewer({
                 <button
                   type="button"
                   onClick={handleTap}
-                  className={`ml-2 px-3 py-1 text-xs rounded transition-all flex items-center gap-1 ${
-                    isTapping
+                  className={`ml-2 px-3 py-1 text-xs rounded transition-all flex items-center gap-1 ${isTapping
                       ? "bg-orange-500 text-white scale-95"
                       : "bg-orange-100 dark:bg-orange-900/30 hover:bg-orange-200 dark:hover:bg-orange-900/50 text-orange-700 dark:text-orange-300"
-                  }`}
+                    }`}
                   title="Tap in time with the music to nudge the BPM"
                 >
                   <Hand className="w-3 h-3" />
@@ -827,11 +825,10 @@ export function TempoHypothesesViewer({
                     onPromote(0, audioDuration);
                   }
                 }}
-                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
-                  canPromote
+                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${canPromote
                     ? "bg-blue-600 hover:bg-blue-700 text-white"
                     : "bg-zinc-200 dark:bg-zinc-700 text-zinc-400 dark:text-zinc-500 cursor-not-allowed"
-                }`}
+                  }`}
                 title={
                   canPromote
                     ? "Promote this locked grid to authoritative musical time"

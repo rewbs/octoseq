@@ -227,7 +227,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
         endColumn: d.location!.column + 1,
       }));
 
-    monaco.editor.setModelMarkers(model as unknown as monaco.editor.ITextModel, "octoseq-rhai", markers);
+    monaco.editor.setModelMarkers(model as Parameters<typeof monaco.editor.setModelMarkers>[0], "octoseq-rhai", markers);
   }, []);
 
   // Cleanup Monaco disposables on unmount
@@ -679,7 +679,7 @@ fn update(dt, inputs) {
         setScriptError(err);
       }
     }
-  }, [script, isReady]);
+  }, [script, isReady, applyDiagnosticsToEditor]);
 
   // Render Loop
   useEffect(() => {
@@ -731,7 +731,7 @@ fn update(dt, inputs) {
     return () => {
       cancelAnimationFrame(rafRef.current);
     };
-  }, [isReady]);
+  }, [applyDiagnosticsToEditor, isReady]);
 
   // Resize observer
   useEffect(() => {
@@ -772,7 +772,8 @@ fn update(dt, inputs) {
     setLastStepCount,
   } = useDebugSignalStore();
 
-  const handleRunAnalysis = useCallback(() => {
+  const handleRunAnalysis = useCallback(async () => {
+    if (isAnalysisRunning) return;
     const vis = visRef.current;
     if (!vis || !script.trim()) {
       setAnalysisError("No visualizer or script available");
@@ -787,6 +788,12 @@ fn update(dt, inputs) {
 
     setAnalysisRunning(true);
     setAnalysisError(null);
+
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => {
+        setTimeout(resolve, 0);
+      });
+    });
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -818,7 +825,7 @@ fn update(dt, inputs) {
     } finally {
       setAnalysisRunning(false);
     }
-  }, [script, audioDuration, setDebugSignals, setAnalysisRunning, setAnalysisError, setLastRunDuration, setLastStepCount]);
+  }, [isAnalysisRunning, script, audioDuration, setDebugSignals, setAnalysisRunning, setAnalysisError, setLastRunDuration, setLastStepCount]);
 
   // const availableSources = useMemo(() => {
   //   const keys = mirResults ? Object.keys(mirResults) : [];
@@ -860,6 +867,19 @@ fn update(dt, inputs) {
             <FlaskConical className="w-4 h-4" />
           )}
         </button>
+        {isAnalysisRunning && (
+          <div
+            className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-300"
+            role="status"
+            aria-live="polite"
+          >
+            <Loader2 className="h-3 w-3 animate-spin" />
+            <span>Analyzing bands</span>
+            <span className="h-1 w-14 overflow-hidden rounded-full bg-emerald-500/20">
+              <span className="block h-full w-full animate-pulse bg-linear-to-r from-transparent via-emerald-400/80 to-transparent" />
+            </span>
+          </div>
+        )}
         {analysisError && (
           <span className="text-red-500 text-xs" title={analysisError}>Analysis error</span>
         )}

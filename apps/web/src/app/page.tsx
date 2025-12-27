@@ -42,7 +42,6 @@ import {
   useMusicalTimeStore,
   useManualTempoStore,
   useFrequencyBandStore,
-  useBandMirStore,
   setupBandMirInvalidation,
   useMirActions,
   useSearchActions,

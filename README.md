@@ -386,42 +386,232 @@ audio → MIR analysis → inspected data → scripted visual → deterministic 
 
 ### Next steps
 
-Near-term development is focused on validating the **core hypothesis** of the project:  
-that perceptually meaningful structure can be extracted from music and used to drive compelling visuals.
+This list captures planned and exploratory work. It is intended as a high-level
+roadmap and reminder of what’s coming next, not a strict execution order.
 
-Planned next steps include:
+#### S — Stems & Source-Level Meaning
 
-**1. Visual scripting maturity**
+Focus: “who is making sound?” alongside “where in frequency?”
 
-- Expand the Rhai scene API incrementally:
-  - materials
-  - camera control
-  - additional procedural primitives
-- Improve scripting ergonomics and debugging affordances
-- Build a small library of reference visuals to serve as a testbed
+- **S1** — Multi-Audio Input Model (No UI)  
+  Mixdown + optional stems as flat, first-class audio inputs.
 
-**2. Perceptual trait extraction (proof of concept)**
+- **S2** — Script Namespace for Stems  
+  Clean separation: `inputs.mix` vs `inputs.stems.*`.
 
-- Define a provisional ontology of perceptual traits (e.g. energy, density, tension, anticipation, release)
-- Implement 2–3 traits end-to-end using whole-track context and lookahead/lookbehind
-- Validate traits visually by mapping them to simple but expressive visuals
-- Refine MIR or search techniques only insofar as they support trait extraction
+- **S3** — Stem Management UI  
+  Import, name, reorder, enable/disable, remove stems (lossy warning).
 
-**3. Strengthen the interpretation–execution contract**
+- **S4** — Per-Stem MIR  
+  Same baseline MIR analyses as mixdown, scoped per stem.
 
-- Formalise the “audio interpretation package” format
-- Ensure it can be:
-  - generated automatically
-  - enriched manually in the Lab
-  - consumed headlessly by the rendering engine
-- Keep the boundary stable so alternative MIR backends can be explored later
+- **S5** — Per-Stem Frequency Bands  
+  Frequency band authoring within stems (reusing F milestones).
 
-**4. Offline rendering workflows**
+- **S6** — Per-Stem Event Streams  
+  Cleaner, role-specific events (kick vs vocal vs bass).
 
-- Improve CLI tooling for batch rendering
-- Support parameter sweeps and preset iteration
-- Focus on repeatability and determinism rather than realtime interactivity
+- **SS** — Optional Stem Separation Integration  
+  External APIs (Demucs, Spleeter, etc.), explicit action, non-hierarchical results.
 
-Search, automatic classification, and robustness across genres are considered **supporting tools**, not headline goals, and will only be pursued insofar as they help extract or validate perceptual structure.
+---
 
-At this stage, the primary goal is not polish or completeness, but to determine whether the underlying idea is musically and visually meaningful at all.
+#### U — UX, Navigation & Interpretation Workflows
+
+Focus: making musical meaning navigable, authorable, and trustworthy.
+
+- **U1** — Interpretation Tree & Navigation Grammar  
+  Tree-based UI with top-level domains: Audio, Event Streams, Scripts, Text.
+
+- **U2** — MIR Display Templates  
+  Curated viewport layouts to avoid combinatorial display chaos.
+
+- **U3** — Candidate Event Layer  
+  Ephemeral, clearly-labelled suggestions from onset detection, peak picking,
+  similarity search, etc.
+
+- **U4** — Authored Event Streams  
+  Top-level, authoritative event streams with clear provenance and editability.
+
+- **U5** — 2D → 1D Reduction Authoring  
+  Explicit, inspectable projection from 2D MIR (spectrogram/CQT/etc.) to
+  user-authored 1D signals.
+
+- **U6** — Event Editing & Payload Enrichment  
+  Duration, weight/salience, tags, labels, text payloads, batch edits.
+
+- **U7** — Script ↔ Interpretation Alignment  
+  Visibility into which signals/events drive which scripts; debug alignment.
+
+- **U8** — Display Presets & Templates  
+  Named, reusable display layouts for common inspection and curation tasks.
+
+- **U9** — Text Structure Integration (No Rendering Yet)  
+  Timestamped text as authored event streams.
+
+---
+
+#### P — Persistence, Projects & Backend Execution
+
+Focus: long-running work, reproducibility, and headless operation.
+
+- **P1** — Interpretation Package v1  
+  Formal schema for authored intent, with soft references to derived artefacts.
+
+- **P2** — MIR as Backend Service  
+  Deterministic recompute-on-miss MIR via CLI/service; cacheable but disposable.
+
+- **P3** — Project Save / Load  
+  Durable project state: audio inputs, bands, timings, events, scripts.
+
+- **P4** — Backend-Only Rendering Flow  
+  Interpretation package → render jobs without UI involvement.
+
+- **P5** — Multi-Preset Batch Rendering  
+  One interpretation package rendered through many scripts/presets.
+
+---
+
+## PT — Perceptual Traits (Second-Level Meaning)
+
+Focus: semantic concepts like tension, release, stability.
+
+- **PT1** — Trait Model & Schema  
+  Define perceptual traits as authored, subjective 1D signals.
+
+- **PT2** — Trait Authoring UI  
+  Combine multiple signals/events into a named trait with live preview.
+
+- **PT3** — Suggested Trait Library  
+  Example recipes (tension, release, density), fully editable.
+
+- **PT4** — Trait → Event Extraction  
+  Optional derived events (e.g. tension peaks), user-curated.
+
+- **PT5** — Script Integration  
+  Traits exposed as `inputs.traits.*`.
+
+---
+
+#### T — Text & Narrative Meaning
+
+Focus: lyrics, captions, narrative cues as first-class structure.
+
+- **T1** — Text Event Model & Persistence  
+  Timestamped text as authoritative, authored events.
+
+- **T2** — Script Access to Text Events  
+  Text streams exposed alongside other event streams.
+
+- **T3** — Text Visual Primitive (Minimal)  
+  Text as 3D scene objects with engine-managed layout.
+
+- **T4** — Kinetic Typography Helpers  
+  Word/letter-level effects, still script-driven and bounded.
+
+---
+
+#### C — Community & Sharing
+
+Focus: sharing interpretation and intent, not social features.
+
+- **C0** — Community-Aware Design Guardrails  
+  Ensure portability and inspectability from day one.
+
+- **C1** — Script Snippets & Templates (Local First)  
+  Save/load reusable script fragments locally.
+
+- **C2** — Public Script Library (Read-Only)  
+  Curated, inspectable visual scripts.
+
+- **C3** — Importable Interpretation Fragments  
+  Share bands, events, traits, text timing.
+
+- **C4** — Whole Project Sharing (Offline First)  
+  Export/import complete interpretation packages.
+
+- **C5** — Public Project Gallery (Optional)  
+  Explore how others extracted meaning.
+
+- **C6** — Versioning & Forking (Long-Term)  
+  Fork scripts and interpretations, track lineage.
+
+---
+
+#### R — Research & MIR Advancement
+
+Focus: pushing analysis quality and musical relevance.
+
+- **R1** — MIR Algorithm Improvements  
+  Refining existing MIR to approach or exceed SOTA where practical.
+
+- **R2** — Advanced Beat / Tempo Models  
+  Whole-track, user-correctable BPM and phase models.
+
+- **R3** — Source- and Band-Aware MIR  
+  Combining stems, bands, and CQT for cleaner semantic signals.
+
+- **R4** — Perceptual Trait Extraction  
+  Higher-level traits (tension, anticipation, release, stability).
+
+---
+
+#### I — Import & Interoperability
+
+Focus: bringing meaning in from other tools.
+
+- **I1** — MIDI Import  
+  Notes, velocities, timings → event streams or signals.
+
+- **I2** — DAW Automation / Marker Import  
+  Ableton/DAW markers, envelopes, or clips → authored events/signals.
+
+- **I3** — Text & Caption Formats  
+  LRC, SRT, custom timestamped text ingestion.
+
+---
+
+#### E — Export & Downstream Use
+
+Focus: letting Octoseq’s interpretations live beyond Octoseq.
+
+- **E1** — Export Authored Events  
+  JSON/MIDI/CSV exports of curated event streams.
+
+- **E2** — Export Signals  
+  1D signals as envelopes or automation curves.
+
+- **E3** — Integration Targets  
+  Making Octoseq outputs usable in other visual, audio, or ML tools.
+
+---
+
+#### L — Language & Scripting Evolution
+
+Focus: long-term ergonomics and power.
+
+- **L1** — Evaluate Lua Adoption  
+  Revisiting Lua once Rust+WASM integration matures.
+
+- **L2** — Scripting API Stabilisation  
+  Freezing and documenting the script-facing surface.
+
+- **L3** — Safe Shader DSL (Optional, Later)  
+  Declarative IR-based shader generation, not raw shader authoring.
+
+---
+
+## Optional / Long-Horizon Exploration
+
+- Multi-user or collaborative interpretation
+- Versioning and branching of interpretations
+- Semantic grouping of signals/events
+- External generative / diffusion integrations (kept out of core)
+
+---
+
+### Guiding Reminder
+
+> F and V extract and express meaning.  
+> U, P, S, T, R, I, and E decide whether that meaning is usable, trustworthy,
+> and valuable beyond a single session.
