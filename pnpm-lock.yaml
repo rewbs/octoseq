@@ -81,8 +81,8 @@ importers:
         specifier: ^3.4.0
         version: 3.4.0
       wavesurfer.js:
-        specifier: '@rewbs/wavesurfer.js@8.0.0-beta.1'
-        version: link:@rewbs/wavesurfer.js@8.0.0-beta.1
+        specifier: npm:@rewbs/wavesurfer.js@8.0.0-beta.1
+        version: '@rewbs/wavesurfer.js@8.0.0-beta.1'
       zustand:
         specifier: ^5.0.9
         version: 5.0.9(@types/react@19.2.7)(react@19.2.3)
@@ -850,6 +850,9 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  '@rewbs/wavesurfer.js@8.0.0-beta.1':
+    resolution: {integrity: sha512-bw13jgCnK0moa8MShWAbv3zwdY+Z5u0Skum5zMSNfdKobxikw5F2nl5tWXlEIY1b6VtWySrZBjUaYV0/3+bIaw==}
 
   '@rollup/rollup-android-arm-eabi@4.53.3':
     resolution: {integrity: sha512-mRSi+4cBjrRLoaal2PnqH82Wqyb+d3HsPUN/W+WslCXsZsyHa9ZeQQX/pQsZaVIWDkPcpV6jJ+3KLbTbgnwv8w==}
@@ -3540,6 +3543,8 @@ snapshots:
       react: 19.2.3
     optionalDependencies:
       '@types/react': 19.2.7
+
+  '@rewbs/wavesurfer.js@8.0.0-beta.1': {}
 
   '@rollup/rollup-android-arm-eabi@4.53.3':
     optional: true

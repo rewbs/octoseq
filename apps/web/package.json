@@ -25,7 +25,7 @@
     "react-dom": "19.2.3",
     "react-hotkeys-hook": "^5.2.1",
     "tailwind-merge": "^3.4.0",
-    "wavesurfer.js": "@rewbs/wavesurfer.js@8.0.0-beta.1",
+    "wavesurfer.js": "npm:@rewbs/wavesurfer.js@8.0.0-beta.1",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
