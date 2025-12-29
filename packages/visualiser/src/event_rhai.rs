@@ -423,6 +423,35 @@ pub fn clear_band_event_streams() {
     BAND_EVENT_STREAMS.with(|s| s.borrow_mut().clear());
 }
 
+// === Named Event Streams ===
+// These are named event streams (e.g., "beatCandidates") pushed from TypeScript.
+// Accessed via `inputs.<name>` in scripts where <name> is an EventStream.
+
+thread_local! {
+    /// Named event streams (e.g., "beatCandidates", "onsetPeaks").
+    static NAMED_EVENT_STREAMS: RefCell<HashMap<String, EventStream>> = RefCell::new(HashMap::new());
+}
+
+/// Store a named event stream for script access via `inputs.<name>`.
+pub fn store_named_event_stream(name: String, stream: EventStream) {
+    NAMED_EVENT_STREAMS.with(|s| s.borrow_mut().insert(name, stream));
+}
+
+/// Get a named event stream by name.
+pub fn get_named_event_stream(name: &str) -> Option<EventStream> {
+    NAMED_EVENT_STREAMS.with(|s| s.borrow().get(name).cloned())
+}
+
+/// Get all named event stream names.
+pub fn get_named_event_stream_names() -> Vec<String> {
+    NAMED_EVENT_STREAMS.with(|s| s.borrow().keys().cloned().collect())
+}
+
+/// Clear all named event streams.
+pub fn clear_named_event_streams() {
+    NAMED_EVENT_STREAMS.with(|s| s.borrow_mut().clear());
+}
+
 /// Rhai API documentation for injection into scripts.
 pub const EVENT_API_RHAI: &str = r#"
 // === Event Extraction API ===

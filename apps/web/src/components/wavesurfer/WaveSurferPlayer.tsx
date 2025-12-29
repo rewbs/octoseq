@@ -16,6 +16,10 @@ const MIN_HEIGHT = 80;
 const MAX_HEIGHT = 1200;
 const DEFAULT_HEIGHT = 150;
 
+const getScrollContainer = (ws: WaveSurfer | null) => {
+  const wrapper = ws?.getWrapper?.();
+  return wrapper?.parentElement ?? null;
+};
 
 import type { AudioBufferLike } from "@octoseq/mir";
 
@@ -30,7 +34,7 @@ type RegionLike = {
   end: number;
   element?: HTMLElement | null;
   remove: () => void;
-  setOptions: (opts: {
+  update: (opts: {
     start?: number;
     end?: number;
     color?: string;
@@ -42,12 +46,10 @@ type RegionLike = {
 };
 
 type RegionsPluginLike = {
-  on: (evt: string, cb: (region: RegionLike, ...rest: unknown[]) => void) => void;
-  un: (evt: string, cb: (region: RegionLike, ...rest: unknown[]) => void) => void;
   getRegions: () => RegionLike[];
   addRegion: (options: { id?: string; start: number; end: number; color?: string; drag?: boolean; resize?: boolean }) => RegionLike;
   clearRegions: () => void;
-  enableDragSelection: (options: { id?: string; color?: string; drag?: boolean; resize?: boolean }, threshold?: number) => () => void;
+  getRegion: (id: string) => RegionLike | undefined;
 };
 
 const QUERY_REGION_ID = "query";
@@ -196,10 +198,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   const candidatesRef = useRef<RefinementCandidate[]>(candidates ?? []);
   const activeCandidateIdRef = useRef<string | null>(activeCandidateId ?? null);
   const regionsPluginRef = useRef<RegionsPluginLike | null>(null);
-  const disableDragSelectionRef = useRef<(() => void) | null>(null);
   const queryRegionRef = useRef<RegionLike | null>(null);
-  const programmaticCreatesRef = useRef<Set<string>>(new Set());
-  const programmaticUpdatesRef = useRef<Set<string>>(new Set());
   const onIsPlayingChangeRef = useRef<WaveSurferPlayerProps["onIsPlayingChange"]>(onIsPlayingChange);
 
   useImperativeHandle(
@@ -240,7 +239,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         void ws.play(start, safeEnd);
 
         // Center view to the segment start for quick A/B comparisons.
-        const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
+        const scrollContainer = getScrollContainer(ws);
         const minPxPerSec = zoomRef.current;
         if (scrollContainer && minPxPerSec > 0) {
           const targetPx = start * minPxPerSec;
@@ -262,8 +261,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         // Clear existing refs (similar to onPickFile)
         regionsPluginRef.current?.clearRegions();
         queryRegionRef.current = null;
-        programmaticCreatesRef.current.clear();
-        programmaticUpdatesRef.current.clear();
         segmentPlaybackRef.current = null;
         isPlayingRef.current = false;
         onRegionChangeRef.current?.(null);
@@ -340,11 +337,11 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   const pickerRef = fileInputRef ?? fallbackFileInputRef;
 
   const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
-  const [timelineEl, setTimelineEl] = useState<HTMLDivElement | null>(null);
 
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoom, setZoom] = useState(0);
+  const [regionsReady, setRegionsReady] = useState(false);
 
   // Region selection debug readout (for trust + tuning).
   const [activeRegion, setActiveRegion] = useState<{
@@ -410,11 +407,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   }
 
   useEffect(() => {
-    if (!containerEl || !timelineEl) return;
-
-    // Region selection plugin (kept as an explicit ref so we don't rely on
-    // WaveSurfer's internal plugin registry types).
-    const regions = Regions.create();
+    if (!containerEl) return;
 
     // Create WS instance (once refs exist).
     const ws = WaveSurfer.create({
@@ -434,15 +427,24 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       dragToSeek: false,
       interact: true,
       minPxPerSec: 0,
-      plugins: [
-        Timeline.create({
-          container: timelineEl,
-        }),
-        regions,
-      ],
     });
 
     wsRef.current = ws;
+
+    let cancelled = false;
+    let cleanupRegionInteractions: (() => void) | null = null;
+
+    const getTimeFromClientX = (clientX: number) => {
+      const scrollContainer = getScrollContainer(ws);
+      if (!scrollContainer) return null;
+      const rect = scrollContainer.getBoundingClientRect();
+      const duration = ws.getDuration() || 0;
+      if (!duration) return null;
+      const totalWidth = scrollContainer.scrollWidth || rect.width;
+      if (!totalWidth) return null;
+      const x = Math.max(0, Math.min(totalWidth, clientX - rect.left + scrollContainer.scrollLeft));
+      return (x / totalWidth) * duration;
+    };
 
     const onReady = () => {
       setIsReady(true);
@@ -465,7 +467,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       // WaveSurfer doesn't necessarily emit a 'scroll' event until the user interacts.
       // We synthesise an initial viewport here so downstream visualisations have
       // a non-empty visible time range immediately.
-      const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
+      const scrollContainer = getScrollContainer(ws);
       const duration = ws.getDuration() || 0;
       const minPxPerSec = zoomRef.current;
       const containerWidthPx = scrollContainer?.clientWidth ?? 0;
@@ -513,13 +515,10 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     };
 
     const onScroll = (startTime: number, endTime: number, leftPx: number, rightPx: number) => {
-      // The WaveSurfer v7 'scroll' event gives us the current visible time range
+      // The WaveSurfer 'scroll' event gives us the current visible time range
       // and pixel bounds within the scroll container.
       // This is the source-of-truth for all time-aligned visualisations.
-      //
-      // Note: WaveSurfer's internal scroll width is based on scrollContainer, not wrapper.
-      const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
-
+      const scrollContainer = getScrollContainer(ws);
       const duration = ws.getDuration() || 0;
       const clampedStart = Math.max(0, startTime);
       const clampedEnd = Math.max(clampedStart, Math.min(duration, endTime));
@@ -532,32 +531,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         minPxPerSec: zoomRef.current,
       });
     };
-
-    const regionsPlugin = regions as unknown as RegionsPluginLike;
-    regionsPluginRef.current = regionsPlugin;
-
-    // Important: enable drag-selection immediately once the Regions plugin exists.
-    // We still reconfigure it when `addMissingMode` changes, but without this initial
-    // enable the first render would never allow selection (the toggle effect only
-    // runs when the mode changes).
-    disableDragSelectionRef.current?.();
-    disableDragSelectionRef.current = regionsPlugin.enableDragSelection(
-      addMissingModeRef.current
-        ? {
-          // Manual add mode: green-ish so new regions read as "accepted".
-          color: "rgba(34, 197, 94, 0.22)",
-          drag: true,
-          resize: true,
-        }
-        : {
-          // Normal mode: query selection (single region).
-          id: QUERY_REGION_ID,
-          color: "rgba(212, 175, 55, 0.18)", // translucent gold
-          drag: true,
-          resize: true,
-        },
-      2
-    );
 
     const updateQueryRegion = (startSec: number, endSec: number) => {
       const decoded = ws.getDecodedData();
@@ -574,82 +547,241 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       onRegionChangeRef.current?.({ startSec: start, endSec: end });
     };
 
-    const onRegionCreated = (r: RegionLike) => {
-      // Ignore regions created by our own reconciliation pass (auto candidates).
-      if (programmaticCreatesRef.current.has(r.id)) {
-        programmaticCreatesRef.current.delete(r.id);
-        return;
-      }
+    const setupRegionInteractions = (regionsPlugin: RegionsPluginLike) => {
+      const scrollContainer = getScrollContainer(ws);
+      if (!scrollContainer) return null;
 
-      // "Add missing match" mode: drag selection creates a new manual candidate region.
-      if (addMissingModeRef.current) {
-        // Keep manual regions editable so users can fine-tune boundaries immediately.
-        r.setOptions({ drag: true, resize: true });
-        onManualCandidateCreateRef.current?.({ id: r.id, startSec: r.start, endSec: r.end });
-        onSelectCandidateIdRef.current?.(r.id);
-        return;
-      }
+      let dragRegionId: string | null = null;
+      let dragMode: "create" | "move" | "resize-start" | "resize-end" | null = null;
+      let dragStartTime = 0;
+      let dragStartClientX = 0;
+      let dragInitialStart = 0;
+      let dragInitialEnd = 0;
+      let dragPointerOffset = 0;
+      let dragMoved = false;
+      let suppressClick = false;
+      const dragThresholdPx = 2;
 
-      // Otherwise: treat drag selection as the query region (single region with fixed ID).
-      if (r.id === QUERY_REGION_ID) {
-        for (const other of regionsPlugin.getRegions()) {
-          if (other.id === QUERY_REGION_ID && other !== r) other.remove();
+      const getRegionById = (id: string | null) => (id ? regionsPlugin.getRegion(id) ?? null : null);
+
+      const applyQueryRegionStyle = (region: RegionLike) => {
+        if (!region.element) return;
+        region.element.style.border = "2px solid rgba(212, 175, 55, 0.55)";
+      };
+
+      const ensureRegionElementMeta = (region: RegionLike) => {
+        if (!region.element) return;
+        region.element.dataset.regionId = region.id;
+      };
+
+      const handlePointerDown = (evt: PointerEvent) => {
+        if (evt.button !== 0) return;
+        suppressClick = false;
+        const target = evt.target as HTMLElement | null;
+        const regionEl = target?.closest?.("[data-region-id]") as HTMLElement | null;
+        const regionId = regionEl?.dataset?.regionId ?? null;
+        const region = getRegionById(regionId);
+        const candidate = regionId ? candidatesRef.current.find((c) => c.id === regionId) : null;
+        const isManual = candidate?.source === "manual";
+        const isQuery = regionId === QUERY_REGION_ID;
+        const allowEdit = isManual || (!addMissingModeRef.current && isQuery);
+
+        dragMoved = false;
+        dragStartClientX = evt.clientX;
+
+        if (region && regionEl && allowEdit) {
+          const t = getTimeFromClientX(evt.clientX);
+          if (t == null) return;
+          const rect = regionEl.getBoundingClientRect();
+          const edgeThreshold = 6;
+          const offsetX = evt.clientX - rect.left;
+          if (offsetX <= edgeThreshold) {
+            dragMode = "resize-start";
+          } else if (rect.width - offsetX <= edgeThreshold) {
+            dragMode = "resize-end";
+          } else {
+            dragMode = "move";
+          }
+          dragRegionId = region.id;
+          dragInitialStart = region.start;
+          dragInitialEnd = region.end;
+          dragPointerOffset = t - region.start;
+          return;
         }
-        queryRegionRef.current = r;
-        r.setOptions({ color: "rgba(212, 175, 55, 0.18)", drag: true, resize: true });
-        if (r.element) r.element.style.border = "2px solid rgba(212, 175, 55, 0.55)";
-        updateQueryRegion(r.start, r.end);
+
+        dragMode = "create";
+        dragRegionId = null;
+        const t = getTimeFromClientX(evt.clientX);
+        if (t == null) {
+          dragMode = null;
+          return;
+        }
+        dragStartTime = t;
+      };
+
+      const handlePointerMove = (evt: PointerEvent) => {
+        if (!dragMode) return;
+        const t = getTimeFromClientX(evt.clientX);
+        if (t == null) return;
+
+        if (dragMode === "create") {
+          const distancePx = Math.abs(evt.clientX - dragStartClientX);
+          if (!dragMoved && distancePx < dragThresholdPx) return;
+          dragMoved = true;
+
+          const start = Math.min(dragStartTime, t);
+          const end = Math.max(dragStartTime, t);
+          if (!dragRegionId) {
+            if (!addMissingModeRef.current) {
+              for (const other of regionsPlugin.getRegions()) {
+                if (other.id === QUERY_REGION_ID) other.remove();
+              }
+              dragRegionId = QUERY_REGION_ID;
+            }
+
+            const region = regionsPlugin.addRegion({
+              id: dragRegionId ?? undefined,
+              start,
+              end,
+              color: addMissingModeRef.current ? "rgba(34, 197, 94, 0.22)" : "rgba(212, 175, 55, 0.18)",
+              drag: true,
+              resize: true,
+            });
+            dragRegionId = region.id;
+            ensureRegionElementMeta(region);
+            if (region.id === QUERY_REGION_ID) applyQueryRegionStyle(region);
+          }
+
+          const region = getRegionById(dragRegionId);
+          if (region) {
+            region.update({ start, end });
+            if (region.id === QUERY_REGION_ID) {
+              queryRegionRef.current = region;
+              updateQueryRegion(region.start, region.end);
+            }
+          }
+          return;
+        }
+
+        const region = getRegionById(dragRegionId);
+        if (!region) return;
+
+        const distancePx = Math.abs(evt.clientX - dragStartClientX);
+        if (!dragMoved && distancePx < dragThresholdPx) return;
+        dragMoved = true;
+        if (dragMode === "move") {
+          const duration = ws.getDuration() || 0;
+          const regionDuration = dragInitialEnd - dragInitialStart;
+          const nextStart = Math.max(0, Math.min(duration - regionDuration, t - dragPointerOffset));
+          const nextEnd = nextStart + regionDuration;
+          region.update({ start: nextStart, end: nextEnd });
+          return;
+        }
+
+        if (dragMode === "resize-start") {
+          const nextStart = Math.min(t, dragInitialEnd);
+          region.update({ start: Math.max(0, nextStart) });
+          return;
+        }
+
+        if (dragMode === "resize-end") {
+          const nextEnd = Math.max(t, dragInitialStart);
+          region.update({ end: Math.max(0, nextEnd) });
+        }
+      };
+
+      const handlePointerUp = (evt: PointerEvent) => {
+        if (!dragMode) return;
+        const region = getRegionById(dragRegionId);
+        const wasCreate = dragMode === "create";
+        const wasDrag = dragMoved;
+
+        dragMode = null;
+        dragRegionId = null;
+        dragMoved = false;
+
+        if (wasDrag) {
+          suppressClick = true;
+          window.setTimeout(() => {
+            suppressClick = false;
+          }, 0);
+        }
+
+        if (!region) return;
+
+        if (wasCreate && dragMoved) {
+          if (addMissingModeRef.current) {
+            onManualCandidateCreateRef.current?.({ id: region.id, startSec: region.start, endSec: region.end });
+            onSelectCandidateIdRef.current?.(region.id);
+          } else if (region.id === QUERY_REGION_ID) {
+            queryRegionRef.current = region;
+            applyQueryRegionStyle(region);
+            updateQueryRegion(region.start, region.end);
+          }
+          return;
+        }
+
+        const candidate = candidatesRef.current.find((c) => c.id === region.id);
+        if (candidate?.source === "manual") {
+          onManualCandidateUpdateRef.current?.({ id: region.id, startSec: region.start, endSec: region.end });
+        } else if (region.id === QUERY_REGION_ID && wasDrag) {
+          queryRegionRef.current = region;
+          updateQueryRegion(region.start, region.end);
+        }
+      };
+
+      const handleRegionClick = (evt: MouseEvent) => {
+        if (suppressClick) return;
+        const target = evt.target as HTMLElement | null;
+        const regionEl = target?.closest?.("[data-region-id]") as HTMLElement | null;
+        const regionId = regionEl?.dataset?.regionId ?? null;
+        if (!regionId || regionId === QUERY_REGION_ID) return;
+        const candidate = candidatesRef.current.find((c) => c.id === regionId);
+        if (!candidate) return;
+        evt.preventDefault();
+        evt.stopPropagation();
+        onSelectCandidateIdRef.current?.(candidate.id);
+      };
+
+      scrollContainer.addEventListener("pointerdown", handlePointerDown);
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", handlePointerUp);
+      scrollContainer.addEventListener("click", handleRegionClick);
+
+      return () => {
+        scrollContainer.removeEventListener("pointerdown", handlePointerDown);
+        window.removeEventListener("pointermove", handlePointerMove);
+        window.removeEventListener("pointerup", handlePointerUp);
+        scrollContainer.removeEventListener("click", handleRegionClick);
+      };
+    };
+
+    const initPlugins = async () => {
+      try {
+        const regionsRegistration = await ws.registerPluginV8(Regions({}));
+        if (cancelled) {
+          await ws.unregisterPluginV8(regionsRegistration.manifest.id);
+          return;
+        }
+
+        const regionsPlugin = regionsRegistration.instance.actions as RegionsPluginLike | undefined;
+        if (regionsPlugin) {
+          regionsPluginRef.current = regionsPlugin;
+          cleanupRegionInteractions = setupRegionInteractions(regionsPlugin);
+          if (!cancelled) setRegionsReady(true);
+        }
+      } catch (err) {
+        console.error("[WaveSurfer] Failed to init regions plugin", err);
+      }
+
+      try {
+        await ws.registerPluginV8(Timeline({}));
+      } catch (err) {
+        console.error("[WaveSurfer] Failed to init timeline plugin", err);
       }
     };
 
-    const onRegionUpdated = (r: RegionLike) => {
-      if (programmaticUpdatesRef.current.has(r.id)) {
-        programmaticUpdatesRef.current.delete(r.id);
-        return;
-      }
-
-      if (r.id === QUERY_REGION_ID) {
-        queryRegionRef.current = r;
-        // Redundant setOptions called during drag causes glitches/shrinking.
-        // The region is already configured correctly on creation/selection.
-        updateQueryRegion(r.start, r.end);
-        return;
-      }
-
-      const candidate = candidatesRef.current.find((c) => c.id === r.id);
-      if (candidate?.source === "manual") {
-        onManualCandidateUpdateRef.current?.({ id: r.id, startSec: r.start, endSec: r.end });
-      }
-    };
-
-    const onRegionRemoved = (r: RegionLike) => {
-      if (r.id !== QUERY_REGION_ID) return;
-
-      // Query replacements can briefly create/remove regions during drag selection.
-      // Only clear if *no* query region remains.
-      const stillHasQuery = regionsPlugin.getRegions().some((rr) => rr.id === QUERY_REGION_ID);
-      if (!stillHasQuery) {
-        queryRegionRef.current = null;
-        setActiveRegion(null);
-        onRegionChangeRef.current?.(null);
-      }
-    };
-
-    const onRegionClicked = (r: RegionLike, evt?: unknown) => {
-      const e = evt as MouseEvent | undefined;
-      e?.preventDefault?.();
-      e?.stopPropagation?.();
-
-      if (r.id === QUERY_REGION_ID) return;
-      const candidate = candidatesRef.current.find((c) => c.id === r.id);
-      if (!candidate) return;
-      onSelectCandidateIdRef.current?.(candidate.id);
-    };
-
-    regionsPlugin.on("region-created", onRegionCreated);
-    regionsPlugin.on("region-updated", onRegionUpdated);
-    regionsPlugin.on("region-removed", onRegionRemoved);
-    regionsPlugin.on("region-clicked", onRegionClicked);
+    void initPlugins();
 
     ws.on("ready", onReady);
     ws.on("play", onPlay);
@@ -660,7 +792,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
 
     let raf = 0;
     const tick = () => {
-      // Best-effort: WaveSurfer v7 provides getCurrentTime().
+      // Best-effort: WaveSurfer provides getCurrentTime().
       // We drive this from an rAF loop while mounted.
       const nowMs = performance.now();
       const t = ws.getCurrentTime() || 0;
@@ -681,7 +813,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         ws.setTime(clamped);
 
         // Also pan so the seek target is visible even when not playing.
-        const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
+        const scrollContainer = getScrollContainer(ws);
         const minPxPerSec = zoomRef.current;
         if (scrollContainer && minPxPerSec > 0) {
           const targetPx = clamped * minPxPerSec;
@@ -700,12 +832,9 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       cancelAnimationFrame(raf);
       cleanupObjectUrl();
 
-      disableDragSelectionRef.current?.();
-      disableDragSelectionRef.current = null;
-      regionsPlugin.un("region-created", onRegionCreated);
-      regionsPlugin.un("region-updated", onRegionUpdated);
-      regionsPlugin.un("region-removed", onRegionRemoved);
-      regionsPlugin.un("region-clicked", onRegionClicked);
+      cancelled = true;
+      cleanupRegionInteractions?.();
+      cleanupRegionInteractions = null;
 
       ws.un("scroll", onScroll);
       ws.un("interaction", onInteraction);
@@ -717,8 +846,9 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       setIsReady(false);
       setIsPlaying(false);
       setActiveRegion(null);
+      setRegionsReady(false);
     };
-  }, [containerEl, timelineEl, initialHeight]);
+  }, [containerEl, initialHeight]);
 
   // Update WaveSurfer height dynamically without recreating
   useEffect(() => {
@@ -726,36 +856,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     if (!ws) return;
     ws.setOptions({ height: panelHeight });
   }, [panelHeight]);
-
-  useEffect(() => {
-    const regionsPlugin = regionsPluginRef.current;
-    if (!regionsPlugin) return;
-
-    disableDragSelectionRef.current?.();
-
-    disableDragSelectionRef.current = regionsPlugin.enableDragSelection(
-      addMissingMode
-        ? {
-          // Manual add mode: green-ish so new regions read as "accepted".
-          color: "rgba(34, 197, 94, 0.22)",
-          drag: true,
-          resize: true,
-        }
-        : {
-          // Normal mode: query selection (single region).
-          id: QUERY_REGION_ID,
-          color: "rgba(212, 175, 55, 0.18)", // translucent gold
-          drag: true,
-          resize: true,
-        },
-      2 // keep threshold tiny so short clicks still seek
-    );
-
-    return () => {
-      disableDragSelectionRef.current?.();
-      disableDragSelectionRef.current = null;
-    };
-  }, [addMissingMode]);
 
   useEffect(() => {
     zoomRef.current = zoom;
@@ -769,7 +869,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     // mapping WaveSurfer uses internally:
     //   scrollWidthPx = durationSec * minPxPerSec
     //   startTimeSec = scrollLeftPx / minPxPerSec
-    const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
+    const scrollContainer = getScrollContainer(ws);
     if (!scrollContainer) return;
 
     const duration = ws.getDuration() || 0;
@@ -794,7 +894,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
 
   useEffect(() => {
     const regionsPlugin = regionsPluginRef.current;
-    if (!regionsPlugin) return;
+    if (!regionsPlugin || !regionsReady) return;
 
     const list = candidates ?? [];
     const desiredIds = new Set(list.map((c) => c.id));
@@ -816,9 +916,12 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
 
       const scoreLabel = candidateCurveKind === "confidence" ? "Confidence" : "Score";
 
+      el.dataset.regionId = region.id;
+
       // UX: auto candidate regions should not block query drag-selection.
       // We still allow manual regions to be edited (drag/resize) and clicked.
       el.style.pointerEvents = c.source === "manual" ? "auto" : "none";
+      el.style.cursor = c.source === "manual" ? "grab" : "default";
       el.style.boxShadow = isActive
         ? "0 0 0 2px rgba(59, 130, 246, 0.75), 0 0 0 6px rgba(59, 130, 246, 0.18)"
         : "";
@@ -836,7 +939,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
 
       let region = byId.get(c.id);
       if (!region) {
-        programmaticCreatesRef.current.add(c.id);
         region = regionsPlugin.addRegion({
           id: c.id,
           start: c.startSec,
@@ -851,13 +953,9 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         const endDelta = Math.abs(region.end - c.endSec);
         const needsTimeUpdate = startDelta > 1e-3 || endDelta > 1e-3;
 
-        if (needsTimeUpdate) programmaticUpdatesRef.current.add(c.id);
-
-        region.setOptions({
+        region.update({
           ...(needsTimeUpdate ? { start: c.startSec, end: c.endSec } : {}),
           color: fill,
-          drag: editable,
-          resize: editable,
         });
       }
 
@@ -869,18 +967,18 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       if (desiredIds.has(r.id)) continue;
       r.remove();
     }
-  }, [candidates, activeCandidateId, candidateCurveKind]);
+  }, [candidates, activeCandidateId, candidateCurveKind, regionsReady]);
 
   useEffect(() => {
     if (queryRegion !== null) return;
     const regionsPlugin = regionsPluginRef.current;
-    if (!regionsPlugin) return;
+    if (!regionsPlugin || !regionsReady) return;
 
     for (const r of regionsPlugin.getRegions()) {
       if (r.id === QUERY_REGION_ID) r.remove();
     }
     queryRegionRef.current = null;
-  }, [queryRegion]);
+  }, [queryRegion, regionsReady]);
 
   async function onPickFile(file: File) {
     const ws = wsRef.current;
@@ -889,8 +987,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     // New audio invalidates all regions (query + candidates); clear proactively so UI never shows stale marks.
     regionsPluginRef.current?.clearRegions();
     queryRegionRef.current = null;
-    programmaticCreatesRef.current.clear();
-    programmaticUpdatesRef.current.clear();
     segmentPlaybackRef.current = null;
     isPlayingRef.current = false;
     setActiveRegion(null);
@@ -1003,7 +1099,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         className={`mt-1.5 rounded-md border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-950 ${addMissingMode ? "ring-2 ring-emerald-500 ring-offset-1 ring-offset-white dark:ring-offset-zinc-950" : ""
           }`}
       >
-        <div ref={setTimelineEl} className="w-full" />
         <div className="relative">
           {addMissingMode ? (
             <div className="pointer-events-none absolute right-2 top-2 rounded bg-emerald-500/15 px-2 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">

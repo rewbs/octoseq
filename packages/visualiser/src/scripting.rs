@@ -54,6 +54,7 @@ static EFFECT_ID_COUNTER: AtomicI64 = AtomicI64::new(0);
 
 use crate::debug_collector::debug_emit;
 use crate::debug_markers::{add_marker_request, DebugMarkerRequest, ShowEventsOptions, MarkerSpreadMode};
+use crate::event_rhai::get_named_event_stream_names;
 use crate::event_stream::EventStream;
 use crate::input::InputSignal;
 use crate::musical_time::MusicalTimeStructure;
@@ -63,8 +64,8 @@ use crate::script_log::{ScriptLogger, reset_frame_log_count};
 use crate::script_diagnostics::{from_eval_error, from_parse_error, ScriptDiagnostic, ScriptPhase};
 use crate::script_introspection::register_introspection_api;
 use crate::signal_rhai::{
-    clear_current_input_signals, generate_bands_namespace, generate_inputs_namespace,
-    register_signal_api, set_current_input_signals, SIGNAL_API_RHAI,
+    clear_current_input_signals, generate_bands_namespace, generate_event_streams_namespace,
+    generate_inputs_namespace, register_signal_api, set_current_input_signals, SIGNAL_API_RHAI,
 };
 use crate::signal::Signal;
 use crate::signal_eval::EvalContext;
@@ -594,6 +595,11 @@ impl ScriptEngine {
         // Generate bands namespace based on available frequency bands
         let bands_namespace = generate_bands_namespace(&self.available_bands);
 
+        // Generate event streams namespace based on available named event streams
+        let event_stream_names = get_named_event_stream_names();
+        let event_stream_names_refs: Vec<&str> = event_stream_names.iter().map(|s| s.as_str()).collect();
+        let event_streams_namespace = generate_event_streams_namespace(&event_stream_names_refs);
+
         // Generate particles namespace
         let particles_namespace = generate_particles_namespace();
 
@@ -1004,6 +1010,9 @@ feedback.is_enabled = || {{
 
 // === Bands Namespace (Band-scoped signal accessors) ===
 {bands_namespace}
+
+// === Event Streams Namespace (Named event streams) ===
+{event_streams_namespace}
 
 // === Particles Namespace ===
 {particles_namespace}

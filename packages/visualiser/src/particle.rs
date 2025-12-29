@@ -282,6 +282,10 @@ impl ParticleSystem {
         let config = &self.config.variation;
 
         // xorshift64 for deterministic randomness
+        // Note: seed 0 is degenerate (produces all zeros), so we use a default non-zero seed
+        if self.rng_state == 0 {
+            self.rng_state = 0x5DEECE66D; // Same default as Java's Random
+        }
         let mut next_f32 = || {
             self.rng_state ^= self.rng_state << 13;
             self.rng_state ^= self.rng_state >> 7;
@@ -390,6 +394,57 @@ mod tests {
         assert_eq!(
             system1.instances[0].local_offset.x,
             system2.instances[0].local_offset.x
+        );
+    }
+
+    #[test]
+    fn test_multiple_particles_have_different_positions() {
+        let events = Arc::new(vec![Event::new(0.0, 1.0)]);
+        let mut config = ParticleConfig::default();
+        config.seed = 42;
+        config.variation.position_spread = Vec3::new(1.0, 1.0, 1.0);
+
+        let mut system = ParticleSystem::from_events(events, 10, config);
+
+        // Spawn 10 particles
+        for i in 0..10 {
+            system.spawn_instance(i as f32 * 0.1, i as f32 * 0.1, 1.0);
+        }
+
+        assert_eq!(system.instance_count(), 10);
+
+        // Verify particles have different positions (variation is working)
+        let first_offset = system.instances[0].local_offset.x;
+        let second_offset = system.instances[1].local_offset.x;
+        assert!(
+            (first_offset - second_offset).abs() > 0.001,
+            "Particles should have different positions due to variation"
+        );
+    }
+
+    #[test]
+    fn test_seed_zero_produces_valid_variation() {
+        // Seed 0 was previously degenerate (xorshift produces all zeros)
+        // After fix, it should produce valid variation
+        let events = Arc::new(vec![Event::new(0.0, 1.0)]);
+        let mut config = ParticleConfig::default();
+        config.seed = 0; // Explicitly test seed 0
+        config.variation.position_spread = Vec3::new(1.0, 1.0, 1.0);
+
+        let mut system = ParticleSystem::from_events(events, 2, config);
+
+        system.spawn_instance(0.0, 0.0, 1.0);
+        system.spawn_instance(0.1, 0.1, 1.0);
+
+        // Both particles should exist
+        assert_eq!(system.instance_count(), 2);
+
+        // Particles should have different positions (RNG is not stuck at 0)
+        let first_offset = system.instances[0].local_offset.x;
+        let second_offset = system.instances[1].local_offset.x;
+        assert!(
+            (first_offset - second_offset).abs() > 0.001,
+            "Seed 0 should produce valid variation after fix"
         );
     }
 }

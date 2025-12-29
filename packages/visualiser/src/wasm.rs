@@ -337,6 +337,84 @@ impl WasmVisualiser {
             .unwrap_or(0)
     }
 
+    /// Push a named event stream (e.g., "beatCandidates") for script access.
+    ///
+    /// The event stream will be available as `inputs.<name>` in Rhai scripts.
+    /// This is used for MIR-derived events like beat candidates, onset peaks, etc.
+    ///
+    /// The JSON format should be an array of event objects with:
+    /// - time: f32
+    /// - weight: f32
+    /// - beat_position: Option<f32>
+    /// - beat_phase: Option<f32>
+    /// - cluster_id: Option<u32>
+    ///
+    /// Returns true if successful, false if parsing failed.
+    pub fn push_event_stream(&self, name: &str, events_json: &str) -> bool {
+        use crate::event_rhai::store_named_event_stream;
+        use crate::event_stream::{EventStream, PickEventsOptions};
+
+        #[derive(serde::Deserialize)]
+        struct EventInput {
+            time: f32,
+            weight: f32,
+            beat_position: Option<f32>,
+            beat_phase: Option<f32>,
+            cluster_id: Option<u32>,
+        }
+
+        match serde_json::from_str::<Vec<EventInput>>(events_json) {
+            Ok(inputs) => {
+                let events: Vec<Event> = inputs
+                    .into_iter()
+                    .map(|e| Event {
+                        time: e.time,
+                        weight: e.weight,
+                        beat_position: e.beat_position,
+                        beat_phase: e.beat_phase,
+                        cluster_id: e.cluster_id,
+                        source: Some(name.to_string()),
+                    })
+                    .collect();
+
+                let event_count = events.len();
+                let stream = EventStream::new(
+                    events,
+                    format!("events:{}", name),
+                    PickEventsOptions::default(),
+                );
+
+                store_named_event_stream(name.to_string(), stream);
+                log::info!(
+                    "Pushed {} events for stream '{}'",
+                    event_count,
+                    name
+                );
+                true
+            }
+            Err(e) => {
+                log::error!("Failed to parse event stream '{}': {}", name, e);
+                false
+            }
+        }
+    }
+
+    /// Clear all named event streams.
+    pub fn clear_event_streams(&self) {
+        use crate::event_rhai::clear_named_event_streams;
+        clear_named_event_streams();
+        log::info!("Cleared all named event streams");
+    }
+
+    /// Get the number of events in a named event stream.
+    /// Returns 0 if no events are stored for this name.
+    pub fn get_event_stream_count(&self, name: &str) -> usize {
+        use crate::event_rhai::get_named_event_stream;
+        get_named_event_stream(name)
+            .map(|s| s.len())
+            .unwrap_or(0)
+    }
+
     pub fn set_sigmoid_k(&self, k: f32) {
         let mut inner = self.inner.borrow_mut();
         inner.state.config.sigmoid_k = k;

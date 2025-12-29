@@ -448,6 +448,21 @@ pub fn register_signal_api(engine: &mut Engine) {
         })
     });
 
+    // === Named event stream accessor ===
+    // Returns pre-extracted EventStream by name (e.g., "beatCandidates"), or empty if not available.
+    engine.register_fn("__event_stream_get", |name: ImmutableString| {
+        use crate::event_rhai::get_named_event_stream;
+        use crate::event_stream::{EventStream, PickEventsOptions};
+
+        get_named_event_stream(name.as_str()).unwrap_or_else(|| {
+            EventStream::new(
+                Vec::new(),
+                format!("events:{}", name),
+                PickEventsOptions::default(),
+            )
+        })
+    });
+
     // === Constant signal ===
     engine.register_fn("__signal_constant", |value: f32| Signal::constant(value));
 }
@@ -547,6 +562,26 @@ inputs.bands["{id}"].events = __band_events_get("{id}");
                 id = id
             ));
         }
+    }
+
+    code
+}
+
+/// Generate Rhai code to add named event streams to the inputs namespace.
+///
+/// This generates code like:
+/// ```rhai
+/// inputs.beatCandidates = __event_stream_get("beatCandidates");
+/// inputs.onsetPeaks = __event_stream_get("onsetPeaks");
+/// ```
+pub fn generate_event_streams_namespace(event_stream_names: &[&str]) -> String {
+    let mut code = String::new();
+
+    for name in event_stream_names {
+        code.push_str(&format!(
+            "inputs.{} = __event_stream_get(\"{}\");\n",
+            name, name
+        ));
     }
 
     code

@@ -10,6 +10,7 @@ import { useDebugSignalStore, type RawAnalysisResult, type DebugSignal } from "@
 import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
 import { useBandMirStore } from "@/lib/stores/bandMirStore";
 import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
+import { useMirStore } from "@/lib/stores/mirStore";
 import type { BandMirFunctionId } from "@octoseq/mir";
 
 // We import the mock type if the real package isn't built yet, preventing TS errors.
@@ -564,12 +565,13 @@ fn update(dt, frame) {
     // Push available MIR signals
     if (mirResults && typeof vis.push_signal === "function") {
       // Map signal names from metadata to MIR result keys
-      // Note: "flux" is an alias for "spectralFlux" for convenience in scripts
+      // Note: "flux" is an alias for "spectralFlux", "energy" is an alias for "onsetEnvelope"
       const signalMappings: Record<string, string> = {
         spectralCentroid: "spectralCentroid",
         spectralFlux: "spectralFlux",
         flux: "spectralFlux",
         onsetEnvelope: "onsetEnvelope",
+        energy: "onsetEnvelope",
       };
 
       for (const [signalName, mirKey] of Object.entries(signalMappings)) {
@@ -600,6 +602,37 @@ fn update(dt, frame) {
       const norm = normalizeSignal(searchSignal);
       const rate = duration > 0 ? norm.length / duration : 0;
       vis.push_signal("searchSimilarity", norm, rate);
+    }
+
+    // Push MIR event streams (e.g., beatCandidates) from the MIR store
+    if (typeof vis.push_event_stream === "function") {
+      const mirStoreResults = useMirStore.getState().mirResults;
+
+      // Push beatCandidates as an event stream
+      const beatCandidatesResult = mirStoreResults.beatCandidates;
+      if (beatCandidatesResult && beatCandidatesResult.kind === "events") {
+        const events = beatCandidatesResult.events.map((e) => ({
+          time: e.time,
+          weight: e.strength,
+          beat_position: null,
+          beat_phase: null,
+          cluster_id: null,
+        }));
+        vis.push_event_stream("beatCandidates", JSON.stringify(events));
+      }
+
+      // Push onsetPeaks as an event stream
+      const onsetPeaksResult = mirStoreResults.onsetPeaks;
+      if (onsetPeaksResult && onsetPeaksResult.kind === "events") {
+        const events = onsetPeaksResult.events.map((e) => ({
+          time: e.time,
+          weight: e.strength,
+          beat_position: null,
+          beat_phase: null,
+          cluster_id: null,
+        }));
+        vis.push_event_stream("onsetPeaks", JSON.stringify(events));
+      }
     }
 
     // Set the musical time structure on the WASM side for beat-aware Signal operations
