@@ -5,14 +5,22 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
-use crate::analysis_runner::{run_analysis, run_analysis_with_events, AnalysisConfig};
+use crate::analysis_runner::{run_analysis_with_bands, run_analysis_with_events_and_bands, AnalysisConfig};
 use crate::event_stream::Event;
 use crate::frequency_band::{FrequencyBandStructure, FrequencyBoundsAtTime};
 use crate::gpu::renderer::Renderer;
 use crate::input::InputSignal;
 use crate::musical_time::MusicalTimeStructure;
 use crate::script_api::script_api_metadata_json;
-use crate::visualiser::VisualiserState;
+use crate::visualiser::{FrameBudget, FrameResult, VisualiserState};
+
+/// Debug struct for entity positions, serialized to JSON for debugging.
+#[derive(Serialize)]
+struct EntityPositionDebug {
+    id: u64,
+    entity_type: String,
+    position: [f32; 3],
+}
 
 #[wasm_bindgen]
 pub struct WasmVisualiser {
@@ -473,6 +481,26 @@ impl WasmVisualiser {
         ]
     }
 
+    /// Get entity positions as JSON for debugging.
+    /// Returns a JSON array of objects with id, type, and position fields.
+    pub fn get_entity_positions_json(&self) -> String {
+        let inner = self.inner.borrow();
+        let scene_graph = inner.state.scene_graph();
+
+        let positions: Vec<EntityPositionDebug> = scene_graph.scene_entities()
+            .map(|(id, entity)| {
+                let transform = entity.transform();
+                EntityPositionDebug {
+                    id: id.0,
+                    entity_type: format!("{:?}", entity),
+                    position: [transform.position.x, transform.position.y, transform.position.z],
+                }
+            })
+            .collect();
+
+        serde_json::to_string(&positions).unwrap_or_else(|_| "[]".to_string())
+    }
+
     pub fn render(&self, dt: f32) {
         let mut inner = self.inner.borrow_mut();
         let ctx = &mut *inner;
@@ -507,6 +535,66 @@ impl WasmVisualiser {
         }
     }
 
+    /// Render with a frame budget timeout.
+    ///
+    /// If the frame takes longer than `budget_ms` to process, it will be dropped
+    /// and a warning logged. This prevents expensive scripts from freezing the browser.
+    ///
+    /// Returns true if the frame completed, false if it was dropped due to budget.
+    pub fn render_with_budget(&self, dt: f32, budget_ms: f64) -> bool {
+        // Get performance.now() for timing
+        let get_time = || -> f64 {
+            web_sys::window()
+                .and_then(|w| w.performance())
+                .map(|p| p.now())
+                .unwrap_or(0.0)
+        };
+
+        let start_time = get_time();
+        let budget = FrameBudget::new(budget_ms, start_time);
+
+        let mut inner = self.inner.borrow_mut();
+        let ctx = &mut *inner;
+
+        // Update state with budget tracking
+        let result = ctx.state.update_with_budget(
+            dt,
+            ctx.rotation_signal.as_ref(),
+            ctx.zoom_signal.as_ref(),
+            &ctx.named_signals,
+            &ctx.band_signals,
+            ctx.musical_time.as_ref(),
+            &budget,
+            get_time,
+        );
+
+        // If budget was exceeded, skip rendering this frame
+        if result == FrameResult::DroppedBudgetExceeded {
+            return false;
+        }
+
+        // Render
+        match ctx.surface.get_current_texture() {
+            Ok(output) => {
+                let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                ctx.renderer.render(&view, &ctx.state);
+                output.present();
+            },
+            Err(wgpu::SurfaceError::Lost) => {
+                ctx.renderer.resize(ctx.config.width, ctx.config.height, &ctx.state);
+                ctx.surface.configure(ctx.renderer.device(), &ctx.config);
+            }
+            Err(wgpu::SurfaceError::OutOfMemory) => {
+                log::error!("Surface out of memory");
+            }
+            Err(e) => {
+                log::warn!("Surface error: {:?}", e);
+            }
+        }
+
+        true
+    }
+
     /// Run script in analysis mode to collect debug.emit() signals.
     ///
     /// This runs the script headlessly across the full track duration,
@@ -518,8 +606,15 @@ impl WasmVisualiser {
 
         let config = AnalysisConfig::new(duration, time_step);
 
-        // Run analysis with the current named_signals
-        match run_analysis(script, &inner.named_signals, config) {
+        // Get band information for namespace generation
+        let bands: Vec<(String, String)> = inner
+            .band_id_to_label
+            .iter()
+            .map(|(id, label)| (id.clone(), label.clone()))
+            .collect();
+
+        // Run analysis with the current named_signals, bands, and band_signals
+        match run_analysis_with_bands(script, &inner.named_signals, &bands, &inner.band_signals, config) {
             Ok(result) => {
                 let wasm_signals: Vec<WasmDebugSignal> = result
                     .debug_signals
@@ -572,9 +667,18 @@ impl WasmVisualiser {
 
         let config = AnalysisConfig::new(duration, time_step);
 
-        match run_analysis_with_events(
+        // Get band information for namespace generation
+        let bands: Vec<(String, String)> = inner
+            .band_id_to_label
+            .iter()
+            .map(|(id, label)| (id.clone(), label.clone()))
+            .collect();
+
+        match run_analysis_with_events_and_bands(
             script,
             &inner.named_signals,
+            &bands,
+            &inner.band_signals,
             inner.musical_time.as_ref(),
             config,
             false, // Don't collect event debug data (reduces payload size)

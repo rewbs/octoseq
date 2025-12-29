@@ -391,7 +391,7 @@ packages/visualiser/src/
 **Rendering Pipeline**:
 1. Load Rhai script → Parse and validate
 2. Call `init(ctx)` → Create initial scene graph
-3. Per frame: Call `update(dt, inputs)` → Update scene
+3. Per frame: Call `update(dt, frame)` → Update scene
 4. Render scene graph via wgpu → Output frame
 
 **Scene Graph**:
@@ -433,15 +433,20 @@ fn init(ctx) {
 }
 
 // Called every frame
-fn update(dt, inputs) {
-    // Access MIR-derived signals
-    let energy = inputs.get("spectralFlux");
+// - `frame` contains per-frame numeric values (time, dt, amplitude, flux, etc.)
+// - Global `inputs` contains Signal accessors (inputs.bands["Bass"].energy, etc.)
+fn update(dt, frame) {
+    // Access per-frame numeric signal values
+    let energy = frame.spectralFlux;
 
     // Update scene based on signals
     cube.scale = 1.0 + energy * 0.5;
 
     // Update line primitives
-    sparkline.push(time, energy);
+    sparkline.push(frame.time, energy);
+
+    // Access band-specific signals via global inputs
+    // let bass_energy = inputs.bands["Bass"].energy;
 }
 ```
 

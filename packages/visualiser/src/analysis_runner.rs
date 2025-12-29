@@ -78,17 +78,19 @@ pub fn run_analysis(
     signals: &HashMap<String, InputSignal>,
     config: AnalysisConfig,
 ) -> Result<AnalysisResult, String> {
-    // Call the extended version with empty bands
-    run_analysis_with_bands(script, signals, &[], config)
+    // Call the extended version with empty bands and band signals
+    run_analysis_with_bands(script, signals, &[], &HashMap::new(), config)
 }
 
 /// Run script in analysis mode with band support.
 ///
-/// This is the extended version that accepts available bands for namespace generation.
+/// This is the extended version that accepts available bands for namespace generation
+/// and band signals for evaluation.
 pub fn run_analysis_with_bands(
     script: &str,
     signals: &HashMap<String, InputSignal>,
     bands: &[(String, String)],
+    band_signals: &HashMap<String, HashMap<String, InputSignal>>,
     config: AnalysisConfig,
 ) -> Result<AnalysisResult, String> {
     // Validate config
@@ -127,7 +129,22 @@ pub fn run_analysis_with_bands(
     set_collector_time(0.0);
     engine.call_init();
 
-    let empty_band_signals: HashMap<String, HashMap<String, InputSignal>> = HashMap::new();
+    // Pre-compute statistics for signals that need normalization
+    let signals_needing_stats = engine.collect_signals_requiring_statistics();
+    if !signals_needing_stats.is_empty() {
+        log::info!(
+            "Pre-computing statistics for {} signals before analysis...",
+            signals_needing_stats.len()
+        );
+        engine.precompute_statistics(
+            &signals_needing_stats,
+            signals,
+            band_signals,
+            None, // No musical time in basic version
+            config.duration,
+            config.time_step,
+        );
+    }
 
     // Run update loop
     for step in 0..step_count {
@@ -146,7 +163,7 @@ pub fn run_analysis_with_bands(
         }
 
         // Call update (scene graph changes are ignored)
-        engine.update(time, dt, &sampled, signals, &empty_band_signals, None);
+        engine.update(time, dt, &sampled, signals, band_signals, None);
     }
 
     // Collect results
@@ -198,8 +215,8 @@ pub fn run_analysis_with_events(
     config: AnalysisConfig,
     collect_event_debug: bool,
 ) -> Result<ExtendedAnalysisResult, String> {
-    // Call the extended version with empty bands
-    run_analysis_with_events_and_bands(script, signals, &[], musical_time, config, collect_event_debug)
+    // Call the extended version with empty bands and band signals
+    run_analysis_with_events_and_bands(script, signals, &[], &HashMap::new(), musical_time, config, collect_event_debug)
 }
 
 /// Run script in analysis mode with event extraction and band support.
@@ -207,6 +224,7 @@ pub fn run_analysis_with_events_and_bands(
     script: &str,
     signals: &HashMap<String, InputSignal>,
     bands: &[(String, String)],
+    band_signals: &HashMap<String, HashMap<String, InputSignal>>,
     musical_time: Option<&MusicalTimeStructure>,
     config: AnalysisConfig,
     collect_event_debug: bool,
@@ -251,7 +269,22 @@ pub fn run_analysis_with_events_and_bands(
     set_collector_time(0.0);
     engine.call_init();
 
-    let empty_band_signals: HashMap<String, HashMap<String, InputSignal>> = HashMap::new();
+    // Pre-compute statistics for signals that need normalization
+    let signals_needing_stats = engine.collect_signals_requiring_statistics();
+    if !signals_needing_stats.is_empty() {
+        log::info!(
+            "Pre-computing statistics for {} signals before analysis...",
+            signals_needing_stats.len()
+        );
+        engine.precompute_statistics(
+            &signals_needing_stats,
+            signals,
+            band_signals,
+            musical_time,
+            config.duration,
+            config.time_step,
+        );
+    }
 
     // Run update loop
     for step in 0..step_count {
@@ -269,7 +302,7 @@ pub fn run_analysis_with_events_and_bands(
         }
 
         // Call update
-        engine.update(time, dt, &sampled, signals, &empty_band_signals, musical_time);
+        engine.update(time, dt, &sampled, signals, band_signals, musical_time);
     }
 
     // Collect debug signals
@@ -344,9 +377,9 @@ mod tests {
                 // Nothing to init
             }
 
-            fn update(dt, inputs) {
-                dbg.emit("time_signal", inputs.time);
-                dbg.emit("energy", inputs.amplitude * 2.0);
+            fn update(dt, frame) {
+                dbg.emit("time_signal", frame.time);
+                dbg.emit("energy", frame.amplitude * 2.0);
             }
         "#;
 
@@ -381,8 +414,8 @@ mod tests {
         let script = r#"
             fn init(ctx) {}
 
-            fn update(dt, inputs) {
-                if inputs.amplitude > 0.5 {
+            fn update(dt, frame) {
+                if frame.amplitude > 0.5 {
                     dbg.emit("gate", 1.0);
                 } else {
                     dbg.emit("gate", 0.0);
@@ -410,7 +443,7 @@ mod tests {
     fn test_analysis_no_signals() {
         let script = r#"
             fn init(ctx) {}
-            fn update(dt, inputs) {
+            fn update(dt, frame) {
                 dbg.emit("constant", 42.0);
             }
         "#;
@@ -436,7 +469,7 @@ mod tests {
 
     #[test]
     fn test_analysis_invalid_config() {
-        let script = r#"fn init(ctx) {} fn update(dt, inputs) {}"#;
+        let script = r#"fn init(ctx) {} fn update(dt, frame) {}"#;
         let signals = HashMap::new();
 
         let result = run_analysis(script, &signals, AnalysisConfig::new(-1.0, 0.01));

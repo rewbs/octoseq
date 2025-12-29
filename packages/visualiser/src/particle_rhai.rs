@@ -90,6 +90,20 @@ pub fn register_particle_api(engine: &mut Engine) {
     engine.register_type_with_name::<ParticleSystemHandle>("ParticleSystem");
 
     // Property accessors for ParticleSystemHandle
+
+    // __id getter/setter for scene management compatibility
+    engine.register_get("__id", |h: &mut ParticleSystemHandle| -> i64 {
+        h.entity_id.map(|id| id as i64).unwrap_or(-1)
+    });
+    engine.register_set("__id", |h: &mut ParticleSystemHandle, id: i64| {
+        h.entity_id = Some(id as u64);
+    });
+
+    // __type getter for entity type identification
+    engine.register_get("__type", |_h: &mut ParticleSystemHandle| -> String {
+        "particle_system".to_string()
+    });
+
     engine.register_get("visible", |h: &mut ParticleSystemHandle| h.system.visible);
     engine.register_set("visible", |h: &mut ParticleSystemHandle, v: bool| {
         h.system.visible = v;
@@ -399,9 +413,30 @@ fn get_string(map: &Map, key: &str) -> Option<String> {
 }
 
 /// Generate Rhai code for the particles namespace.
+/// This wraps the native builder methods to allocate entity IDs and register particle systems.
 pub fn generate_particles_namespace() -> String {
     r#"
-let particles = __particles_builder();
+let __particles_builder_inner = __particles_builder();
+let particles = #{};
+particles.__type = "particles_namespace";
+
+particles.from_events = |events, options| {
+    let sys = __particles_builder_inner.from_events(events, options);
+    let id = __next_id;
+    __next_id += 1;
+    sys.__id = id;
+    __particle_systems["" + id] = sys;
+    sys
+};
+
+particles.stream = |signal, options| {
+    let sys = __particles_builder_inner.stream(signal, options);
+    let id = __next_id;
+    __next_id += 1;
+    sys.__id = id;
+    __particle_systems["" + id] = sys;
+    sys
+};
 "#
     .to_string()
 }

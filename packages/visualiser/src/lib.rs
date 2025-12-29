@@ -37,6 +37,7 @@ pub mod post_processing;
 
 // Frame feedback (V7)
 pub mod feedback;
+pub mod feedback_rhai;
 
 // Debug visualization
 pub mod debug_markers;

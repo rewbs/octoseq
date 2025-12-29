@@ -175,6 +175,16 @@ pub fn register_event_api(engine: &mut Engine) {
     engine.register_fn("limit", |es: &mut EventStream, max_events: i64| {
         es.limit(max_events as usize)
     });
+
+    // === EventStream probe method ===
+    // Converts to signal and attaches a debug probe for analysis visualization.
+    // Returns a Signal (not EventStream) since the probe wraps a signal.
+    engine.register_fn(
+        "probe",
+        |es: &mut EventStream, name: rhai::ImmutableString| -> Signal {
+            es.to_signal().probe(name.as_str())
+        },
+    );
 }
 
 /// Parse PickEventsOptions from a Rhai Map.

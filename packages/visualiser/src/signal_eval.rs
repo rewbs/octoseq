@@ -8,9 +8,11 @@
 //! - Pre-computed statistics (for normalization)
 //! - Runtime state (for smoothing, gates)
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::debug_collector::debug_emit;
+use crate::signal::SignalId;
 use crate::input::InputSignal;
 use crate::musical_time::{MusicalTimeSegment, MusicalTimeStructure, DEFAULT_BPM};
 use crate::signal::{
@@ -31,6 +33,9 @@ pub struct EvalContext<'a> {
     /// Delta time since last frame.
     pub dt: f32,
 
+    /// Frame count (incremented each update).
+    pub frame_count: u64,
+
     /// Musical time structure (for beat-aware operations).
     pub musical_time: Option<&'a MusicalTimeStructure>,
 
@@ -45,6 +50,10 @@ pub struct EvalContext<'a> {
 
     /// Runtime state for stateful operations.
     pub state: &'a mut SignalState,
+
+    /// Per-frame evaluation cache for signal memoization.
+    /// Prevents re-evaluation of the same signal node multiple times per frame.
+    frame_cache: RefCell<HashMap<SignalId, f32>>,
 }
 
 impl<'a> EvalContext<'a> {
@@ -52,6 +61,7 @@ impl<'a> EvalContext<'a> {
     pub fn new(
         time: f32,
         dt: f32,
+        frame_count: u64,
         musical_time: Option<&'a MusicalTimeStructure>,
         input_signals: &'a HashMap<String, InputSignal>,
         band_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
@@ -61,12 +71,29 @@ impl<'a> EvalContext<'a> {
         Self {
             time,
             dt,
+            frame_count,
             musical_time,
             input_signals,
             band_signals,
             statistics,
             state,
+            frame_cache: RefCell::new(HashMap::new()),
         }
+    }
+
+    /// Clear the frame cache. Call this at the start of each frame.
+    pub fn clear_frame_cache(&self) {
+        self.frame_cache.borrow_mut().clear();
+    }
+
+    /// Get a cached value for a signal, if present.
+    pub fn get_cached(&self, id: SignalId) -> Option<f32> {
+        self.frame_cache.borrow().get(&id).copied()
+    }
+
+    /// Store a computed value in the frame cache.
+    pub fn cache_value(&self, id: SignalId, value: f32) {
+        self.frame_cache.borrow_mut().insert(id, value);
     }
 
     /// Get the current musical time segment (if any).
@@ -79,10 +106,10 @@ impl<'a> EvalContext<'a> {
         self.current_segment().map(|s| s.bpm).unwrap_or_else(|| {
             // Log warning once
             if !self.state.warned_no_musical_time {
-                log::warn!(
-                    "No musical time available, using default BPM of {}",
-                    DEFAULT_BPM
-                );
+                // log::warn!(
+                //     "No musical time available, using default BPM of {}",
+                //     DEFAULT_BPM
+                // );
             }
             DEFAULT_BPM
         })
@@ -106,14 +133,41 @@ impl<'a> EvalContext<'a> {
 
 impl Signal {
     /// Evaluate the signal at the current time in the given context.
+    ///
+    /// Results are cached per-frame to avoid redundant computation when the same
+    /// signal node is referenced multiple times (e.g., via derived signals).
     pub fn evaluate(&self, ctx: &mut EvalContext) -> f32 {
+        // Check cache first
+        if let Some(cached) = ctx.get_cached(self.id) {
+            return cached;
+        }
+
+        // Compute the value
+        let value = self.evaluate_uncached(ctx);
+
+        // Cache and return
+        ctx.cache_value(self.id, value);
+        value
+    }
+
+    /// Evaluate the signal without caching (internal implementation).
+    fn evaluate_uncached(&self, ctx: &mut EvalContext) -> f32 {
         match &*self.node {
             // === Sources ===
             SignalNode::Input { name, sampling } => {
                 // Special-cased built-ins (not backed by InputSignal sample arrays)
+                // These form the canonical time namespace
                 match name.as_str() {
+                    // Legacy names (for backwards compatibility)
                     "time" => ctx.time,
                     "dt" => ctx.dt,
+                    // Canonical time namespace
+                    "time.seconds" => ctx.time,
+                    "time.dt" => ctx.dt,
+                    "time.frames" => ctx.frame_count as f32,
+                    "time.beats" => ctx.beat_position(),
+                    "time.phase" => ctx.beat_position().fract(),
+                    "time.bpm" => ctx.current_bpm(),
                     _ => ctx
                         .input_signals
                         .get(name)
@@ -155,12 +209,17 @@ impl Signal {
 
             SignalNode::Mul(a, b) => a.evaluate(ctx) * b.evaluate(ctx),
 
-            SignalNode::Scale(s, factor) => s.evaluate(ctx) * factor,
+            SignalNode::Scale { source, factor } => {
+                let value = source.evaluate(ctx);
+                let f = factor.evaluate(ctx);
+                value * f
+            }
 
             SignalNode::Mix { a, b, weight } => {
                 let va = a.evaluate(ctx);
                 let vb = b.evaluate(ctx);
-                va * (1.0 - weight) + vb * weight
+                let w = weight.evaluate(ctx);
+                va * (1.0 - w) + vb * w
             }
 
             // === Debug ===
@@ -180,24 +239,211 @@ impl Signal {
             }
 
             // === Math Primitives ===
-            SignalNode::Clamp { source, min, max } => source.evaluate(ctx).clamp(*min, *max),
+            SignalNode::Sigmoid { source, k } => {
+                let x = source.evaluate(ctx);
+                let k_val = k.evaluate(ctx);
+                if k_val == 0.0 {
+                    x
+                } else {
+                    let center = 0.5;
+                    1.0 / (1.0 + (-k_val * (x - center)).exp())
+                }
+            }
+            SignalNode::Clamp { source, min, max } => {
+                let value = source.evaluate(ctx);
+                let min_val = min.evaluate(ctx);
+                let max_val = max.evaluate(ctx);
+                value.clamp(min_val, max_val)
+            }
 
             SignalNode::Floor { source } => source.evaluate(ctx).floor(),
 
             SignalNode::Ceil { source } => source.evaluate(ctx).ceil(),
 
+            SignalNode::Abs { source } => source.evaluate(ctx).abs(),
+
+            SignalNode::Round { source } => source.evaluate(ctx).round(),
+
+            SignalNode::Sign { source } => {
+                let v = source.evaluate(ctx);
+                if v > 0.0 {
+                    1.0
+                } else if v < 0.0 {
+                    -1.0
+                } else {
+                    0.0
+                }
+            }
+
+            SignalNode::Neg { source } => -source.evaluate(ctx),
+
+            // === Extended Arithmetic ===
+            SignalNode::Sub(a, b) => a.evaluate(ctx) - b.evaluate(ctx),
+
+            SignalNode::Div(a, b) => {
+                let numerator = a.evaluate(ctx);
+                let denominator = b.evaluate(ctx);
+                if denominator.abs() < 1e-10 {
+                    0.0 // Guard against division by zero
+                } else {
+                    numerator / denominator
+                }
+            }
+
+            SignalNode::Pow { source, exponent } => {
+                let base = source.evaluate(ctx);
+                let exp = exponent.evaluate(ctx);
+                base.powf(exp)
+            }
+
+            SignalNode::Offset { source, amount } => {
+                let value = source.evaluate(ctx);
+                let offset = amount.evaluate(ctx);
+                value + offset
+            }
+
+            // === Trigonometric (value transformation) ===
+            SignalNode::Sin { source } => source.evaluate(ctx).sin(),
+
+            SignalNode::Cos { source } => source.evaluate(ctx).cos(),
+
+            SignalNode::Tan { source } => source.evaluate(ctx).tan(),
+
+            SignalNode::Asin { source } => {
+                let v = source.evaluate(ctx).clamp(-1.0, 1.0); // Ensure valid domain
+                v.asin()
+            }
+
+            SignalNode::Acos { source } => {
+                let v = source.evaluate(ctx).clamp(-1.0, 1.0); // Ensure valid domain
+                v.acos()
+            }
+
+            SignalNode::Atan { source } => source.evaluate(ctx).atan(),
+
+            SignalNode::Atan2 { y, x } => {
+                let y_val = y.evaluate(ctx);
+                let x_val = x.evaluate(ctx);
+                y_val.atan2(x_val)
+            }
+
+            // === Exponential and Logarithmic ===
+            SignalNode::Sqrt { source } => {
+                let v = source.evaluate(ctx).max(0.0); // Ensure non-negative
+                v.sqrt()
+            }
+
+            SignalNode::Exp { source } => source.evaluate(ctx).exp(),
+
+            SignalNode::Ln { source } => {
+                let v = source.evaluate(ctx).max(1e-10); // Ensure positive
+                v.ln()
+            }
+
+            SignalNode::Log { source, base } => {
+                let v = source.evaluate(ctx).max(1e-10); // Ensure positive
+                let b = base.evaluate(ctx).max(1e-10); // Ensure positive base
+                if (b - 1.0).abs() < 1e-10 {
+                    0.0 // log base 1 is undefined
+                } else {
+                    v.ln() / b.ln()
+                }
+            }
+
+            // === Modular / Periodic ===
+            SignalNode::Mod { source, divisor } => {
+                let v = source.evaluate(ctx);
+                let d = divisor.evaluate(ctx);
+                if d.abs() < 1e-10 {
+                    0.0
+                } else {
+                    v.rem_euclid(d) // Euclidean modulo (always positive)
+                }
+            }
+
+            SignalNode::Rem { source, divisor } => {
+                let v = source.evaluate(ctx);
+                let d = divisor.evaluate(ctx);
+                if d.abs() < 1e-10 {
+                    0.0
+                } else {
+                    v % d // Remainder (can be negative)
+                }
+            }
+
+            SignalNode::Wrap { source, min, max } => {
+                let v = source.evaluate(ctx);
+                let lo = min.evaluate(ctx);
+                let hi = max.evaluate(ctx);
+                let range = hi - lo;
+                if range <= 0.0 {
+                    lo
+                } else {
+                    lo + (v - lo).rem_euclid(range)
+                }
+            }
+
+            SignalNode::Fract { source } => source.evaluate(ctx).fract(),
+
+            // === Mapping / Shaping ===
+            SignalNode::Map {
+                source,
+                in_min,
+                in_max,
+                out_min,
+                out_max,
+            } => {
+                let v = source.evaluate(ctx);
+                let i_lo = in_min.evaluate(ctx);
+                let i_hi = in_max.evaluate(ctx);
+                let o_lo = out_min.evaluate(ctx);
+                let o_hi = out_max.evaluate(ctx);
+                let in_range = i_hi - i_lo;
+                if in_range.abs() < 1e-10 {
+                    o_lo // Avoid division by zero
+                } else {
+                    let t = (v - i_lo) / in_range;
+                    o_lo + t * (o_hi - o_lo)
+                }
+            }
+
+            SignalNode::Smoothstep { source, edge0, edge1 } => {
+                let x = source.evaluate(ctx);
+                let e0 = edge0.evaluate(ctx);
+                let e1 = edge1.evaluate(ctx);
+                let range = e1 - e0;
+                if range.abs() < 1e-10 {
+                    if x < e0 { 0.0 } else { 1.0 }
+                } else {
+                    let t = ((x - e0) / range).clamp(0.0, 1.0);
+                    t * t * (3.0 - 2.0 * t)
+                }
+            }
+
+            SignalNode::Lerp { a, b, t } => {
+                let va = a.evaluate(ctx);
+                let vb = b.evaluate(ctx);
+                let tv = t.evaluate(ctx);
+                va + (vb - va) * tv
+            }
+
             // === Rate and Accumulation ===
             SignalNode::Diff { source } => self.evaluate_diff(source, ctx),
 
             SignalNode::Integrate { source, decay_beats } => {
-                self.evaluate_integrate(source, *decay_beats, ctx)
+                let decay = decay_beats.evaluate(ctx);
+                self.evaluate_integrate(source, decay, ctx)
             }
 
             // === Time Shifting ===
-            SignalNode::Delay { source, beats } => self.evaluate_delay(source, *beats, ctx),
+            SignalNode::Delay { source, beats } => {
+                let b = beats.evaluate(ctx);
+                self.evaluate_delay(source, b, ctx)
+            }
 
             SignalNode::Anticipate { source, beats } => {
-                self.evaluate_anticipate(source, *beats, ctx)
+                let b = beats.evaluate(ctx);
+                self.evaluate_anticipate(source, b, ctx)
             }
         }
     }
@@ -463,7 +709,8 @@ impl Signal {
             SignalNode::Smooth { source, .. } => self.find_root_input_name(source),
             SignalNode::Normalise { source, .. } => self.find_root_input_name(source),
             SignalNode::Gate { source, .. } => self.find_root_input_name(source),
-            SignalNode::Scale(s, _) => self.find_root_input_name(s),
+            SignalNode::Sigmoid { source, .. } => self.find_root_input_name(source),
+            SignalNode::Scale { source, .. } => self.find_root_input_name(source),
             SignalNode::Debug { source, .. } => self.find_root_input_name(source),
             _ => None,
         }
@@ -483,8 +730,8 @@ impl Signal {
                 if let Some(stats) = ctx.statistics.get(source.id) {
                     stats.normalize_global(raw)
                 } else {
-                    // No statistics available, return raw
-                    log::warn!("No statistics available for global normalization");
+                    // No statistics available, warn once and return raw
+                    ctx.state.warn_missing_stats_once(source.id, "global");
                     raw
                 }
             }
@@ -493,8 +740,8 @@ impl Signal {
                 if let Some(stats) = ctx.statistics.get(source.id) {
                     stats.normalize_robust(raw)
                 } else {
-                    // No statistics available, return raw
-                    log::warn!("No statistics available for robust normalization");
+                    // No statistics available, warn once and return raw
+                    ctx.state.warn_missing_stats_once(source.id, "robust");
                     raw
                 }
             }
@@ -885,7 +1132,7 @@ mod tests {
         statistics: &'a StatisticsCache,
         state: &'a mut SignalState,
     ) -> EvalContext<'a> {
-        EvalContext::new(time, dt, None, input_signals, band_signals, statistics, state)
+        EvalContext::new(time, dt, 0, None, input_signals, band_signals, statistics, state)
     }
 
     #[test]
@@ -995,6 +1242,24 @@ mod tests {
 
         assert!((gated_high.evaluate(&mut ctx) - 1.0).abs() < 0.001);
         assert!((gated_low.evaluate(&mut ctx) - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_evaluate_sigmoid() {
+        let inputs = HashMap::new();
+        let band_signals = HashMap::new();
+        let stats = StatisticsCache::new();
+        let mut state = SignalState::new();
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stats, &mut state);
+
+        let mid = Signal::constant(0.5).sigmoid(10.0);
+        assert!((mid.evaluate(&mut ctx) - 0.5).abs() < 0.01);
+
+        let high = Signal::constant(1.0).sigmoid(10.0);
+        assert!(high.evaluate(&mut ctx) > 0.9);
+
+        let pass_through = Signal::constant(0.2).sigmoid(0.0);
+        assert!((pass_through.evaluate(&mut ctx) - 0.2).abs() < 0.001);
     }
 
     #[test]

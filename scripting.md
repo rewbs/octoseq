@@ -95,6 +95,45 @@ Line entities have all mesh properties plus:
 
 When `max_points` is reached, the oldest points are overwritten (ring buffer behaviour).
 
+### Creating Signal-Driven Lines (line.trace)
+
+For declarative Signal visualization, use `line.trace()` instead of `line.strip()`:
+
+```rhai
+// Create a line that automatically traces a Signal over time
+let amplitude_trace = line.trace(inputs.amplitude, #{
+    max_points: 256,  // Ring buffer size (default: 256)
+    mode: "line",     // "line" or "points" (default: "line")
+    x_scale: 1.0,     // Scale factor for X axis (time) (default: 1.0)
+    y_scale: 1.0,     // Scale factor for Y axis (signal value) (default: 1.0)
+    y_offset: 0.0     // Offset added to signal value before scaling (default: 0.0)
+});
+```
+
+The engine automatically evaluates the Signal each frame and pushes a point at `(time * x_scale, (value + y_offset) * y_scale)`. This is the preferred way to visualize Signals without imperative code.
+
+| Property/Method | Type           | Description                              |
+| --------------- | -------------- | ---------------------------------------- |
+| `color`         | `{r, g, b, a}` | RGBA color (0.0-1.0 range)               |
+| `clear()`       | method         | Clear all points                         |
+| `x_scale`       | `f32 \| Signal` | Scale factor for time axis              |
+| `y_scale`       | `f32 \| Signal` | Scale factor for signal value           |
+| `y_offset`      | `f32 \| Signal` | Offset added before scaling             |
+
+**Comparison:**
+
+```rhai
+// Imperative (line.strip) - requires update() code
+let spark = line.strip(#{ max_points: 256 });
+fn update(dt, frame) {
+    spark.push(frame.time, frame.amplitude);  // Must sample manually
+}
+
+// Declarative (line.trace) - automatic Signal evaluation
+let trace = line.trace(inputs.amplitude, #{ max_points: 256 });
+// No update() code needed - engine evaluates Signal automatically
+```
+
 ### Scene Management
 
 ```rhai
@@ -287,14 +326,87 @@ cube.color = #{
 };
 ```
 
+### Time Signals
+
+The `time` namespace provides canonical time signals for declarative time-based animation:
+
+```rhai
+// Time signals - all return Signal objects
+time.seconds    // Elapsed time in seconds
+time.frames     // Frame count (increments each update)
+time.beats      // Current beat position (continuous)
+time.phase      // Beat phase 0-1 (fractional part of beat position)
+time.bpm        // Current BPM (from beat grid, or 120.0 default)
+time.dt         // Delta time since last frame
+```
+
+**Declarative vs Imperative Time-Based Animation:**
+
+```rhai
+// BEFORE (imperative): manage phase manually in update()
+let phase = 0.0;
+fn update(dt, frame) {
+    phase += dt * 0.5;
+    cube.rotation.y = phase;
+}
+
+// AFTER (declarative): use time signals
+fn update(dt, frame) {
+    cube.rotation.y = time.seconds.scale(0.5);
+}
+```
+
+Time signals compose naturally with other Signal operations:
+
+```rhai
+// Smooth oscillation synced to beats
+cube.scale = time.beats.scale(2.0).sin().scale(0.3).add(1.0);
+
+// Frame-based animation
+let frame_signal = time.frames.scale(0.01).sin();
+```
+
 ### Arithmetic Operations
 
 ```rhai
 let sum = signal1.add(signal2);      // Add two signals
 let sum = signal.add(0.5);           // Add constant
+let diff = signal1.sub(signal2);     // Subtract signals
+let diff = signal.sub(0.5);          // Subtract constant
 let product = signal1.mul(signal2);  // Multiply signals
+let quot = signal1.div(signal2);     // Divide signals
 let scaled = signal.scale(2.0);      // Multiply by constant
+let offset = signal.offset(0.5);     // Add constant (alias for add)
 let mixed = sig1.mix(sig2, 0.5);     // Blend: 0.0=sig1, 1.0=sig2
+let neg = signal.neg();              // Negate signal
+let powered = signal.pow(2.0);       // Raise to power
+let lerped = sig1.lerp(sig2, 0.5);   // Linear interpolation
+```
+
+**Important: Use Methods, Not Operators**
+
+Rhai does not support custom operator overloading. You **cannot** use `+`, `-`, `*`, `/` on Signals:
+
+```rhai
+// ❌ WRONG - will fail with type error
+let result = signal + 0.5;
+let result = signal * 2.0;
+let result = 1.0 - signal;
+
+// ✅ CORRECT - use method chaining
+let result = signal.add(0.5);
+let result = signal.scale(2.0);
+let result = gen.constant(1.0).sub(signal);
+```
+
+For `scalar op signal` patterns, use the signal's method with `gen.constant()`:
+
+```rhai
+// Instead of: 1.0 - signal
+let inverted = gen.constant(1.0).sub(signal);
+
+// Instead of: 2.0 * signal
+let doubled = signal.scale(2.0);  // commutative, so this works
 ```
 
 ### Smoothing
@@ -347,8 +459,95 @@ let gated = signal.gate.hysteresis(
 let clamped = signal.clamp(0.0, 1.0);  // Clamp to range
 let floored = signal.floor();           // Round down
 let ceiled = signal.ceil();             // Round up
+let rounded = signal.round();           // Round to nearest
+let shaped = signal.sigmoid(10.0);      // Sigmoid curve (center 0.5)
 let rate = signal.diff();               // Derivative: (current - prev) / dt
 let accum = signal.integrate(2.0);      // Cumulative sum with decay (0 = no decay)
+let sign_val = signal.sign();           // -1, 0, or 1 depending on sign
+let abs_val = signal.abs();             // Absolute value
+```
+
+### Trigonometric Functions
+
+Apply trigonometric functions to a signal's **value**. These transform the signal output, not the time domain.
+
+```rhai
+// Basic trig (input in radians)
+let sine = signal.sin();        // sin(value)
+let cosine = signal.cos();      // cos(value)
+let tangent = signal.tan();     // tan(value)
+
+// Inverse trig (returns radians)
+let asin_val = signal.asin();   // asin(value), input clamped to [-1, 1]
+let acos_val = signal.acos();   // acos(value), input clamped to [-1, 1]
+let atan_val = signal.atan();   // atan(value)
+let atan2_val = sig_y.atan2(sig_x);  // atan2(y, x)
+```
+
+**Important: `signal.sin()` vs `gen.sin()`**
+
+These serve different purposes:
+
+```rhai
+// gen.sin(freq, phase) - TIME-BASED oscillator
+// Generates a sine wave over time (beat position)
+let oscillator = gen.sin(2.0, 0.0);  // 2 cycles per beat
+
+// signal.sin() - VALUE transformation
+// Applies sin() to the signal's current value
+let transformed = time.seconds.sin();  // sin(elapsed_seconds)
+```
+
+Use `gen.sin()` for rhythmic oscillations. Use `signal.sin()` when you want to apply the sine function to a signal's value.
+
+### Exponential and Logarithmic Functions
+
+```rhai
+let root = signal.sqrt();           // Square root
+let exp_val = signal.exp();         // e^value
+let ln_val = signal.ln();           // Natural logarithm (ln)
+let log_val = signal.log(10.0);     // Logarithm with custom base
+```
+
+### Modular and Periodic Functions
+
+```rhai
+let mod_val = signal.modulo(1.0);       // Euclidean modulo (always positive)
+let rem_val = signal.rem(1.0);          // Remainder (can be negative)
+let frac = signal.fract();              // Fractional part (value - floor(value))
+let wrapped = signal.wrap(0.0, 1.0);    // Wrap value to range [min, max)
+```
+
+Useful for creating looping animations:
+
+```rhai
+// Continuous rotation that wraps at 2π
+let rotation = time.seconds.modulo(6.283185);  // 0 to 2π
+
+// Looping 0-1 phase
+let phase = time.beats.fract();
+```
+
+### Mapping and Shaping Functions
+
+```rhai
+// Map from one range to another
+let mapped = signal.map(0.0, 1.0, -1.0, 1.0);  // [0,1] → [-1,1]
+
+// Smoothstep interpolation (S-curve between edges)
+let smooth = signal.smoothstep(0.2, 0.8);  // Smooth transition in [0.2, 0.8]
+
+// Linear interpolation between two signals
+let blended = sig_a.lerp(sig_b, 0.5);  // 50% blend
+let dynamic_blend = sig_a.lerp(sig_b, inputs.amplitude);  // Audio-reactive blend
+```
+
+All mapping parameters can be Signals for dynamic control:
+
+```rhai
+// Dynamic range mapping based on audio energy
+let out_max = inputs.amplitude.scale(2.0).add(1.0);
+let mapped = signal.map(0.0, 1.0, 0.0, out_max);
 ```
 
 ### Time Shifting
@@ -357,6 +556,30 @@ let accum = signal.integrate(2.0);      // Cumulative sum with decay (0 = no dec
 let delayed = signal.delay(0.5);       // Look 0.5 beats into the past
 let ahead = signal.anticipate(0.5);    // Look 0.5 beats into the future (input signals only)
 ```
+
+### Dynamic Parameters
+
+Many signal methods accept either a constant or another signal as a parameter. This enables expressive, audio-reactive transformations where the transformation parameters themselves vary with the music.
+
+```rhai
+// Static: integrate with fixed decay
+let static_decay = signal.integrate(2.0);
+
+// Dynamic: decay rate controlled by another signal
+let decay_signal = inputs.amplitude.normalise.robust().scale(4.0);
+let dynamic_decay = signal.integrate(decay_signal);
+
+// Dynamic delay modulated by onset envelope
+let delay_amount = inputs.onsetEnvelope.normalise.robust().scale(0.5);
+let wobbly_delay = signal.delay(delay_amount);
+
+// Dynamic clamping range
+let min_bound = inputs.amplitude.scale(0.2);
+let max_bound = inputs.amplitude.scale(0.8).add(0.2);
+let adaptive_clamp = signal.clamp(min_bound, max_bound);
+```
+
+Methods supporting dynamic parameters: `scale`, `mix`, `clamp`, `sigmoid`, `integrate`, `delay`, `anticipate`, `pow`, `modulo`, `rem`, `wrap`, `map`, `smoothstep`, `lerp`, `log`, `offset`.
 
 ### Sampling Configuration
 
@@ -397,6 +620,47 @@ let probed = signal.probe("my_signal");  // Attach non-invasive probe
 ```
 
 Emits signal values during analysis mode. The signal value passes through unchanged.
+
+### Explicit Sampling (Escape Hatch)
+
+The `sample_at()` method provides an explicit escape hatch for imperative sampling. This breaks the declarative model but serves legitimate use cases like debugging, one-off queries, or init-time lookups.
+
+```rhai
+// Sample a signal at a specific time (in seconds)
+let value = signal.sample_at(5.0);  // Get value at t=5 seconds
+```
+
+**Important Limitations:**
+
+- Works reliably on `Input` and `BandInput` signals (raw audio data available)
+- For computed signals, samples the entire graph at that time point
+- Cannot look into the future beyond available audio data
+- Returns 0.0 if sampling fails (with a warning logged)
+
+**When to Use:**
+
+```rhai
+// ✅ Good: Debug/inspection during development
+fn init(ctx) {
+    let peak_at_chorus = inputs.amplitude.sample_at(45.0);
+    log.info("Amplitude at chorus: " + peak_at_chorus);
+}
+
+// ✅ Good: One-time init calculations
+fn init(ctx) {
+    let avg_energy = inputs.energy.sample_at(30.0);  // Sample at 30s
+    // Use for initial setup...
+}
+
+// ❌ Avoid: Per-frame sampling (defeats declarative model)
+fn update(dt, frame) {
+    // Don't do this - just assign the signal directly!
+    cube.scale = signal.sample_at(frame.time);  // BAD
+    cube.scale = signal;  // GOOD - declarative
+}
+```
+
+Use `sample_at()` sparingly. Prefer declarative bindings where signals are assigned to entity properties and evaluated automatically by the engine.
 
 ---
 
@@ -776,71 +1040,46 @@ fn update(dt, frame) {
 
 ### Example 7: Event-Driven Particle Burst Effect
 
-Use event extraction to trigger discrete visual events with ADSR envelopes.
+Use built-in particle primitives to spawn bursts from onset events.
 
 ```rhai
-// Create a grid of cubes to act as "particles"
-let particles = [];
-let particle_count = 16;
+// Extract strong onset events once (full track)
+let burst_events = inputs.onsetEnvelope
+    .smooth.exponential(0.02, 0.15)
+    .normalise.robust()
+    .pick.events(#{
+        hysteresis_beats: 0.5,     // At most 2 events per beat
+        target_density: 1.0,        // ~1 event per beat
+        min_threshold: 0.4,         // Only strong onsets
+        phase_bias: 0.3             // Prefer on-beat events
+    });
+
+// Built-in particle system: emit multiple instances per event.
+let burst_system = particles.from_events(burst_events, #{
+    count: 24,                      // Instances per event
+    lifetime_beats: 0.6,
+    envelope: "attack_decay",
+    attack_beats: 0.02,             // Very fast attack
+    decay_beats: 0.35,              // Moderate decay
+    easing: "exponential_out",
+    spread: #{ x: 1.2, y: 0.6, z: 1.2 },
+    scale: 0.08,
+    scale_variation: 0.5,
+    color: #{ r: 1.0, g: 0.7, b: 0.2, a: 1.0 },
+    color_variation: 0.15
+});
 
 fn init(ctx) {
-    // Create particle grid
-    for i in 0..particle_count {
-        let p = mesh.cube();
-        let row = i / 4;
-        let col = i % 4;
-        p.position = #{
-            x: (col - 1.5) * 1.2,
-            y: 0.0,
-            z: (row - 1.5) * 1.2
-        };
-        p.scale = 0.1;  // Start small
-        particles.push(p);
-        scene.add(p);
-    }
+    scene.add(burst_system);
 }
 
 fn update(dt, frame) {
-    // Extract strong onset events
-    let events = inputs.onsetEnvelope
-        .smooth.exponential(0.02, 0.15)
-        .normalise.robust()
-        .pick.events(#{
-            hysteresis_beats: 0.5,       // At most 2 events per beat
-            target_density: 1.0,          // ~1 event per beat
-            min_threshold: 0.4,           // Only strong onsets
-            phase_bias: 0.3               // Prefer on-beat events
-        });
-
-    // Create burst envelope from events
-    let burst = events.to_signal(#{
-        envelope: "adsr",
-        attack_beats: 0.02,       // Very fast attack
-        decay_beats: 0.1,         // Quick decay to sustain
-        sustain_level: 0.3,       // Hold at 30%
-        sustain_beats: 0.05,      // Brief sustain
-        release_beats: 0.3,       // Moderate release
-        easing: "quadratic_out",
-        overlap_mode: "max"       // Don't accumulate overlapping bursts
-    });
-
-    // Staggered delay for wave effect
-    for i in 0..particle_count {
-        let p = particles[i];
-
-        // Calculate distance from center (0-2 range)
-        let row = i / 4;
-        let col = i % 4;
-        let dist = ((row - 1.5).abs() + (col - 1.5).abs()) / 3.0;
-
-        // Delay burst based on distance from center
-        let delayed_burst = burst.delay(dist * 0.1);
-
-        // Apply to particle
-        p.scale = delayed_burst.scale(0.4).add(0.1);
-        p.position.y = delayed_burst.scale(0.5);
-        p.rotation.y = inputs.time.scale(0.5).add(delayed_burst.scale(3.0));
-    }
+    // Optional: move the whole system with audio intensity
+    burst_system.position = #{
+        x: 0.0,
+        y: frame.amplitude * 0.5,
+        z: 0.0
+    };
 }
 ```
 
@@ -1267,36 +1506,596 @@ This pattern allows you to:
 
 ---
 
+### Example 14: Feedback Layers for Trails and Visual Memory
+
+Use the `feedback` API to create Milkdrop-style temporal effects: trails, motion blur, and warped accumulation. The fluent builder API provides autocomplete and parameter documentation in the editor.
+
+```rhai
+let cube = mesh.cube();
+
+// Audio-reactive signals
+let energy = inputs.amplitude
+    .smooth.exponential(0.05, 0.2)
+    .normalise.robust();
+
+let onset = inputs.onsetEnvelope
+    .smooth.exponential(0.02, 0.15)
+    .normalise.robust();
+
+fn init(ctx) {
+    scene.add(cube);
+
+    // Create feedback using the fluent builder API
+    let fb = feedback.builder()
+        .warp.spiral(0.8, 0.02)      // strength, rotation (scale defaults to 1.0)
+        .color.decay(0.92)           // decay rate (0.9=fast, 0.99=slow)
+        .blend.add()                 // additive blending for trails
+        .opacity(0.85)               // feedback visibility
+        .build();
+
+    feedback.enable(fb);
+}
+
+fn update(dt, frame) {
+    // Animate the cube
+    cube.rotation.y += dt * 0.5;
+    cube.rotation.x = onset.scale(0.5);
+    cube.scale = energy.scale(0.4).add(0.6);
+
+    // Color pulses on beats
+    cube.color = #{
+        r: onset.scale(0.8).add(0.2),
+        g: energy.scale(0.5).add(0.3),
+        b: 0.8,
+        a: 1.0
+    };
+}
+```
+
+#### Chained Transforms
+
+Multiple warp and color operations can be chained by calling methods multiple times. Operations are applied in sequence: `previous_frame → warp₁ → warp₂ → ... → color₁ → color₂ → ... → blend(current) → output`.
+
+```rhai
+let cube = mesh.cube();
+
+fn init(ctx) {
+    scene.add(cube);
+
+    // Chain multiple transforms using the fluent API (up to 4 each)
+    let fb = feedback.builder()
+        // Warp chain: spiral then radial zoom
+        .warp.spiral(0.5, 0.02)              // strength, rotation
+        .warp.radial(0.3, 1.01)              // strength, scale
+
+        // Color chain: decay then hue shift
+        .color.decay(0.95)                   // decay rate
+        .color.hsv(0.01, 0.0, 0.0)           // h, s, v shifts
+
+        .blend.add()
+        .opacity(0.9)
+        .build();
+
+    feedback.enable(fb);
+}
+
+fn update(dt, frame) {
+    cube.rotation.y += dt * 0.5;
+}
+```
+
+#### Dynamic Feedback Updates
+
+For audio-reactive feedback parameters, recreate and re-enable the config in `update()`:
+
+```rhai
+let sphere = mesh.sphere();
+
+let energy = inputs.amplitude
+    .smooth.exponential(0.1, 0.3)
+    .normalise.robust();
+
+fn init(ctx) {
+    scene.add(sphere);
+}
+
+fn update(dt, frame) {
+    // Rebuild feedback each frame with dynamic values
+    let warp_strength = frame.amplitude * 0.5;
+    let hue_shift = frame.energy * 0.1;
+
+    let fb = feedback.builder()
+        .warp.radial(warp_strength, 1.01)
+        .color.hsv(hue_shift, 0.0, -0.05)
+        .blend.screen()
+        .opacity(0.9)
+        .build();
+
+    feedback.enable(fb);
+
+    sphere.position.y = energy.scale(0.5);
+    sphere.rotation.y += dt;
+}
+```
+
+**Notes on chained transforms:**
+- Up to 4 warp operations and 4 color operations can be chained
+- Each method call adds a new operation to the chain
+- Methods can be called in any order; `.build()` finalizes the config
+
+#### Warp Methods Reference
+
+| Method | Signature | Effect |
+|--------|-----------|--------|
+| `.warp.spiral` | `(strength, rotation)` or `(strength, rotation, scale)` | Radial + rotation combined |
+| `.warp.radial` | `(strength)` or `(strength, scale)` | Expand/contract from center |
+| `.warp.affine` | `(scale, rotation)` or `(scale, rotation, tx, ty)` | Scale, rotate, translate |
+| `.warp.noise` | `(strength, frequency)` | Perlin-based displacement |
+| `.warp.shear` | `(strength)` | Skew transformation |
+
+#### Color Methods Reference
+
+| Method | Signature | Effect |
+|--------|-----------|--------|
+| `.color.decay` | `(rate)` | Fade to black (0.9=fast, 0.99=slow) |
+| `.color.hsv` | `(h, s, v)` | Hue/saturation/value shift |
+| `.color.posterize` | `(levels)` | Reduce color levels (2-16 typical) |
+| `.color.channel_offset` | `(x, y)` | RGB split / chromatic aberration |
+
+#### Blend Methods Reference
+
+| Method | Effect |
+|--------|--------|
+| `.blend.alpha()` | Linear interpolation (default) |
+| `.blend.add()` | Additive (brightens, good for trails) |
+| `.blend.multiply()` | Darkens overlapping areas |
+| `.blend.screen()` | Inverse multiply (brightens) |
+| `.blend.overlay()` | Contrast enhancement |
+| `.blend.difference()` | Subtractive (psychedelic effects) |
+| `.blend.max()` | Maximum of both values |
+
+#### Disabling Feedback
+
+```rhai
+// Toggle feedback off
+feedback.disable();
+
+// Check if feedback is active
+if feedback.is_enabled() {
+    log.info("Feedback is on");
+}
+```
+
+---
+
+### Example 15: Materials and Shader Parameters
+
+Use the material system to apply host-defined shaders with signal-driven parameters.
+
+```rhai
+let cube = mesh.cube();
+let glowing_sphere = mesh.sphere();
+
+// Audio-reactive signals
+let energy = inputs.amplitude
+    .smooth.exponential(0.05, 0.2)
+    .normalise.robust();
+
+let onset = inputs.onsetEnvelope
+    .smooth.exponential(0.02, 0.15)
+    .normalise.robust();
+
+fn init(ctx) {
+    // Default material (no special effects)
+    cube.position = #{ x: -2.0, y: 0.0, z: 0.0 };
+    scene.add(cube);
+
+    // Emissive material with glow
+    glowing_sphere.position = #{ x: 2.0, y: 0.0, z: 0.0 };
+    glowing_sphere.material = "emissive";
+    scene.add(glowing_sphere);
+}
+
+fn update(dt, frame) {
+    // Animate positions
+    cube.rotation.y += dt * 0.5;
+    glowing_sphere.rotation.y -= dt * 0.3;
+
+    // Signal-driven emissive parameters
+    // The emission_intensity responds to audio
+    glowing_sphere.params.emission_color = #{
+        r: onset.scale(0.8).add(0.2),
+        g: energy.scale(0.5).add(0.2),
+        b: 0.8,
+        a: 1.0
+    };
+    glowing_sphere.params.emission_intensity = onset.scale(2.0).add(0.5);
+}
+```
+
+#### Available Materials
+
+| Material ID | Description | Parameters |
+|------------|-------------|------------|
+| `default` | Standard mesh rendering | `base_color` |
+| `emissive` | Self-illuminating glow | `emission_color`, `emission_intensity` |
+| `wire_glow` | Glowing wireframe effect | `glow_color`, `glow_intensity`, `line_width` |
+| `soft_additive` | Soft additive blending | `base_color`, `softness` |
+| `gradient` | Two-tone gradient | `color_top`, `color_bottom`, `blend_height` |
+
+#### Material Introspection
+
+```rhai
+// List all available materials
+log.info(dbg.listMaterials());
+// → ["default", "emissive", "wire_glow", "soft_additive", "gradient"]
+
+// Get detailed info about a material
+log.info(dbg.describeMaterial("emissive"));
+// → { name: "emissive", blend_mode: "Additive", params: [...] }
+```
+
+---
+
+### Example 16: Post-Processing Effects
+
+Apply composable post-processing effects to the final render.
+
+```rhai
+let cube = mesh.cube();
+
+// Create post-processing effects
+let bloom = fx.bloom(#{
+    threshold: 0.7,      // Brightness threshold (0.0-2.0)
+    intensity: 0.5,      // Bloom strength (0.0-2.0)
+    radius: 4.0,         // Blur radius (0.0-32.0, uses optimized separable blur)
+    downsample: 2.0      // Resolution factor (1=full, 2=half, etc. for performance)
+});
+
+let grade = fx.colorGrade(#{
+    contrast: 1.1,
+    saturation: 1.2
+});
+
+let vignette = fx.vignette(#{
+    intensity: 0.3,
+    smoothness: 0.5
+});
+
+fn init(ctx) {
+    scene.add(cube);
+
+    // Add effects to the post-processing chain
+    post.add(bloom);
+    post.add(grade);
+    post.add(vignette);
+}
+
+fn update(dt, frame) {
+    cube.rotation.y += dt * 0.5;
+
+    // Signal-driven bloom intensity
+    bloom.intensity = inputs.amplitude
+        .smooth.exponential(0.05, 0.2)
+        .normalise.robust()
+        .scale(0.8);
+}
+```
+
+#### Dynamic Effect Chains
+
+```rhai
+let cube = mesh.cube();
+
+let bloom = fx.bloom(#{ threshold: 0.6 });
+let distortion = fx.distortion(#{ amount: 0.0 });
+
+fn init(ctx) {
+    scene.add(cube);
+    post.add(bloom);
+    post.add(distortion);
+}
+
+fn update(dt, frame) {
+    cube.rotation.y += dt;
+
+    // Audio-reactive distortion on strong onsets
+    let onset = inputs.onsetEnvelope
+        .smooth.exponential(0.02, 0.1)
+        .normalise.robust();
+
+    distortion.amount = onset.scale(0.15);
+
+    // Temporarily disable bloom during quiet sections
+    bloom.enabled = frame.amplitude > 0.2;
+}
+```
+
+#### Available Effects
+
+| Effect | Description | Parameters |
+|--------|-------------|------------|
+| `fx.bloom()` | Glow on bright areas | `threshold`, `intensity`, `radius` (capped at 32), `downsample` |
+| `fx.colorGrade()` | Color correction | `brightness`, `contrast`, `saturation`, `gamma`, `tint` |
+| `fx.vignette()` | Darkened edges | `intensity`, `smoothness`, `color` |
+| `fx.distortion()` | Barrel/pincushion | `amount`, `center` |
+
+#### Chain Management
+
+```rhai
+// Create effects
+let bloom = fx.bloom(#{ threshold: 0.7 });
+let grade = fx.colorGrade(#{ contrast: 1.1 });
+
+// Add effects to chain
+post.add(bloom);
+post.add(grade);
+
+// Remove an effect
+post.remove(bloom);
+
+// Clear all effects
+post.clear();
+
+// Re-add for reorder demo
+post.add(bloom);
+post.add(grade);
+
+// Reorder effects (grade first, then bloom)
+post.setOrder([grade.__id, bloom.__id]);
+```
+
+#### Effect Introspection
+
+```rhai
+// List all available effects
+log.info(dbg.listEffects());
+// → ["bloom", "color_grade", "vignette", "distortion"]
+
+// Get detailed info about an effect
+log.info(dbg.describeEffect("bloom"));
+// → { name: "bloom", description: "...", params: [...] }
+```
+
+---
+
+### Example 17: Combined Materials, Effects, and Feedback
+
+A comprehensive example combining all visual enhancement systems.
+
+```rhai
+let main_sphere = mesh.sphere();
+let accent_cubes = [];
+
+// Audio signals
+let energy = inputs.amplitude
+    .smooth.exponential(0.05, 0.2)
+    .normalise.robust();
+
+let onset = inputs.onsetEnvelope
+    .smooth.exponential(0.02, 0.15)
+    .normalise.robust();
+
+let beat_events = onset.pick.events(#{
+    hysteresis_beats: 0.4,
+    target_density: 2.0
+});
+
+let beat_envelope = beat_events.to_signal(#{
+    envelope: "attack_decay",
+    attack_beats: 0.01,
+    decay_beats: 0.2,
+    easing: "exponential_out"
+});
+
+// Post-processing effects
+let bloom = fx.bloom(#{ threshold: 0.6, intensity: 0.5 });
+let grade = fx.colorGrade(#{ saturation: 1.1 });
+let vignette = fx.vignette(#{ intensity: 0.2 });
+
+fn init(ctx) {
+    // Main sphere with emissive material
+    main_sphere.material = "emissive";
+    scene.add(main_sphere);
+
+    // Create orbiting accent cubes with gradient material
+    for i in 0..6 {
+        let cube = mesh.cube();
+        cube.material = "gradient";
+        cube.scale = 0.2;
+        accent_cubes.push(cube);
+        scene.add(cube);
+    }
+
+    // Set up post-processing chain
+    post.add(bloom);
+    post.add(grade);
+    post.add(vignette);
+
+    // Create feedback for trails
+    let fb = feedback.builder()
+        .warp.spiral(0.3, 0.01)
+        .color.decay(0.92)
+        .blend.add()
+        .opacity(0.7)
+        .build();
+    feedback.enable(fb);
+}
+
+fn update(dt, frame) {
+    let time = frame.time;
+
+    // Main sphere - pulsing glow
+    main_sphere.scale = energy.scale(0.3).add(0.8);
+    main_sphere.params.emission_intensity = beat_envelope.scale(2.0).add(0.5);
+    main_sphere.params.emission_color = #{
+        r: beat_envelope.scale(0.6).add(0.4),
+        g: energy.scale(0.4).add(0.3),
+        b: 0.9,
+        a: 1.0
+    };
+
+    // Orbiting cubes
+    for i in 0..6 {
+        let cube = accent_cubes[i];
+        let angle = time * 0.5 + (i * 1.047);  // 60 degrees apart
+        let radius = 2.0 + beat_envelope.scale(0.5);
+
+        cube.position = #{
+            x: radius * angle.cos(),
+            y: beat_envelope.scale(0.3),
+            z: radius * angle.sin()
+        };
+        cube.rotation.y = time * 2.0;
+
+        // Gradient colors react to audio
+        cube.params.color_top = #{
+            r: onset.scale(0.8).add(0.2),
+            g: 0.3,
+            b: 0.8,
+            a: 1.0
+        };
+        cube.params.color_bottom = #{
+            r: 0.2,
+            g: energy.scale(0.6).add(0.2),
+            b: 0.5,
+            a: 1.0
+        };
+    }
+
+    // Dynamic post-processing
+    bloom.intensity = beat_envelope.scale(0.5).add(0.3);
+    grade.saturation = energy.scale(0.3).add(1.0);
+    vignette.intensity = beat_envelope.scale(0.2).add(0.1);
+}
+```
+
+---
+
 ## Reference
 
 ### Signal Methods
 
-| Method                  | Signature                                 | Description                      |
-| ----------------------- | ----------------------------------------- | -------------------------------- |
-| `add`                   | `(Signal) -> Signal` or `(f32) -> Signal` | Add signals or constant          |
-| `mul`                   | `(Signal) -> Signal`                      | Multiply signals                 |
-| `scale`                 | `(f32) -> Signal`                         | Multiply by constant             |
-| `mix`                   | `(Signal, f32) -> Signal`                 | Blend two signals                |
-| `smooth.moving_average` | `(beats: f32) -> Signal`                  | Moving average smoothing         |
-| `smooth.exponential`    | `(attack: f32, release: f32) -> Signal`   | Asymmetric exponential smoothing |
-| `smooth.gaussian`       | `(sigma: f32) -> Signal`                  | Gaussian smoothing               |
-| `normalise.global`      | `() -> Signal`                            | Min-max normalisation            |
-| `normalise.robust`      | `() -> Signal`                            | Percentile-based normalisation   |
-| `normalise.to_range`    | `(min: f32, max: f32) -> Signal`          | Map to range                     |
-| `gate.threshold`        | `(f32) -> Signal`                         | Simple threshold gate            |
-| `gate.hysteresis`       | `(on: f32, off: f32) -> Signal`           | Hysteresis gate                  |
-| `clamp`                 | `(min: f32, max: f32) -> Signal`          | Clamp to range                   |
-| `floor`                 | `() -> Signal`                            | Round down                       |
-| `ceil`                  | `() -> Signal`                            | Round up                         |
-| `diff`                  | `() -> Signal`                            | Derivative                       |
-| `integrate`             | `(decay: f32) -> Signal`                  | Cumulative sum with decay        |
-| `delay`                 | `(beats: f32) -> Signal`                  | Time delay                       |
-| `anticipate`            | `(beats: f32) -> Signal`                  | Look ahead (input signals only)  |
-| `probe`                 | `(name: String) -> Signal`                | Attach debug probe               |
-| `interpolate`           | `() -> Signal`                            | Use linear interpolation sampling |
-| `peak`                  | `() -> Signal`                            | Use peak-preserving sampling (default) |
-| `peak_window`           | `(beats: f32) -> Signal`                  | Peak-preserving with custom window |
-| `peak_window_sec`       | `(seconds: f32) -> Signal`                | Peak-preserving with window in seconds |
+Parameters marked with `†` can accept either a constant (`f32`) or a `Signal` for dynamic control.
+
+#### Arithmetic
+
+| Method    | Signature                                 | Description              |
+| --------- | ----------------------------------------- | ------------------------ |
+| `add`     | `(Signal) -> Signal` or `(f32) -> Signal` | Add signals or constant  |
+| `sub`     | `(Signal) -> Signal` or `(f32) -> Signal` | Subtract signals         |
+| `mul`     | `(Signal) -> Signal`                      | Multiply signals         |
+| `div`     | `(Signal) -> Signal`                      | Divide signals           |
+| `scale`   | `(factor†) -> Signal`                     | Multiply by factor       |
+| `offset`  | `(amount†) -> Signal`                     | Add constant (alias)     |
+| `neg`     | `() -> Signal`                            | Negate signal            |
+| `pow`     | `(exponent†) -> Signal`                   | Raise to power           |
+| `mix`     | `(Signal, weight†) -> Signal`             | Blend two signals        |
+| `lerp`    | `(Signal, t†) -> Signal`                  | Linear interpolation     |
+
+#### Trigonometric
+
+| Method  | Signature                | Description                    |
+| ------- | ------------------------ | ------------------------------ |
+| `sin`   | `() -> Signal`           | Sine of value                  |
+| `cos`   | `() -> Signal`           | Cosine of value                |
+| `tan`   | `() -> Signal`           | Tangent of value               |
+| `asin`  | `() -> Signal`           | Arc sine (input clamped)       |
+| `acos`  | `() -> Signal`           | Arc cosine (input clamped)     |
+| `atan`  | `() -> Signal`           | Arc tangent                    |
+| `atan2` | `(Signal) -> Signal`     | atan2(self, other)             |
+
+#### Exponential and Logarithmic
+
+| Method | Signature          | Description              |
+| ------ | ------------------ | ------------------------ |
+| `sqrt` | `() -> Signal`     | Square root              |
+| `exp`  | `() -> Signal`     | e^value                  |
+| `ln`   | `() -> Signal`     | Natural logarithm        |
+| `log`  | `(base†) -> Signal`| Logarithm with base      |
+
+#### Modular and Periodic
+
+| Method   | Signature                    | Description                      |
+| -------- | ---------------------------- | -------------------------------- |
+| `modulo` | `(divisor†) -> Signal`       | Euclidean modulo (always ≥ 0)    |
+| `rem`    | `(divisor†) -> Signal`       | Remainder (can be negative)      |
+| `fract`  | `() -> Signal`               | Fractional part                  |
+| `wrap`   | `(min†, max†) -> Signal`     | Wrap value to range [min, max)   |
+
+#### Mapping and Shaping
+
+| Method      | Signature                                      | Description                    |
+| ----------- | ---------------------------------------------- | ------------------------------ |
+| `map`       | `(in_min†, in_max†, out_min†, out_max†) -> Signal` | Map from one range to another |
+| `smoothstep`| `(edge0†, edge1†) -> Signal`                   | S-curve interpolation          |
+| `clamp`     | `(min†, max†) -> Signal`                       | Clamp to range                 |
+| `abs`       | `() -> Signal`                                 | Absolute value                 |
+| `sign`      | `() -> Signal`                                 | -1, 0, or 1                    |
+| `floor`     | `() -> Signal`                                 | Round down                     |
+| `ceil`      | `() -> Signal`                                 | Round up                       |
+| `round`     | `() -> Signal`                                 | Round to nearest               |
+| `sigmoid`   | `(k†) -> Signal`                               | Sigmoid curve (center 0.5)     |
+
+#### Smoothing
+
+| Method                  | Signature                               | Description                      |
+| ----------------------- | --------------------------------------- | -------------------------------- |
+| `smooth.moving_average` | `(beats: f32) -> Signal`                | Moving average smoothing         |
+| `smooth.exponential`    | `(attack: f32, release: f32) -> Signal` | Asymmetric exponential smoothing |
+| `smooth.gaussian`       | `(sigma: f32) -> Signal`                | Gaussian smoothing               |
+
+#### Normalisation
+
+| Method               | Signature                    | Description                    |
+| -------------------- | ---------------------------- | ------------------------------ |
+| `normalise.global`   | `() -> Signal`               | Min-max normalisation          |
+| `normalise.robust`   | `() -> Signal`               | Percentile-based normalisation |
+| `normalise.to_range` | `(min: f32, max: f32) -> Signal` | Map to range               |
+
+#### Gating
+
+| Method            | Signature                  | Description        |
+| ----------------- | -------------------------- | ------------------ |
+| `gate.threshold`  | `(f32) -> Signal`          | Simple threshold   |
+| `gate.hysteresis` | `(on: f32, off: f32) -> Signal` | Hysteresis gate |
+
+#### Time and State
+
+| Method      | Signature              | Description                         |
+| ----------- | ---------------------- | ----------------------------------- |
+| `diff`      | `() -> Signal`         | Derivative                          |
+| `integrate` | `(decay†) -> Signal`   | Cumulative sum with decay           |
+| `delay`     | `(beats†) -> Signal`   | Time delay                          |
+| `anticipate`| `(beats†) -> Signal`   | Look ahead (input signals only)     |
+| `sample_at` | `(time: f32) -> f32`   | Sample value at time (escape hatch) |
+
+#### Sampling Configuration
+
+| Method          | Signature              | Description                            |
+| --------------- | ---------------------- | -------------------------------------- |
+| `interpolate`   | `() -> Signal`         | Use linear interpolation sampling      |
+| `peak`          | `() -> Signal`         | Use peak-preserving sampling (default) |
+| `peak_window`   | `(beats: f32) -> Signal`| Peak-preserving with custom window    |
+| `peak_window_sec`| `(seconds: f32) -> Signal`| Peak-preserving with window in seconds|
+
+#### Debug
+
+| Method     | Signature                  | Description                       |
+| ---------- | -------------------------- | --------------------------------- |
+| `probe`    | `(name: String) -> Signal` | Attach debug probe                |
+| `describe` | `() -> String`             | Human-readable graph description  |
+
+### Time Signals
+
+| Signal         | Description                               |
+| -------------- | ----------------------------------------- |
+| `time.seconds` | Elapsed time in seconds                   |
+| `time.frames`  | Frame count (increments each update)      |
+| `time.beats`   | Current beat position (continuous)        |
+| `time.phase`   | Beat phase 0-1 (fractional part of beat)  |
+| `time.bpm`     | Current BPM (from beat grid, or 120.0)    |
+| `time.dt`      | Delta time since last frame               |
 
 ### Generator Functions
 
@@ -1348,3 +2147,70 @@ This pattern allows you to:
 4. **Whole-track visibility** - Scripts can look ahead and behind in time
 5. **Immutable signals** - All transformations return new signals
 6. **Deterministic** - Same audio input always produces identical visuals
+7. **Signals everywhere** - All APIs that accept numeric parameters should also accept Signals (see below)
+
+---
+
+## Signals Everywhere
+
+**Core Principle**: Any API parameter that accepts a number should also accept a `Signal`. Signals are evaluated per-frame during scene sync, enabling audio-reactive control of any numeric property without imperative code.
+
+### Currently Supported
+
+The following APIs fully support Signals for numeric parameters:
+
+- **Entity properties**: `position.{x,y,z}`, `rotation.{x,y,z}`, `scale`, `color.{r,g,b,a}`
+- **Material parameters**: `entity.params.*` (all numeric material params)
+- **Post-processing effects**: `fx.bloom()`, `fx.colorGrade()`, `fx.vignette()`, `fx.distortion()` - all numeric parameters
+- **Effect post-modification**: `bloom.intensity = signal`, `grade.saturation = signal`, etc.
+- **Effect color/vec params**: `tint.r/g/b/a`, `color.r/g/b/a`, `center.x/y` - all accept Signals
+- **Feedback builder**: All warp, color, and opacity parameters accept Signals via `SignalOrF32`
+- **Line trace**: `line.trace(signal, options)` - declarative Signal-driven line visualization
+- **Signal methods with dynamic params**: `scale()`, `mix()`, `clamp()`, `sigmoid()`, `integrate()`, `delay()`, `anticipate()`
+
+### APIs That Accept Numbers Only
+
+| API | Parameters | Notes |
+|-----|------------|-------|
+| `line.push(x, y)` | `x`, `y` | Immediate-mode; use `line.trace()` for Signal-driven lines |
+| `dbg.emit(name, value)` | `value` | Debug emission - samples value at call time |
+
+### Implementation Pattern
+
+When adding Signal support to a parameter:
+
+1. Accept `rhai::Dynamic` instead of `f64`/`f32`
+2. Store as `Dynamic` in the effect/config struct
+3. During sync/evaluation, use `eval_signal_param()` or similar to resolve:
+   - If it's a number, use directly
+   - If it's a Signal, evaluate at current time/dt
+
+Example (pseudo-code):
+```rust
+// In effect parameter storage
+pub struct BloomOptions {
+    pub intensity: Dynamic,  // Can be f64 or Signal
+}
+
+// During sync
+let intensity_value = eval_signal_param(&options.intensity, time, dt, signals)?;
+```
+
+### Why This Matters
+
+Without Signal support, users must write imperative code in `update()`:
+```rhai
+// Without Signal support (verbose, imperative)
+fn update(dt, frame) {
+    bloom.intensity = frame.amplitude * 0.5;  // Must sample manually each frame
+}
+```
+
+With Signal support, users can express intent declaratively:
+```rhai
+// With Signal support (declarative, expressive)
+let bloom = fx.bloom(#{
+    intensity: inputs.amplitude.smooth.exponential(0.1, 0.3).scale(0.5)
+});
+// Engine evaluates automatically each frame
+```

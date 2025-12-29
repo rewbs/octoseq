@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
 import WaveSurfer from "wavesurfer.js";
 import { minMax, normaliseForWaveform } from "@octoseq/mir";
@@ -8,7 +8,6 @@ import type { BandMir1DResult, BandMirDiagnostics } from "@octoseq/mir";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
 import { getBandColorHex } from "@/lib/bandColors";
 import { useBandMirStore, useFrequencyBandStore } from "@/lib/stores";
-import { useShallow } from "zustand/react/shallow";
 import { BandEventOverlay, BandEventCountBadge } from "./BandEventOverlay";
 
 // ----------------------------
@@ -24,6 +23,8 @@ export type BandMirSignalViewerProps = {
     cursorTimeSec?: number | null;
     /** Notify parent when this view is hovered */
     onCursorTimeChange?: (timeSec: number | null) => void;
+    /** Notify parent of waveform readiness progress */
+    onWaveformsReadyChange?: (status: { ready: number; total: number }) => void;
 };
 
 type BandSignalRowProps = {
@@ -34,6 +35,7 @@ type BandSignalRowProps = {
     onCursorTimeChange?: (timeSec: number | null) => void;
     /** Whether to show event overlay */
     showEvents?: boolean;
+    onWaveformReady?: (bandId: string) => void;
 };
 
 // ----------------------------
@@ -49,10 +51,12 @@ function BandSignalRow({
     cursorTimeSec,
     onCursorTimeChange,
     showEvents = true,
+    onWaveformReady,
 }: BandSignalRowProps) {
     const wsRef = useRef<WaveSurfer | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const readyRef = useRef(false);
+    const loadTokenRef = useRef(0);
     const viewportRef = useRef<WaveSurferViewport | null>(viewport);
 
     const color = getBandColorHex(bandIndex);
@@ -132,27 +136,40 @@ function BandSignalRow({
         }
 
         readyRef.current = false;
+        loadTokenRef.current += 1;
+        const loadToken = loadTokenRef.current;
         const peaks: Array<Float32Array> = [out];
         const dummyBlob = new Blob([], { type: "application/octet-stream" });
 
-        void ws.loadBlob(dummyBlob, peaks, duration).then(() => {
-            readyRef.current = true;
-            const vp = viewportRef.current;
-            if (vp) {
-                try {
-                    if (vp.minPxPerSec > 0) ws.zoom(vp.minPxPerSec);
-                } catch (e) {
-                    // Ignore
+        void ws
+            .loadBlob(dummyBlob, peaks, duration)
+            .then(() => {
+                if (loadToken !== loadTokenRef.current) return;
+                readyRef.current = true;
+                const vp = viewportRef.current;
+                if (vp) {
+                    try {
+                        if (vp.minPxPerSec > 0) ws.zoom(vp.minPxPerSec);
+                    } catch (e) {
+                        // Ignore
+                    }
+                    const scrollContainer = (
+                        ws.getRenderer() as unknown as { scrollContainer?: HTMLElement }
+                    )?.scrollContainer;
+                    if (scrollContainer && vp.minPxPerSec > 0) {
+                        scrollContainer.scrollLeft = Math.max(0, vp.startTime * vp.minPxPerSec);
+                    }
                 }
-                const scrollContainer = (
-                    ws.getRenderer() as unknown as { scrollContainer?: HTMLElement }
-                )?.scrollContainer;
-                if (scrollContainer && vp.minPxPerSec > 0) {
-                    scrollContainer.scrollLeft = Math.max(0, vp.startTime * vp.minPxPerSec);
-                }
-            }
-        });
-    }, [result]);
+            })
+            .catch((err) => {
+                if (loadToken !== loadTokenRef.current) return;
+                console.error("[Band MIR] wavesurfer load failed", err);
+            })
+            .finally(() => {
+                if (loadToken !== loadTokenRef.current) return;
+                onWaveformReady?.(result.bandId);
+            });
+    }, [result, onWaveformReady]);
 
     // Sync viewport
     useEffect(() => {
@@ -282,26 +299,68 @@ export function BandMirSignalViewer({
     viewport,
     cursorTimeSec,
     onCursorTimeChange,
+    onWaveformsReadyChange,
 }: BandMirSignalViewerProps) {
-    const { expanded, setExpanded, getResultsByFunction } = useBandMirStore(
-        useShallow((s) => ({
-            expanded: s.expanded,
-            setExpanded: s.setExpanded,
-            getResultsByFunction: s.getResultsByFunction,
-        }))
-    );
+    const expanded = useBandMirStore((s) => s.expanded);
+    const setExpanded = useBandMirStore((s) => s.setExpanded);
+    const cache = useBandMirStore((s) => s.cache);
 
     const structure = useFrequencyBandStore((s) => s.structure);
 
     // Get results for this function
-    const results = getResultsByFunction(fn);
+    const results = useMemo(() => {
+        const entries: BandMir1DResult[] = [];
+        for (const [key, result] of cache.entries()) {
+            if (key.endsWith(`:${fn}`)) {
+                entries.push(result);
+            }
+        }
+        return entries;
+    }, [cache, fn]);
 
     // Sort by band sortOrder
-    const sortedResults = [...results].sort((a, b) => {
-        const bandA = structure?.bands.find((band) => band.id === a.bandId);
-        const bandB = structure?.bands.find((band) => band.id === b.bandId);
-        return (bandA?.sortOrder ?? 0) - (bandB?.sortOrder ?? 0);
-    });
+    const sortedResults = useMemo(() => {
+        return [...results].sort((a, b) => {
+            const bandA = structure?.bands.find((band) => band.id === a.bandId);
+            const bandB = structure?.bands.find((band) => band.id === b.bandId);
+            return (bandA?.sortOrder ?? 0) - (bandB?.sortOrder ?? 0);
+        });
+    }, [results, structure]);
+
+    const [readyBandIds, setReadyBandIds] = useState<Set<string>>(new Set());
+    const handleWaveformReady = useCallback((bandId: string) => {
+        setReadyBandIds((prev) => {
+            if (prev.has(bandId)) return prev;
+            const next = new Set(prev);
+            next.add(bandId);
+            return next;
+        });
+    }, []);
+
+    const resultsKey = useMemo(() => {
+        return sortedResults
+            .map((result) => {
+                const totalMs = result.meta?.timings?.totalMs ?? 0;
+                return `${result.bandId}:${result.fn}:${result.values.length}:${result.times.length}:${totalMs}`;
+            })
+            .join("|");
+    }, [sortedResults]);
+
+    useEffect(() => {
+        setReadyBandIds(new Set());
+        onWaveformsReadyChange?.({ ready: 0, total: sortedResults.length });
+    }, [resultsKey, onWaveformsReadyChange, sortedResults.length]);
+
+    const readyCount = readyBandIds.size;
+    useEffect(() => {
+        onWaveformsReadyChange?.({ ready: readyCount, total: sortedResults.length });
+    }, [readyCount, onWaveformsReadyChange, sortedResults.length]);
+
+    useEffect(() => {
+        return () => {
+            onWaveformsReadyChange?.({ ready: 0, total: 0 });
+        };
+    }, [onWaveformsReadyChange]);
 
     // Get band indices for coloring
     const bandIndexMap = new Map<string, number>();
@@ -339,6 +398,7 @@ export function BandMirSignalViewer({
                             viewport={viewport}
                             cursorTimeSec={cursorTimeSec}
                             onCursorTimeChange={onCursorTimeChange}
+                            onWaveformReady={handleWaveformReady}
                         />
                     ))}
                 </div>

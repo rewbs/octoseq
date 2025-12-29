@@ -12,6 +12,13 @@ import { useFrequencyBandStore } from "../frequencyBandStore";
 import { useBandMirStore, type BandEvent } from "../bandMirStore";
 import { useConfigStore } from "../configStore";
 
+const waitForNextPaint = () =>
+    new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+            setTimeout(resolve, 0);
+        });
+    });
+
 /**
  * Hook that provides band MIR analysis actions.
  *
@@ -53,39 +60,40 @@ export function useBandMirActions() {
 
             if (bandsToCompute.length === 0) return;
 
-            const spectrogramConfig = configStore.getSpectrogramConfig();
-
-            // Create a cache key that includes BOTH audio identity and spectrogram config.
-            // This prevents stale reuse when FFT/hop settings change.
-            const audioId = `${audioFileName ?? "unknown"}:${audioDuration}:${audio.sampleRate}`;
-            const specKey = `${audioId}:fft=${spectrogramConfig.fftSize}:hop=${spectrogramConfig.hopSize}:win=${spectrogramConfig.window}`;
-
-            // Get or compute spectrogram
-            let spec: Spectrogram;
-            if (
-                spectrogramCacheRef.current &&
-                spectrogramCacheRef.current.audioId === specKey
-            ) {
-                spec = spectrogramCacheRef.current.spec;
-            } else {
-                // Create AudioBufferLike from AudioBuffer
-                const ch0 = audio.getChannelData(0);
-                const mono = new Float32Array(ch0);
-                const audioLike = {
-                    sampleRate: audio.sampleRate,
-                    numberOfChannels: 1,
-                    getChannelData: () => mono,
-                };
-
-                spec = await spectrogram(audioLike, spectrogramConfig);
-
-                spectrogramCacheRef.current = { audioId: specKey, spec };
-            }
-
             // Mark bands as pending
             bandsToCompute.forEach((b) => bandMirStore.setPending(b.id, true));
+            await waitForNextPaint();
 
             try {
+                const spectrogramConfig = configStore.getSpectrogramConfig();
+
+                // Create a cache key that includes BOTH audio identity and spectrogram config.
+                // This prevents stale reuse when FFT/hop settings change.
+                const audioId = `${audioFileName ?? "unknown"}:${audioDuration}:${audio.sampleRate}`;
+                const specKey = `${audioId}:fft=${spectrogramConfig.fftSize}:hop=${spectrogramConfig.hopSize}:win=${spectrogramConfig.window}`;
+
+                // Get or compute spectrogram
+                let spec: Spectrogram;
+                if (
+                    spectrogramCacheRef.current &&
+                    spectrogramCacheRef.current.audioId === specKey
+                ) {
+                    spec = spectrogramCacheRef.current.spec;
+                } else {
+                    // Create AudioBufferLike from AudioBuffer
+                    const ch0 = audio.getChannelData(0);
+                    const mono = new Float32Array(ch0);
+                    const audioLike = {
+                        sampleRate: audio.sampleRate,
+                        numberOfChannels: 1,
+                        getChannelData: () => mono,
+                    };
+
+                    spec = await spectrogram(audioLike, spectrogramConfig);
+
+                    spectrogramCacheRef.current = { audioId: specKey, spec };
+                }
+
                 // Run batch computation
                 const { results } = await runBandMirBatch(spec, {
                     bands: bandsToCompute,
@@ -169,6 +177,7 @@ export function useBandMirActions() {
 
             // Mark as pending
             bandsToExtract.forEach((b) => bandMirStore.setEventsPending(b.id, true));
+            await waitForNextPaint();
 
             try {
                 // Conservative defaults for band-scoped event extraction

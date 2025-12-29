@@ -3,12 +3,86 @@
 //! This module registers Signal and its fluent builders with the Rhai engine,
 //! enabling scripts to use the Signal API with method chaining.
 
-use rhai::{Engine, ImmutableString};
+use std::cell::RefCell;
+use std::collections::HashMap;
+
+use rhai::{Dynamic, Engine, EvalAltResult, ImmutableString};
 
 use crate::event_rhai::{register_event_api, PickBuilder};
+use crate::input::InputSignal;
 use crate::signal::{
-    GateBuilder, GeneratorNode, NormaliseBuilder, NoiseType, Signal, SmoothBuilder,
+    GateBuilder, GeneratorNode, NormaliseBuilder, NoiseType, Signal, SignalNode, SignalParam,
+    SmoothBuilder,
 };
+
+// Thread-local storage for input signals during script execution.
+// Used by sample_at to access raw signal data at specific times.
+thread_local! {
+    static CURRENT_INPUT_SIGNALS: RefCell<Option<HashMap<String, InputSignal>>> = const { RefCell::new(None) };
+    static CURRENT_BAND_SIGNALS: RefCell<Option<HashMap<String, HashMap<String, InputSignal>>>> = const { RefCell::new(None) };
+}
+
+/// Set the input signals for the current thread (call before script execution).
+pub fn set_current_input_signals(
+    inputs: HashMap<String, InputSignal>,
+    bands: HashMap<String, HashMap<String, InputSignal>>,
+) {
+    CURRENT_INPUT_SIGNALS.with(|cell| {
+        *cell.borrow_mut() = Some(inputs);
+    });
+    CURRENT_BAND_SIGNALS.with(|cell| {
+        *cell.borrow_mut() = Some(bands);
+    });
+}
+
+/// Clear the input signals for the current thread (call after script execution).
+pub fn clear_current_input_signals() {
+    CURRENT_INPUT_SIGNALS.with(|cell| {
+        *cell.borrow_mut() = None;
+    });
+    CURRENT_BAND_SIGNALS.with(|cell| {
+        *cell.borrow_mut() = None;
+    });
+}
+
+/// Convert a Rhai Dynamic value to SignalParam.
+///
+/// Accepts:
+/// - f32/f64: Converts to SignalParam::Scalar
+/// - i64/i32: Converts to SignalParam::Scalar
+/// - Signal: Converts to SignalParam::Signal
+fn to_signal_param(value: Dynamic) -> Result<SignalParam, Box<EvalAltResult>> {
+    // Try f64 (Rhai's default float type)
+    if let Some(f) = value.clone().try_cast::<f64>() {
+        return Ok(SignalParam::Scalar(f as f32));
+    }
+
+    // Try f32 (in case a Rust f32 is passed through)
+    if let Some(f) = value.clone().try_cast::<f32>() {
+        return Ok(SignalParam::Scalar(f));
+    }
+
+    // Try i64 (Rhai's default integer type)
+    if let Some(i) = value.clone().try_cast::<i64>() {
+        return Ok(SignalParam::Scalar(i as f32));
+    }
+
+    // Try i32 (in case a Rust i32 is passed through)
+    if let Some(i) = value.clone().try_cast::<i32>() {
+        return Ok(SignalParam::Scalar(i as f32));
+    }
+
+    // Try Signal
+    if let Some(signal) = value.clone().try_cast::<Signal>() {
+        return Ok(SignalParam::Signal(Box::new(signal)));
+    }
+
+    Err(format!(
+        "Expected number or Signal for signal parameter, got {}",
+        value.type_name()
+    )
+    .into())
+}
 
 /// Register Signal API types and functions with a Rhai engine.
 pub fn register_signal_api(engine: &mut Engine) {
@@ -19,30 +93,220 @@ pub fn register_signal_api(engine: &mut Engine) {
     engine.register_fn("add", |s: &mut Signal, other: Signal| s.add(other));
     engine.register_fn("add", |s: &mut Signal, value: f32| s.add_scalar(value));
     engine.register_fn("mul", |s: &mut Signal, other: Signal| s.mul(other));
-    engine.register_fn("scale", |s: &mut Signal, factor: f32| s.scale(factor));
-    engine.register_fn("mix", |s: &mut Signal, other: Signal, weight: f32| {
-        s.mix(other, weight)
-    });
+    engine.register_fn(
+        "scale",
+        |s: &mut Signal, factor: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.scale(to_signal_param(factor)?))
+        },
+    );
+    engine.register_fn(
+        "mix",
+        |s: &mut Signal, other: Signal, weight: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.mix(other, to_signal_param(weight)?))
+        },
+    );
 
-    // === Debug method ===
+    // === Debug methods ===
     engine.register_fn("probe", |s: &mut Signal, name: ImmutableString| {
         s.probe(name.as_str())
     });
+    engine.register_fn("describe", |s: &mut Signal| -> ImmutableString {
+        s.describe().into()
+    });
 
     // === Math primitives ===
-    engine.register_fn("clamp", |s: &mut Signal, min: f32, max: f32| s.clamp(min, max));
+    engine.register_fn(
+        "clamp",
+        |s: &mut Signal, min: Dynamic, max: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.clamp(to_signal_param(min)?, to_signal_param(max)?))
+        },
+    );
     engine.register_fn("floor", |s: &mut Signal| s.floor());
     engine.register_fn("ceil", |s: &mut Signal| s.ceil());
+    engine.register_fn("abs", |s: &mut Signal| s.abs());
+    engine.register_fn(
+        "sigmoid",
+        |s: &mut Signal, k: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.sigmoid(to_signal_param(k)?))
+        },
+    );
+    engine.register_fn("round", |s: &mut Signal| s.round());
+    engine.register_fn("sign", |s: &mut Signal| s.sign());
+    engine.register_fn("neg", |s: &mut Signal| s.neg());
+
+    // === Extended arithmetic ===
+    engine.register_fn("sub", |s: &mut Signal, other: Signal| s.sub(other));
+    engine.register_fn("sub", |s: &mut Signal, value: f32| s.sub_scalar(value));
+    engine.register_fn("div", |s: &mut Signal, other: Signal| s.div(other));
+    engine.register_fn("div", |s: &mut Signal, value: f32| s.div_scalar(value));
+    engine.register_fn(
+        "pow",
+        |s: &mut Signal, exponent: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.pow(to_signal_param(exponent)?))
+        },
+    );
+    engine.register_fn(
+        "offset",
+        |s: &mut Signal, amount: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.offset(to_signal_param(amount)?))
+        },
+    );
+
+    // === Trigonometric (value transformation) ===
+    // Note: These transform the signal VALUE, unlike gen.sin() which generates oscillators
+    engine.register_fn("sin", |s: &mut Signal| s.sin());
+    engine.register_fn("cos", |s: &mut Signal| s.cos());
+    engine.register_fn("tan", |s: &mut Signal| s.tan());
+    engine.register_fn("asin", |s: &mut Signal| s.asin());
+    engine.register_fn("acos", |s: &mut Signal| s.acos());
+    engine.register_fn("atan", |s: &mut Signal| s.atan());
+    engine.register_fn("atan2", |s: &mut Signal, x: Signal| s.atan2(x));
+
+    // === Exponential and logarithmic ===
+    engine.register_fn("sqrt", |s: &mut Signal| s.sqrt());
+    engine.register_fn("exp", |s: &mut Signal| s.exp());
+    engine.register_fn("ln", |s: &mut Signal| s.ln());
+    engine.register_fn(
+        "log",
+        |s: &mut Signal, base: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.log(to_signal_param(base)?))
+        },
+    );
+
+    // === Modular / periodic ===
+    engine.register_fn(
+        "modulo",
+        |s: &mut Signal, divisor: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.modulo(to_signal_param(divisor)?))
+        },
+    );
+    engine.register_fn(
+        "rem",
+        |s: &mut Signal, divisor: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.rem(to_signal_param(divisor)?))
+        },
+    );
+    engine.register_fn(
+        "wrap",
+        |s: &mut Signal, min: Dynamic, max: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.wrap(to_signal_param(min)?, to_signal_param(max)?))
+        },
+    );
+    engine.register_fn("fract", |s: &mut Signal| s.fract());
+
+    // === Mapping / shaping ===
+    engine.register_fn(
+        "map",
+        |s: &mut Signal,
+         in_min: Dynamic,
+         in_max: Dynamic,
+         out_min: Dynamic,
+         out_max: Dynamic|
+         -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.map(
+                to_signal_param(in_min)?,
+                to_signal_param(in_max)?,
+                to_signal_param(out_min)?,
+                to_signal_param(out_max)?,
+            ))
+        },
+    );
+    engine.register_fn(
+        "smoothstep",
+        |s: &mut Signal, edge0: Dynamic, edge1: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.smoothstep(to_signal_param(edge0)?, to_signal_param(edge1)?))
+        },
+    );
+    engine.register_fn(
+        "lerp",
+        |s: &mut Signal, other: Signal, t: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.lerp(other, to_signal_param(t)?))
+        },
+    );
 
     // === Rate and accumulation ===
     engine.register_fn("diff", |s: &mut Signal| s.diff());
-    engine.register_fn("integrate", |s: &mut Signal, decay_beats: f32| {
-        s.integrate(decay_beats)
-    });
+    engine.register_fn(
+        "integrate",
+        |s: &mut Signal, decay_beats: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.integrate(to_signal_param(decay_beats)?))
+        },
+    );
 
     // === Time shifting ===
-    engine.register_fn("delay", |s: &mut Signal, beats: f32| s.delay(beats));
-    engine.register_fn("anticipate", |s: &mut Signal, beats: f32| s.anticipate(beats));
+    engine.register_fn(
+        "delay",
+        |s: &mut Signal, beats: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.delay(to_signal_param(beats)?))
+        },
+    );
+    engine.register_fn(
+        "anticipate",
+        |s: &mut Signal, beats: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
+            Ok(s.anticipate(to_signal_param(beats)?))
+        },
+    );
+
+    // === Explicit sampling (escape hatch) ===
+    // WARNING: This is an imperative escape hatch. Only works reliably on Input/BandInput signals.
+    // For most use cases, prefer declarative transformations.
+    engine.register_fn("sample_at", |s: &mut Signal, time: f32| -> f32 {
+        match &*s.node {
+            SignalNode::Input { name, .. } => {
+                // Handle special time signals
+                match name.as_str() {
+                    "time" | "time.seconds" => time,
+                    "time.dt" | "dt" => 0.016, // Default dt assumption
+                    "time.frames" => 0.0, // Cannot determine frame count from time alone
+                    "time.beats" | "time.phase" | "time.bpm" => {
+                        log::warn!(
+                            "sample_at: Cannot sample time.{} without musical context",
+                            name
+                        );
+                        0.0
+                    }
+                    _ => {
+                        // Try to sample from stored input signals
+                        CURRENT_INPUT_SIGNALS.with(|cell| {
+                            if let Some(ref inputs) = *cell.borrow() {
+                                if let Some(sig) = inputs.get(name) {
+                                    return sig.sample(time);
+                                }
+                            }
+                            log::warn!("sample_at: Input '{}' not available for sampling", name);
+                            0.0
+                        })
+                    }
+                }
+            }
+            SignalNode::BandInput {
+                band_key, feature, ..
+            } => CURRENT_BAND_SIGNALS.with(|cell| {
+                if let Some(ref bands) = *cell.borrow() {
+                    if let Some(features) = bands.get(band_key) {
+                        if let Some(sig) = features.get(feature) {
+                            return sig.sample(time);
+                        }
+                    }
+                }
+                log::warn!(
+                    "sample_at: Band '{}' feature '{}' not available for sampling",
+                    band_key,
+                    feature
+                );
+                0.0
+            }),
+            SignalNode::Constant(v) => *v,
+            _ => {
+                log::warn!(
+                    "sample_at: Only Input/BandInput/Constant signals can be sampled. \
+                     For composed signals, this returns 0.0. \
+                     Prefer declarative signal bindings instead."
+                );
+                0.0
+            }
+        }
+    });
 
     // === Sampling configuration ===
     // Change from default peak-preserving to linear interpolation
@@ -190,7 +454,7 @@ pub fn register_signal_api(engine: &mut Engine) {
 
 /// Rhai code to inject at script load time for the Signal API.
 ///
-/// This provides the `gen` namespace and `inputs` object.
+/// This provides the `gen` namespace, `time` namespace, and `inputs` object.
 pub const SIGNAL_API_RHAI: &str = r#"
 // === Signal Generators Namespace ===
 let gen = #{};
@@ -202,6 +466,18 @@ gen.saw = |freq, phase| __gen_saw(freq, phase);
 gen.noise = |noise_type, seed| __gen_noise(noise_type, seed);
 gen.perlin = |scale, seed| __gen_perlin(scale, seed);
 gen.constant = |value| __signal_constant(value);
+
+// === Time Namespace ===
+// Canonical time signals for declarative time-based animation.
+// These are Signals, not numbers - use them in signal graphs.
+let time = #{};
+time.__type = "time_namespace";
+time.seconds = __signal_input("time.seconds");
+time.frames = __signal_input("time.frames");
+time.beats = __signal_input("time.beats");
+time.phase = __signal_input("time.phase");
+time.bpm = __signal_input("time.bpm");
+time.dt = __signal_input("time.dt");
 
 // === Inputs Namespace ===
 // This object provides Signal-returning accessors for input signals.

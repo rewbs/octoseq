@@ -37,6 +37,9 @@ pub struct SignalState {
     /// Tracks band/feature combinations that have been warned about being missing.
     /// Format: "band_key:feature"
     pub warned_missing_bands: HashSet<String>,
+
+    /// Tracks signals that have warned about missing statistics.
+    pub warned_missing_stats: HashSet<SignalId>,
 }
 
 impl SignalState {
@@ -56,6 +59,7 @@ impl SignalState {
         self.delay_buffers.clear();
         self.warned_no_musical_time = false;
         self.warned_missing_bands.clear();
+        self.warned_missing_stats.clear();
     }
 
     /// Warn once about a missing band/feature combination.
@@ -68,6 +72,22 @@ impl SignalState {
                 band_key,
                 feature
             );
+        }
+    }
+
+    /// Warn once about missing statistics for a signal.
+    /// Returns true if this is the first warning for this signal.
+    pub fn warn_missing_stats_once(&mut self, signal_id: SignalId, norm_type: &str) -> bool {
+        if self.warned_missing_stats.insert(signal_id) {
+            log::warn!(
+                "No statistics available for {} normalization (signal {:?}) - returning raw value. \
+                 Use .normalise.to_range(min, max) for analysis mode, or ensure statistics are pre-computed.",
+                norm_type,
+                signal_id
+            );
+            true
+        } else {
+            false
         }
     }
 

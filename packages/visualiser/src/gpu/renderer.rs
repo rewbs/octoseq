@@ -12,7 +12,7 @@ use crate::scene_graph::{MeshType, RenderMode, Transform};
 use crate::deformation::apply_deformations;
 use crate::mesh_asset::{MeshAsset, BoundingBox, CUBE_BOUNDS, PLANE_BOUNDS, SPHERE_BOUNDS};
 use crate::material::{MaterialRegistry, ParamValue};
-use crate::particle_eval::GpuMeshParticleInstance;
+use crate::particle_eval::{GpuMeshParticleInstance, GpuParticleInstance};
 use crate::post_processing::PostEffectRegistry;
 use bytemuck::{Pod, Zeroable};
 use std::collections::HashMap;
@@ -25,12 +25,21 @@ const MAX_MESH_PARTICLE_INSTANCES: usize = 500;
 /// Maximum points per line strip.
 const MAX_POINTS_PER_LINE: usize = 1024;
 
+/// Maximum number of meshes that can be rendered per frame.
+/// Each mesh needs its own uniform slot in the dynamic uniform buffer.
+const MAX_MESHES_PER_FRAME: usize = 256;
+
+/// Uniform buffer alignment (WebGPU minUniformBufferOffsetAlignment is typically 256 bytes)
+const UNIFORM_ALIGNMENT: usize = 256;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Pod, Zeroable)]
 struct Uniforms {
     view_proj: [[f32; 4]; 4],
     model: [[f32; 4]; 4],
     instance_color: [f32; 4],
+    // Padding to reach 256-byte alignment (144 bytes of data + 112 bytes padding)
+    _padding: [f32; 28],
 }
 
 impl Uniforms {
@@ -39,6 +48,7 @@ impl Uniforms {
             view_proj: glam::Mat4::IDENTITY.to_cols_array_2d(),
             model: glam::Mat4::IDENTITY.to_cols_array_2d(),
             instance_color: [1.0, 1.0, 1.0, 1.0], // Default: no tint
+            _padding: [0.0; 28],
         }
     }
 
@@ -274,6 +284,14 @@ pub struct Renderer {
     /// Bind group for mesh particles (uses view_proj only)
     mesh_particle_bind_group: wgpu::BindGroup,
 
+    // Billboard particle rendering
+    billboard_particle_pipeline: wgpu::RenderPipeline,
+    billboard_particle_instance_buffer: wgpu::Buffer,
+    billboard_particle_uniform_buffer: wgpu::Buffer,
+    billboard_particle_bind_group: wgpu::BindGroup,
+    billboard_quad_vertex_buffer: wgpu::Buffer,
+    billboard_quad_index_buffer: wgpu::Buffer,
+
     // Material system
     material_registry: MaterialRegistry,
     material_pipeline_manager: MaterialPipelineManager,
@@ -300,10 +318,13 @@ impl Renderer {
         let temp_state = VisualiserState::new();
         uniforms.update_view_proj(size, &temp_state);
 
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Mesh Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[uniforms]),
+        // Create a large uniform buffer for dynamic uniform binding (one slot per mesh)
+        let uniform_buffer_size = (UNIFORM_ALIGNMENT * MAX_MESHES_PER_FRAME) as u64;
+        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Mesh Uniform Buffer (Dynamic)"),
+            size: uniform_buffer_size,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
         let mesh_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -312,8 +333,8 @@ impl Renderer {
                 visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+                    has_dynamic_offset: true, // Enable dynamic offsets
+                    min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<Uniforms>() as u64),
                 },
                 count: None,
             }],
@@ -324,7 +345,11 @@ impl Renderer {
             layout: &mesh_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &uniform_buffer,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(std::mem::size_of::<Uniforms>() as u64),
+                }),
             }],
             label: Some("mesh_bind_group"),
         });
@@ -563,6 +588,79 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
+        // === Billboard Particle Pipeline Setup ===
+
+        // Billboard uniforms: view_proj (mat4) + camera_right (vec4) + camera_up (vec4)
+        // Total: 16 + 4 + 4 = 24 floats = 96 bytes
+        let billboard_uniform_data: [f32; 24] = [0.0; 24];
+        let billboard_particle_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Billboard Particle Uniform Buffer"),
+            contents: bytemuck::cast_slice(&billboard_uniform_data),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // Bind group layout for billboard particles (view_proj + camera vectors)
+        let billboard_particle_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("billboard_particle_bind_group_layout"),
+        });
+
+        let billboard_particle_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &billboard_particle_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: billboard_particle_uniform_buffer.as_entire_binding(),
+            }],
+            label: Some("billboard_particle_bind_group"),
+        });
+
+        let billboard_particle_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Billboard Particle Pipeline Layout"),
+            bind_group_layouts: &[&billboard_particle_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let billboard_particle_pipeline = pipeline::create_billboard_particle_pipeline(&device, &billboard_particle_pipeline_layout, format);
+
+        // Instance buffer for billboard particles
+        let billboard_particle_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Billboard Particle Instance Buffer"),
+            size: (MAX_MESH_PARTICLE_INSTANCES * std::mem::size_of::<GpuParticleInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Quad geometry for billboard particles (4 vertices, 6 indices)
+        // Positions: (-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)
+        let quad_vertices: [f32; 8] = [
+            -0.5, -0.5,  // bottom-left
+             0.5, -0.5,  // bottom-right
+             0.5,  0.5,  // top-right
+            -0.5,  0.5,  // top-left
+        ];
+        let quad_indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
+
+        let billboard_quad_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Billboard Quad Vertex Buffer"),
+            contents: bytemuck::cast_slice(&quad_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let billboard_quad_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Billboard Quad Index Buffer"),
+            contents: bytemuck::cast_slice(&quad_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
         // === Material System Setup ===
         let material_registry = MaterialRegistry::new();
         let material_pipeline_manager = MaterialPipelineManager::new(&device, format, &material_registry);
@@ -598,6 +696,12 @@ impl Renderer {
             mesh_particle_instance_buffer,
             mesh_particle_view_buffer,
             mesh_particle_bind_group,
+            billboard_particle_pipeline,
+            billboard_particle_instance_buffer,
+            billboard_particle_uniform_buffer,
+            billboard_particle_bind_group,
+            billboard_quad_vertex_buffer,
+            billboard_quad_index_buffer,
             material_registry,
             material_pipeline_manager,
             material_global_uniforms,
@@ -739,6 +843,26 @@ impl Renderer {
             label: Some("Render Encoder"),
         });
 
+        // Pre-write all mesh uniform data to the buffer BEFORE the render pass.
+        // This is critical: queue.write_buffer() is immediate, not recorded in the command stream.
+        // If we write during the render pass, all meshes would use the last mesh's data.
+        for (mesh_idx, (_entity_id, mesh, world_matrix)) in meshes_to_render.iter().enumerate() {
+            if mesh_idx >= MAX_MESHES_PER_FRAME {
+                log::warn!("Too many meshes ({} > {}), some will not be rendered", meshes_to_render.len(), MAX_MESHES_PER_FRAME);
+                break;
+            }
+
+            self.uniforms.model = world_matrix.to_cols_array_2d();
+            self.uniforms.instance_color = mesh.color;
+
+            let offset = (mesh_idx * UNIFORM_ALIGNMENT) as u64;
+            self.queue.write_buffer(
+                &self.uniform_buffer,
+                offset,
+                bytemuck::cast_slice(&[self.uniforms]),
+            );
+        }
+
         // Render scene to post-processor's scene texture
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -761,9 +885,13 @@ impl Renderer {
                 occlusion_query_set: None,
             });
 
-            // Render meshes
-            for (_entity_id, mesh, world_matrix) in &meshes_to_render {
-                self.uniforms.model = world_matrix.to_cols_array_2d();
+            // Render meshes using pre-written uniform data with dynamic offsets
+            for (mesh_idx, (_entity_id, mesh, world_matrix)) in meshes_to_render.iter().enumerate() {
+                if mesh_idx >= MAX_MESHES_PER_FRAME {
+                    break;
+                }
+
+                let dynamic_offset = (mesh_idx * UNIFORM_ALIGNMENT) as u32;
 
                 match &mesh.mesh_type {
                     MeshType::Asset(asset_id) => {
@@ -831,15 +959,9 @@ impl Renderer {
                                             render_pass.draw_indexed(0..buffers.num_indices, 0, 0..1);
                                         }
                                     } else {
-                                        // Fallback to legacy pipeline
-                                        self.uniforms.instance_color = mesh.color;
-                                        self.queue.write_buffer(
-                                            &self.uniform_buffer,
-                                            0,
-                                            bytemuck::cast_slice(&[self.uniforms]),
-                                        );
+                                        // Fallback to legacy pipeline - use pre-written uniforms with dynamic offset
                                         render_pass.set_pipeline(&self.mesh_pipeline);
-                                        render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                                        render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
                                         if use_deformed {
                                             render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
                                         } else {
@@ -850,14 +972,9 @@ impl Renderer {
                                     }
                                 }
                                 RenderMode::Wireframe => {
-                                    self.uniforms.instance_color = mesh.wireframe_color;
-                                    self.queue.write_buffer(
-                                        &self.uniform_buffer,
-                                        0,
-                                        bytemuck::cast_slice(&[self.uniforms]),
-                                    );
+                                    // TODO: wireframe_color needs separate uniform slot
                                     render_pass.set_pipeline(&self.wireframe_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
                                     if use_deformed {
                                         render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
                                     } else {
@@ -867,15 +984,9 @@ impl Renderer {
                                     render_pass.draw_indexed(0..buffers.num_edges, 0, 0..1);
                                 }
                                 RenderMode::SolidWithWireframe => {
-                                    // First pass: solid
-                                    self.uniforms.instance_color = mesh.color;
-                                    self.queue.write_buffer(
-                                        &self.uniform_buffer,
-                                        0,
-                                        bytemuck::cast_slice(&[self.uniforms]),
-                                    );
+                                    // First pass: solid - use pre-written uniforms with dynamic offset
                                     render_pass.set_pipeline(&self.mesh_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
                                     if use_deformed {
                                         render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
                                     } else {
@@ -884,14 +995,10 @@ impl Renderer {
                                     render_pass.set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                                     render_pass.draw_indexed(0..buffers.num_indices, 0, 0..1);
 
-                                    // Second pass: wireframe overlay
-                                    self.uniforms.instance_color = mesh.wireframe_color;
-                                    self.queue.write_buffer(
-                                        &self.uniform_buffer,
-                                        0,
-                                        bytemuck::cast_slice(&[self.uniforms]),
-                                    );
+                                    // Second pass: wireframe overlay - also use dynamic offset
+                                    // TODO: wireframe_color needs separate handling
                                     render_pass.set_pipeline(&self.wireframe_pipeline);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
                                     if use_deformed {
                                         render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
                                     } else {
@@ -959,27 +1066,17 @@ impl Renderer {
                                         render_pass.draw_indexed(0..num_indices, 0, 0..1);
                                     }
                                 } else {
-                                    // Fallback to legacy pipeline
-                                    self.uniforms.instance_color = mesh.color;
-                                    self.queue.write_buffer(
-                                        &self.uniform_buffer,
-                                        0,
-                                        bytemuck::cast_slice(&[self.uniforms]),
-                                    );
+                                    // Fallback to legacy pipeline - use pre-written uniforms with dynamic offset
                                     render_pass.set_pipeline(&self.mesh_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
                                     render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
                                     render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                                     render_pass.draw_indexed(0..num_indices, 0, 0..1);
                                 }
                             }
                             RenderMode::Wireframe => {
-                                self.uniforms.instance_color = mesh.wireframe_color;
-                                self.queue.write_buffer(
-                                    &self.uniform_buffer,
-                                    0,
-                                    bytemuck::cast_slice(&[self.uniforms]),
-                                );
+                                // TODO: wireframe_color needs separate uniform slot to avoid conflation
+                                // For now, use pre-written uniforms (will use solid color instead of wireframe_color)
                                 let geometry = match &mesh.mesh_type {
                                     MeshType::Cube => &self.cube_geometry,
                                     MeshType::Plane => &self.plane_geometry,
@@ -988,20 +1085,14 @@ impl Renderer {
                                 };
                                 if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
                                     render_pass.set_pipeline(&self.wireframe_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
                                     render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
                                     render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
                                     render_pass.draw_indexed(0..num_edges, 0, 0..1);
                                 }
                             }
                             RenderMode::SolidWithWireframe => {
-                                // First pass: solid
-                                self.uniforms.instance_color = mesh.color;
-                                self.queue.write_buffer(
-                                    &self.uniform_buffer,
-                                    0,
-                                    bytemuck::cast_slice(&[self.uniforms]),
-                                );
+                                // First pass: solid - use pre-written uniforms with dynamic offset
                                 let geometry = match &mesh.mesh_type {
                                     MeshType::Cube => &self.cube_geometry,
                                     MeshType::Plane => &self.plane_geometry,
@@ -1009,18 +1100,13 @@ impl Renderer {
                                     _ => continue,
                                 };
                                 render_pass.set_pipeline(&self.mesh_pipeline);
-                                render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                                render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
                                 render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
                                 render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                                 render_pass.draw_indexed(0..num_indices, 0, 0..1);
 
-                                // Second pass: wireframe overlay
-                                self.uniforms.instance_color = mesh.wireframe_color;
-                                self.queue.write_buffer(
-                                    &self.uniform_buffer,
-                                    0,
-                                    bytemuck::cast_slice(&[self.uniforms]),
-                                );
+                                // Second pass: wireframe overlay - also use dynamic offset
+                                // TODO: wireframe_color needs separate handling
                                 let geometry = match &mesh.mesh_type {
                                     MeshType::Cube => &self.cube_geometry,
                                     MeshType::Plane => &self.plane_geometry,
@@ -1029,6 +1115,7 @@ impl Renderer {
                                 };
                                 if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
                                     render_pass.set_pipeline(&self.wireframe_pipeline);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
                                     render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
                                     render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
                                     render_pass.draw_indexed(0..num_edges, 0, 0..1);
@@ -1046,7 +1133,8 @@ impl Renderer {
 
             if show_all_bounds || !per_entity_bounds.is_empty() {
                 render_pass.set_pipeline(&self.wireframe_pipeline);
-                render_pass.set_bind_group(0, &self.mesh_bind_group, &[]);
+                // Debug bounds uses offset 0 since it writes its own uniforms
+                render_pass.set_bind_group(0, &self.mesh_bind_group, &[0]);
 
                 // Debug bounds color: yellow
                 let debug_color = [1.0f32, 0.9, 0.0];
@@ -1132,13 +1220,19 @@ impl Renderer {
             }
         }
 
+        // Render particle systems
+        self.render_particles_to_scene(&mut encoder, state);
+
         // Apply frame feedback (V7)
+        // Uniforms are pre-evaluated (signals resolved to f32) during scene sync.
         let feedback_config = state.feedback_config();
+        let feedback_uniforms = state.feedback_uniforms();
         self.post_processor.process_feedback(
             &self.device,
             &mut encoder,
             &self.queue,
             feedback_config,
+            feedback_uniforms,
         );
 
         // Apply post-processing chain
@@ -1238,5 +1332,207 @@ impl Renderer {
         }
 
         self.queue.submit(iter::once(encoder.finish()));
+    }
+
+    /// Render particle systems to the scene texture.
+    ///
+    /// This is called during the main render pass to add particles to the scene
+    /// before feedback and post-processing are applied.
+    fn render_particles_to_scene(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        state: &VisualiserState,
+    ) {
+        use crate::particle::ParticleGeometry;
+        use crate::particle_eval::{generate_gpu_instances, generate_mesh_particle_instances, ParticleEvalContext};
+
+        let particle_systems = state.particle_systems();
+        if particle_systems.is_empty() {
+            return;
+        }
+
+        // Build particle evaluation context
+        let bpm = state.bpm();
+        let secs_per_beat = 60.0 / bpm;
+        let particle_ctx = ParticleEvalContext {
+            current_time_secs: state.time,
+            current_beat: state.time / secs_per_beat,
+            secs_per_beat,
+            dt: 0.016, // Approximate frame time
+            dt_beats: 0.016 / secs_per_beat,
+        };
+
+        // Collect all particle instances by type
+        let mut mesh_instances_by_asset: std::collections::HashMap<String, Vec<GpuMeshParticleInstance>>
+            = std::collections::HashMap::new();
+        let mut billboard_instances: Vec<GpuParticleInstance> = Vec::new();
+
+        for (_id, system) in particle_systems.iter() {
+            if !system.visible || system.instances.is_empty() {
+                continue;
+            }
+
+            match &system.geometry {
+                ParticleGeometry::Billboard { .. } | ParticleGeometry::Point { .. } => {
+                    // Collect billboard/point particle instances
+                    let instances = generate_gpu_instances(system, &particle_ctx);
+                    billboard_instances.extend(instances);
+                }
+                ParticleGeometry::Mesh { asset_id, base_scale } => {
+                    // Generate GPU instances for mesh particles
+                    let instances = generate_mesh_particle_instances(system, &particle_ctx, *base_scale);
+                    if !instances.is_empty() {
+                        mesh_instances_by_asset
+                            .entry(asset_id.clone())
+                            .or_default()
+                            .extend(instances);
+                    }
+                }
+            }
+        }
+
+        // Render billboard particles
+        if !billboard_instances.is_empty() {
+            let instance_count = billboard_instances.len().min(MAX_MESH_PARTICLE_INSTANCES);
+            let instances = &billboard_instances[..instance_count];
+
+            // Update billboard uniforms (view_proj + camera vectors)
+            self.uniforms.update_view_proj(self.size, state);
+
+            // Compute camera vectors from the fixed camera position
+            // This matches the camera setup in update_view_proj
+            let dist = 4.0f32;
+            let camera_pos = glam::Vec3::new(dist, dist * 0.5, dist);
+            let target = glam::Vec3::ZERO;
+            let up = glam::Vec3::Y;
+
+            // Compute view-space basis vectors
+            let forward = (target - camera_pos).normalize();
+            let right = forward.cross(up).normalize();
+            let cam_up = right.cross(forward);
+
+            let camera_right = [right.x, right.y, right.z, 0.0];
+            let camera_up = [cam_up.x, cam_up.y, cam_up.z, 0.0];
+
+            // Build billboard uniform data: view_proj (16) + camera_right (4) + camera_up (4)
+            // Flatten the 4x4 matrix to [f32; 16]
+            let vp = &self.uniforms.view_proj;
+            let view_proj_flat: [f32; 16] = [
+                vp[0][0], vp[0][1], vp[0][2], vp[0][3],
+                vp[1][0], vp[1][1], vp[1][2], vp[1][3],
+                vp[2][0], vp[2][1], vp[2][2], vp[2][3],
+                vp[3][0], vp[3][1], vp[3][2], vp[3][3],
+            ];
+
+            let mut billboard_uniforms: [f32; 24] = [0.0; 24];
+            billboard_uniforms[0..16].copy_from_slice(&view_proj_flat);
+            billboard_uniforms[16..20].copy_from_slice(&camera_right);
+            billboard_uniforms[20..24].copy_from_slice(&camera_up);
+
+            self.queue.write_buffer(
+                &self.billboard_particle_uniform_buffer,
+                0,
+                bytemuck::cast_slice(&billboard_uniforms),
+            );
+
+            // Upload instance data
+            self.queue.write_buffer(
+                &self.billboard_particle_instance_buffer,
+                0,
+                bytemuck::cast_slice(instances),
+            );
+
+            // Create render pass for billboard particles
+            {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Billboard Particle Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: self.post_processor.scene_view(),
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+
+                render_pass.set_pipeline(&self.billboard_particle_pipeline);
+                render_pass.set_bind_group(0, &self.billboard_particle_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.billboard_quad_vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, self.billboard_particle_instance_buffer.slice(..));
+                render_pass.set_index_buffer(self.billboard_quad_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.draw_indexed(0..6, 0, 0..instance_count as u32);
+            }
+        }
+
+        // Render mesh particles
+        for (asset_id, instances) in mesh_instances_by_asset.iter() {
+            if instances.is_empty() {
+                continue;
+            }
+
+            // Look up the mesh asset
+            let asset = match state.asset_registry.get(asset_id) {
+                Some(a) => a,
+                None => {
+                    log::warn!("Particle mesh asset not found: {}", asset_id);
+                    continue;
+                }
+            };
+
+            // Clamp to max instances
+            let instance_count = instances.len().min(MAX_MESH_PARTICLE_INSTANCES);
+            let instances = &instances[..instance_count];
+
+            // Ensure mesh buffers exist
+            let _ = self.get_or_create_loaded_mesh_buffers(&asset);
+            let buffers = match self.loaded_mesh_buffers.get(asset_id) {
+                Some(b) => b,
+                None => continue,
+            };
+
+            // Update view projection matrix
+            self.uniforms.update_view_proj(self.size, state);
+            self.queue.write_buffer(
+                &self.mesh_particle_view_buffer,
+                0,
+                bytemuck::cast_slice(&self.uniforms.view_proj),
+            );
+
+            // Upload instance data
+            self.queue.write_buffer(
+                &self.mesh_particle_instance_buffer,
+                0,
+                bytemuck::cast_slice(instances),
+            );
+
+            // Create render pass to scene view
+            {
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("Mesh Particle Render Pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: self.post_processor.scene_view(),
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                });
+
+                render_pass.set_pipeline(&self.mesh_particle_pipeline);
+                render_pass.set_bind_group(0, &self.mesh_particle_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, self.mesh_particle_instance_buffer.slice(..));
+                render_pass.set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.draw_indexed(0..buffers.num_indices, 0, 0..instance_count as u32);
+            }
+        }
     }
 }

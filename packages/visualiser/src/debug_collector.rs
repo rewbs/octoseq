@@ -4,7 +4,7 @@
 //! Uses thread-local storage to allow Rhai native functions to access the collector.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// A single debug emission at a specific time.
 #[derive(Debug, Clone)]
@@ -53,6 +53,9 @@ pub struct DebugCollector {
     enabled: bool,
     /// Maximum emissions per signal (memory bound)
     max_emissions_per_signal: usize,
+    /// Tracks (name, time_bits) pairs that have already emitted this frame.
+    /// Used for deduplication when the same probe is evaluated multiple times.
+    emitted_this_frame: HashSet<(String, u32)>,
 }
 
 impl DebugCollector {
@@ -63,15 +66,25 @@ impl DebugCollector {
             current_time: 0.0,
             enabled: true,
             max_emissions_per_signal: 100_000, // ~10 minutes at 10ms steps
+            emitted_this_frame: HashSet::new(),
         }
     }
 
     /// Set the current time for subsequent emissions.
+    /// Also clears the per-frame deduplication set.
     pub fn set_time(&mut self, time: f32) {
+        // Clear deduplication set when time changes (new frame)
+        if (time - self.current_time).abs() > f32::EPSILON {
+            self.emitted_this_frame.clear();
+        }
         self.current_time = time;
     }
 
     /// Record a debug emission.
+    ///
+    /// Emissions are deduplicated per-frame: if the same probe name emits
+    /// multiple times at the same time (e.g., because the signal is evaluated
+    /// multiple times), only the first emission is recorded.
     pub fn emit(&mut self, name: &str, value: f32) {
         if !self.enabled {
             return;
@@ -84,6 +97,14 @@ impl DebugCollector {
 
         // Validate value (must be finite)
         if !value.is_finite() {
+            return;
+        }
+
+        // Deduplicate: only emit once per (name, time) pair per frame
+        let time_bits = self.current_time.to_bits();
+        let key = (name.to_string(), time_bits);
+        if !self.emitted_this_frame.insert(key) {
+            // Already emitted for this probe at this time
             return;
         }
 

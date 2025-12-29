@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
 
-import { Github } from "lucide-react";
+import { Github, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,7 @@ import {
   useMusicalTimeStore,
   useManualTempoStore,
   useFrequencyBandStore,
+  useBandMirStore,
   setupBandMirInvalidation,
   useMirActions,
   useSearchActions,
@@ -259,6 +260,27 @@ export default function Home() {
       mutedBandIds: s.mutedBandIds,
     }))
   );
+  const { pendingBandCount, pendingEventCount } = useBandMirStore(
+    useShallow((s) => ({
+      pendingBandCount: s.pendingBandIds.size,
+      pendingEventCount: s.eventsPendingBandIds.size,
+    }))
+  );
+  const bandResultCount = useBandMirStore((s) => {
+    if (visualTab === "onsetEnvelope") return s.getResultsByFunction("bandOnsetStrength").length;
+    if (visualTab === "spectralFlux") return s.getResultsByFunction("bandSpectralFlux").length;
+    return 0;
+  });
+  const [bandWaveformProgress, setBandWaveformProgress] = useState({ ready: 0, total: 0 });
+  const handleBandWaveformsReadyChange = useCallback(
+    (status: { ready: number; total: number }) => {
+      setBandWaveformProgress((prev) => {
+        if (prev.ready === status.ready && prev.total === status.total) return prev;
+        return status;
+      });
+    },
+    []
+  );
 
   // Audio URL for band auditioning
   const audioUrl = useAudioStore((s) => s.audioUrl);
@@ -335,6 +357,16 @@ export default function Home() {
 
   // ===== COMPUTED VALUES =====
   const canRun = !!audio;
+  const bandWaveformTotal = bandResultCount > 0 ? bandResultCount : bandWaveformProgress.total;
+  const isBandWaveformRenderPending =
+    bandWaveformTotal > 0 && bandWaveformProgress.ready < bandWaveformTotal;
+  const isBandAnalysisRunning = pendingBandCount > 0 || pendingEventCount > 0 || isBandWaveformRenderPending;
+  const bandAnalysisLabel =
+    pendingBandCount > 0
+      ? `Analyzing ${pendingBandCount} band${pendingBandCount === 1 ? "" : "s"}`
+      : pendingEventCount > 0
+        ? `Extracting events (${pendingEventCount})`
+        : `Rendering waveforms (${bandWaveformProgress.ready}/${bandWaveformTotal})`;
 
   // Extract beat candidates from MIR results for phase alignment
   const beatCandidates = useMemo((): BeatCandidate[] => {
@@ -924,16 +956,27 @@ export default function Home() {
                                     const fn = visualTab === "onsetEnvelope" ? "bandOnsetStrength" : "bandSpectralFlux";
                                     void runBandAnalysis(undefined, [fn]);
                                   }}
-                                  disabled={isRunning}
+                                  disabled={isRunning || isBandAnalysisRunning}
                                 >
                                   Run Band Analysis
                                 </Button>
+                                {isBandAnalysisRunning && (
+                                  <span
+                                    className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+                                    role="status"
+                                    aria-live="polite"
+                                  >
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    {bandAnalysisLabel}
+                                  </span>
+                                )}
                               </div>
                               <BandMirSignalViewer
                                 fn={visualTab === "onsetEnvelope" ? "bandOnsetStrength" : "bandSpectralFlux"}
                                 viewport={viewport}
                                 cursorTimeSec={mirroredCursorTimeSec}
                                 onCursorTimeChange={setCursorTimeSec}
+                                onWaveformsReadyChange={handleBandWaveformsReadyChange}
                               />
                             </div>
                           )}

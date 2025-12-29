@@ -165,6 +165,7 @@ impl EventExtractor {
             let mut ctx = EvalContext::new(
                 t,
                 self.time_step,
+                i as u64,
                 self.musical_time.as_ref(),
                 signals,
                 &self.band_signals,

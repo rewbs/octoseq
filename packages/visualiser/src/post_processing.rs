@@ -354,11 +354,11 @@ impl PostEffectRegistry {
     }
 
     fn register_builtin_effects(&mut self) {
-        // Bloom effect
+        // Bloom effect (uses optimized multi-pass processor with separable blur)
         self.register(
             PostEffect::builder("bloom")
                 .name("Bloom")
-                .description("Adds glow to bright areas")
+                .description("Adds glow to bright areas (optimized multi-pass)")
                 .param(EffectParamDef::float("threshold", 0.8)
                     .with_range(0.0, 2.0)
                     .with_description("Brightness threshold for bloom"))
@@ -366,8 +366,11 @@ impl PostEffectRegistry {
                     .with_range(0.0, 2.0)
                     .with_description("Bloom intensity"))
                 .param(EffectParamDef::float("radius", 4.0)
-                    .with_range(1.0, 16.0)
-                    .with_description("Blur radius in pixels"))
+                    .with_range(0.0, 32.0)
+                    .with_description("Blur radius (capped at 32)"))
+                .param(EffectParamDef::float("downsample", 2.0)
+                    .with_range(1.0, 8.0)
+                    .with_description("Downsample factor (1=full res, 2=half, etc.)"))
                 .build()
         );
 

@@ -2,7 +2,7 @@
 // Provides Milkdrop-style temporal visual memory with spatial warping,
 // colour transforms, and blend modes.
 //
-// Pipeline: previous_frame -> spatial_warp -> colour_transform -> blend(current) -> output
+// Pipeline: previous_frame -> warp₁ -> warp₂ -> ... -> color₁ -> color₂ -> ... -> blend(current) -> output
 
 struct VertexInput {
     @location(0) position: vec2<f32>,
@@ -14,33 +14,48 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
 }
 
-struct FeedbackUniforms {
-    // Warp params
+// GPU warp step (32 bytes = 2 × 16-byte blocks)
+struct GpuWarpStep {
+    // Block 1
     warp_type: u32,
-    warp_strength: f32,
-    warp_scale: f32,
-    warp_rotation: f32,
+    strength: f32,
+    scale: f32,
+    rotation: f32,
+    // Block 2
+    translate_x: f32,
+    translate_y: f32,
+    frequency: f32,
+    falloff: f32,
+}
 
-    warp_translate: vec2<f32>,
-    warp_frequency: f32,
-    warp_falloff: f32,
-
-    warp_seed: u32,
-    _pad0: vec3<u32>,
-
-    // Colour params
+// GPU color step (32 bytes = 2 × 16-byte blocks)
+struct GpuColorStep {
+    // Block 1
     color_type: u32,
-    color_decay_rate: f32,
-    color_posterize_levels: f32,
-    _pad1: f32,
+    decay_rate: f32,
+    posterize_levels: f32,
+    hsv_h: f32,
+    // Block 2
+    hsv_s: f32,
+    hsv_v: f32,
+    offset_x: f32,
+    offset_y: f32,
+}
 
-    color_hsv_shift: vec4<f32>,
-    color_channel_offset: vec4<f32>,
-
-    // Blend params
+// Main uniforms structure
+// Header (16 bytes) + 4 warp steps (128 bytes) + 4 color steps (128 bytes) = 272 bytes
+struct FeedbackUniforms {
+    // Header (16 bytes)
+    warp_count: u32,
+    color_count: u32,
     blend_mode: u32,
     opacity: f32,
-    _pad2: vec2<f32>,
+
+    // Warp steps array (4 × 32 = 128 bytes)
+    warp_steps: array<GpuWarpStep, 4>,
+
+    // Color steps array (4 × 32 = 128 bytes)
+    color_steps: array<GpuColorStep, 4>,
 }
 
 @group(0) @binding(0) var current_texture: texture_2d<f32>;
@@ -141,29 +156,29 @@ fn hsv_to_rgb(hsv: vec3<f32>) -> vec3<f32> {
 }
 
 // ============================================================================
-// Spatial warp operators
+// Spatial warp operators (single step)
 // ============================================================================
 
-fn apply_warp(uv: vec2<f32>) -> vec2<f32> {
+fn apply_warp_step(uv: vec2<f32>, step: GpuWarpStep) -> vec2<f32> {
     let center = vec2<f32>(0.5, 0.5);
     let centered = uv - center;
-    let strength = params.warp_strength;
+    let strength = step.strength;
 
     // Calculate edge falloff
     let edge_dist = 1.0 - max(abs(centered.x), abs(centered.y)) * 2.0;
-    let falloff_factor = mix(1.0, saturate(edge_dist * 2.0), params.warp_falloff);
+    let falloff_factor = mix(1.0, saturate(edge_dist * 2.0), step.falloff);
     let effective_strength = strength * falloff_factor;
 
-    switch params.warp_type {
+    switch step.warp_type {
         // None
         case 0u: {
             return uv;
         }
         // Affine (scale, rotate, translate)
         case 1u: {
-            let s = params.warp_scale;
-            let c = cos(params.warp_rotation * effective_strength);
-            let sn = sin(params.warp_rotation * effective_strength);
+            let s = step.scale;
+            let c = cos(step.rotation * effective_strength);
+            let sn = sin(step.rotation * effective_strength);
 
             // Scale
             var transformed = centered / mix(1.0, s, effective_strength);
@@ -175,7 +190,7 @@ fn apply_warp(uv: vec2<f32>) -> vec2<f32> {
             );
 
             // Translate
-            transformed += params.warp_translate * effective_strength;
+            transformed += vec2<f32>(step.translate_x, step.translate_y) * effective_strength;
 
             return transformed + center;
         }
@@ -194,23 +209,23 @@ fn apply_warp(uv: vec2<f32>) -> vec2<f32> {
             let angle = atan2(centered.y, centered.x);
 
             // Rotation proportional to distance and strength
-            let new_angle = angle + params.warp_rotation * dist * effective_strength;
+            let new_angle = angle + step.rotation * dist * effective_strength;
 
             // Scale
-            let new_dist = dist * (1.0 + (params.warp_scale - 1.0) * effective_strength);
+            let new_dist = dist * (1.0 + (step.scale - 1.0) * effective_strength);
 
             return center + vec2<f32>(cos(new_angle), sin(new_angle)) * new_dist;
         }
         // Noise displacement
         case 4u: {
-            let n = noise2d(uv * params.warp_frequency, params.warp_seed);
+            let n = noise2d(uv * step.frequency, 0u);
             return uv + n * effective_strength * 0.1;
         }
         // Shear
         case 5u: {
             return vec2<f32>(
                 uv.x + centered.y * effective_strength,
-                uv.y + centered.x * effective_strength * params.warp_scale
+                uv.y + centered.x * effective_strength * step.scale
             );
         }
         default: {
@@ -219,40 +234,48 @@ fn apply_warp(uv: vec2<f32>) -> vec2<f32> {
     }
 }
 
+// Apply all warp steps in sequence
+fn apply_warp_chain(uv: vec2<f32>) -> vec2<f32> {
+    var result = uv;
+    let count = min(params.warp_count, 4u);
+
+    for (var i: u32 = 0u; i < count; i++) {
+        result = apply_warp_step(result, params.warp_steps[i]);
+    }
+
+    return result;
+}
+
 // ============================================================================
-// Colour transform operators
+// Colour transform operators (single step)
 // ============================================================================
 
-fn apply_color(color: vec4<f32>, uv: vec2<f32>) -> vec4<f32> {
-    switch params.color_type {
+fn apply_color_step(color: vec4<f32>, step: GpuColorStep) -> vec4<f32> {
+    switch step.color_type {
         // None
         case 0u: {
             return color;
         }
         // Decay (exponential fade)
         case 1u: {
-            return vec4<f32>(color.rgb * params.color_decay_rate, color.a);
+            return vec4<f32>(color.rgb * step.decay_rate, color.a);
         }
         // HSV shift
         case 2u: {
             var hsv = rgb_to_hsv(color.rgb);
-            hsv.x = fract(hsv.x + params.color_hsv_shift.x);
-            hsv.y = saturate(hsv.y + params.color_hsv_shift.y);
-            hsv.z = saturate(hsv.z + params.color_hsv_shift.z);
+            hsv.x = fract(hsv.x + step.hsv_h);
+            hsv.y = saturate(hsv.y + step.hsv_s);
+            hsv.z = saturate(hsv.z + step.hsv_v);
             return vec4<f32>(hsv_to_rgb(hsv), color.a);
         }
         // Posterize
         case 3u: {
-            let levels = params.color_posterize_levels;
+            let levels = step.posterize_levels;
             return vec4<f32>(floor(color.rgb * levels) / levels, color.a);
         }
-        // Channel offset (chromatic aberration)
-        // This is special: we need to re-sample at offset positions
+        // Channel offset - handled specially in main
         case 4u: {
-            let offset = params.color_channel_offset.xy * 0.01;
-            // Note: this needs the warped UV, which we get from the caller
-            // We sample each channel at a different offset
-            return color; // Handled specially in fs_main
+            return color;
         }
         default: {
             return color;
@@ -260,9 +283,40 @@ fn apply_color(color: vec4<f32>, uv: vec2<f32>) -> vec4<f32> {
     }
 }
 
-// Special handler for channel offset that samples the feedback texture
+// Apply all color steps in sequence
+fn apply_color_chain(color: vec4<f32>) -> vec4<f32> {
+    var result = color;
+    let count = min(params.color_count, 4u);
+
+    for (var i: u32 = 0u; i < count; i++) {
+        result = apply_color_step(result, params.color_steps[i]);
+    }
+
+    return result;
+}
+
+// Check if any color step uses channel offset (needs special handling)
+fn has_channel_offset() -> bool {
+    let count = min(params.color_count, 4u);
+    for (var i: u32 = 0u; i < count; i++) {
+        if (params.color_steps[i].color_type == 4u) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Apply channel offset for the first color step that uses it
 fn apply_channel_offset(warped_uv: vec2<f32>) -> vec4<f32> {
-    let offset = params.color_channel_offset.xy * 0.01;
+    // Find the first channel offset step
+    var offset = vec2<f32>(0.0, 0.0);
+    let count = min(params.color_count, 4u);
+    for (var i: u32 = 0u; i < count; i++) {
+        if (params.color_steps[i].color_type == 4u) {
+            offset = vec2<f32>(params.color_steps[i].offset_x, params.color_steps[i].offset_y) * 0.01;
+            break;
+        }
+    }
 
     let r = textureSample(feedback_texture, tex_sampler, warped_uv + offset).r;
     let g = textureSample(feedback_texture, tex_sampler, warped_uv).g;
@@ -340,21 +394,28 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Sample current frame
     let current = textureSample(current_texture, tex_sampler, in.uv);
 
-    // Apply spatial warp to get feedback UV
-    let warped_uv = apply_warp(in.uv);
+    // Apply all spatial warps in sequence to get feedback UV
+    let warped_uv = apply_warp_chain(in.uv);
 
     // Clamp to valid UV range to prevent edge artifacts
     let clamped_uv = clamp(warped_uv, vec2<f32>(0.001), vec2<f32>(0.999));
 
-    // Sample feedback and apply colour transform
+    // Sample feedback and apply colour transforms
     var feedback: vec4<f32>;
 
-    if (params.color_type == 4u) {
-        // Channel offset needs special handling
+    if (has_channel_offset()) {
+        // Channel offset needs special handling - apply it first, then other colors
         feedback = apply_channel_offset(clamped_uv);
+        // Apply remaining non-channel-offset color transforms
+        let count = min(params.color_count, 4u);
+        for (var i: u32 = 0u; i < count; i++) {
+            if (params.color_steps[i].color_type != 4u) {
+                feedback = apply_color_step(feedback, params.color_steps[i]);
+            }
+        }
     } else {
         feedback = textureSample(feedback_texture, tex_sampler, clamped_uv);
-        feedback = apply_color(feedback, clamped_uv);
+        feedback = apply_color_chain(feedback);
     }
 
     // Blend feedback with current frame

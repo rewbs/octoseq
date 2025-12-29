@@ -8,6 +8,7 @@ use wgpu::util::DeviceExt;
 use bytemuck::{Pod, Zeroable};
 
 use crate::feedback::{FeedbackConfig, FeedbackUniforms};
+use crate::gpu::bloom_processor::{BloomProcessor, BloomParams};
 use crate::post_processing::{PostProcessingChain, PostEffectRegistry, EffectParamValue};
 
 /// Maximum size for effect uniform buffer (in bytes).
@@ -91,6 +92,12 @@ pub struct PostProcessor {
     feedback_uniform_bind_group: wgpu::BindGroup,
     /// Whether feedback was applied this frame (for determining post-process input).
     feedback_applied_this_frame: bool,
+    /// Whether the feedback texture needs to be cleared (first use or after resize).
+    feedback_needs_clear: bool,
+
+    // === Optimized bloom processor ===
+    /// Multi-pass bloom processor (separable blur + downsampling)
+    bloom_processor: BloomProcessor,
 }
 
 impl PostProcessor {
@@ -358,6 +365,9 @@ impl PostProcessor {
             }],
         });
 
+        // Create optimized bloom processor
+        let bloom_processor = BloomProcessor::new(device, format, width, height);
+
         let mut processor = Self {
             intermediate_textures: [tex_a, tex_b],
             intermediate_views: [view_a, view_b],
@@ -381,6 +391,9 @@ impl PostProcessor {
             feedback_texture_bind_group_layout,
             feedback_uniform_bind_group,
             feedback_applied_this_frame: false,
+            feedback_needs_clear: true,
+            // Bloom processor
+            bloom_processor,
         };
 
         // Create pipelines for registered effects
@@ -532,6 +545,12 @@ impl PostProcessor {
         self.scene_view = self.scene_texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.feedback_view = self.feedback_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        // Mark feedback texture as needing clear (new texture has undefined contents)
+        self.feedback_needs_clear = true;
+
+        // Resize bloom processor with default downsample
+        self.bloom_processor.resize(device, self.width, self.height, self.bloom_processor.current_downsample());
+
         // Recreate blit bind group with new scene view
         self.blit_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Blit Bind Group"),
@@ -606,29 +625,59 @@ impl PostProcessor {
                 &self.intermediate_views[ping]
             };
 
-            // Update effect uniforms
-            if let Some(params) = evaluated_params.get(&effect.effect_id) {
-                self.update_effect_uniforms(queue, &effect.effect_id, params);
+            // Check if this is a bloom effect - route through optimized BloomProcessor
+            if effect.effect_id == "bloom" {
+                // Extract bloom parameters
+                let bloom_params = if let Some(params) = evaluated_params.get(&effect.effect_id) {
+                    let threshold = params.get(0).map(|p| p.as_float()).unwrap_or(0.8);
+                    let intensity = params.get(1).map(|p| p.as_float()).unwrap_or(0.5);
+                    let radius = params.get(2).map(|p| p.as_float()).unwrap_or(4.0);
+                    let downsample = params.get(3).map(|p| p.as_float() as u32).unwrap_or(2);
+                    BloomParams {
+                        threshold,
+                        intensity,
+                        radius,
+                        downsample,
+                    }
+                } else {
+                    BloomParams::default()
+                };
+
+                // Process through optimized multi-pass bloom
+                self.bloom_processor.process(
+                    device,
+                    encoder,
+                    queue,
+                    current_input_view,
+                    output,
+                    &bloom_params,
+                );
+            } else {
+                // Standard single-pass effect processing
+                // Update effect uniforms
+                if let Some(params) = evaluated_params.get(&effect.effect_id) {
+                    self.update_effect_uniforms(queue, &effect.effect_id, params);
+                }
+
+                // Create texture bind group for this pass
+                let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some(&format!("Effect Texture Bind Group: {}", effect.effect_id)),
+                    layout: &self.texture_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(current_input_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                });
+
+                // Render effect
+                self.render_effect(encoder, output, &effect.effect_id, &texture_bind_group);
             }
-
-            // Create texture bind group for this pass
-            let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some(&format!("Effect Texture Bind Group: {}", effect.effect_id)),
-                layout: &self.texture_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: wgpu::BindingResource::TextureView(current_input_view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::Sampler(&self.sampler),
-                    },
-                ],
-            });
-
-            // Render effect
-            self.render_effect(encoder, output, &effect.effect_id, &texture_bind_group);
 
             // Update for next pass
             if !is_last {
@@ -735,12 +784,20 @@ impl PostProcessor {
     ///
     /// The result is written to `intermediate_textures[0]` and copied to `feedback_texture`
     /// for the next frame.
+    ///
+    /// # Arguments
+    /// * `device` - wgpu device
+    /// * `encoder` - command encoder
+    /// * `queue` - wgpu queue
+    /// * `config` - feedback configuration (for enabled flag)
+    /// * `uniforms` - pre-evaluated uniforms (all signals resolved to f32)
     pub fn process_feedback(
         &mut self,
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         queue: &wgpu::Queue,
         config: &FeedbackConfig,
+        uniforms: &FeedbackUniforms,
     ) {
         self.feedback_applied_this_frame = false;
 
@@ -748,9 +805,14 @@ impl PostProcessor {
             return;
         }
 
-        // Update feedback uniforms
-        let uniforms = config.to_uniforms();
-        queue.write_buffer(&self.feedback_uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+        // Clear feedback texture on first use to avoid undefined/garbage data
+        if self.feedback_needs_clear {
+            self.clear_feedback(encoder);
+            self.feedback_needs_clear = false;
+        }
+
+        // Update feedback uniforms (already evaluated, just write to GPU)
+        queue.write_buffer(&self.feedback_uniform_buffer, 0, bytemuck::bytes_of(uniforms));
 
         // Create texture bind group for this frame
         // Bindings: 0 = current (scene), 1 = feedback (previous), 2 = sampler

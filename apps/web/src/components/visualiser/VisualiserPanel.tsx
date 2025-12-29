@@ -54,6 +54,14 @@ const FOOTER_RESERVE = 80; // Space reserved for footer + margins
 // Script editor sizing
 const SCRIPT_MIN_HEIGHT = 60;
 const SCRIPT_DEFAULT_HEIGHT = 200;
+const SCRIPT_AUTOSAVE_KEY = "octoseq:visualiser-script:v1";
+const SCRIPT_AUTOSAVE_DEBOUNCE_MS = 400;
+
+// Preview FPS settings
+const MIN_TARGET_FPS = 1;
+const MAX_TARGET_FPS = 120;
+const DEFAULT_TARGET_FPS = 30;
+const FPS_SETTINGS_KEY = "octoseq:visualiser-fps:v1";
 
 // Horizontal layout sizing (percentage-based)
 const SCRIPT_MIN_WIDTH_PERCENT = 15;
@@ -100,6 +108,42 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   const startYRef = useRef(0);
   const startHeightRef = useRef(0);
   const userHasResizedRef = useRef(false);
+
+  // Target FPS for preview (affects signal sampling)
+  const [targetFps, setTargetFps] = useState(DEFAULT_TARGET_FPS);
+  const targetFpsRef = useRef(targetFps);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    targetFpsRef.current = targetFps;
+  }, [targetFps]);
+
+  // Load FPS setting from localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(FPS_SETTINGS_KEY);
+      if (stored !== null) {
+        const parsed = parseFloat(stored);
+        if (!isNaN(parsed) && parsed >= MIN_TARGET_FPS && parsed <= MAX_TARGET_FPS) {
+          setTargetFps(parsed);
+        }
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, []);
+
+  // Save FPS setting to localStorage
+  const handleFpsChange = useCallback((fps: number) => {
+    const clamped = Math.max(MIN_TARGET_FPS, Math.min(MAX_TARGET_FPS, fps));
+    setTargetFps(clamped);
+    try {
+      window.localStorage.setItem(FPS_SETTINGS_KEY, String(clamped));
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, []);
 
   // Auto-fit height calculation based on window size
   useEffect(() => {
@@ -332,8 +376,9 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   // Default demo script - uses scene graph API
   // Uses signals that are always available: time, dt, amplitude, flux
   const defaultScript = `// Rhai script: Cube reacts to audio
-// Available signals: time, dt, amplitude, flux
+// The 'frame' parameter has per-frame values: time, dt, amplitude, flux
 // Also: spectralCentroid, spectralFlux, onsetEnvelope (if MIR computed)
+// The global 'inputs' object has Signal accessors: inputs.bands["Bass"].energy, etc.
 
 let cube;
 let phase = 0.0;
@@ -343,19 +388,47 @@ fn init(ctx) {
     scene.add(cube);
 }
 
-fn update(dt, inputs) {
+fn update(dt, frame) {
     // Use flux (from zoom source) or fall back to constant rotation
-    let flux_val = if inputs.contains("flux") { inputs.flux } else { 0.0 };
+    let flux_val = if frame.contains("flux") { frame.flux } else { 0.0 };
     phase += dt * (0.5 + flux_val * 2.0);
 
     cube.rotation.y = phase;
-    cube.rotation.x = 0.1 * (inputs.time * 2.0).sin();
+    cube.rotation.x = 0.1 * (frame.time * 2.0).sin();
 
     // Scale based on amplitude (from rotation source)
-    let amp = if inputs.contains("amplitude") { inputs.amplitude } else { 0.0 };
+    let amp = if frame.contains("amplitude") { frame.amplitude } else { 0.0 };
     cube.scale = 1.0 + amp * 0.5;
 }`;
   const [script, setScript] = useState(defaultScript);
+  const [isScriptLoaded, setIsScriptLoaded] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(SCRIPT_AUTOSAVE_KEY);
+      if (stored !== null) {
+        setScript(stored);
+      }
+    } catch (error) {
+      console.warn("Failed to read saved script:", error);
+    } finally {
+      setIsScriptLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isScriptLoaded || typeof window === "undefined") return;
+    const handle = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(SCRIPT_AUTOSAVE_KEY, script);
+      } catch (error) {
+        console.warn("Failed to autosave script:", error);
+      }
+    }, SCRIPT_AUTOSAVE_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(handle);
+  }, [script, isScriptLoaded]);
 
   // Update timeRef for the loop
   useEffect(() => {
@@ -606,14 +679,14 @@ fn update(dt, inputs) {
     const vis = visRef.current as any;
     const duration = audioDuration ?? 0;
 
-    // Clear previous band signals
-    if (typeof vis.clear_band_signals === "function") {
-      vis.clear_band_signals();
-    }
-
     // Get all band MIR results
     const allResults = getAllBandMirResults();
     if (allResults.length === 0) return;
+
+    // Clear previous band signals only if we have new ones to push
+    if (typeof vis.clear_band_signals === "function") {
+      vis.clear_band_signals();
+    }
 
     // Map function IDs to script feature names
     const featureMap: Record<BandMirFunctionId, string> = {
@@ -679,29 +752,90 @@ fn update(dt, inputs) {
         setScriptError(err);
       }
     }
-  }, [script, isReady, applyDiagnosticsToEditor]);
+  }, [script, isReady, applyDiagnosticsToEditor, bandMirResults, frequencyBands]);
 
   // Render Loop
   useEffect(() => {
     if (!isReady || !visRef.current) return;
 
     let lastLog = performance.now();
+    let lastRenderTime = performance.now();
     lastTimeRef.current = performance.now();
     const vis = visRef.current;
+
+    // Track dropped frames for user feedback
+    let droppedFrameCount = 0;
+    let totalDroppedFrames = 0;
+    let lastDroppedFrameWarning = 0;
+
+    // Frame budget in milliseconds (50ms = minimum ~20fps before dropping)
+    const FRAME_BUDGET_MS = 50;
+
+    // Rolling average for frame time (exponential moving average)
+    let avgFrameTimeMs = 0;
+    const EMA_ALPHA = 0.1; // Smoothing factor (lower = smoother, higher = more responsive)
 
     const loop = (now: number) => {
       if (now - lastLog > 1000) {
         lastLog = now;
       }
 
-      const dt = isPlayingRef.current ? (now - lastTimeRef.current) / 1000 : 0;
+      // Get current target FPS and calculate frame interval
+      const currentTargetFps = targetFpsRef.current;
+      const targetFrameIntervalMs = 1000 / currentTargetFps;
+      const timeSinceLastRender = now - lastRenderTime;
+
+      // Skip this frame if not enough time has passed (throttle to target FPS)
+      if (timeSinceLastRender < targetFrameIntervalMs * 0.95) {
+        rafRef.current = requestAnimationFrame(loop);
+        return;
+      }
+
+      // Use fixed dt based on target FPS for consistent signal sampling
+      // This ensures peak-preserving sampling windows are predictable
+      const dt = isPlayingRef.current ? (1 / currentTargetFps) : 0;
+      lastRenderTime = now;
       lastTimeRef.current = now;
 
-      vis.render(dt);
+      // Measure frame processing time
+      const frameStart = performance.now();
 
-      // Poll script diagnostics (runtime errors during update/render)
+      // Use budget-limited render if available, otherwise fall back to regular render
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const visAny = vis as any;
+      let frameCompleted = true;
+      if (typeof visAny.render_with_budget === "function") {
+        frameCompleted = visAny.render_with_budget(dt, FRAME_BUDGET_MS);
+      } else {
+        vis.render(dt);
+      }
+
+      const frameEnd = performance.now();
+      const frameTimeMs = frameEnd - frameStart;
+
+      // Update rolling average (only for completed frames to avoid skewed stats)
+      if (frameCompleted) {
+        avgFrameTimeMs = avgFrameTimeMs === 0
+          ? frameTimeMs
+          : avgFrameTimeMs * (1 - EMA_ALPHA) + frameTimeMs * EMA_ALPHA;
+      }
+
+      // Track dropped frames
+      if (!frameCompleted) {
+        droppedFrameCount++;
+        totalDroppedFrames++;
+        // Log warning every 5 seconds if frames are being dropped
+        if (now - lastDroppedFrameWarning > 5000) {
+          console.warn(
+            `Dropped ${droppedFrameCount} frames in the last 5 seconds due to script complexity. ` +
+            `Consider simplifying your script.`
+          );
+          droppedFrameCount = 0;
+          lastDroppedFrameWarning = now;
+        }
+      }
+
+      // Poll script diagnostics (runtime errors during update/render)
       if (typeof visAny.take_script_diagnostics_json === "function") {
         const diagJson = visAny.take_script_diagnostics_json();
         const diags = parseScriptDiagnosticsJson(diagJson);
@@ -721,10 +855,17 @@ fn update(dt, inputs) {
             time: vals[0] || 0,
             entityCount: vals[1] || 0,
             meshCount: vals[2] || 0,
-            lineCount: vals[3] || 0
+            lineCount: vals[3] || 0,
+            frameTimeMs: avgFrameTimeMs,
+            budgetUsedPercent: (avgFrameTimeMs / FRAME_BUDGET_MS) * 100,
+            droppedFrames: totalDroppedFrames
           });
         }
       }
+      // if (typeof visAny.get_entity_positions_json === "function") {
+      //   const posJson = visAny.get_entity_positions_json();
+      //   console.log("Entity positions:", posJson);
+      // }
     };
     rafRef.current = requestAnimationFrame(loop);
 
@@ -758,7 +899,8 @@ fn update(dt, inputs) {
   }, [isReady]);
 
   const [debugValues, setDebugValues] = useState<{
-    time: number, entityCount: number, meshCount: number, lineCount: number
+    time: number, entityCount: number, meshCount: number, lineCount: number,
+    frameTimeMs: number, budgetUsedPercent: number, droppedFrames: number
   } | null>(null);
 
   // Debug signal analysis
@@ -867,6 +1009,23 @@ fn update(dt, inputs) {
             <FlaskConical className="w-4 h-4" />
           )}
         </button>
+        {/* FPS control */}
+        <div className="flex items-center gap-1">
+          <span className="text-zinc-500 dark:text-zinc-400">FPS:</span>
+          <input
+            type="number"
+            value={targetFps}
+            onChange={(e) => {
+              const val = parseFloat(e.target.value);
+              if (!isNaN(val)) handleFpsChange(val);
+            }}
+            min={MIN_TARGET_FPS}
+            max={MAX_TARGET_FPS}
+            step="any"
+            className="w-12 px-1 py-0.5 text-xs bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            title={`Target preview FPS (${MIN_TARGET_FPS}-${MAX_TARGET_FPS})`}
+          />
+        </div>
         {isAnalysisRunning && (
           <div
             className="flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-300"
@@ -874,7 +1033,7 @@ fn update(dt, inputs) {
             aria-live="polite"
           >
             <Loader2 className="h-3 w-3 animate-spin" />
-            <span>Analyzing bands</span>
+            <span>Extracting debug signals</span>
             <span className="h-1 w-14 overflow-hidden rounded-full bg-emerald-500/20">
               <span className="block h-full w-full animate-pulse bg-linear-to-r from-transparent via-emerald-400/80 to-transparent" />
             </span>
@@ -1016,6 +1175,18 @@ fn update(dt, inputs) {
               <div>Entities: {debugValues.entityCount.toFixed(0)}</div>
               <div>Meshes: {debugValues.meshCount.toFixed(0)}</div>
               <div>Lines: {debugValues.lineCount.toFixed(0)}</div>
+              <div className="mt-1 pt-1 border-t border-zinc-600">
+                <div className={
+                  debugValues.budgetUsedPercent > 100 ? 'text-red-400' :
+                  debugValues.budgetUsedPercent > 60 ? 'text-yellow-400' :
+                  'text-emerald-400'
+                }>
+                  Frame: {debugValues.frameTimeMs.toFixed(1)}ms ({debugValues.budgetUsedPercent.toFixed(0)}%)
+                </div>
+                {debugValues.droppedFrames > 0 && (
+                  <div className="text-red-400">Dropped: {debugValues.droppedFrames}</div>
+                )}
+              </div>
             </div>
           )}
 

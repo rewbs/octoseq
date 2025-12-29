@@ -8,13 +8,43 @@
 use bytemuck::{Pod, Zeroable};
 
 /// GPU instance data for point/billboard particles.
-#[allow(dead_code)]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 pub struct GpuParticleInstance {
     pub position: [f32; 3],
     pub scale: f32,
     pub color: [f32; 4],
+}
+
+impl GpuParticleInstance {
+    /// Returns the vertex buffer layout for instanced billboard rendering.
+    /// This should be used as the second vertex buffer (slot 1) with step_mode::Instance.
+    pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<GpuParticleInstance>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                // world_position: vec3<f32>
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 1, // After quad vertex position (location 0)
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                // scale: f32
+                wgpu::VertexAttribute {
+                    offset: 12,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32,
+                },
+                // color: vec4<f32>
+                wgpu::VertexAttribute {
+                    offset: 16,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+            ],
+        }
+    }
 }
 
 /// GPU instance data for mesh-based particles.

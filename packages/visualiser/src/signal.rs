@@ -14,6 +14,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use crate::event_stream::Event;
+use crate::signal_eval::EvalContext;
 
 /// Global counter for generating unique signal IDs.
 static SIGNAL_ID_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -126,17 +127,21 @@ impl Signal {
         Signal::new(SignalNode::Mul(self.clone(), other))
     }
 
-    /// Multiply this signal by a constant.
-    pub fn scale(&self, factor: f32) -> Signal {
-        Signal::new(SignalNode::Scale(self.clone(), factor))
+    /// Multiply this signal by a factor (constant or signal).
+    pub fn scale(&self, factor: impl Into<SignalParam>) -> Signal {
+        Signal::new(SignalNode::Scale {
+            source: self.clone(),
+            factor: factor.into(),
+        })
     }
 
     /// Mix this signal with another using a weight (0.0 = all self, 1.0 = all other).
-    pub fn mix(&self, other: Signal, weight: f32) -> Signal {
+    /// Weight can be a constant or a signal.
+    pub fn mix(&self, other: Signal, weight: impl Into<SignalParam>) -> Signal {
         Signal::new(SignalNode::Mix {
             a: self.clone(),
             b: other,
-            weight,
+            weight: weight.into(),
         })
     }
 
@@ -180,11 +185,12 @@ impl Signal {
     // === Math Primitives ===
 
     /// Clamp the signal to a range [min, max].
-    pub fn clamp(&self, min: f32, max: f32) -> Signal {
+    /// Min and max can be constants or signals.
+    pub fn clamp(&self, min: impl Into<SignalParam>, max: impl Into<SignalParam>) -> Signal {
         Signal::new(SignalNode::Clamp {
             source: self.clone(),
-            min,
-            max,
+            min: min.into(),
+            max: max.into(),
         })
     }
 
@@ -202,6 +208,248 @@ impl Signal {
         })
     }
 
+    /// Absolute value.
+    pub fn abs(&self) -> Signal {
+        Signal::new(SignalNode::Abs {
+            source: self.clone(),
+        })
+    }
+
+    /// Sigmoid curve centered at 0.5.
+    /// `k` controls steepness (0.0 = no-op). Can be a constant or signal.
+    pub fn sigmoid(&self, k: impl Into<SignalParam>) -> Signal {
+        Signal::new(SignalNode::Sigmoid {
+            source: self.clone(),
+            k: k.into(),
+        })
+    }
+
+    /// Round to nearest integer.
+    pub fn round(&self) -> Signal {
+        Signal::new(SignalNode::Round {
+            source: self.clone(),
+        })
+    }
+
+    /// Sign function: returns -1.0, 0.0, or 1.0.
+    pub fn sign(&self) -> Signal {
+        Signal::new(SignalNode::Sign {
+            source: self.clone(),
+        })
+    }
+
+    /// Negate this signal (multiply by -1).
+    pub fn neg(&self) -> Signal {
+        Signal::new(SignalNode::Neg {
+            source: self.clone(),
+        })
+    }
+
+    // === Extended Arithmetic ===
+
+    /// Subtract another signal from this one.
+    pub fn sub(&self, other: Signal) -> Signal {
+        Signal::new(SignalNode::Sub(self.clone(), other))
+    }
+
+    /// Subtract a constant from this signal.
+    pub fn sub_scalar(&self, value: f32) -> Signal {
+        self.sub(Signal::constant(value))
+    }
+
+    /// Divide this signal by another.
+    pub fn div(&self, other: Signal) -> Signal {
+        Signal::new(SignalNode::Div(self.clone(), other))
+    }
+
+    /// Divide this signal by a constant.
+    pub fn div_scalar(&self, value: f32) -> Signal {
+        self.div(Signal::constant(value))
+    }
+
+    /// Raise this signal to a power.
+    /// Exponent can be a constant or signal.
+    pub fn pow(&self, exponent: impl Into<SignalParam>) -> Signal {
+        Signal::new(SignalNode::Pow {
+            source: self.clone(),
+            exponent: exponent.into(),
+        })
+    }
+
+    /// Add an offset to this signal.
+    /// Amount can be a constant or signal.
+    pub fn offset(&self, amount: impl Into<SignalParam>) -> Signal {
+        Signal::new(SignalNode::Offset {
+            source: self.clone(),
+            amount: amount.into(),
+        })
+    }
+
+    // === Trigonometric (value transformation) ===
+
+    /// Compute sine of this signal's value (in radians).
+    /// Note: This transforms the signal VALUE, unlike gen.sin() which generates oscillators.
+    pub fn sin(&self) -> Signal {
+        Signal::new(SignalNode::Sin {
+            source: self.clone(),
+        })
+    }
+
+    /// Compute cosine of this signal's value (in radians).
+    pub fn cos(&self) -> Signal {
+        Signal::new(SignalNode::Cos {
+            source: self.clone(),
+        })
+    }
+
+    /// Compute tangent of this signal's value (in radians).
+    pub fn tan(&self) -> Signal {
+        Signal::new(SignalNode::Tan {
+            source: self.clone(),
+        })
+    }
+
+    /// Compute arc sine of this signal's value.
+    pub fn asin(&self) -> Signal {
+        Signal::new(SignalNode::Asin {
+            source: self.clone(),
+        })
+    }
+
+    /// Compute arc cosine of this signal's value.
+    pub fn acos(&self) -> Signal {
+        Signal::new(SignalNode::Acos {
+            source: self.clone(),
+        })
+    }
+
+    /// Compute arc tangent of this signal's value.
+    pub fn atan(&self) -> Signal {
+        Signal::new(SignalNode::Atan {
+            source: self.clone(),
+        })
+    }
+
+    /// Compute arc tangent of y/x, handling all quadrants correctly.
+    /// This signal is treated as y, and `x` is the other signal.
+    pub fn atan2(&self, x: Signal) -> Signal {
+        Signal::new(SignalNode::Atan2 {
+            y: self.clone(),
+            x,
+        })
+    }
+
+    // === Exponential and Logarithmic ===
+
+    /// Compute square root of this signal's value.
+    pub fn sqrt(&self) -> Signal {
+        Signal::new(SignalNode::Sqrt {
+            source: self.clone(),
+        })
+    }
+
+    /// Compute e^x where x is this signal's value.
+    pub fn exp(&self) -> Signal {
+        Signal::new(SignalNode::Exp {
+            source: self.clone(),
+        })
+    }
+
+    /// Compute natural logarithm of this signal's value.
+    pub fn ln(&self) -> Signal {
+        Signal::new(SignalNode::Ln {
+            source: self.clone(),
+        })
+    }
+
+    /// Compute logarithm with custom base.
+    /// Base can be a constant or signal.
+    pub fn log(&self, base: impl Into<SignalParam>) -> Signal {
+        Signal::new(SignalNode::Log {
+            source: self.clone(),
+            base: base.into(),
+        })
+    }
+
+    // === Modular / Periodic ===
+
+    /// Compute Euclidean modulo (always positive result).
+    /// Divisor can be a constant or signal.
+    pub fn modulo(&self, divisor: impl Into<SignalParam>) -> Signal {
+        Signal::new(SignalNode::Mod {
+            source: self.clone(),
+            divisor: divisor.into(),
+        })
+    }
+
+    /// Compute remainder (can be negative for negative dividend).
+    /// Divisor can be a constant or signal.
+    pub fn rem(&self, divisor: impl Into<SignalParam>) -> Signal {
+        Signal::new(SignalNode::Rem {
+            source: self.clone(),
+            divisor: divisor.into(),
+        })
+    }
+
+    /// Wrap value to range [min, max).
+    /// Min and max can be constants or signals.
+    pub fn wrap(&self, min: impl Into<SignalParam>, max: impl Into<SignalParam>) -> Signal {
+        Signal::new(SignalNode::Wrap {
+            source: self.clone(),
+            min: min.into(),
+            max: max.into(),
+        })
+    }
+
+    /// Get fractional part of this signal's value.
+    pub fn fract(&self) -> Signal {
+        Signal::new(SignalNode::Fract {
+            source: self.clone(),
+        })
+    }
+
+    // === Mapping / Shaping ===
+
+    /// Map this signal from one range to another.
+    /// All parameters can be constants or signals.
+    pub fn map(
+        &self,
+        in_min: impl Into<SignalParam>,
+        in_max: impl Into<SignalParam>,
+        out_min: impl Into<SignalParam>,
+        out_max: impl Into<SignalParam>,
+    ) -> Signal {
+        Signal::new(SignalNode::Map {
+            source: self.clone(),
+            in_min: in_min.into(),
+            in_max: in_max.into(),
+            out_min: out_min.into(),
+            out_max: out_max.into(),
+        })
+    }
+
+    /// Apply smoothstep interpolation.
+    /// Returns 0 when x <= edge0, 1 when x >= edge1, smooth interpolation between.
+    /// Edges can be constants or signals.
+    pub fn smoothstep(&self, edge0: impl Into<SignalParam>, edge1: impl Into<SignalParam>) -> Signal {
+        Signal::new(SignalNode::Smoothstep {
+            source: self.clone(),
+            edge0: edge0.into(),
+            edge1: edge1.into(),
+        })
+    }
+
+    /// Linearly interpolate between this signal and another.
+    /// When t=0, returns self; when t=1, returns other.
+    /// t can be a constant or signal.
+    pub fn lerp(&self, other: Signal, t: impl Into<SignalParam>) -> Signal {
+        Signal::new(SignalNode::Lerp {
+            a: self.clone(),
+            b: other,
+            t: t.into(),
+        })
+    }
+
     // === Rate and Accumulation ===
 
     /// Compute the rate of change (derivative approximation).
@@ -216,10 +464,11 @@ impl Signal {
     ///
     /// - `decay_beats`: Time constant for decay in beats. 0 = no decay.
     ///   The accumulated value decays by exp(-dt/tau) each frame.
-    pub fn integrate(&self, decay_beats: f32) -> Signal {
+    ///   Can be a constant or a signal.
+    pub fn integrate(&self, decay_beats: impl Into<SignalParam>) -> Signal {
         Signal::new(SignalNode::Integrate {
             source: self.clone(),
-            decay_beats,
+            decay_beats: decay_beats.into(),
         })
     }
 
@@ -227,19 +476,21 @@ impl Signal {
 
     /// Delay the signal by N beats (look back in time).
     /// Uses a ring buffer to store past values.
-    pub fn delay(&self, beats: f32) -> Signal {
+    /// Beats can be a constant or a signal.
+    pub fn delay(&self, beats: impl Into<SignalParam>) -> Signal {
         Signal::new(SignalNode::Delay {
             source: self.clone(),
-            beats,
+            beats: beats.into(),
         })
     }
 
     /// Anticipate the signal by N beats (look ahead in time).
     /// Only works reliably on Input signals; falls back to current value otherwise.
-    pub fn anticipate(&self, beats: f32) -> Signal {
+    /// Beats can be a constant or a signal.
+    pub fn anticipate(&self, beats: impl Into<SignalParam>) -> Signal {
         Signal::new(SignalNode::Anticipate {
             source: self.clone(),
-            beats,
+            beats: beats.into(),
         })
     }
 
@@ -342,24 +593,55 @@ impl Signal {
             SignalNode::Gate { source, .. } => {
                 source.collect_normalise_sources(sources);
             }
-            SignalNode::Add(a, b) | SignalNode::Mul(a, b) => {
+            // Binary operations with two signal children
+            SignalNode::Add(a, b)
+            | SignalNode::Mul(a, b)
+            | SignalNode::Sub(a, b)
+            | SignalNode::Div(a, b) => {
                 a.collect_normalise_sources(sources);
                 b.collect_normalise_sources(sources);
             }
-            SignalNode::Scale(s, _) => {
-                s.collect_normalise_sources(sources);
+            SignalNode::Atan2 { y, x } => {
+                y.collect_normalise_sources(sources);
+                x.collect_normalise_sources(sources);
             }
-            SignalNode::Mix { a, b, .. } => {
+            SignalNode::Scale { source, .. } => {
+                source.collect_normalise_sources(sources);
+            }
+            SignalNode::Mix { a, b, .. } | SignalNode::Lerp { a, b, .. } => {
                 a.collect_normalise_sources(sources);
                 b.collect_normalise_sources(sources);
             }
             SignalNode::Debug { source, .. } => {
                 source.collect_normalise_sources(sources);
             }
-            // New primitives that wrap a source
-            SignalNode::Clamp { source, .. }
+            // Unary primitives that wrap a source
+            SignalNode::Sigmoid { source, .. }
+            | SignalNode::Clamp { source, .. }
             | SignalNode::Floor { source }
             | SignalNode::Ceil { source }
+            | SignalNode::Abs { source }
+            | SignalNode::Round { source }
+            | SignalNode::Sign { source }
+            | SignalNode::Neg { source }
+            | SignalNode::Pow { source, .. }
+            | SignalNode::Offset { source, .. }
+            | SignalNode::Sin { source }
+            | SignalNode::Cos { source }
+            | SignalNode::Tan { source }
+            | SignalNode::Asin { source }
+            | SignalNode::Acos { source }
+            | SignalNode::Atan { source }
+            | SignalNode::Sqrt { source }
+            | SignalNode::Exp { source }
+            | SignalNode::Ln { source }
+            | SignalNode::Log { source, .. }
+            | SignalNode::Mod { source, .. }
+            | SignalNode::Rem { source, .. }
+            | SignalNode::Wrap { source, .. }
+            | SignalNode::Fract { source }
+            | SignalNode::Map { source, .. }
+            | SignalNode::Smoothstep { source, .. }
             | SignalNode::Diff { source }
             | SignalNode::Integrate { source, .. }
             | SignalNode::Delay { source, .. }
@@ -396,6 +678,186 @@ impl Signal {
     pub fn from_events_with_options(events: Arc<Vec<Event>>, options: ToSignalOptions) -> Signal {
         Signal::new(SignalNode::EventStreamEnvelope { events, options })
     }
+
+    /// Returns a human-readable description of the signal's computation graph.
+    ///
+    /// Useful for debugging to understand how a signal is constructed.
+    /// Example output: `Input("energy").Smooth.Exponential(0.1, 0.5).Add(Constant(1.0))`
+    pub fn describe(&self) -> String {
+        self.describe_node(&self.node)
+    }
+
+    fn describe_node(&self, node: &SignalNode) -> String {
+        match node {
+            SignalNode::Input { name, .. } => format!("Input(\"{}\")", name),
+            SignalNode::BandInput { band_key, feature, .. } => {
+                format!("BandInput(\"{}\", \"{}\")", band_key, feature)
+            }
+            SignalNode::Constant(v) => format!("Constant({})", v),
+            SignalNode::Add(a, b) => {
+                format!("{}.Add({})", self.describe_node(&a.node), self.describe_node(&b.node))
+            }
+            SignalNode::Sub(a, b) => {
+                format!("{}.Sub({})", self.describe_node(&a.node), self.describe_node(&b.node))
+            }
+            SignalNode::Mul(a, b) => {
+                format!("{}.Mul({})", self.describe_node(&a.node), self.describe_node(&b.node))
+            }
+            SignalNode::Div(a, b) => {
+                format!("{}.Div({})", self.describe_node(&a.node), self.describe_node(&b.node))
+            }
+            SignalNode::Scale { source, factor } => {
+                format!("{}.Scale({})", self.describe_node(&source.node), self.describe_param(factor))
+            }
+            SignalNode::Offset { source, amount } => {
+                format!("{}.Offset({})", self.describe_node(&source.node), self.describe_param(amount))
+            }
+            SignalNode::Mix { a, b, weight } => {
+                format!("{}.Mix({}, {})", self.describe_node(&a.node), self.describe_node(&b.node), self.describe_param(weight))
+            }
+            SignalNode::Neg { source } => {
+                format!("{}.Neg()", self.describe_node(&source.node))
+            }
+            SignalNode::Pow { source, exponent } => {
+                format!("{}.Pow({})", self.describe_node(&source.node), self.describe_param(exponent))
+            }
+            SignalNode::Lerp { a, b, t } => {
+                format!("{}.Lerp({}, {})", self.describe_node(&a.node), self.describe_node(&b.node), self.describe_param(t))
+            }
+            SignalNode::Sin { source } => format!("{}.Sin()", self.describe_node(&source.node)),
+            SignalNode::Cos { source } => format!("{}.Cos()", self.describe_node(&source.node)),
+            SignalNode::Tan { source } => format!("{}.Tan()", self.describe_node(&source.node)),
+            SignalNode::Asin { source } => format!("{}.Asin()", self.describe_node(&source.node)),
+            SignalNode::Acos { source } => format!("{}.Acos()", self.describe_node(&source.node)),
+            SignalNode::Atan { source } => format!("{}.Atan()", self.describe_node(&source.node)),
+            SignalNode::Atan2 { y, x } => {
+                format!("{}.Atan2({})", self.describe_node(&y.node), self.describe_node(&x.node))
+            }
+            SignalNode::Sqrt { source } => format!("{}.Sqrt()", self.describe_node(&source.node)),
+            SignalNode::Exp { source } => format!("{}.Exp()", self.describe_node(&source.node)),
+            SignalNode::Ln { source } => format!("{}.Ln()", self.describe_node(&source.node)),
+            SignalNode::Log { source, base } => {
+                format!("{}.Log({})", self.describe_node(&source.node), self.describe_param(base))
+            }
+            SignalNode::Mod { source, divisor } => {
+                format!("{}.Mod({})", self.describe_node(&source.node), self.describe_param(divisor))
+            }
+            SignalNode::Rem { source, divisor } => {
+                format!("{}.Rem({})", self.describe_node(&source.node), self.describe_param(divisor))
+            }
+            SignalNode::Fract { source } => format!("{}.Fract()", self.describe_node(&source.node)),
+            SignalNode::Wrap { source, min, max } => {
+                format!("{}.Wrap({}, {})", self.describe_node(&source.node), self.describe_param(min), self.describe_param(max))
+            }
+            SignalNode::Map { source, in_min, in_max, out_min, out_max } => {
+                format!("{}.Map({}, {}, {}, {})",
+                    self.describe_node(&source.node),
+                    self.describe_param(in_min),
+                    self.describe_param(in_max),
+                    self.describe_param(out_min),
+                    self.describe_param(out_max)
+                )
+            }
+            SignalNode::Smoothstep { source, edge0, edge1 } => {
+                format!("{}.Smoothstep({}, {})", self.describe_node(&source.node), self.describe_param(edge0), self.describe_param(edge1))
+            }
+            SignalNode::Clamp { source, min, max } => {
+                format!("{}.Clamp({}, {})", self.describe_node(&source.node), self.describe_param(min), self.describe_param(max))
+            }
+            SignalNode::Abs { source } => format!("{}.Abs()", self.describe_node(&source.node)),
+            SignalNode::Sign { source } => format!("{}.Sign()", self.describe_node(&source.node)),
+            SignalNode::Floor { source } => format!("{}.Floor()", self.describe_node(&source.node)),
+            SignalNode::Ceil { source } => format!("{}.Ceil()", self.describe_node(&source.node)),
+            SignalNode::Round { source } => format!("{}.Round()", self.describe_node(&source.node)),
+            SignalNode::Sigmoid { source, k } => {
+                format!("{}.Sigmoid({})", self.describe_node(&source.node), self.describe_param(k))
+            }
+            SignalNode::Smooth { source, params } => {
+                match params {
+                    SmoothParams::MovingAverage { window_beats } => {
+                        format!("{}.Smooth.MovingAverage({})", self.describe_node(&source.node), window_beats)
+                    }
+                    SmoothParams::Exponential { attack_beats, release_beats } => {
+                        format!("{}.Smooth.Exponential({}, {})", self.describe_node(&source.node), attack_beats, release_beats)
+                    }
+                    SmoothParams::Gaussian { sigma_beats } => {
+                        format!("{}.Smooth.Gaussian({})", self.describe_node(&source.node), sigma_beats)
+                    }
+                }
+            }
+            SignalNode::Normalise { source, params } => {
+                match params {
+                    NormaliseParams::Global => {
+                        format!("{}.Normalise.Global()", self.describe_node(&source.node))
+                    }
+                    NormaliseParams::Robust => {
+                        format!("{}.Normalise.Robust()", self.describe_node(&source.node))
+                    }
+                    NormaliseParams::Range { min, max } => {
+                        format!("{}.Normalise.ToRange({}, {})", self.describe_node(&source.node), min, max)
+                    }
+                }
+            }
+            SignalNode::Gate { source, params } => {
+                match params {
+                    GateParams::Threshold { threshold } => {
+                        format!("{}.Gate.Threshold({})", self.describe_node(&source.node), threshold)
+                    }
+                    GateParams::Hysteresis { on_threshold, off_threshold } => {
+                        format!("{}.Gate.Hysteresis({}, {})", self.describe_node(&source.node), on_threshold, off_threshold)
+                    }
+                }
+            }
+            SignalNode::Diff { source } => format!("{}.Diff()", self.describe_node(&source.node)),
+            SignalNode::Integrate { source, decay_beats } => {
+                format!("{}.Integrate({})", self.describe_node(&source.node), self.describe_param(decay_beats))
+            }
+            SignalNode::Delay { source, beats } => {
+                format!("{}.Delay({})", self.describe_node(&source.node), self.describe_param(beats))
+            }
+            SignalNode::Anticipate { source, beats } => {
+                format!("{}.Anticipate({})", self.describe_node(&source.node), self.describe_param(beats))
+            }
+            SignalNode::Debug { source, name } => {
+                format!("{}.Probe(\"{}\")", self.describe_node(&source.node), name)
+            }
+            SignalNode::Generator(gen_node) => {
+                match gen_node {
+                    GeneratorNode::Sin { freq_beats, phase } => {
+                        format!("gen.sin({}, {})", freq_beats, phase)
+                    }
+                    GeneratorNode::Square { freq_beats, phase, duty } => {
+                        format!("gen.square({}, {}, {})", freq_beats, phase, duty)
+                    }
+                    GeneratorNode::Triangle { freq_beats, phase } => {
+                        format!("gen.triangle({}, {})", freq_beats, phase)
+                    }
+                    GeneratorNode::Saw { freq_beats, phase } => {
+                        format!("gen.saw({}, {})", freq_beats, phase)
+                    }
+                    GeneratorNode::Noise { noise_type, seed } => {
+                        format!("gen.noise({:?}, {})", noise_type, seed)
+                    }
+                    GeneratorNode::Perlin { scale_beats, seed } => {
+                        format!("gen.perlin({}, {})", scale_beats, seed)
+                    }
+                }
+            }
+            SignalNode::EventStreamSource { events } => {
+                format!("Events(count={})", events.len())
+            }
+            SignalNode::EventStreamEnvelope { events, .. } => {
+                format!("EventsEnvelope(count={})", events.len())
+            }
+        }
+    }
+
+    fn describe_param(&self, param: &SignalParam) -> String {
+        match param {
+            SignalParam::Scalar(v) => format!("{}", v),
+            SignalParam::Signal(s) => self.describe_node(&s.node),
+        }
+    }
 }
 
 impl std::fmt::Debug for Signal {
@@ -404,6 +866,71 @@ impl std::fmt::Debug for Signal {
             .field("id", &self.id)
             .field("node", &self.node)
             .finish()
+    }
+}
+
+// ============================================================================
+// SignalParam - Parameter type that can be either a scalar or a Signal
+// ============================================================================
+
+/// A parameter that can be either a constant scalar value or a Signal.
+///
+/// This allows signal transformation methods (like `integrate`, `delay`, etc.)
+/// to accept either a fixed value or a dynamic signal as a parameter.
+///
+/// # Example (Rhai)
+/// ```rhai
+/// // Using a constant
+/// let delayed = signal.delay(0.5);
+///
+/// // Using another signal as the parameter
+/// let dynamic_delay = signal.delay(inputs.amplitude);
+/// ```
+#[derive(Clone)]
+pub enum SignalParam {
+    /// A constant scalar value.
+    Scalar(f32),
+    /// A dynamic signal that will be evaluated each frame.
+    Signal(Box<Signal>),
+}
+
+impl SignalParam {
+    /// Evaluate the parameter at the current time.
+    ///
+    /// - For `Scalar`, returns the constant value.
+    /// - For `Signal`, evaluates the signal in the given context.
+    pub fn evaluate(&self, ctx: &mut EvalContext) -> f32 {
+        match self {
+            SignalParam::Scalar(v) => *v,
+            SignalParam::Signal(s) => s.evaluate(ctx),
+        }
+    }
+}
+
+impl std::fmt::Debug for SignalParam {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SignalParam::Scalar(v) => write!(f, "Scalar({})", v),
+            SignalParam::Signal(s) => write!(f, "Signal({:?})", s.id),
+        }
+    }
+}
+
+impl From<f32> for SignalParam {
+    fn from(v: f32) -> Self {
+        SignalParam::Scalar(v)
+    }
+}
+
+impl From<Signal> for SignalParam {
+    fn from(s: Signal) -> Self {
+        SignalParam::Signal(Box::new(s))
+    }
+}
+
+impl From<&Signal> for SignalParam {
+    fn from(s: &Signal) -> Self {
+        SignalParam::Signal(Box::new(s.clone()))
     }
 }
 
@@ -442,10 +969,10 @@ pub enum SignalNode {
     Add(Signal, Signal),
     /// Multiply two signals.
     Mul(Signal, Signal),
-    /// Scale a signal by a constant factor.
-    Scale(Signal, f32),
-    /// Mix two signals with a weight.
-    Mix { a: Signal, b: Signal, weight: f32 },
+    /// Scale a signal by a factor (can be constant or signal).
+    Scale { source: Signal, factor: SignalParam },
+    /// Mix two signals with a weight (can be constant or signal).
+    Mix { a: Signal, b: Signal, weight: SignalParam },
 
     // === Debug ===
     /// Debug probe - emits values during analysis but passes through unchanged.
@@ -464,24 +991,94 @@ pub enum SignalNode {
     },
 
     // === Math Primitives ===
+    /// Sigmoid curve centered at 0.5.
+    Sigmoid { source: Signal, k: SignalParam },
     /// Clamp signal to a range.
-    Clamp { source: Signal, min: f32, max: f32 },
+    Clamp { source: Signal, min: SignalParam, max: SignalParam },
     /// Floor (round down).
     Floor { source: Signal },
     /// Ceiling (round up).
     Ceil { source: Signal },
+    /// Absolute value.
+    Abs { source: Signal },
+    /// Round to nearest integer.
+    Round { source: Signal },
+    /// Sign function: -1, 0, or 1.
+    Sign { source: Signal },
+    /// Negation (multiply by -1).
+    Neg { source: Signal },
+
+    // === Extended Arithmetic ===
+    /// Subtract two signals.
+    Sub(Signal, Signal),
+    /// Divide two signals.
+    Div(Signal, Signal),
+    /// Power: source^exponent.
+    Pow { source: Signal, exponent: SignalParam },
+    /// Offset (add constant or signal).
+    Offset { source: Signal, amount: SignalParam },
+
+    // === Trigonometric (value transformation) ===
+    /// Sine of signal value (radians).
+    Sin { source: Signal },
+    /// Cosine of signal value (radians).
+    Cos { source: Signal },
+    /// Tangent of signal value (radians).
+    Tan { source: Signal },
+    /// Arc sine of signal value.
+    Asin { source: Signal },
+    /// Arc cosine of signal value.
+    Acos { source: Signal },
+    /// Arc tangent of signal value.
+    Atan { source: Signal },
+    /// Arc tangent of y/x, handling quadrants.
+    Atan2 { y: Signal, x: Signal },
+
+    // === Exponential and Logarithmic ===
+    /// Square root.
+    Sqrt { source: Signal },
+    /// Exponential (e^x).
+    Exp { source: Signal },
+    /// Natural logarithm.
+    Ln { source: Signal },
+    /// Logarithm with custom base.
+    Log { source: Signal, base: SignalParam },
+
+    // === Modular / Periodic ===
+    /// Euclidean modulo.
+    Mod { source: Signal, divisor: SignalParam },
+    /// Remainder (can be negative).
+    Rem { source: Signal, divisor: SignalParam },
+    /// Wrap value to range [min, max).
+    Wrap { source: Signal, min: SignalParam, max: SignalParam },
+    /// Fractional part (x - floor(x)).
+    Fract { source: Signal },
+
+    // === Mapping / Shaping ===
+    /// Map from input range to output range.
+    Map {
+        source: Signal,
+        in_min: SignalParam,
+        in_max: SignalParam,
+        out_min: SignalParam,
+        out_max: SignalParam,
+    },
+    /// Smoothstep interpolation between edges.
+    Smoothstep { source: Signal, edge0: SignalParam, edge1: SignalParam },
+    /// Linear interpolation between two signals.
+    Lerp { a: Signal, b: Signal, t: SignalParam },
 
     // === Rate and Accumulation ===
     /// Rate of change (derivative approximation).
     Diff { source: Signal },
-    /// Cumulative sum with optional decay.
-    Integrate { source: Signal, decay_beats: f32 },
+    /// Cumulative sum with optional decay (decay_beats can be constant or signal).
+    Integrate { source: Signal, decay_beats: SignalParam },
 
     // === Time Shifting ===
-    /// Delay by N beats (look back in time).
-    Delay { source: Signal, beats: f32 },
-    /// Anticipate by N beats (look ahead in time).
-    Anticipate { source: Signal, beats: f32 },
+    /// Delay by N beats (look back in time). Beats can be constant or signal.
+    Delay { source: Signal, beats: SignalParam },
+    /// Anticipate by N beats (look ahead in time). Beats can be constant or signal.
+    Anticipate { source: Signal, beats: SignalParam },
 }
 
 /// Generator node for oscillators, noise, and other signal sources.
@@ -850,10 +1447,10 @@ mod tests {
         assert!(matches!(&*product.node, SignalNode::Mul(_, _)));
 
         let scaled = a.scale(2.0);
-        assert!(matches!(&*scaled.node, SignalNode::Scale(_, 2.0)));
+        assert!(matches!(&*scaled.node, SignalNode::Scale { .. }));
 
         let mixed = a.mix(b, 0.5);
-        assert!(matches!(&*mixed.node, SignalNode::Mix { weight: 0.5, .. }));
+        assert!(matches!(&*mixed.node, SignalNode::Mix { .. }));
     }
 
     #[test]

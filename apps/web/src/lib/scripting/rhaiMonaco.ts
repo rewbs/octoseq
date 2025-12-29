@@ -7,7 +7,7 @@
  * - Autocomplete driven by host-defined Script API metadata
  */
 
-import type { ApiType, ScriptApiMetadata, ScriptApiIndex } from "./scriptApi";
+import type { ApiMethod, ApiType, ScriptApiMetadata, ScriptApiIndex } from "./scriptApi";
 import { buildScriptApiIndex, formatMethodSignature } from "./scriptApi";
 
 // We use 'any' for Monaco types since @monaco-editor/react provides the instance at runtime
@@ -108,6 +108,102 @@ function findMatchingParenBackward(text: string, closeIndex: number): number | n
   return null;
 }
 
+// Debug flag for chain parsing - set to true to enable console logging
+const DEBUG_CHAIN_PARSING = false;
+const DEBUG_SIGNATURE_HELP = false;
+const DEBUG_LOCAL_VARS = false;
+
+/**
+ * Parse a chain expression starting after '=' in a variable declaration.
+ * Returns the chain segments if valid, or null if not parseable.
+ */
+function parseChainFromExpression(text: string): ChainSegment[] | null {
+  // Add a trailing '.' to reuse parseChainBeforeDot
+  const withDot = trimRight(text) + ".";
+  return parseChainBeforeDot(withDot);
+}
+
+/**
+ * Parse variable declarations from code and resolve their types.
+ * Returns a map of variable name -> type name.
+ */
+function parseLocalVariableTypes(
+  code: string,
+  api: ScriptApiIndex
+): Map<string, string> {
+  const varTypes = new Map<string, string>();
+
+  // Pattern: let varName = expression; or let varName = expression\n
+  // We need to be careful about multi-line expressions and nested structures
+  const letPattern = /\blet\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*/g;
+
+  let match;
+  while ((match = letPattern.exec(code)) !== null) {
+    const varName = match[1]!;
+    const assignStart = match.index + match[0].length;
+
+    // Find the end of the expression (semicolon or newline, accounting for braces/parens)
+    let depth = 0;
+    let braceDepth = 0;
+    let bracketDepth = 0;
+    let i = assignStart;
+    let inString = false;
+    let stringChar = "";
+
+    while (i < code.length) {
+      const ch = code[i]!;
+
+      // Handle string literals
+      if (!inString && (ch === '"' || ch === "'")) {
+        inString = true;
+        stringChar = ch;
+        i++;
+        continue;
+      }
+      if (inString) {
+        if (ch === stringChar && code[i - 1] !== "\\") {
+          inString = false;
+        }
+        i++;
+        continue;
+      }
+
+      // Track nesting
+      if (ch === "(") depth++;
+      else if (ch === ")") depth--;
+      else if (ch === "{") braceDepth++;
+      else if (ch === "}") braceDepth--;
+      else if (ch === "[") bracketDepth++;
+      else if (ch === "]") bracketDepth--;
+
+      // End of expression
+      if (depth === 0 && braceDepth === 0 && bracketDepth === 0) {
+        if (ch === ";" || ch === "\n") {
+          break;
+        }
+      }
+
+      i++;
+    }
+
+    const expression = code.slice(assignStart, i).trim();
+    if (DEBUG_LOCAL_VARS) console.log(`[localVars] ${varName} = ${expression}`);
+
+    // Try to parse the expression as a chain
+    const chain = parseChainFromExpression(expression);
+    if (chain && chain.length > 0) {
+      // Resolve the chain type (using only globals, not recursive local vars)
+      const resolvedType = resolveChainTypeWithLocals(chain, api, new Map());
+      if (resolvedType) {
+        varTypes.set(varName, resolvedType.name);
+        if (DEBUG_LOCAL_VARS) console.log(`[localVars] ${varName} -> ${resolvedType.name}`);
+      }
+    }
+  }
+
+  return varTypes;
+}
+
 function parseChainBeforeDot(textUntilPosition: string): ChainSegment[] | null {
   const text = trimRight(textUntilPosition);
   if (!text.endsWith(".")) return null;
@@ -116,9 +212,11 @@ function parseChainBeforeDot(textUntilPosition: string): ChainSegment[] | null {
   while (i >= 0 && isWhitespace(text[i]!)) i--;
 
   const segmentsReversed: ChainSegment[] = [];
+  if (DEBUG_CHAIN_PARSING) console.log("[parseChain] input:", JSON.stringify(text));
 
   while (i >= 0) {
     const ch = text[i]!;
+    if (DEBUG_CHAIN_PARSING) console.log(`[parseChain] i=${i}, ch='${ch}', segments so far:`, JSON.stringify(segmentsReversed));
 
     if (ch === ")") {
       // Parse a method call segment: `name(...)`
@@ -138,13 +236,27 @@ function parseChainBeforeDot(textUntilPosition: string): ChainSegment[] | null {
       // Parse ["..."] style string index.
       i--; // before ]
       while (i >= 0 && isWhitespace(text[i]!)) i--;
+      if (DEBUG_CHAIN_PARSING) console.log(`[parseChain] parsing string index, i=${i}, char='${text[i]}'`);
       const str = parseStringLiteralBackward(text, i);
-      if (!str) return null;
+      if (!str) {
+        if (DEBUG_CHAIN_PARSING) console.log("[parseChain] parseStringLiteralBackward returned null");
+        return null;
+      }
+      if (DEBUG_CHAIN_PARSING) console.log(`[parseChain] parsed string: "${str.value}", startIndex=${str.startIndex}`);
       i = str.startIndex - 1; // before opening quote
       while (i >= 0 && isWhitespace(text[i]!)) i--;
-      if (i < 0 || text[i] !== "[") return null;
+      if (DEBUG_CHAIN_PARSING) console.log(`[parseChain] looking for '[', i=${i}, char='${text[i]}'`);
+      if (i < 0 || text[i] !== "[") {
+        if (DEBUG_CHAIN_PARSING) console.log("[parseChain] expected '[' but got:", text[i]);
+        return null;
+      }
       i--; // before '['
       segmentsReversed.push({ kind: "index", value: str.value });
+      // After an index, continue directly to parse the identifier before '[' (e.g., 'bands' in 'bands["..."]')
+      // Skip the dot check since '[' connects directly to the identifier
+      while (i >= 0 && isWhitespace(text[i]!)) i--;
+      if (DEBUG_CHAIN_PARSING) console.log(`[parseChain] after index, continuing at i=${i}, char='${text[i]}'`);
+      continue;
     } else if (isIdentChar(ch)) {
       const end = i + 1;
       let start = i;
@@ -165,8 +277,142 @@ function parseChainBeforeDot(textUntilPosition: string): ChainSegment[] | null {
     break;
   }
 
-  if (segmentsReversed.length === 0) return null;
-  return segmentsReversed.reverse();
+  if (segmentsReversed.length === 0) {
+    if (DEBUG_CHAIN_PARSING) console.log("[parseChain] no segments found");
+    return null;
+  }
+  const result = segmentsReversed.reverse();
+  if (DEBUG_CHAIN_PARSING) console.log("[parseChain] final chain:", JSON.stringify(result));
+  return result;
+}
+
+/**
+ * Information about the current function call context for signature help.
+ */
+type CallContext = {
+  /** The text before the opening paren (used to resolve the method) */
+  textBeforeOpen: string;
+  /** The index of the opening paren in the original text */
+  openParenIndex: number;
+  /** Which argument the cursor is on (0-indexed) */
+  activeParameter: number;
+};
+
+/**
+ * Find the opening paren of the innermost unclosed function call and count
+ * which argument the cursor is currently on.
+ */
+function findCallContext(textUntilPosition: string): CallContext | null {
+  const text = textUntilPosition;
+  let i = text.length - 1;
+  let depth = 0;
+  let commaCount = 0;
+
+  if (DEBUG_SIGNATURE_HELP) console.log("[findCallContext] input:", JSON.stringify(text));
+
+  while (i >= 0) {
+    const ch = text[i]!;
+
+    // Skip string literals
+    if (ch === '"' || ch === "'") {
+      const str = parseStringLiteralBackward(text, i);
+      if (str) {
+        i = str.startIndex - 1;
+        continue;
+      }
+    }
+
+    if (ch === ")") {
+      depth++;
+      i--;
+      continue;
+    }
+
+    if (ch === "]") {
+      // Skip bracket pairs
+      let bracketDepth = 1;
+      i--;
+      while (i >= 0 && bracketDepth > 0) {
+        const bc = text[i]!;
+        if (bc === '"' || bc === "'") {
+          const str = parseStringLiteralBackward(text, i);
+          if (str) {
+            i = str.startIndex - 1;
+            continue;
+          }
+        }
+        if (bc === "]") bracketDepth++;
+        else if (bc === "[") bracketDepth--;
+        i--;
+      }
+      continue;
+    }
+
+    if (ch === "(") {
+      if (depth === 0) {
+        // Found the opening paren of our call
+        const textBeforeOpen = text.slice(0, i);
+        if (DEBUG_SIGNATURE_HELP) {
+          console.log("[findCallContext] found open paren at", i, "commas:", commaCount);
+          console.log("[findCallContext] textBeforeOpen:", JSON.stringify(textBeforeOpen));
+        }
+        return {
+          textBeforeOpen,
+          openParenIndex: i,
+          activeParameter: commaCount,
+        };
+      }
+      depth--;
+      i--;
+      continue;
+    }
+
+    if (ch === "," && depth === 0) {
+      commaCount++;
+    }
+
+    i--;
+  }
+
+  if (DEBUG_SIGNATURE_HELP) console.log("[findCallContext] no unclosed paren found");
+  return null;
+}
+
+/**
+ * Parse the method name from text ending just before an opening paren.
+ * Returns the chain segments and the method name being called.
+ */
+function parseMethodCall(textBeforeOpen: string): { chain: ChainSegment[]; methodName: string } | null {
+  const text = trimRight(textBeforeOpen);
+  if (text.length === 0) return null;
+
+  // Extract the identifier immediately before the paren
+  let i = text.length - 1;
+  while (i >= 0 && isWhitespace(text[i]!)) i--;
+  if (i < 0 || !isIdentChar(text[i]!)) return null;
+
+  const end = i + 1;
+  let start = i;
+  while (start >= 0 && isIdentChar(text[start]!)) start--;
+  const methodName = text.slice(start + 1, end);
+
+  // Check if there's a dot before this identifier (method call on a type)
+  let j = start;
+  while (j >= 0 && isWhitespace(text[j]!)) j--;
+
+  if (j >= 0 && text[j] === ".") {
+    // This is a method call: parse the chain before the dot
+    const chainText = text.slice(0, j + 1); // include the dot
+    const chain = parseChainBeforeDot(chainText);
+    if (chain) {
+      if (DEBUG_SIGNATURE_HELP) console.log("[parseMethodCall] method:", methodName, "chain:", JSON.stringify(chain));
+      return { chain, methodName };
+    }
+  }
+
+  // Could be a global function call
+  if (DEBUG_SIGNATURE_HELP) console.log("[parseMethodCall] global function:", methodName);
+  return { chain: [], methodName };
 }
 
 function detectBandKeyContext(textUntilPosition: string): { hasQuote: boolean } | null {
@@ -203,38 +449,88 @@ function findTypeNameInRef(typeName: string, typesByName: Map<string, ApiType>):
   return typesByName.get(first) ?? null;
 }
 
-function resolveChainType(chain: ChainSegment[], api: ScriptApiIndex): ApiType | null {
+/**
+ * Resolve a chain to its final type, optionally using local variable types.
+ * @param chain - The parsed chain segments
+ * @param api - The API index for type lookups
+ * @param localVarTypes - Map of local variable names to type names (optional)
+ */
+function resolveChainTypeWithLocals(
+  chain: ChainSegment[],
+  api: ScriptApiIndex,
+  localVarTypes: Map<string, string>
+): ApiType | null {
   const [root, ...rest] = chain;
-  if (!root || root.kind !== "ident") return null;
+  if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] chain:", JSON.stringify(chain));
 
-  const global = api.globalsByName.get(root.name);
-  if (!global) return null;
-  let current = api.typesByName.get(global.type_name) ?? null;
-  if (!current) return null;
+  if (!root || root.kind !== "ident") {
+    if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] root is not an ident:", root);
+    return null;
+  }
+
+  // First check local variables, then fall back to globals
+  let rootTypeName: string | null = null;
+
+  const localType = localVarTypes.get(root.name);
+  if (localType) {
+    rootTypeName = localType;
+    if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] found local var:", root.name, "->", localType);
+  } else {
+    const global = api.globalsByName.get(root.name);
+    if (global) {
+      rootTypeName = global.type_name;
+      if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] found global:", root.name, "->", global.type_name);
+    }
+  }
+
+  if (!rootTypeName) {
+    if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] root not found in locals or globals:", root.name);
+    return null;
+  }
+
+  let current = api.typesByName.get(rootTypeName) ?? null;
+  if (!current) {
+    if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] type not found:", rootTypeName);
+    return null;
+  }
+  if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] initial type:", current.name);
 
   for (const seg of rest) {
-    if (!current) return null;
+    if (!current) {
+      if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] current is null");
+      return null;
+    }
 
     if (seg.kind === "index") {
       // Only the Bands namespace supports string indexing (bands["Bass"]).
       if (current.name === "Bands") {
         current = api.typesByName.get("BandSignals") ?? null;
+        if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] index on Bands -> BandSignals:", current?.name);
         continue;
       }
+      if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] index on non-Bands type:", current.name);
       return null;
     }
 
     if (seg.kind === "call") {
       const method = current.methods.find((m) => m.name === seg.name);
-      if (!method) return null;
+      if (!method) {
+        if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] method not found:", seg.name, "on", current.name);
+        return null;
+      }
       current = findTypeNameInRef(method.returns, api.typesByName);
+      if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] call", seg.name, "->", current?.name);
       continue;
     }
 
     // Property traversal.
     const prop = current.properties.find((p) => p.name === seg.name);
-    if (!prop) return null;
+    if (!prop) {
+      if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] property not found:", seg.name, "on", current.name, "available:", current.properties.map(p => p.name));
+      return null;
+    }
     current = findTypeNameInRef(prop.type_name, api.typesByName);
+    if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] property", seg.name, "->", current?.name);
   }
 
   return current;
@@ -519,9 +815,18 @@ export function createRhaiHoverProvider(
       const beforeWord = lineContent.substring(0, word.startColumn - 1);
       const beforeTrimmed = trimRight(beforeWord);
       if (beforeTrimmed.endsWith(".")) {
+        // Get all text up to cursor for local variable parsing
+        const textUntilPosition = model.getValueInRange({
+          startLineNumber: 1,
+          startColumn: 1,
+          endLineNumber: position.lineNumber,
+          endColumn: position.column,
+        });
+        const localVarTypes = parseLocalVariableTypes(textUntilPosition, api);
+
         const chain = parseChainBeforeDot(beforeTrimmed);
         if (chain) {
-          const parentType = resolveChainType(chain, api);
+          const parentType = resolveChainTypeWithLocals(chain, api, localVarTypes);
           if (parentType) {
             const prop = parentType.properties.find((p) => p.name === wordText);
             if (prop) {
@@ -592,8 +897,13 @@ export function createRhaiCompletionProvider(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     provideCompletionItems(model: any, position: any) {
-      const lineContent = model.getLineContent(position.lineNumber);
-      const textUntilPosition = lineContent.substring(0, position.column - 1);
+      // Get all text up to cursor to support multi-line chains
+      const textUntilPosition = model.getValueInRange({
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: position.lineNumber,
+        endColumn: position.column,
+      });
       const api = getIndex();
 
       const wordInfo = model.getWordUntilPosition(position);
@@ -639,10 +949,16 @@ export function createRhaiCompletionProvider(
         return { suggestions };
       }
 
+      // Parse local variable types from code up to cursor
+      const localVarTypes = api ? parseLocalVariableTypes(textUntilPosition, api) : new Map<string, string>();
+      if (DEBUG_LOCAL_VARS && localVarTypes.size > 0) {
+        console.log("[completions] local vars:", Object.fromEntries(localVarTypes));
+      }
+
       // Member completion after a dot.
       const chain = parseChainBeforeDot(textUntilPosition);
       if (chain && api) {
-        const resolved = resolveChainType(chain, api);
+        const resolved = resolveChainTypeWithLocals(chain, api, localVarTypes);
         if (resolved) {
           return { suggestions: collectMemberCompletions(monaco, resolved, range) };
         }
@@ -687,6 +1003,167 @@ export function createRhaiCompletionProvider(
 }
 
 /**
+ * Create a signature help provider for Rhai that shows parameter hints
+ * when typing inside function/method calls.
+ */
+export function createRhaiSignatureHelpProvider(
+  _monaco: MonacoInstance,
+  getApiMetadata: () => ScriptApiMetadata | null
+) {
+  // Cache index building because Monaco calls this frequently.
+  let cachedMeta: ScriptApiMetadata | null = null;
+  let cachedIndex: ScriptApiIndex | null = null;
+
+  const getIndex = (): ScriptApiIndex | null => {
+    const meta = getApiMetadata();
+    if (!meta) return null;
+    if (cachedMeta !== meta) {
+      cachedMeta = meta;
+      cachedIndex = buildScriptApiIndex(meta);
+    }
+    return cachedIndex;
+  };
+
+  return {
+    signatureHelpTriggerCharacters: ["(", ","],
+    signatureHelpRetriggerCharacters: [","],
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    provideSignatureHelp(model: any, position: any) {
+      const api = getIndex();
+      if (!api) return null;
+
+      // Get all text up to cursor position
+      const textUntilPosition = model.getValueInRange({
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: position.lineNumber,
+        endColumn: position.column,
+      });
+
+      // Find the current call context
+      const callContext = findCallContext(textUntilPosition);
+      if (!callContext) {
+        if (DEBUG_SIGNATURE_HELP) console.log("[signatureHelp] no call context");
+        return null;
+      }
+
+      // Parse what method is being called
+      const methodCall = parseMethodCall(callContext.textBeforeOpen);
+      if (!methodCall) {
+        if (DEBUG_SIGNATURE_HELP) console.log("[signatureHelp] could not parse method call");
+        return null;
+      }
+
+      // Parse local variable types for improved resolution
+      const localVarTypes = parseLocalVariableTypes(textUntilPosition, api);
+
+      const { chain, methodName } = methodCall;
+      let methods: ApiMethod[] = [];
+
+      if (chain.length === 0) {
+        // Global function call - look for functions in globals
+        const global = api.globalsByName.get(methodName);
+        if (global && global.kind === "function") {
+          // Find the type that represents this function
+          const funcType = api.typesByName.get(global.type_name);
+          if (funcType) {
+            // The function itself might be represented as a method on a namespace
+            methods = funcType.methods.filter((m) => m.name === methodName);
+          }
+          // If no methods found on type, create a synthetic one from global
+          if (methods.length === 0) {
+            // Check if there's a dedicated function type with a "call" or matching method
+            const allTypes = Array.from(api.typesByName.values());
+            for (const t of allTypes) {
+              const found = t.methods.filter((m) => m.name === methodName);
+              if (found.length > 0) {
+                methods = found;
+                break;
+              }
+            }
+          }
+        }
+      } else {
+        // Method call on a type - resolve the chain to find the type (using local vars)
+        const parentType = resolveChainTypeWithLocals(chain, api, localVarTypes);
+        if (parentType) {
+          methods = parentType.methods.filter((m) => m.name === methodName);
+          if (DEBUG_SIGNATURE_HELP) {
+            console.log("[signatureHelp] parent type:", parentType.name, "methods found:", methods.length);
+          }
+        }
+      }
+
+      if (methods.length === 0) {
+        if (DEBUG_SIGNATURE_HELP) console.log("[signatureHelp] no methods found for:", methodName);
+        return null;
+      }
+
+      // Build signature information for each overload
+      const signatures = methods.map((method: ApiMethod) => {
+        const params = method.params.map((p) => {
+          const paramLabel = p.optional
+            ? `${p.name}?: ${p.type_name}`
+            : `${p.name}: ${p.type_name}`;
+          return {
+            label: paramLabel,
+            documentation: {
+              value: p.description + (p.default !== undefined ? `\n\nDefault: \`${JSON.stringify(p.default)}\`` : ""),
+            },
+          };
+        });
+
+        const paramLabels = params.map((p: { label: string }) => p.label).join(", ");
+        const signatureLabel = `${method.name}(${paramLabels}) -> ${method.returns}`;
+
+        return {
+          label: signatureLabel,
+          documentation: {
+            value: [
+              method.description,
+              method.notes ? `\n\n*${method.notes}*` : "",
+              method.example ? `\n\n**Example:**\n\`\`\`rhai\n${method.example}\n\`\`\`` : "",
+            ]
+              .filter(Boolean)
+              .join(""),
+          },
+          parameters: params,
+        };
+      });
+
+      // Determine active signature (prefer the one where activeParameter is in range)
+      let activeSignature = 0;
+      for (let i = 0; i < signatures.length; i++) {
+        if (callContext.activeParameter < signatures[i]!.parameters.length) {
+          activeSignature = i;
+          break;
+        }
+      }
+
+      // Clamp activeParameter to the signature's parameter count
+      const activeParameter = Math.min(
+        callContext.activeParameter,
+        Math.max(0, signatures[activeSignature]!.parameters.length - 1)
+      );
+
+      if (DEBUG_SIGNATURE_HELP) {
+        console.log("[signatureHelp] returning", signatures.length, "signatures, active:", activeSignature, "param:", activeParameter);
+      }
+
+      return {
+        value: {
+          signatures,
+          activeSignature,
+          activeParameter,
+        },
+        dispose: () => {},
+      };
+    },
+  };
+}
+
+/**
  * Register the Rhai language with Monaco.
  * Call this once when Monaco is initialized.
  *
@@ -724,6 +1201,14 @@ export function registerRhaiLanguage(
     monaco.languages.registerCompletionItemProvider(
       RHAI_LANGUAGE_ID,
       createRhaiCompletionProvider(monaco, getApiMetadata, getAvailableBands)
+    )
+  );
+
+  // Register signature help provider for parameter hints
+  disposables.push(
+    monaco.languages.registerSignatureHelpProvider(
+      RHAI_LANGUAGE_ID,
+      createRhaiSignatureHelpProvider(monaco, getApiMetadata)
     )
   );
 
