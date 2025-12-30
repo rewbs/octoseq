@@ -12,6 +12,11 @@ const MIN_HEIGHT = 80;
 const MAX_HEIGHT = 400;
 const DEFAULT_HEIGHT = 150;
 
+const getScrollContainer = (ws: WaveSurfer | null) => {
+  const wrapper = ws?.getWrapper?.();
+  return wrapper?.parentElement ?? null;
+};
+
 
 
 import type { WaveSurferViewport } from "./types";
@@ -137,7 +142,7 @@ export function SyncedWaveSurferSignal({
 
       // If viewport already exists, apply it now (no React state needed).
       const vp = viewportRef.current;
-      const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
+      const scrollContainer = getScrollContainer(ws);
       if (scrollContainer && vp?.minPxPerSec) {
         ws.zoom(vp.minPxPerSec);
         scrollContainer.scrollLeft = Math.max(0, vp.startTime * vp.minPxPerSec);
@@ -241,7 +246,7 @@ export function SyncedWaveSurferSignal({
           } catch (e) {
             console.warn("[MIR-1D] zoom after load failed", e);
           }
-          const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
+          const scrollContainer = getScrollContainer(ws);
           if (scrollContainer && vp.minPxPerSec > 0) {
             scrollContainer.scrollLeft = Math.max(0, vp.startTime * vp.minPxPerSec);
           }
@@ -272,7 +277,7 @@ export function SyncedWaveSurferSignal({
     //
     // This keeps time alignment tight:
     //   scrollLeftPx = startTimeSec * minPxPerSec
-    const scrollContainer = (ws.getRenderer() as unknown as { scrollContainer?: HTMLElement })?.scrollContainer;
+    const scrollContainer = getScrollContainer(ws);
     if (!scrollContainer) return;
 
     if (viewport.minPxPerSec > 0) {

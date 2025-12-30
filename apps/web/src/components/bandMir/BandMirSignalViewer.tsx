@@ -10,6 +10,11 @@ import { getBandColorHex } from "@/lib/bandColors";
 import { useBandMirStore, useFrequencyBandStore } from "@/lib/stores";
 import { BandEventOverlay, BandEventCountBadge } from "./BandEventOverlay";
 
+const getScrollContainer = (ws: WaveSurfer | null) => {
+    const wrapper = ws?.getWrapper?.();
+    return wrapper?.parentElement ?? null;
+};
+
 // ----------------------------
 // Types
 // ----------------------------
@@ -95,9 +100,7 @@ function BandSignalRow({
         ws.on("ready", () => {
             readyRef.current = true;
             const vp = viewportRef.current;
-            const scrollContainer = (
-                ws.getRenderer() as unknown as { scrollContainer?: HTMLElement }
-            )?.scrollContainer;
+            const scrollContainer = getScrollContainer(ws);
             if (scrollContainer && vp?.minPxPerSec) {
                 ws.zoom(vp.minPxPerSec);
                 scrollContainer.scrollLeft = Math.max(0, vp.startTime * vp.minPxPerSec);
@@ -153,9 +156,7 @@ function BandSignalRow({
                     } catch (e) {
                         // Ignore
                     }
-                    const scrollContainer = (
-                        ws.getRenderer() as unknown as { scrollContainer?: HTMLElement }
-                    )?.scrollContainer;
+                    const scrollContainer = getScrollContainer(ws);
                     if (scrollContainer && vp.minPxPerSec > 0) {
                         scrollContainer.scrollLeft = Math.max(0, vp.startTime * vp.minPxPerSec);
                     }
@@ -182,9 +183,7 @@ function BandSignalRow({
             return;
         }
 
-        const scrollContainer = (
-            ws.getRenderer() as unknown as { scrollContainer?: HTMLElement }
-        )?.scrollContainer;
+        const scrollContainer = getScrollContainer(ws);
         if (scrollContainer && viewport.minPxPerSec > 0) {
             scrollContainer.scrollLeft = Math.max(0, viewport.startTime * viewport.minPxPerSec);
         }
