@@ -730,7 +730,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         }
       };
 
-      const handleRegionClick = (evt: MouseEvent) => {
+      const handleRegionClick = (evt: globalThis.MouseEvent) => {
         if (suppressClick) return;
         const target = evt.target as HTMLElement | null;
         const regionEl = target?.closest?.("[data-region-id]") as HTMLElement | null;

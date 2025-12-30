@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { FrequencyBandSidebar, HeatmapWithBandOverlay } from "@/components/frequencyBand";
 import { BandMirSignalViewer, BandAmplitudeSelector, useBandAmplitudeData } from "@/components/bandMir";
 import { MirConfigModal } from "@/components/mir/MirConfigModal";
-import { SyncedWaveSurferSignal } from "@/components/wavesurfer/SyncedWaveSurferSignal";
+import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
 import { SparseEventsViewer } from "@/components/wavesurfer/SparseEventsViewer";
 import { BeatGridOverlay } from "@/components/wavesurfer/BeatGridOverlay";
 import { BeatMarkingOverlay } from "@/components/wavesurfer/BeatMarkingOverlay";
@@ -882,13 +882,14 @@ export default function Home() {
                       </span>
                     )}
                   </div>
-                  <SyncedWaveSurferSignal
-                    data={bandAmplitudeData.values}
-                    times={bandAmplitudeData.times}
+                  <SignalViewer
+                    signal={createContinuousSignal(bandAmplitudeData.times, bandAmplitudeData.values)}
                     viewport={viewport}
                     cursorTimeSec={mirroredCursorTimeSec}
                     onCursorTimeChange={setCursorTimeSec}
                     initialHeight={80}
+                    mode="filled"
+                    color={{ stroke: "rgb(124, 58, 237)", fill: "rgba(124, 58, 237, 0.3)" }}
                   />
                 </div>
               )}
@@ -898,13 +899,14 @@ export default function Home() {
                 {visualTab === "search" ? (
                   hasSearchResult ? (
                     <div className="space-y-2">
-                      <SyncedWaveSurferSignal
-                        data={searchSignal!}
-                        times={searchResult!.times}
+                      <SignalViewer
+                        signal={createContinuousSignal(searchResult!.times, searchSignal!)}
                         viewport={viewport}
                         cursorTimeSec={mirroredCursorTimeSec}
                         onCursorTimeChange={setCursorTimeSec}
-                        overlayThreshold={searchControls.threshold}
+                        threshold={searchControls.threshold}
+                        mode="filled"
+                        color={{ stroke: "rgb(16, 185, 129)", fill: "rgba(16, 185, 129, 0.3)" }}
                       />
                     </div>
                   ) : (
@@ -916,12 +918,13 @@ export default function Home() {
                       {debugSignals.map((sig) => (
                         <div key={sig.name} className="border-l-2 border-purple-500 pl-2">
                           <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">{sig.name}</span>
-                          <SyncedWaveSurferSignal
-                            data={sig.values}
-                            times={sig.times}
+                          <SignalViewer
+                            signal={createContinuousSignal(sig.times, sig.values)}
                             viewport={viewport}
                             cursorTimeSec={mirroredCursorTimeSec}
                             onCursorTimeChange={setCursorTimeSec}
+                            mode="filled"
+                            color={{ stroke: "rgb(168, 85, 247)", fill: "rgba(168, 85, 247, 0.3)" }}
                           />
                         </div>
                       ))}
@@ -938,12 +941,13 @@ export default function Home() {
                       visualTab === "onsetEnvelope" ? (
                       tabResult?.kind === "1d" && tabResult.fn === visualTab ? (
                         <>
-                          <SyncedWaveSurferSignal
-                            data={tabResult.values}
-                            times={tabResult.times}
+                          <SignalViewer
+                            signal={createContinuousSignal(tabResult.times, tabResult.values)}
                             viewport={viewport}
                             cursorTimeSec={mirroredCursorTimeSec}
                             onCursorTimeChange={setCursorTimeSec}
+                            mode="filled"
+                            color={{ stroke: "rgb(59, 130, 246)", fill: "rgba(59, 130, 246, 0.3)" }}
                           />
                           {/* Band MIR signals for relevant 1D tabs */}
                           {hasBands && (visualTab === "onsetEnvelope" || visualTab === "spectralFlux") && (

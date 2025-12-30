@@ -2,18 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
-import WaveSurfer from "wavesurfer.js";
-import { minMax, normaliseForWaveform } from "@octoseq/mir";
 import type { BandMir1DResult, BandMirDiagnostics } from "@octoseq/mir";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
+import { createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
+import {
+  decimator,
+  normalizer,
+  renderLine,
+  clamp,
+  type NormalizationBounds,
+  type RenderPoint,
+} from "@octoseq/wavesurfer-signalviewer";
 import { getBandColorHex } from "@/lib/bandColors";
 import { useBandMirStore, useFrequencyBandStore } from "@/lib/stores";
 import { BandEventOverlay, BandEventCountBadge } from "./BandEventOverlay";
-
-const getScrollContainer = (ws: WaveSurfer | null) => {
-    const wrapper = ws?.getWrapper?.();
-    return wrapper?.parentElement ?? null;
-};
 
 // ----------------------------
 // Types
@@ -40,11 +42,11 @@ type BandSignalRowProps = {
     onCursorTimeChange?: (timeSec: number | null) => void;
     /** Whether to show event overlay */
     showEvents?: boolean;
-    onWaveformReady?: (bandId: string) => void;
+    onReady?: (bandId: string) => void;
 };
 
 // ----------------------------
-// Single Band Signal Row
+// Single Band Signal Row (Canvas-based)
 // ----------------------------
 
 const BAND_ROW_HEIGHT = 60;
@@ -56,13 +58,23 @@ function BandSignalRow({
     cursorTimeSec,
     onCursorTimeChange,
     showEvents = true,
-    onWaveformReady,
+    onReady,
 }: BandSignalRowProps) {
-    const wsRef = useRef<WaveSurfer | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
-    const readyRef = useRef(false);
-    const loadTokenRef = useRef(0);
-    const viewportRef = useRef<WaveSurferViewport | null>(viewport);
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
+    const boundsRef = useRef<NormalizationBounds | null>(null);
+    const hasCalledReady = useRef(false);
+    const viewportBoundsRef = useRef<{ min: number; max: number } | null>(null);
+
+    // Hover state for value display
+    const [hoverInfo, setHoverInfo] = useState<{
+        value: number | null;
+        time: number;
+        x: number;
+        viewportMin: number;
+        viewportMax: number;
+    } | null>(null);
 
     const color = getBandColorHex(bandIndex);
     const hasWarnings = result.diagnostics.warnings.length > 0;
@@ -71,188 +83,231 @@ function BandSignalRow({
     const eventData = useBandMirStore((s) => s.getEventsCached(result.bandId));
     const isEventVisible = useBandMirStore((s) => s.isBandEventVisible(result.bandId));
 
-    // Track viewport in ref
-    useEffect(() => {
-        viewportRef.current = viewport;
-    }, [viewport]);
+    // Create signal from result
+    const signal = useMemo(() => {
+        return createContinuousSignal(result.times, result.values);
+    }, [result.times, result.values]);
 
-    // Initialize WaveSurfer
+    // Compute normalization bounds when signal changes
+    useEffect(() => {
+        boundsRef.current = normalizer.computeBounds(signal, "global");
+    }, [signal]);
+
+    // Get value at a specific time using binary search
+    const getValueAtTime = useCallback((time: number): number | null => {
+        const { times, values } = signal;
+        if (times.length === 0) return null;
+
+        let left = 0;
+        let right = times.length - 1;
+
+        if (time <= (times[0] ?? 0)) return values[0] ?? null;
+        if (time >= (times[right] ?? 0)) return values[right] ?? null;
+
+        while (left < right - 1) {
+            const mid = Math.floor((left + right) / 2);
+            const midTime = times[mid] ?? 0;
+            if (midTime <= time) {
+                left = mid;
+            } else {
+                right = mid;
+            }
+        }
+
+        const t0 = times[left] ?? 0;
+        const t1 = times[right] ?? 0;
+        const v0 = values[left] ?? 0;
+        const v1 = values[right] ?? 0;
+
+        if (t1 === t0) return v0;
+        const ratio = (time - t0) / (t1 - t0);
+        return v0 + ratio * (v1 - v0);
+    }, [signal]);
+
+    // Render function
+    const render = useCallback(() => {
+        const canvas = canvasRef.current;
+        const container = containerRef.current;
+        if (!canvas || !container || !viewport) return;
+
+        // Get or initialize context
+        if (!ctxRef.current) {
+            ctxRef.current = canvas.getContext("2d");
+        }
+        const ctx = ctxRef.current;
+        if (!ctx) return;
+
+        const rect = container.getBoundingClientRect();
+        const width = rect.width;
+        const height = BAND_ROW_HEIGHT;
+
+        if (width === 0) return;
+
+        // Resize canvas if needed
+        const dpr = window.devicePixelRatio || 1;
+        if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        // Clear
+        ctx.clearRect(0, 0, width, height);
+
+        // Get bounds
+        const bounds = boundsRef.current ?? { min: 0, max: 1 };
+
+        // Calculate visible time range
+        const { startTime, endTime } = viewport;
+        const visibleDuration = endTime - startTime;
+        if (visibleDuration <= 0) return;
+
+        // Calculate actual pixels per second based on container width
+        const pxPerSec = width / visibleDuration;
+
+        // Time to X conversion
+        const timeToX = (time: number): number => {
+            return (time - startTime) * pxPerSec;
+        };
+
+        // Get decimated data
+        const targetPoints = Math.min(width * 2, 4000);
+
+        // Calculate viewport min/max
+        const { times: sigTimes, values: sigValues } = signal;
+        let vpMin = Infinity;
+        let vpMax = -Infinity;
+        for (let i = 0; i < sigTimes.length; i++) {
+            const t = sigTimes[i];
+            const v = sigValues[i];
+            if (t !== undefined && v !== undefined && t >= startTime && t <= endTime) {
+                if (v < vpMin) vpMin = v;
+                if (v > vpMax) vpMax = v;
+            }
+        }
+        if (vpMin !== Infinity && vpMax !== -Infinity) {
+            viewportBoundsRef.current = { min: vpMin, max: vpMax };
+        }
+
+        // Render continuous signal
+        const { times, values } = signal;
+        const canvasHeight = height;
+
+        // Decimate
+        const decimated = decimator.decimate(times, values, startTime, endTime, targetPoints);
+
+        // Convert to render points
+        const points: RenderPoint[] = [];
+        for (let i = 0; i < decimated.times.length; i++) {
+            const time = decimated.times[i];
+            const value = decimated.values[i];
+            if (time === undefined || value === undefined) continue;
+
+            const x = timeToX(time);
+            const normalized = normalizer.normalize(value, bounds);
+
+            // Bottom baseline
+            const y = canvasHeight * (1 - clamp(normalized, 0, 1));
+
+            points.push({ x, y, value, time });
+        }
+
+        // Render filled line
+        renderLine(ctx, points, {
+            color: {
+                stroke: color,
+                fill: `${color}4D`, // 30% opacity
+                strokeWidth: 1.5,
+                opacity: 1,
+            },
+            baseline: "bottom",
+            mode: "filled",
+            canvasHeight,
+        });
+
+        // Draw cursor
+        if (cursorTimeSec != null && cursorTimeSec >= startTime && cursorTimeSec <= endTime) {
+            const cursorX = timeToX(cursorTimeSec);
+            ctx.save();
+            ctx.strokeStyle = "rgba(239, 68, 68, 0.8)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(cursorX, 0);
+            ctx.lineTo(cursorX, height);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // Signal ready on first successful render
+        if (!hasCalledReady.current && points.length > 0) {
+            hasCalledReady.current = true;
+            onReady?.(result.bandId);
+        }
+    }, [viewport, signal, cursorTimeSec, color, result.bandId, onReady]);
+
+    // Re-render when dependencies change
+    useEffect(() => {
+        render();
+    }, [render]);
+
+    // Handle resize observer
     useEffect(() => {
         const container = containerRef.current;
         if (!container) return;
 
-        const ws = WaveSurfer.create({
-            container,
-            height: BAND_ROW_HEIGHT,
-            waveColor: color,
-            progressColor: `${color}66`, // 40% opacity
-            cursorColor: "#d4af37",
-            normalize: false,
-            autoScroll: true,
-            autoCenter: false,
-            interact: false,
-            dragToSeek: false,
-            minPxPerSec: 0,
+        const resizeObserver = new ResizeObserver(() => {
+            render();
         });
+        resizeObserver.observe(container);
 
-        wsRef.current = ws;
+        return () => resizeObserver.disconnect();
+    }, [render]);
 
-        ws.on("ready", () => {
-            readyRef.current = true;
-            const vp = viewportRef.current;
-            const scrollContainer = getScrollContainer(ws);
-            if (scrollContainer && vp?.minPxPerSec) {
-                ws.zoom(vp.minPxPerSec);
-                scrollContainer.scrollLeft = Math.max(0, vp.startTime * vp.minPxPerSec);
-            }
-        });
-
-        return () => {
-            readyRef.current = false;
-            ws.destroy();
-            wsRef.current = null;
-        };
-    }, [color]);
-
-    // Load data
+    // Reset ready state when result changes
     useEffect(() => {
-        const ws = wsRef.current;
-        if (!ws) return;
-
-        const { times, values } = result;
-        if (values.length === 0 || times.length === 0) return;
-
-        // Normalize values for display
-        const normalized = normaliseForWaveform(values, { center: false });
-
-        // Upsample to display sample rate
-        const duration = Math.max(0, times[times.length - 1] ?? 0);
-        const displaySampleRate = 3000;
-        const displayLength = Math.max(1, Math.ceil(duration * displaySampleRate));
-        const out = new Float32Array(displayLength);
-
-        let frame = 0;
-        for (let i = 0; i < displayLength; i++) {
-            const t = i / displaySampleRate;
-            while (frame + 1 < times.length && (times[frame + 1] ?? 0) <= t) frame++;
-            out[i] = normalized[frame] ?? 0;
-        }
-
-        readyRef.current = false;
-        loadTokenRef.current += 1;
-        const loadToken = loadTokenRef.current;
-        const peaks: Array<Float32Array> = [out];
-        const dummyBlob = new Blob([], { type: "application/octet-stream" });
-
-        void ws
-            .loadBlob(dummyBlob, peaks, duration)
-            .then(() => {
-                if (loadToken !== loadTokenRef.current) return;
-                readyRef.current = true;
-                const vp = viewportRef.current;
-                if (vp) {
-                    try {
-                        if (vp.minPxPerSec > 0) ws.zoom(vp.minPxPerSec);
-                    } catch (e) {
-                        // Ignore
-                    }
-                    const scrollContainer = getScrollContainer(ws);
-                    if (scrollContainer && vp.minPxPerSec > 0) {
-                        scrollContainer.scrollLeft = Math.max(0, vp.startTime * vp.minPxPerSec);
-                    }
-                }
-            })
-            .catch((err) => {
-                if (loadToken !== loadTokenRef.current) return;
-                console.error("[Band MIR] wavesurfer load failed", err);
-            })
-            .finally(() => {
-                if (loadToken !== loadTokenRef.current) return;
-                onWaveformReady?.(result.bandId);
-            });
-    }, [result, onWaveformReady]);
-
-    // Sync viewport
-    useEffect(() => {
-        const ws = wsRef.current;
-        if (!ws || !viewport || !readyRef.current) return;
-
-        try {
-            ws.zoom(viewport.minPxPerSec);
-        } catch (e) {
-            return;
-        }
-
-        const scrollContainer = getScrollContainer(ws);
-        if (scrollContainer && viewport.minPxPerSec > 0) {
-            scrollContainer.scrollLeft = Math.max(0, viewport.startTime * viewport.minPxPerSec);
-        }
-    }, [viewport]);
-
-    // Sync cursor
-    useEffect(() => {
-        const ws = wsRef.current;
-        if (!ws || !readyRef.current || cursorTimeSec == null) return;
-
-        const duration = ws.getDuration();
-        if (duration > 0) {
-            ws.setTime(Math.min(duration, Math.max(0, cursorTimeSec)));
-        }
-    }, [cursorTimeSec]);
+        hasCalledReady.current = false;
+    }, [result]);
 
     const handleMouseMove = (evt: React.MouseEvent<HTMLDivElement>) => {
-        if (!onCursorTimeChange || !viewport) return;
+        if (!viewport) return;
         const rect = evt.currentTarget.getBoundingClientRect();
-        const span = viewport.endTime - viewport.startTime;
-        if (span <= 0) return;
-        const pxPerSec = rect.width > 0 ? rect.width / span : viewport.minPxPerSec;
-        if (!pxPerSec || pxPerSec <= 0) return;
+        const visibleDuration = viewport.endTime - viewport.startTime;
+        if (visibleDuration <= 0 || rect.width <= 0) return;
         const x = Math.max(0, Math.min(rect.width, evt.clientX - rect.left));
-        const t = viewport.startTime + x / pxPerSec;
-        onCursorTimeChange(Math.max(0, t));
+        const t = viewport.startTime + (x / rect.width) * visibleDuration;
+
+        onCursorTimeChange?.(Math.max(0, t));
+
+        // Get value at cursor for display
+        const value = getValueAtTime(t);
+        const vpBounds = viewportBoundsRef.current;
+        setHoverInfo({
+            value,
+            time: t,
+            x,
+            viewportMin: vpBounds?.min ?? 0,
+            viewportMax: vpBounds?.max ?? 0,
+        });
     };
 
     const handleMouseLeave = () => {
         onCursorTimeChange?.(null);
+        setHoverInfo(null);
     };
 
     return (
-        <div className="flex items-stretch min-w-0 border-b border-zinc-200 dark:border-zinc-800 last:border-b-0">
-            {/* Band label */}
+        <div className="relative border-b border-zinc-200 dark:border-zinc-800 last:border-b-0">
+            {/* Signal viewer - full width */}
             <div
-                className="flex items-center justify-between gap-1 px-2 py-1 text-xs font-medium shrink-0 border-r border-zinc-200 dark:border-zinc-800"
-                style={{ width: 100, backgroundColor: `${color}15` }}
+                ref={containerRef}
+                className="w-full relative bg-zinc-50 dark:bg-zinc-900"
+                style={{ height: BAND_ROW_HEIGHT }}
+                onMouseMove={handleMouseMove}
+                onMouseLeave={handleMouseLeave}
             >
-                <span
-                    className="truncate"
-                    style={{ color }}
-                    title={result.bandLabel}
-                >
-                    {result.bandLabel}
-                </span>
-                <div className="flex items-center gap-1 shrink-0">
-                    {showEvents && (
-                        <BandEventCountBadge
-                            eventData={eventData}
-                            color={color}
-                            visible={isEventVisible}
-                        />
-                    )}
-                    {hasWarnings && (
-                        <span title={result.diagnostics.warnings.join("; ")}>
-                            <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
-                        </span>
-                    )}
-                </div>
-            </div>
-
-            {/* Waveform with event overlay */}
-            <div className="flex-1 min-w-0 relative">
-                <div
-                    ref={containerRef}
-                    className="w-full overflow-x-hidden"
-                    onMouseMove={handleMouseMove}
-                    onMouseLeave={handleMouseLeave}
+                <canvas
+                    ref={canvasRef}
+                    className="absolute inset-0 w-full h-full"
                 />
                 {showEvents && (
                     <BandEventOverlay
@@ -264,6 +319,46 @@ function BandSignalRow({
                     />
                 )}
             </div>
+
+            {/* Band label - floating overlay */}
+            <div
+                className="absolute left-1 top-1 flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium backdrop-blur-sm"
+                style={{ backgroundColor: `${color}20`, color }}
+            >
+                <span className="truncate max-w-20" title={result.bandLabel}>
+                    {result.bandLabel}
+                </span>
+                {showEvents && (
+                    <BandEventCountBadge
+                        eventData={eventData}
+                        color={color}
+                        visible={isEventVisible}
+                    />
+                )}
+                {hasWarnings && (
+                    <span title={result.diagnostics.warnings.join("; ")}>
+                        <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
+                    </span>
+                )}
+            </div>
+
+            {/* Floating value display on hover */}
+            {hoverInfo && hoverInfo.value !== null && (
+                <div
+                    className="absolute top-1 z-20 pointer-events-none"
+                    style={{
+                        left: `${Math.min(Math.max(hoverInfo.x, 50), (containerRef.current?.getBoundingClientRect().width ?? 150) - 50)}px`,
+                        transform: "translateX(-50%)",
+                    }}
+                >
+                    <div className="bg-zinc-800/90 dark:bg-zinc-200/90 text-zinc-100 dark:text-zinc-900 text-xs px-1.5 py-0.5 rounded shadow-lg backdrop-blur-sm whitespace-nowrap">
+                        <span className="font-mono font-medium">{hoverInfo.value.toFixed(3)}</span>
+                        <span className="text-tiny opacity-70 ml-1.5">
+                            vp: {hoverInfo.viewportMin.toFixed(2)}–{hoverInfo.viewportMax.toFixed(2)}
+                        </span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -327,7 +422,7 @@ export function BandMirSignalViewer({
     }, [results, structure]);
 
     const [readyBandIds, setReadyBandIds] = useState<Set<string>>(new Set());
-    const handleWaveformReady = useCallback((bandId: string) => {
+    const handleReady = useCallback((bandId: string) => {
         setReadyBandIds((prev) => {
             if (prev.has(bandId)) return prev;
             const next = new Set(prev);
@@ -397,7 +492,7 @@ export function BandMirSignalViewer({
                             viewport={viewport}
                             cursorTimeSec={cursorTimeSec}
                             onCursorTimeChange={onCursorTimeChange}
-                            onWaveformReady={handleWaveformReady}
+                            onReady={handleReady}
                         />
                     ))}
                 </div>
