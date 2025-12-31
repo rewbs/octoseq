@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import type { WaveSurferViewport } from "./types";
 import { generateBeatTimes, generateSegmentBeatTimes } from "@octoseq/mir";
 import type { BeatGrid, MusicalTimeSegment } from "@octoseq/mir";
+import { useBeatGridStore } from "@/lib/stores/beatGridStore";
+
+/** Threshold for switching between notch and full line rendering */
+const NOTCH_THRESHOLD = 16;
 
 export type BeatGridOverlayProps = {
     viewport: WaveSurferViewport | null;
@@ -37,6 +41,27 @@ export function BeatGridOverlay({
     selectedSegmentId,
 }: BeatGridOverlayProps) {
     const hostRef = useRef<HTMLDivElement | null>(null);
+    const [containerWidth, setContainerWidth] = useState(0);
+
+    // Get sub-beat division from store
+    const subBeatDivision = useBeatGridStore((s) => s.subBeatDivision);
+
+    // Measure actual container width
+    useEffect(() => {
+        const host = hostRef.current;
+        if (!host) return;
+
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                setContainerWidth(entry.contentRect.width);
+            }
+        });
+
+        observer.observe(host);
+        setContainerWidth(host.offsetWidth);
+
+        return () => observer.disconnect();
+    }, []);
 
     // Compute beat times for the provisional beat grid
     const provisionalBeatTimes = useMemo(() => {
@@ -68,7 +93,9 @@ export function BeatGridOverlay({
         if (!viewport || !isVisible) return;
 
         const span = viewport.endTime - viewport.startTime;
-        const width = viewport.containerWidthPx;
+        // Use measured containerWidth if available, otherwise fall back to viewport.containerWidthPx
+        const width = containerWidth > 0 ? containerWidth : viewport.containerWidthPx;
+        if (width <= 0) return;
         const pxPerSec = span > 0 && width > 0 ? width / span : viewport.minPxPerSec;
         if (!pxPerSec || pxPerSec <= 0) return;
 
@@ -77,14 +104,58 @@ export function BeatGridOverlay({
         const visibleStart = viewport.startTime - margin;
         const visibleEnd = viewport.endTime + margin;
 
-        // Helper to render a vertical line
+        // Count visible beats to determine rendering mode
+        const visibleBeatCount = provisionalBeatTimes.filter(
+            (t) => t >= viewport.startTime && t <= viewport.endTime
+        ).length;
+        const useNotches = visibleBeatCount > NOTCH_THRESHOLD;
+        const notchHeight = Math.round(height / 6);
+
+        // Helper to render a vertical line (full or notch)
         const renderLine = (
             time: number,
             color: string,
             lineWidth: number,
             isDashed = false,
-            zIndex = 1
+            zIndex = 1,
+            mode: "full" | "notch" = "full"
         ) => {
+            const x = (time - viewport.startTime) * pxPerSec;
+            if (x < -10 || x > width + 10) return;
+
+            if (mode === "notch") {
+                // Render top notch only
+                const topDiv = document.createElement("div");
+                topDiv.style.position = "absolute";
+                topDiv.style.left = `${x}px`;
+                topDiv.style.top = "0px";
+                topDiv.style.height = `${notchHeight}px`;
+                topDiv.style.width = `${lineWidth}px`;
+                topDiv.style.background = color;
+                topDiv.style.pointerEvents = "none";
+                topDiv.style.zIndex = String(zIndex);
+                host.appendChild(topDiv);
+            } else {
+                const div = document.createElement("div");
+                div.style.position = "absolute";
+                div.style.left = `${x}px`;
+                div.style.top = "0px";
+                div.style.height = `${height}px`;
+                div.style.width = `${lineWidth}px`;
+                div.style.background = isDashed ? "transparent" : color;
+                div.style.pointerEvents = "none";
+                div.style.zIndex = String(zIndex);
+
+                if (isDashed) {
+                    div.style.borderLeft = `${lineWidth}px dashed ${color}`;
+                }
+
+                host.appendChild(div);
+            }
+        };
+
+        // Helper to render sub-beat lines (dotted)
+        const renderSubBeatLine = (time: number, zIndex: number = 0) => {
             const x = (time - viewport.startTime) * pxPerSec;
             if (x < -10 || x > width + 10) return;
 
@@ -93,17 +164,14 @@ export function BeatGridOverlay({
             div.style.left = `${x}px`;
             div.style.top = "0px";
             div.style.height = `${height}px`;
-            div.style.width = `${lineWidth}px`;
-            div.style.background = isDashed ? "transparent" : color;
+            div.style.width = "1px";
+            div.style.background = "repeating-linear-gradient(to bottom, rgba(156, 163, 175, 0.5) 0px, rgba(156, 163, 175, 0.5) 2px, transparent 2px, transparent 6px)";
             div.style.pointerEvents = "none";
             div.style.zIndex = String(zIndex);
-
-            if (isDashed) {
-                div.style.borderLeft = `${lineWidth}px dashed ${color}`;
-            }
-
             host.appendChild(div);
         };
+
+        const renderMode = useNotches ? "notch" : "full";
 
         // Helper to render a segment boundary marker
         const renderSegmentBoundary = (
@@ -147,7 +215,32 @@ export function BeatGridOverlay({
             host.appendChild(marker);
         };
 
-        // 1. Render committed segment boundaries and beats
+        // 1. Render sub-beats (only when not in notch mode and subBeatDivision > 1)
+        if (!useNotches && subBeatDivision > 1 && beatGrid && provisionalBeatTimes.length > 0) {
+            for (let i = 0; i < provisionalBeatTimes.length - 1; i++) {
+                const beatTime = provisionalBeatTimes[i];
+                const nextBeatTime = provisionalBeatTimes[i + 1];
+                if (beatTime === undefined || nextBeatTime === undefined) continue;
+
+                // Skip if this beat falls within a committed segment
+                const inCommittedSegment = musicalTimeSegments.some(
+                    seg => beatTime >= seg.startTime && beatTime < seg.endTime
+                );
+                if (inCommittedSegment) continue;
+
+                const beatInterval = nextBeatTime - beatTime;
+                const subBeatInterval = beatInterval / subBeatDivision;
+
+                // Render sub-beats between this beat and the next
+                for (let j = 1; j < subBeatDivision; j++) {
+                    const subBeatTime = beatTime + j * subBeatInterval;
+                    if (subBeatTime < visibleStart || subBeatTime > visibleEnd) continue;
+                    renderSubBeatLine(subBeatTime, 0);
+                }
+            }
+        }
+
+        // 2. Render committed segment boundaries and beats
         for (const segment of musicalTimeSegments) {
             const isSelected = segment.id === selectedSegmentId;
 
@@ -171,12 +264,13 @@ export function BeatGridOverlay({
                         : "rgba(34, 197, 94, 0.6)", // green-500 semi-transparent
                     isSelected ? 2 : 1,
                     false,
-                    2
+                    2,
+                    renderMode
                 );
             }
         }
 
-        // 2. Render provisional beat grid (if any and not overlapping committed segments)
+        // 3. Render provisional beat grid (if any and not overlapping committed segments)
         if (beatGrid && provisionalBeatTimes.length > 0) {
             for (const time of provisionalBeatTimes) {
                 if (time < visibleStart || time > visibleEnd) continue;
@@ -190,10 +284,10 @@ export function BeatGridOverlay({
                 // Color based on locked status
                 if (beatGrid.isLocked) {
                     // Locked: solid green line
-                    renderLine(time, "rgba(34, 197, 94, 0.8)", 2, false, 1);
+                    renderLine(time, "rgba(34, 197, 94, 0.8)", 2, false, 1, renderMode);
                 } else {
                     // Provisional: thinner orange line
-                    renderLine(time, "rgba(251, 146, 60, 0.7)", 1, false, 1);
+                    renderLine(time, "rgba(251, 146, 60, 0.7)", 1, false, 1, renderMode);
                 }
             }
         }
@@ -206,6 +300,8 @@ export function BeatGridOverlay({
         musicalTimeSegments,
         committedBeatTimesMap,
         selectedSegmentId,
+        containerWidth,
+        subBeatDivision,
     ]);
 
     // Show if visible and either have a beat grid or musical time segments
@@ -214,8 +310,8 @@ export function BeatGridOverlay({
     return (
         <div
             ref={hostRef}
-            className="pointer-events-none absolute left-0 top-0"
-            style={{ width: viewport?.containerWidthPx ?? 0, height }}
+            className="pointer-events-none absolute inset-x-0 top-0"
+            style={{ height }}
         />
     );
 }

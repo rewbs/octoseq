@@ -45,6 +45,9 @@ export function MirConfigModal() {
     showDcBin,
     showMfccC0,
     heatmapScheme,
+    cqtBinsPerOctave,
+    cqtFMin,
+    cqtFMax,
   } = useConfigStore(
     useShallow((s) => ({
       isConfigOpen: s.isConfigOpen,
@@ -74,6 +77,9 @@ export function MirConfigModal() {
       showDcBin: s.showDcBin,
       showMfccC0: s.showMfccC0,
       heatmapScheme: s.heatmapScheme,
+      cqtBinsPerOctave: s.cqtBinsPerOctave,
+      cqtFMin: s.cqtFMin,
+      cqtFMax: s.cqtFMax,
     }))
   );
 
@@ -105,6 +111,9 @@ export function MirConfigModal() {
     setShowDcBin,
     setShowMfccC0,
     setHeatmapScheme,
+    setCqtBinsPerOctave,
+    setCqtFMin,
+    setCqtFMax,
   } = useConfigStore(
     useShallow((s) => ({
       setIsConfigOpen: s.setIsConfigOpen,
@@ -134,6 +143,9 @@ export function MirConfigModal() {
       setShowDcBin: s.setShowDcBin,
       setShowMfccC0: s.setShowMfccC0,
       setHeatmapScheme: s.setHeatmapScheme,
+      setCqtBinsPerOctave: s.setCqtBinsPerOctave,
+      setCqtFMin: s.setCqtFMin,
+      setCqtFMax: s.setCqtFMax,
     }))
   );
 
@@ -167,6 +179,12 @@ export function MirConfigModal() {
 
   const usesTempo = filter === "all" || filter === "tempoHypotheses";
 
+  const usesCqt =
+    filter === "all" ||
+    filter === "cqtHarmonicEnergy" ||
+    filter === "cqtBassPitchMotion" ||
+    filter === "cqtTonalStability";
+
   return (
     <Modal title="MIR Configuration" open={isConfigOpen} onOpenChange={setIsConfigOpen}>
       <div className="space-y-4">
@@ -193,6 +211,9 @@ export function MirConfigModal() {
             <option value="mfccDelta">MFCC Delta (2D)</option>
             <option value="mfccDeltaDelta">MFCC Delta-Delta (2D)</option>
             <option value="tempoHypotheses">Tempo Hypotheses</option>
+            <option value="cqtHarmonicEnergy">CQT Harmonic Energy (1D)</option>
+            <option value="cqtBassPitchMotion">CQT Bass Pitch Motion (1D)</option>
+            <option value="cqtTonalStability">CQT Tonal Stability (1D)</option>
           </select>
         </div>
 
@@ -547,6 +568,54 @@ export function MirConfigModal() {
                     </span>
                   </label>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {usesCqt && (
+            <div className="rounded-md border border-zinc-100 bg-zinc-50/50 p-2 dark:border-zinc-800/50 dark:bg-zinc-900/50">
+              <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                CQT (Constant-Q Transform)
+              </h3>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">Bins per octave</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={96}
+                    step={1}
+                    value={cqtBinsPerOctave}
+                    onChange={(e) =>
+                      setCqtBinsPerOctave(Math.max(1, Math.floor(Number(e.target.value)) || 24))
+                    }
+                    className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                  />
+                </label>
+                <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">fMin (Hz)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={cqtFMin}
+                    onChange={(e) => setCqtFMin(e.target.value)}
+                    placeholder="32.7 (C1)"
+                    className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                  />
+                </label>
+                <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">fMax (Hz)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={cqtFMax}
+                    onChange={(e) => setCqtFMax(e.target.value)}
+                    placeholder="8372 (C9)"
+                    className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                  />
+                </label>
               </div>
             </div>
           )}

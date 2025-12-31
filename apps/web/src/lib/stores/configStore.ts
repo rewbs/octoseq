@@ -58,6 +58,11 @@ interface ConfigState {
 
   // Band MIR (F3)
   bandMirAutoCompute: boolean;
+
+  // CQT
+  cqtBinsPerOctave: number;
+  cqtFMin: string; // Keep as string for optional input
+  cqtFMax: string;
 }
 
 interface ConfigActions {
@@ -117,6 +122,11 @@ interface ConfigActions {
   // Band MIR (F3) setters
   setBandMirAutoCompute: (v: boolean) => void;
 
+  // CQT setters
+  setCqtBinsPerOctave: (v: number) => void;
+  setCqtFMin: (v: string) => void;
+  setCqtFMax: (v: string) => void;
+
   // Utility
   parseOptionalNumber: (v: string) => number | undefined;
   getSpectrogramConfig: () => { fftSize: number; hopSize: number; window: "hann" };
@@ -126,6 +136,7 @@ interface ConfigActions {
   getHpssConfig: () => { timeMedian: number; freqMedian: number; spectrogram: { fftSize: number; hopSize: number; window: "hann" } };
   getMfccConfig: () => { nCoeffs: number; spectrogram: { fftSize: number; hopSize: number; window: "hann" } };
   getTempoHypothesesConfig: () => { minBpm: number; maxBpm: number; binSizeBpm: number; maxHypotheses: number; weightByStrength: boolean };
+  getCqtConfig: () => { binsPerOctave?: number; fMin?: number; fMax?: number };
 }
 
 export type ConfigStore = ConfigState & ConfigActions;
@@ -186,6 +197,11 @@ const initialState: ConfigState = {
 
   // Band MIR (F3)
   bandMirAutoCompute: false,
+
+  // CQT (defaults match CQT_DEFAULTS in mir library)
+  cqtBinsPerOctave: 24,
+  cqtFMin: "", // empty = use library default (32.7 Hz, C1)
+  cqtFMax: "", // empty = use library default (8372 Hz, C9)
 };
 
 export const useConfigStore = create<ConfigStore>()(
@@ -249,6 +265,11 @@ export const useConfigStore = create<ConfigStore>()(
 
         // Band MIR (F3) setters
         setBandMirAutoCompute: (v) => set({ bandMirAutoCompute: v }, false, "setBandMirAutoCompute"),
+
+        // CQT setters
+        setCqtBinsPerOctave: (v) => set({ cqtBinsPerOctave: v }, false, "setCqtBinsPerOctave"),
+        setCqtFMin: (v) => set({ cqtFMin: v }, false, "setCqtFMin"),
+        setCqtFMax: (v) => set({ cqtFMax: v }, false, "setCqtFMax"),
 
         // Utility
         parseOptionalNumber: (v: string): number | undefined => {
@@ -330,6 +351,16 @@ export const useConfigStore = create<ConfigStore>()(
             weightByStrength: state.tempoWeightByStrength,
           };
         },
+
+        getCqtConfig: () => {
+          const state = get();
+          const parseOptionalNumber = state.parseOptionalNumber;
+          return {
+            binsPerOctave: state.cqtBinsPerOctave,
+            fMin: parseOptionalNumber(state.cqtFMin),
+            fMax: parseOptionalNumber(state.cqtFMax),
+          };
+        },
       }),
       {
         name: "octoseq-config",
@@ -365,6 +396,9 @@ export const useConfigStore = create<ConfigStore>()(
           showMfccC0: state.showMfccC0,
           heatmapScheme: state.heatmapScheme,
           bandMirAutoCompute: state.bandMirAutoCompute,
+          cqtBinsPerOctave: state.cqtBinsPerOctave,
+          cqtFMin: state.cqtFMin,
+          cqtFMax: state.cqtFMax,
         }),
       }
     ),

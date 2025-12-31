@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
-import type { BandMir1DResult, BandMirDiagnostics } from "@octoseq/mir";
+import type { BandMir1DResult, BandCqt1DResult, BandMirDiagnostics, BandMirFunctionId, BandCqtFunctionId } from "@octoseq/mir";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
 import { createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
 import {
@@ -16,14 +16,21 @@ import {
 import { getBandColorHex } from "@/lib/bandColors";
 import { useBandMirStore, useFrequencyBandStore } from "@/lib/stores";
 import { BandEventOverlay, BandEventCountBadge } from "./BandEventOverlay";
+import { GenericBeatGridOverlay } from "@/components/beatGrid/GenericBeatGridOverlay";
 
 // ----------------------------
 // Types
 // ----------------------------
 
+/** Union type for band result - both STFT and CQT results share the same structure */
+type BandResultUnion = BandMir1DResult | BandCqt1DResult;
+
+/** CQT function IDs for type checking */
+const CQT_FUNCTIONS: BandCqtFunctionId[] = ["bandCqtHarmonicEnergy", "bandCqtBassPitchMotion", "bandCqtTonalStability"];
+
 export type BandMirSignalViewerProps = {
-    /** The band MIR function to show results for (e.g., "bandOnsetStrength") */
-    fn: "bandOnsetStrength" | "bandSpectralFlux" | "bandAmplitudeEnvelope";
+    /** The band MIR function to show results for (e.g., "bandOnsetStrength" or "bandCqtHarmonicEnergy") */
+    fn: BandMirFunctionId | BandCqtFunctionId;
     /** Viewport from the main WaveSurfer instance */
     viewport: WaveSurferViewport | null;
     /** Shared mirrored cursor (hover or playhead) to display */
@@ -32,10 +39,14 @@ export type BandMirSignalViewerProps = {
     onCursorTimeChange?: (timeSec: number | null) => void;
     /** Notify parent of waveform readiness progress */
     onWaveformsReadyChange?: (status: { ready: number; total: number }) => void;
+    /** Whether to show beat grid overlay (default: false) */
+    showBeatGrid?: boolean;
+    /** Audio duration in seconds (required if showBeatGrid is true) */
+    audioDuration?: number;
 };
 
 type BandSignalRowProps = {
-    result: BandMir1DResult;
+    result: BandResultUnion;
     bandIndex: number;
     viewport: WaveSurferViewport | null;
     cursorTimeSec?: number | null;
@@ -43,6 +54,10 @@ type BandSignalRowProps = {
     /** Whether to show event overlay */
     showEvents?: boolean;
     onReady?: (bandId: string) => void;
+    /** Whether to show beat grid overlay */
+    showBeatGrid?: boolean;
+    /** Audio duration in seconds */
+    audioDuration?: number;
 };
 
 // ----------------------------
@@ -59,6 +74,8 @@ function BandSignalRow({
     onCursorTimeChange,
     showEvents = true,
     onReady,
+    showBeatGrid = false,
+    audioDuration = 0,
 }: BandSignalRowProps) {
     const containerRef = useRef<HTMLDivElement | null>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -318,6 +335,13 @@ function BandSignalRow({
                         height={BAND_ROW_HEIGHT}
                     />
                 )}
+                {showBeatGrid && audioDuration > 0 && (
+                    <GenericBeatGridOverlay
+                        viewport={viewport}
+                        audioDuration={audioDuration}
+                        height={BAND_ROW_HEIGHT}
+                    />
+                )}
             </div>
 
             {/* Band label - floating overlay */}
@@ -394,23 +418,30 @@ export function BandMirSignalViewer({
     cursorTimeSec,
     onCursorTimeChange,
     onWaveformsReadyChange,
+    showBeatGrid = false,
+    audioDuration = 0,
 }: BandMirSignalViewerProps) {
     const expanded = useBandMirStore((s) => s.expanded);
     const setExpanded = useBandMirStore((s) => s.setExpanded);
     const cache = useBandMirStore((s) => s.cache);
+    const cqtCache = useBandMirStore((s) => s.cqtCache);
 
     const structure = useFrequencyBandStore((s) => s.structure);
 
-    // Get results for this function
+    // Determine if this is a CQT function
+    const isCqtFn = CQT_FUNCTIONS.includes(fn as BandCqtFunctionId);
+
+    // Get results for this function from the appropriate cache
     const results = useMemo(() => {
-        const entries: BandMir1DResult[] = [];
-        for (const [key, result] of cache.entries()) {
+        const entries: BandResultUnion[] = [];
+        const targetCache = isCqtFn ? cqtCache : cache;
+        for (const [key, result] of targetCache.entries()) {
             if (key.endsWith(`:${fn}`)) {
                 entries.push(result);
             }
         }
         return entries;
-    }, [cache, fn]);
+    }, [cache, cqtCache, fn, isCqtFn]);
 
     // Sort by band sortOrder
     const sortedResults = useMemo(() => {
@@ -493,6 +524,8 @@ export function BandMirSignalViewer({
                             cursorTimeSec={cursorTimeSec}
                             onCursorTimeChange={onCursorTimeChange}
                             onReady={handleReady}
+                            showBeatGrid={showBeatGrid}
+                            audioDuration={audioDuration}
                         />
                     ))}
                 </div>

@@ -12,6 +12,8 @@ use crate::gpu::renderer::Renderer;
 use crate::input::InputSignal;
 use crate::musical_time::MusicalTimeStructure;
 use crate::script_api::script_api_metadata_json;
+// Note: ScriptSignalInfo and SignalChainAnalysis are used via state methods
+// but not directly referenced in this file (they're serialized to JSON)
 use crate::visualiser::{FrameBudget, FrameResult, VisualiserState};
 
 /// Debug struct for entity positions, serialized to JSON for debugging.
@@ -808,6 +810,69 @@ impl WasmVisualiser {
                 serde_json::to_string(&wasm_result).unwrap_or_else(|_| {
                     r#"{"success":false,"error":"Unknown error","signals":[],"event_streams":[],"step_count":0,"duration":0}"#.to_string()
                 })
+            }
+        }
+    }
+
+    // === Signal Explorer API ===
+
+    /// Get all Signal variables from the current script.
+    /// Returns a JSON array of ScriptSignalInfo objects.
+    pub fn get_script_signals(&self) -> String {
+        let inner = self.inner.borrow();
+        let signals = inner.state.get_signal_variables();
+        serde_json::to_string(&signals).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    /// Check if a signal variable exists in the current script.
+    pub fn has_signal(&self, name: &str) -> bool {
+        let mut inner = self.inner.borrow_mut();
+        inner.state.has_signal(name)
+    }
+
+    /// Analyze a signal chain with localized sampling.
+    ///
+    /// Returns JSON with either:
+    /// - SignalChainAnalysis on success
+    /// - { "error": "message" } on failure
+    ///
+    /// Parameters:
+    /// - signal_name: Name of the signal variable in the script
+    /// - center_time: Time to center analysis around (seconds)
+    /// - window_beats: Number of beats before/after center to sample
+    /// - sample_count: Number of samples to take
+    pub fn analyze_signal_chain(
+        &self,
+        signal_name: &str,
+        center_time: f32,
+        window_beats: f32,
+        sample_count: usize,
+    ) -> String {
+        let mut inner = self.inner.borrow_mut();
+
+        // Clone the data we need to avoid borrow conflicts
+        let named_signals = inner.named_signals.clone();
+        let band_signals = inner.band_signals.clone();
+        let musical_time = inner.musical_time.clone();
+
+        let result = inner.state.analyze_signal_chain(
+            signal_name,
+            center_time,
+            window_beats,
+            sample_count,
+            &named_signals,
+            &band_signals,
+            musical_time.as_ref(),
+        );
+
+        match result {
+            Ok(analysis) => {
+                serde_json::to_string(&analysis).unwrap_or_else(|e| {
+                    format!(r#"{{"error":"Serialization error: {}"}}"#, e)
+                })
+            }
+            Err(e) => {
+                format!(r#"{{"error":"{}"}}"#, e.replace('"', "'"))
             }
         }
     }

@@ -25,6 +25,15 @@ import {
   parseScriptApiMetadata,
   parseScriptDiagnosticsJson,
 } from "@/lib/scripting";
+import { SignalExplorerPanel } from "@/components/signalExplorer";
+import { useSignalExplorerStore } from "@/lib/stores/signalExplorerStore";
+import {
+  detectSignalAtCursor,
+  cursorChangedSignal,
+  updateScriptSignals,
+  requestSignalAnalysis,
+  refreshCurrentSignal,
+} from "@/lib/signalExplorer";
 
 type MonacoDisposable = { dispose: () => void };
 
@@ -32,6 +41,7 @@ type MonacoEditorLike = {
   getModel?: () => unknown;
   onDidFocusEditorText: (callback: () => void) => MonacoDisposable;
   onDidBlurEditorText: (callback: () => void) => MonacoDisposable;
+  onDidChangeCursorPosition?: (callback: (e: { position: { lineNumber: number; column: number } }) => void) => MonacoDisposable;
   hasTextFocus?: () => boolean;
 };
 
@@ -103,6 +113,15 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   const isPlayingRef = useRef(isPlaying);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Dirty flag for conditional rendering when paused
+  // When not playing, we only re-render when something changes (script, seek, signals, resize)
+  const needsRenderRef = useRef(true);
+
+  // Request a single render frame (used when paused to trigger re-render on changes)
+  const requestRender = useCallback(() => {
+    needsRenderRef.current = true;
+  }, []);
+
   // Resizable height state
   const [panelHeight, setPanelHeight] = useState(DEFAULT_HEIGHT);
   const isResizingRef = useRef(false);
@@ -114,9 +133,10 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   const [targetFps, setTargetFps] = useState(DEFAULT_TARGET_FPS);
   const targetFpsRef = useRef(targetFps);
 
-  // Keep ref in sync with state
+  // Keep ref in sync with state and update Signal Explorer store
   useEffect(() => {
     targetFpsRef.current = targetFps;
+    useSignalExplorerStore.getState().setTargetFps(targetFps);
   }, [targetFps]);
 
   // Load FPS setting from localStorage
@@ -202,10 +222,12 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
     };
   }, []);
 
-  // Keep ref up to date for loop access
+  // Keep ref up to date for loop access and trigger render on state change
   useEffect(() => {
     isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
+    // Request render when playback state changes (e.g., to render initial paused frame)
+    requestRender();
+  }, [isPlaying, requestRender]);
 
   const [isReady, setIsReady] = useState(false);
   const [webGpuError, setWebGpuError] = useState<string | null>(null);
@@ -248,6 +270,30 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
       editor.onDidFocusEditorText(() => disableScope(HOTKEY_SCOPE_APP)),
       editor.onDidBlurEditorText(() => enableScope(HOTKEY_SCOPE_APP)),
     ];
+
+    // Add cursor position listener for Signal Explorer
+    if (editor.onDidChangeCursorPosition) {
+      const cursorDisposable = editor.onDidChangeCursorPosition((e) => {
+        const model = editor.getModel?.() as Parameters<typeof monaco.editor.setModelMarkers>[0] | null;
+        if (!model) return;
+
+        const scriptSignals = useSignalExplorerStore.getState().scriptSignals;
+        const prevCursor = useSignalExplorerStore.getState().currentCursor;
+        const cursor = detectSignalAtCursor(model, e.position, scriptSignals);
+
+        useSignalExplorerStore.getState().setCursor(cursor);
+
+        // Only trigger analysis if cursor moved to a different signal
+        if (cursor.signalName && cursorChangedSignal(prevCursor, cursor) && visRef.current) {
+          requestSignalAnalysis(
+            visRef.current as Parameters<typeof requestSignalAnalysis>[0],
+            cursor.signalName,
+            timeRef.current
+          );
+        }
+      });
+      monacoDisposablesRef.current.push(cursorDisposable);
+    }
 
     if (editor.hasTextFocus?.()) {
       disableScope(HOTKEY_SCOPE_APP);
@@ -431,13 +477,61 @@ fn update(dt, frame) {
     return () => window.clearTimeout(handle);
   }, [script, isScriptLoaded]);
 
-  // Update timeRef for the loop
+  // Track previous playback time for seek detection
+  const prevPlaybackTimeRef = useRef(playbackTime);
+
+  // Update timeRef for the loop and detect seeks for Signal Explorer
   useEffect(() => {
+    const prevTime = prevPlaybackTimeRef.current;
+    const timeDelta = Math.abs(playbackTime - prevTime);
+    prevPlaybackTimeRef.current = playbackTime;
     timeRef.current = playbackTime;
+
     if (visRef.current) {
       visRef.current.set_time(playbackTime);
     }
-  }, [playbackTime]);
+
+    // Request render when playback time changes (handles seeking while paused)
+    requestRender();
+
+    // Detect seek (time jump > 0.3s) and refresh Signal Explorer
+    const SEEK_THRESHOLD = 0.3;
+    if (timeDelta > SEEK_THRESHOLD) {
+      const { lastValidSignalName, isExpanded } = useSignalExplorerStore.getState();
+      if (lastValidSignalName && isExpanded && visRef.current) {
+        requestSignalAnalysis(
+          visRef.current as Parameters<typeof requestSignalAnalysis>[0],
+          lastValidSignalName,
+          playbackTime
+        );
+      }
+    }
+  }, [playbackTime, requestRender]);
+
+  // Update Signal Explorer playback state and refresh during playback
+  useEffect(() => {
+    useSignalExplorerStore.getState().setPlaybackActive(isPlaying);
+  }, [isPlaying]);
+
+  // Periodically refresh Signal Explorer during playback (~2Hz)
+  useEffect(() => {
+    if (!isPlaying || !visRef.current) return;
+
+    const PLAYBACK_UPDATE_INTERVAL_MS = 500; // 2Hz
+    const intervalId = setInterval(() => {
+      const { lastValidSignalName, isExpanded } = useSignalExplorerStore.getState();
+      // Only update if panel is expanded and we have a signal selected
+      if (lastValidSignalName && isExpanded && visRef.current) {
+        requestSignalAnalysis(
+          visRef.current as Parameters<typeof requestSignalAnalysis>[0],
+          lastValidSignalName,
+          timeRef.current
+        );
+      }
+    }, PLAYBACK_UPDATE_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [isPlaying]);
 
   useEffect(() => {
     let active = true;
@@ -566,12 +660,19 @@ fn update(dt, frame) {
     if (mirResults && typeof vis.push_signal === "function") {
       // Map signal names from metadata to MIR result keys
       // Note: "flux" is an alias for "spectralFlux", "energy" is an alias for "onsetEnvelope"
+      // CQT signal aliases: "harmonic", "bassMotion", "tonal"
       const signalMappings: Record<string, string> = {
         spectralCentroid: "spectralCentroid",
         spectralFlux: "spectralFlux",
         flux: "spectralFlux",
         onsetEnvelope: "onsetEnvelope",
         energy: "onsetEnvelope",
+        cqtHarmonicEnergy: "cqtHarmonicEnergy",
+        harmonic: "cqtHarmonicEnergy",
+        cqtBassPitchMotion: "cqtBassPitchMotion",
+        bassMotion: "cqtBassPitchMotion",
+        cqtTonalStability: "cqtTonalStability",
+        tonal: "cqtTonalStability",
       };
 
       for (const [signalName, mirKey] of Object.entries(signalMappings)) {
@@ -687,7 +788,21 @@ fn update(dt, frame) {
       vis.push_signal("beatPhase", beatPhaseArray, sampleRate);
       vis.push_signal("bpm", bpmArray, sampleRate);
     }
-  }, [mirResults, isReady, audio, audioDuration, searchSignal, musicalTimeStructure]);
+
+    // Request render when signals change (even when paused)
+    requestRender();
+  }, [mirResults, isReady, audio, audioDuration, searchSignal, musicalTimeStructure, requestRender]);
+
+  // Update Signal Explorer BPM from musical time structure
+  useEffect(() => {
+    if (musicalTimeStructure && musicalTimeStructure.segments.length > 0) {
+      // Use the first segment's BPM (most common case)
+      const firstSegment = musicalTimeStructure.segments[0];
+      useSignalExplorerStore.getState().setBpm(firstSegment?.bpm ?? null);
+    } else {
+      useSignalExplorerStore.getState().setBpm(null);
+    }
+  }, [musicalTimeStructure]);
 
   // Get band MIR results and frequency bands for the band signals effect
   const bandMirResults = useBandMirStore((state) => state.cache);
@@ -726,6 +841,7 @@ fn update(dt, frame) {
       bandAmplitudeEnvelope: "energy",
       bandOnsetStrength: "onset",
       bandSpectralFlux: "flux",
+      bandSpectralCentroid: "centroid",
     };
 
     // Push each band signal
@@ -757,7 +873,10 @@ fn update(dt, frame) {
         vis.push_band_events(eventData.bandId, eventsJson);
       }
     }
-  }, [bandMirResults, bandEventCache, frequencyBands, isReady, audioDuration, getAllBandMirResults, getAllEventResults, getBandById]);
+
+    // Request render when band signals change (even when paused)
+    requestRender();
+  }, [bandMirResults, bandEventCache, frequencyBands, isReady, audioDuration, getAllBandMirResults, getAllEventResults, getBandById, requestRender]);
 
 
   // Load script when enabled or script changes
@@ -780,12 +899,19 @@ fn update(dt, frame) {
 
       if (success) {
         setScriptError(diags[0]?.message ?? null);
+
+        // Update Signal Explorer with script signals and refresh current analysis
+        updateScriptSignals(visAny);
+        refreshCurrentSignal(visAny, timeRef.current);
+
+        // Request render to show script changes immediately (even when paused)
+        requestRender();
       } else {
         const err = diags[0]?.message ?? vis.get_script_error() ?? "Unknown script error";
         setScriptError(err);
       }
     }
-  }, [script, isReady, applyDiagnosticsToEditor, bandMirResults, frequencyBands]);
+  }, [script, isReady, applyDiagnosticsToEditor, bandMirResults, frequencyBands, requestRender]);
 
   // Render Loop
   useEffect(() => {
@@ -824,9 +950,21 @@ fn update(dt, frame) {
         return;
       }
 
+      // When paused, only render if explicitly requested (dirty flag set)
+      // This saves CPU/GPU when nothing has changed
+      const isCurrentlyPlaying = isPlayingRef.current;
+      if (!isCurrentlyPlaying && !needsRenderRef.current) {
+        // Not playing and no render requested - skip this frame but keep loop alive
+        rafRef.current = requestAnimationFrame(loop);
+        return;
+      }
+
+      // Clear dirty flag (we're about to render)
+      needsRenderRef.current = false;
+
       // Use fixed dt based on target FPS for consistent signal sampling
       // This ensures peak-preserving sampling windows are predictable
-      const dt = isPlayingRef.current ? (1 / currentTargetFps) : 0;
+      const dt = isCurrentlyPlaying ? (1 / currentTargetFps) : 0;
       lastRenderTime = now;
       lastTimeRef.current = now;
 
@@ -922,6 +1060,8 @@ fn update(dt, frame) {
           canvasRef.current.height = height * dpr;
         }
         vis.resize(width * dpr, height * dpr);
+        // Request render when canvas resizes (even when paused)
+        needsRenderRef.current = true;
       }
     });
 
@@ -1128,6 +1268,11 @@ fn update(dt, frame) {
                   </div>
                 </div>
               )}
+
+              {/* Signal Explorer Panel */}
+              <div className="border-t border-zinc-800">
+                <SignalExplorerPanel className="rounded-none border-0" />
+              </div>
             </div>
 
             {/* Horizontal Resize Handle */}

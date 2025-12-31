@@ -38,6 +38,7 @@ export function useMirActions() {
     const hpssConfig = configStore.getHpssConfig();
     const mfccConfig = configStore.getMfccConfig();
     const tempoHypothesesConfig = configStore.getTempoHypothesesConfig();
+    const cqtConfig = configStore.getCqtConfig();
 
     // Cancel any in-flight job before starting a new one.
     if (activeJobRef.current) {
@@ -46,6 +47,7 @@ export function useMirActions() {
     }
 
     mirStore.setIsRunning(true);
+    mirStore.setRunningAnalysis(selected);
     mirStore.setLastTimings(null);
 
     const ch0 = audio.getChannelData(0);
@@ -65,6 +67,7 @@ export function useMirActions() {
       hpss: hpssConfig,
       mfcc: mfccConfig,
       tempoHypotheses: tempoHypothesesConfig,
+      cqt: cqtConfig,
     };
 
     try {
@@ -183,6 +186,7 @@ export function useMirActions() {
     } finally {
       activeJobRef.current = null;
       mirStore.setIsRunning(false);
+      mirStore.setRunningAnalysis(null);
     }
   }, []);
 
@@ -206,6 +210,9 @@ export function useMirActions() {
     "mfcc",
     "mfccDelta",
     "mfccDeltaDelta",
+    "cqtHarmonicEnergy",
+    "cqtBassPitchMotion",
+    "cqtTonalStability",
   ];
 
   const runAllAnalyses = useCallback(async () => {

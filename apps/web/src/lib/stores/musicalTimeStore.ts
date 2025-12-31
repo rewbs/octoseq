@@ -104,6 +104,9 @@ interface MusicalTimeActions {
     /** Split a segment at a given time. Returns IDs of the two new segments. */
     splitSegmentAt: (id: string, splitTime: number) => [string, string] | null;
 
+    /** Update a boundary between two adjacent segments (sets endTime of segment and startTime of next). */
+    updateBoundary: (segmentId: string, newEndTime: number) => void;
+
     // Selection
     /** Select a segment for editing. */
     selectSegment: (id: string | null) => void;
@@ -288,8 +291,52 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
                 const { structure, selectedSegmentId, audioIdentity } = get();
                 if (!structure) return;
 
+                const segmentIndex = structure.segments.findIndex((seg) => seg.id === id);
+                if (segmentIndex === -1) return;
+
+                const segment = structure.segments[segmentIndex];
+                if (!segment) return;
                 const now = new Date().toISOString();
-                const newSegments = structure.segments.filter((seg) => seg.id !== id);
+
+                // If it's the only segment, just remove it
+                if (structure.segments.length === 1) {
+                    set(
+                        {
+                            structure: {
+                                ...structure,
+                                segments: [],
+                                modifiedAt: now,
+                            },
+                            selectedSegmentId: null,
+                        },
+                        false,
+                        "removeSegment"
+                    );
+                    if (audioIdentity) {
+                        get().saveToLocalStorage();
+                    }
+                    return;
+                }
+
+                // Expand adjacent segment to maintain coverage
+                const newSegments = structure.segments
+                    .filter((seg) => seg.id !== id)
+                    .map((seg, idx, arr) => {
+                        // If we removed the first segment, extend the new first segment's start
+                        if (segmentIndex === 0 && idx === 0) {
+                            return { ...seg, startTime: segment.startTime };
+                        }
+                        // If we removed the last segment, extend the new last segment's end
+                        if (segmentIndex === structure.segments.length - 1 && idx === arr.length - 1) {
+                            return { ...seg, endTime: segment.endTime };
+                        }
+                        // If we removed a middle segment, extend the previous segment's end
+                        // (the segment at segmentIndex - 1 in the original array is now at segmentIndex - 1 in new array)
+                        if (idx === segmentIndex - 1) {
+                            return { ...seg, endTime: segment.endTime };
+                        }
+                        return seg;
+                    });
 
                 set(
                     {
@@ -346,6 +393,55 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
                 } catch (error) {
                     console.error("Failed to split segment:", error);
                     return null;
+                }
+            },
+
+            updateBoundary: (segmentId, newEndTime) => {
+                const { structure, audioIdentity } = get();
+                if (!structure) return;
+
+                // Find the segment and its index
+                const segmentIndex = structure.segments.findIndex((seg) => seg.id === segmentId);
+                if (segmentIndex === -1) return;
+
+                const segment = structure.segments[segmentIndex];
+                const nextSegment = structure.segments[segmentIndex + 1];
+
+                // Must have both segments
+                if (!segment || !nextSegment) return;
+
+                // Validate the new boundary time
+                const minDuration = 0.1; // Minimum segment duration
+                if (newEndTime <= segment.startTime + minDuration) return;
+                if (newEndTime >= nextSegment.endTime - minDuration) return;
+
+                const now = new Date().toISOString();
+
+                // Update both segments
+                const newSegments = structure.segments.map((seg, idx) => {
+                    if (idx === segmentIndex) {
+                        return { ...seg, endTime: newEndTime };
+                    }
+                    if (idx === segmentIndex + 1) {
+                        return { ...seg, startTime: newEndTime };
+                    }
+                    return seg;
+                });
+
+                set(
+                    {
+                        structure: {
+                            ...structure,
+                            segments: newSegments,
+                            modifiedAt: now,
+                        },
+                    },
+                    false,
+                    "updateBoundary"
+                );
+
+                if (audioIdentity) {
+                    get().saveToLocalStorage();
                 }
             },
 

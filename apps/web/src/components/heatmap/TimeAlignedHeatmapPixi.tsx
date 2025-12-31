@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
 import { Application, Sprite, Texture } from "pixi.js";
 import { GripHorizontal } from "lucide-react";
+import { GenericBeatGridOverlay } from "@/components/beatGrid/GenericBeatGridOverlay";
+import type { WaveSurferViewport } from "@/components/wavesurfer/types";
 
 // Pre-computed color lookup tables for performance (256 entries per scheme)
 const COLOR_LUT_SIZE = 256;
@@ -42,6 +44,11 @@ export type TimeAlignedHeatmapProps = {
   yLabel?: string;
 
   colorScheme?: HeatmapColorScheme;
+
+  /** Whether to show beat grid overlay (default: false) */
+  showBeatGrid?: boolean;
+  /** Audio duration in seconds (required if showBeatGrid is true) */
+  audioDuration?: number;
 };
 
 function clamp01(x: number): number {
@@ -174,8 +181,23 @@ export function TimeAlignedHeatmapPixi({
   initialHeight = DEFAULT_HEIGHT,
   valueRange,
   colorScheme = "grayscale",
+  showBeatGrid = false,
+  audioDuration = 0,
 }: TimeAlignedHeatmapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Create a viewport object for beat grid overlay
+  const viewport: WaveSurferViewport | null = useMemo(() => {
+    if (width <= 0 || endTime <= startTime) return null;
+    const duration = endTime - startTime;
+    return {
+      startTime,
+      endTime,
+      containerWidthPx: width,
+      totalWidthPx: width,
+      minPxPerSec: width / duration,
+    };
+  }, [startTime, endTime, width]);
 
   const appRef = useRef<Application | null>(null);
   const spriteRef = useRef<Sprite | null>(null);
@@ -514,12 +536,22 @@ export function TimeAlignedHeatmapPixi({
   return (
     <div className="w-full">
       <div className="rounded-md border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-950">
-        <div
-          ref={(el) => {
-            containerRef.current = el;
-          }}
-          style={{ width, height: panelHeight }}
-        />
+        <div className="relative">
+          <div
+            ref={(el) => {
+              containerRef.current = el;
+            }}
+            style={{ width, height: panelHeight }}
+          />
+          {/* Beat grid overlay */}
+          {showBeatGrid && audioDuration > 0 && viewport && (
+            <GenericBeatGridOverlay
+              viewport={viewport}
+              audioDuration={audioDuration}
+              height={panelHeight}
+            />
+          )}
+        </div>
 
         {/* Resize Handle */}
         <div

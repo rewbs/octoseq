@@ -1,6 +1,13 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type { BandMir1DResult, BandMirFunctionId } from "@octoseq/mir";
+import type {
+    BandMir1DResult,
+    BandMirFunctionId,
+    BandCqt1DResult,
+    BandCqtFunctionId,
+    BandEventsResult,
+    BandEventFunctionId,
+} from "@octoseq/mir";
 
 // ----------------------------
 // Types
@@ -8,6 +15,8 @@ import type { BandMir1DResult, BandMirFunctionId } from "@octoseq/mir";
 
 /** Cache key format: bandId:functionId */
 type BandMirCacheKey = `${string}:${BandMirFunctionId}`;
+type BandCqtCacheKey = `${string}:${BandCqtFunctionId}`;
+type BandEventCacheKey = `${string}:${BandEventFunctionId}`;
 
 /** Event data matching WASM EventStream events */
 export interface BandEvent {
@@ -30,8 +39,16 @@ function makeCacheKey(bandId: string, fn: BandMirFunctionId): BandMirCacheKey {
     return `${bandId}:${fn}`;
 }
 
+function makeCqtCacheKey(bandId: string, fn: BandCqtFunctionId): BandCqtCacheKey {
+    return `${bandId}:${fn}`;
+}
+
+function makeEventCacheKey(bandId: string, fn: BandEventFunctionId): BandEventCacheKey {
+    return `${bandId}:${fn}`;
+}
+
 interface BandMirState {
-    /** Cached results keyed by bandId:fn */
+    /** Cached STFT band MIR results keyed by bandId:fn */
     cache: Map<BandMirCacheKey, BandMir1DResult>;
 
     /** Bands currently being computed */
@@ -46,7 +63,26 @@ interface BandMirState {
     /** Whether band signals are expanded in the UI */
     expanded: boolean;
 
-    // === Band Events ===
+    // === CQT Band Signals ===
+
+    /** Cached CQT band results keyed by bandId:fn */
+    cqtCache: Map<BandCqtCacheKey, BandCqt1DResult>;
+
+    /** Bands currently having CQT computed */
+    cqtPendingBandIds: Set<string>;
+
+    // === Typed Band Events ===
+
+    /** Cached band event extraction results keyed by bandId:fn */
+    typedEventCache: Map<BandEventCacheKey, BandEventsResult>;
+
+    /** Bands currently having typed events extracted */
+    typedEventsPendingBandIds: Set<string>;
+
+    /** Whether typed events are expanded in the UI */
+    typedEventsExpanded: boolean;
+
+    // === Legacy Band Events (for backwards compatibility) ===
 
     /** Cached band event extraction results keyed by bandId */
     eventCache: Map<string, BandEventData>;
@@ -98,7 +134,56 @@ interface BandMirActions {
     /** Clear all results and reset state */
     reset: () => void;
 
-    // === Band Event Actions ===
+    // === CQT Band Actions ===
+
+    /** Get cached CQT result */
+    getCqtCached: (bandId: string, fn: BandCqtFunctionId) => BandCqt1DResult | null;
+
+    /** Store CQT results */
+    setCqtResults: (results: BandCqt1DResult[]) => void;
+
+    /** Mark band as having CQT computed */
+    setCqtPending: (bandId: string, pending: boolean) => void;
+
+    /** Check if band CQT is being computed */
+    isCqtPending: (bandId: string) => boolean;
+
+    /** Invalidate CQT cache for a band */
+    invalidateCqtBand: (bandId: string) => void;
+
+    /** Invalidate all CQT caches */
+    invalidateAllCqt: () => void;
+
+    /** Get CQT results by function */
+    getCqtResultsByFunction: (fn: BandCqtFunctionId) => BandCqt1DResult[];
+
+    // === Typed Band Event Actions ===
+
+    /** Get cached typed events */
+    getTypedEventsCached: (bandId: string, fn: BandEventFunctionId) => BandEventsResult | null;
+
+    /** Store typed event results */
+    setTypedEventResults: (results: BandEventsResult[]) => void;
+
+    /** Mark band as having typed events extracted */
+    setTypedEventsPending: (bandId: string, pending: boolean) => void;
+
+    /** Check if typed events are being extracted */
+    isTypedEventsPending: (bandId: string) => boolean;
+
+    /** Invalidate typed events for a band */
+    invalidateTypedEventsBand: (bandId: string) => void;
+
+    /** Invalidate all typed events */
+    invalidateAllTypedEvents: () => void;
+
+    /** Get typed event results by function */
+    getTypedEventsByFunction: (fn: BandEventFunctionId) => BandEventsResult[];
+
+    /** Toggle typed events expanded state */
+    setTypedEventsExpanded: (expanded: boolean) => void;
+
+    // === Legacy Band Event Actions (backwards compatibility) ===
 
     /** Get cached events for a band */
     getEventsCached: (bandId: string) => BandEventData | null;
@@ -143,7 +228,14 @@ const initialState: BandMirState = {
     bandVersions: new Map(),
     spectrogramVersion: 0,
     expanded: true,
-    // Events
+    // CQT
+    cqtCache: new Map(),
+    cqtPendingBandIds: new Set(),
+    // Typed Events
+    typedEventCache: new Map(),
+    typedEventsPendingBandIds: new Set(),
+    typedEventsExpanded: true,
+    // Legacy Events
     eventCache: new Map(),
     eventsPendingBandIds: new Set(),
     eventsVisible: true,
@@ -283,6 +375,11 @@ export const useBandMirStore = create<BandMirStore>()(
                         pendingBandIds: new Set(),
                         bandVersions: new Map(),
                         spectrogramVersion: 0,
+                        cqtCache: new Map(),
+                        cqtPendingBandIds: new Set(),
+                        typedEventCache: new Map(),
+                        typedEventsPendingBandIds: new Set(),
+                        typedEventsExpanded: true,
                         eventCache: new Map(),
                         eventsPendingBandIds: new Set(),
                         eventsVisible: true,
@@ -293,7 +390,155 @@ export const useBandMirStore = create<BandMirStore>()(
                 );
             },
 
-            // === Band Event Actions ===
+            // === CQT Band Actions ===
+
+            getCqtCached: (bandId, fn) => {
+                const key = makeCqtCacheKey(bandId, fn);
+                return get().cqtCache.get(key) ?? null;
+            },
+
+            setCqtResults: (results) => {
+                set(
+                    (state) => {
+                        const newCache = new Map(state.cqtCache);
+                        for (const result of results) {
+                            const key = makeCqtCacheKey(result.bandId, result.fn);
+                            newCache.set(key, result);
+                        }
+                        return { cqtCache: newCache };
+                    },
+                    false,
+                    "setCqtResults"
+                );
+            },
+
+            setCqtPending: (bandId, pending) => {
+                set(
+                    (state) => {
+                        const newPending = new Set(state.cqtPendingBandIds);
+                        if (pending) {
+                            newPending.add(bandId);
+                        } else {
+                            newPending.delete(bandId);
+                        }
+                        return { cqtPendingBandIds: newPending };
+                    },
+                    false,
+                    "setCqtPending"
+                );
+            },
+
+            isCqtPending: (bandId) => {
+                return get().cqtPendingBandIds.has(bandId);
+            },
+
+            invalidateCqtBand: (bandId) => {
+                set(
+                    (state) => {
+                        const newCache = new Map(state.cqtCache);
+                        for (const key of newCache.keys()) {
+                            if (key.startsWith(`${bandId}:`)) {
+                                newCache.delete(key);
+                            }
+                        }
+                        return { cqtCache: newCache };
+                    },
+                    false,
+                    "invalidateCqtBand"
+                );
+            },
+
+            invalidateAllCqt: () => {
+                set({ cqtCache: new Map() }, false, "invalidateAllCqt");
+            },
+
+            getCqtResultsByFunction: (fn) => {
+                const results: BandCqt1DResult[] = [];
+                for (const [key, result] of get().cqtCache.entries()) {
+                    if (key.endsWith(`:${fn}`)) {
+                        results.push(result);
+                    }
+                }
+                return results;
+            },
+
+            // === Typed Band Event Actions ===
+
+            getTypedEventsCached: (bandId, fn) => {
+                const key = makeEventCacheKey(bandId, fn);
+                return get().typedEventCache.get(key) ?? null;
+            },
+
+            setTypedEventResults: (results) => {
+                set(
+                    (state) => {
+                        const newCache = new Map(state.typedEventCache);
+                        for (const result of results) {
+                            const key = makeEventCacheKey(result.bandId, result.fn);
+                            newCache.set(key, result);
+                        }
+                        return { typedEventCache: newCache };
+                    },
+                    false,
+                    "setTypedEventResults"
+                );
+            },
+
+            setTypedEventsPending: (bandId, pending) => {
+                set(
+                    (state) => {
+                        const newPending = new Set(state.typedEventsPendingBandIds);
+                        if (pending) {
+                            newPending.add(bandId);
+                        } else {
+                            newPending.delete(bandId);
+                        }
+                        return { typedEventsPendingBandIds: newPending };
+                    },
+                    false,
+                    "setTypedEventsPending"
+                );
+            },
+
+            isTypedEventsPending: (bandId) => {
+                return get().typedEventsPendingBandIds.has(bandId);
+            },
+
+            invalidateTypedEventsBand: (bandId) => {
+                set(
+                    (state) => {
+                        const newCache = new Map(state.typedEventCache);
+                        for (const key of newCache.keys()) {
+                            if (key.startsWith(`${bandId}:`)) {
+                                newCache.delete(key);
+                            }
+                        }
+                        return { typedEventCache: newCache };
+                    },
+                    false,
+                    "invalidateTypedEventsBand"
+                );
+            },
+
+            invalidateAllTypedEvents: () => {
+                set({ typedEventCache: new Map() }, false, "invalidateAllTypedEvents");
+            },
+
+            getTypedEventsByFunction: (fn) => {
+                const results: BandEventsResult[] = [];
+                for (const [key, result] of get().typedEventCache.entries()) {
+                    if (key.endsWith(`:${fn}`)) {
+                        results.push(result);
+                    }
+                }
+                return results;
+            },
+
+            setTypedEventsExpanded: (expanded) => {
+                set({ typedEventsExpanded: expanded }, false, "setTypedEventsExpanded");
+            },
+
+            // === Legacy Band Event Actions ===
 
             getEventsCached: (bandId) => {
                 return get().eventCache.get(bandId) ?? null;
@@ -405,16 +650,20 @@ export function setupBandMirInvalidation(): () => void {
                 case "band_removed":
                 case "band_enabled_changed":
                     if (event.bandId) {
-                        // Invalidate both MIR results and events for this band
+                        // Invalidate all caches for this band
                         store.invalidateBand(event.bandId);
+                        store.invalidateCqtBand(event.bandId);
+                        store.invalidateTypedEventsBand(event.bandId);
                         store.invalidateBandEvents(event.bandId);
                     }
                     break;
 
                 case "structure_cleared":
                 case "structure_imported":
-                    // Invalidate all MIR results and events
+                    // Invalidate all caches
                     store.invalidateAll();
+                    store.invalidateAllCqt();
+                    store.invalidateAllTypedEvents();
                     store.invalidateAllEvents();
                     break;
             }

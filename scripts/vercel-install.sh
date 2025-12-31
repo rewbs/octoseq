@@ -1,7 +1,8 @@
 #!/bin/bash
 # Vercel-specific install script
-# This script ensures Vercel uses the published npm packages for @octoseq/visualiser
-# and @octoseq/mir instead of trying to build them from the workspace.
+# This script ensures Vercel uses the published npm packages for @octoseq/visualiser,
+# @octoseq/mir, and @octoseq/wavesurfer-signalviewer instead of trying to build them
+# from the workspace.
 #
 # It uses the 'dev' npm tag to get the latest prerelease version (with git SHA).
 # It includes retry logic to handle the race condition where GitHub Actions
@@ -35,7 +36,7 @@ commit_triggers_publish() {
 
     # Check if any changed file matches the workflow trigger paths
     # These must stay in sync with .github/workflows/build-and-publish.yml
-    if echo "$changed_files" | grep -qE '^(apps/web/|packages/(visualiser|mir)/|\.github/workflows/build-and-publish\.yml$)'; then
+    if echo "$changed_files" | grep -qE '^(apps/web/|packages/(visualiser|mir|wavesurfer-signalviewer)/|\.github/workflows/build-and-publish\.yml$)'; then
         return 0  # true - triggers publish
     else
         return 1  # false - doesn't trigger publish
@@ -115,17 +116,21 @@ fi
 echo "==> Checking npm package availability..."
 TEMP_DIR=$(mktemp -d)
 
-# Start both waits in background, stdout (version) goes to temp files, stderr passes through
+# Start all waits in background, stdout (version) goes to temp files, stderr passes through
 wait_for_package "@octoseq/visualiser" "$CURRENT_SHA" "$SKIP_WAIT" > "$TEMP_DIR/visualiser_version" &
 PID_VISUALISER=$!
 wait_for_package "@octoseq/mir" "$CURRENT_SHA" "$SKIP_WAIT" > "$TEMP_DIR/mir_version" &
 PID_MIR=$!
+wait_for_package "@octoseq/wavesurfer-signalviewer" "$CURRENT_SHA" "$SKIP_WAIT" > "$TEMP_DIR/signalviewer_version" &
+PID_SIGNALVIEWER=$!
 
-# Wait for both and capture exit codes
+# Wait for all and capture exit codes
 wait $PID_VISUALISER
 VISUALISER_EXIT=$?
 wait $PID_MIR
 MIR_EXIT=$?
+wait $PID_SIGNALVIEWER
+SIGNALVIEWER_EXIT=$?
 
 # Check for failures
 if [ "$VISUALISER_EXIT" != "0" ]; then
@@ -138,17 +143,24 @@ if [ "$MIR_EXIT" != "0" ]; then
     rm -rf "$TEMP_DIR"
     exit 1
 fi
+if [ "$SIGNALVIEWER_EXIT" != "0" ]; then
+    echo "ERROR: Failed to resolve @octoseq/wavesurfer-signalviewer" >&2
+    rm -rf "$TEMP_DIR"
+    exit 1
+fi
 
 VISUALISER_VERSION=$(cat "$TEMP_DIR/visualiser_version")
 MIR_VERSION=$(cat "$TEMP_DIR/mir_version")
+SIGNALVIEWER_VERSION=$(cat "$TEMP_DIR/signalviewer_version")
 rm -rf "$TEMP_DIR"
 
 echo "    Resolved versions:"
 echo "      @octoseq/visualiser@$VISUALISER_VERSION"
 echo "      @octoseq/mir@$MIR_VERSION"
+echo "      @octoseq/wavesurfer-signalviewer@$SIGNALVIEWER_VERSION"
 
-# Create a temporary pnpm-workspace.yaml that excludes both packages
-echo "==> Excluding visualiser and mir from workspace..."
+# Create a temporary pnpm-workspace.yaml that excludes all @octoseq packages
+echo "==> Excluding visualiser, mir, and wavesurfer-signalviewer from workspace..."
 cat > pnpm-workspace.yaml << 'EOF'
 packages:
   - "apps/*"
@@ -162,9 +174,11 @@ const pkgPath = './apps/web/package.json';
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 pkg.dependencies['@octoseq/visualiser'] = '${VISUALISER_VERSION}';
 pkg.dependencies['@octoseq/mir'] = '${MIR_VERSION}';
+pkg.dependencies['@octoseq/wavesurfer-signalviewer'] = '${SIGNALVIEWER_VERSION}';
 fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 console.log('    Updated @octoseq/visualiser to: ${VISUALISER_VERSION}');
 console.log('    Updated @octoseq/mir to: ${MIR_VERSION}');
+console.log('    Updated @octoseq/wavesurfer-signalviewer to: ${SIGNALVIEWER_VERSION}');
 "
 
 # Brief delay to allow npm registry CDN propagation

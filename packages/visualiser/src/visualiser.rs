@@ -14,6 +14,7 @@ use crate::musical_time::MusicalTimeStructure;
 use crate::script_diagnostics::ScriptDiagnostic;
 use crate::scripting::{ScriptEngine, get_script_debug_options, reset_script_debug_options};
 use crate::scene_graph::{EntityId, SceneGraph};
+use crate::signal_explorer::{ScriptSignalInfo, SignalChainAnalysis};
 
 /// Frame budget for limiting processing time in web preview.
 ///
@@ -434,6 +435,40 @@ impl VisualiserState {
         self.debug_marker_layer.update(current_beat, self.current_bpm);
 
         FrameResult::Completed
+    }
+
+    // === Signal Explorer API ===
+
+    /// Get all Signal variables from the current script scope.
+    pub fn get_signal_variables(&self) -> Vec<ScriptSignalInfo> {
+        self.script_engine.get_signal_variables()
+    }
+
+    /// Check if a Signal variable exists in the current script scope.
+    pub fn has_signal(&mut self, name: &str) -> bool {
+        self.script_engine.has_signal(name)
+    }
+
+    /// Analyze a signal chain with localized sampling.
+    pub fn analyze_signal_chain(
+        &mut self,
+        signal_name: &str,
+        center_time: f32,
+        window_beats: f32,
+        sample_count: usize,
+        input_signals: &HashMap<String, InputSignal>,
+        band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+        musical_time: Option<&MusicalTimeStructure>,
+    ) -> Result<SignalChainAnalysis, String> {
+        self.script_engine.analyze_signal_chain(
+            signal_name,
+            center_time,
+            window_beats,
+            sample_count,
+            input_signals,
+            band_signals,
+            musical_time,
+        )
     }
 }
 

@@ -350,6 +350,70 @@ export function bandSpectralFlux(
     };
 }
 
+/**
+ * Compute spectral centroid for a frequency band.
+ *
+ * Returns the weighted average of frequency bins within the band (center of mass).
+ * Output is in Hz per frame.
+ *
+ * @param spec - Source spectrogram
+ * @param band - Frequency band to analyze
+ * @param options - Computation options
+ * @returns Band MIR result with spectral centroid in Hz
+ */
+export function bandSpectralCentroid(
+    spec: Spectrogram,
+    band: FrequencyBand,
+    options?: BandMirOptions
+): BandMir1DResult {
+    const startMs = typeof performance !== "undefined" ? performance.now() : Date.now();
+
+    // Apply band mask
+    const masked = applyBandMaskToSpectrogram(spec, band, {
+        edgeSmoothHz: options?.edgeSmoothHz,
+    });
+
+    const nFrames = masked.times.length;
+    const nBins = (masked.fftSize >>> 1) + 1;
+    const binHz = masked.sampleRate / masked.fftSize;
+    const out = new Float32Array(nFrames);
+
+    for (let t = 0; t < nFrames; t++) {
+        const mags = masked.magnitudes[t];
+
+        if (!mags) {
+            out[t] = 0;
+            continue;
+        }
+
+        let num = 0;
+        let den = 0;
+
+        // Weighted average: centroid = Σ(f * m) / Σ(m)
+        for (let k = 0; k < nBins; k++) {
+            const m = mags[k] ?? 0;
+            if (m > 0) {
+                const f = k * binHz;
+                num += f * m;
+                den += m;
+            }
+        }
+
+        out[t] = den > 0 ? num / den : 0;
+    }
+
+    return {
+        kind: "bandMir1d",
+        bandId: band.id,
+        bandLabel: band.label,
+        fn: "bandSpectralCentroid",
+        times: masked.times,
+        values: out,
+        meta: createMeta(startMs),
+        diagnostics: computeDiagnostics(masked.energyRetainedPerFrame),
+    };
+}
+
 // ----------------------------
 // Batch Runner
 // ----------------------------
@@ -415,6 +479,9 @@ export async function runBandMirBatch(
                 case "bandSpectralFlux":
                     result = bandSpectralFlux(spec, band, options);
                     break;
+                case "bandSpectralCentroid":
+                    result = bandSpectralCentroid(spec, band, options);
+                    break;
                 default:
                     // Exhaustive check
                     const _exhaustive: never = fn;
@@ -449,6 +516,8 @@ export function getBandMirFunctionLabel(fn: BandMirFunctionId): string {
             return "Onset Strength";
         case "bandSpectralFlux":
             return "Spectral Flux";
+        case "bandSpectralCentroid":
+            return "Spectral Centroid";
         default:
             return fn;
     }

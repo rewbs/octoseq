@@ -7,6 +7,7 @@ import { GripHorizontal } from "lucide-react";
 
 import { HeatmapPlayheadOverlay } from "@/components/heatmap/HeatmapPlayheadOverlay";
 import { ViewportOverlayMarkers, type OverlayEvent, type OverlayMarkerVariant } from "./ViewportOverlayMarkers";
+import { GenericBeatGridOverlay } from "@/components/beatGrid/GenericBeatGridOverlay";
 import type { WaveSurferViewport } from "./types";
 
 const MIN_HEIGHT = 60;
@@ -31,6 +32,11 @@ export type SparseEventsViewerProps = {
 
   /** Visual variant for markers. Defaults to "onset". */
   variant?: OverlayMarkerVariant;
+
+  /** Whether to show beat grid overlay (default: false) */
+  showBeatGrid?: boolean;
+  /** Audio duration in seconds (required if showBeatGrid is true) */
+  audioDuration?: number;
 };
 
 /**
@@ -46,6 +52,8 @@ export function SparseEventsViewer({
   cursorTimeSec,
   onCursorTimeChange,
   variant,
+  showBeatGrid = false,
+  audioDuration = 0,
 }: SparseEventsViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -138,6 +146,13 @@ export function SparseEventsViewer({
           onMouseLeave={handleMouseLeave}
         >
           <ViewportOverlayMarkers viewport={viewport} events={events} height={panelHeight} variant={variant} />
+          {showBeatGrid && audioDuration > 0 && (
+            <GenericBeatGridOverlay
+              viewport={viewport}
+              audioDuration={audioDuration}
+              height={panelHeight}
+            />
+          )}
           <HeatmapPlayheadOverlay
             viewport={viewport}
             timeSec={cursorTimeSec ?? null}

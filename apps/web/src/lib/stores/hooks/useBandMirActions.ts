@@ -2,9 +2,16 @@ import { useCallback, useRef } from "react";
 import {
     spectrogram,
     runBandMirBatch,
+    runBandCqtBatch,
+    runBandEventsBatch,
+    cqtSpectrogram,
+    withCqtDefaults,
     peakPick,
     type Spectrogram,
+    type CqtSpectrogram,
     type BandMirFunctionId,
+    type BandCqtFunctionId,
+    type BandEventFunctionId,
     type FrequencyBand,
 } from "@octoseq/mir";
 import { useAudioStore } from "../audioStore";
@@ -30,6 +37,12 @@ export function useBandMirActions() {
     const spectrogramCacheRef = useRef<{
         audioId: string | null;
         spec: Spectrogram;
+    } | null>(null);
+
+    // Cache CQT spectrogram separately
+    const cqtCacheRef = useRef<{
+        audioId: string | null;
+        cqt: CqtSpectrogram;
     } | null>(null);
 
     const runBandAnalysis = useCallback(
@@ -143,7 +156,142 @@ export function useBandMirActions() {
 
     const clearSpectrogramCache = useCallback(() => {
         spectrogramCacheRef.current = null;
+        cqtCacheRef.current = null;
     }, []);
+
+    /**
+     * Run CQT-based band analysis.
+     *
+     * CQT provides log-frequency resolution suitable for harmonic and tonal analysis.
+     */
+    const runBandCqtAnalysis = useCallback(
+        async (
+            bandIds?: string[],
+            functions: BandCqtFunctionId[] = ["bandCqtHarmonicEnergy", "bandCqtTonalStability"]
+        ) => {
+            const { audio, audioFileName, audioDuration } = useAudioStore.getState();
+            if (!audio) return;
+
+            const structure = useFrequencyBandStore.getState().structure;
+            if (!structure) return;
+
+            const bandMirStore = useBandMirStore.getState();
+
+            // Get bands to process
+            const bands = bandIds
+                ? structure.bands.filter((b) => bandIds.includes(b.id) && b.enabled)
+                : structure.bands.filter((b) => b.enabled);
+
+            if (bands.length === 0) return;
+
+            // Check cache - skip bands with valid cached results
+            const bandsToCompute = bands.filter((band) => {
+                return functions.some((fn) => !bandMirStore.getCqtCached(band.id, fn));
+            });
+
+            if (bandsToCompute.length === 0) return;
+
+            // Mark bands as pending
+            bandsToCompute.forEach((b) => bandMirStore.setCqtPending(b.id, true));
+            await waitForNextPaint();
+
+            try {
+                // Create audio ID for cache key
+                const audioId = `${audioFileName ?? "unknown"}:${audioDuration}:${audio.sampleRate}`;
+
+                // Get or compute CQT spectrogram
+                let cqt: CqtSpectrogram;
+                if (cqtCacheRef.current && cqtCacheRef.current.audioId === audioId) {
+                    cqt = cqtCacheRef.current.cqt;
+                } else {
+                    // Create AudioBufferLike from AudioBuffer
+                    const ch0 = audio.getChannelData(0);
+                    const mono = new Float32Array(ch0);
+                    const audioLike = {
+                        sampleRate: audio.sampleRate,
+                        numberOfChannels: 1,
+                        getChannelData: () => mono,
+                    };
+
+                    cqt = await cqtSpectrogram(audioLike, withCqtDefaults({}));
+                    cqtCacheRef.current = { audioId, cqt };
+                }
+
+                // Run batch computation
+                const { results } = await runBandCqtBatch(cqt, {
+                    bands: bandsToCompute,
+                    functions,
+                });
+
+                // Store results
+                const allResults = Array.from(results.values()).flat();
+                bandMirStore.setCqtResults(allResults);
+            } finally {
+                // Clear pending state
+                bandsToCompute.forEach((b) => bandMirStore.setCqtPending(b.id, false));
+            }
+        },
+        []
+    );
+
+    /**
+     * Run typed event extraction from band MIR signals.
+     *
+     * Uses the bandEvents module for consistent event extraction.
+     */
+    const runTypedEventExtraction = useCallback(
+        async (
+            bandIds?: string[],
+            functions: BandEventFunctionId[] = ["bandOnsetPeaks"]
+        ) => {
+            const structure = useFrequencyBandStore.getState().structure;
+            if (!structure) return;
+
+            const bandMirStore = useBandMirStore.getState();
+
+            // Get bands to process
+            const bands = bandIds
+                ? structure.bands.filter((b) => bandIds.includes(b.id) && b.enabled)
+                : structure.bands.filter((b) => b.enabled);
+
+            if (bands.length === 0) return;
+
+            // Build band MIR results map for event extraction
+            const bandMirResults = new Map<string, import("@octoseq/mir").BandMir1DResult[]>();
+            const bandsWithResults: FrequencyBand[] = [];
+
+            for (const band of bands) {
+                const results = bandMirStore.getResultsByBand(band.id);
+                if (results.length > 0) {
+                    bandMirResults.set(band.id, results);
+                    bandsWithResults.push(band);
+                }
+            }
+
+            if (bandsWithResults.length === 0) return;
+
+            // Mark bands as pending
+            bandsWithResults.forEach((b) => bandMirStore.setTypedEventsPending(b.id, true));
+            await waitForNextPaint();
+
+            try {
+                // Run batch extraction
+                const { results } = await runBandEventsBatch({
+                    bandMirResults,
+                    functions,
+                    sourceFunction: "bandOnsetStrength",
+                });
+
+                // Store results
+                const allResults = Array.from(results.values()).flat();
+                bandMirStore.setTypedEventResults(allResults);
+            } finally {
+                // Clear pending state
+                bandsWithResults.forEach((b) => bandMirStore.setTypedEventsPending(b.id, false));
+            }
+        },
+        []
+    );
 
     /**
      * Extract events from band onset strength signals.
@@ -270,7 +418,11 @@ export function useBandMirActions() {
         runAllBandAnalysis,
         invalidateAndRecompute,
         clearSpectrogramCache,
-        // Event extraction
+        // CQT analysis
+        runBandCqtAnalysis,
+        // Typed event extraction
+        runTypedEventExtraction,
+        // Legacy event extraction
         extractBandEvents,
         extractSingleBandEvents,
         extractAllBandEvents,

@@ -35,8 +35,14 @@ export type {
   FrequencyKeyframe,
   // Band-Scoped MIR (F3)
   BandMirFunctionId,
+  BandCqtFunctionId,
+  BandEventFunctionId,
   BandMirDiagnostics,
   BandMir1DResult,
+  BandCqt1DResult,
+  BandMirEvent,
+  BandEventDiagnostics,
+  BandEventsResult,
   // CQT (F5)
   CqtConfig,
   CqtSpectrogram,
@@ -191,9 +197,46 @@ export {
     bandAmplitudeEnvelope,
     bandOnsetStrength,
     bandSpectralFlux,
+    bandSpectralCentroid,
     runBandMirBatch,
     getBandMirFunctionLabel,
 } from "./dsp/bandMir";
+
+// ----------------------------
+// Band Events (F3)
+// ----------------------------
+
+export type {
+    BandOnsetPeaksOptions,
+    BandBeatCandidatesOptions,
+    BandEventsBatchRequest,
+    BandEventsBatchResult,
+} from "./dsp/bandEvents";
+export {
+    bandOnsetPeaks,
+    bandBeatCandidates,
+    runBandEventsBatch,
+    getBandEventFunctionLabel,
+} from "./dsp/bandEvents";
+
+// ----------------------------
+// Band CQT (F3)
+// ----------------------------
+
+export type {
+    BandCqtOptions,
+    MaskedCqtSpectrogram,
+    BandCqtBatchRequest,
+    BandCqtBatchResult,
+} from "./dsp/bandCqt";
+export {
+    applyBandMaskToCqt,
+    bandCqtHarmonicEnergy,
+    bandCqtBassPitchMotion,
+    bandCqtTonalStability,
+    runBandCqtBatch,
+    getBandCqtFunctionLabel,
+} from "./dsp/bandCqt";
 
 // ----------------------------
 // HPSS

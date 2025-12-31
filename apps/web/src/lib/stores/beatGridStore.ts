@@ -7,6 +7,22 @@ import type {
     PhaseAlignmentConfig,
 } from "@octoseq/mir";
 
+/** Available sub-beat division options */
+export type SubBeatDivision = 1 | 2 | 3 | 4 | 6 | 8 | 9 | 12 | 16;
+
+/** Sub-beat division options with labels for dropdown */
+export const SUB_BEAT_DIVISIONS: Array<{ value: SubBeatDivision; label: string }> = [
+    { value: 1, label: "None" },
+    { value: 2, label: "1/2" },
+    { value: 3, label: "1/3" },
+    { value: 4, label: "1/4" },
+    { value: 6, label: "1/6" },
+    { value: 8, label: "1/8" },
+    { value: 9, label: "1/9" },
+    { value: 12, label: "1/12" },
+    { value: 16, label: "1/16" },
+];
+
 interface BeatGridState {
     /** Currently selected tempo hypothesis (null if none selected). */
     selectedHypothesis: TempoHypothesis | null;
@@ -34,6 +50,12 @@ interface BeatGridState {
 
     /** Configuration for phase alignment algorithm. */
     config: Required<PhaseAlignmentConfig>;
+
+    /** IDs of hypotheses to display as candidate grids (in addition to active). */
+    visibleHypothesisIds: Set<string>;
+
+    /** Sub-beat division (1 = no sub-beats, 2 = half beats, etc.). */
+    subBeatDivision: SubBeatDivision;
 }
 
 interface BeatGridActions {
@@ -98,6 +120,25 @@ interface BeatGridActions {
 
     /** Get the current grid for promotion. Returns null if not promotable. */
     getPromotableGrid: () => BeatGrid | null;
+
+    // ----------------------------
+    // Candidate visibility (multi-hypothesis display)
+    // ----------------------------
+
+    /** Toggle visibility of a hypothesis grid. */
+    toggleHypothesisVisibility: (hypothesisId: string) => void;
+
+    /** Set visibility of a hypothesis grid explicitly. */
+    setHypothesisVisible: (hypothesisId: string, visible: boolean) => void;
+
+    /** Check if a hypothesis grid is visible. */
+    isHypothesisVisible: (hypothesisId: string) => boolean;
+
+    /** Clear all visible hypothesis IDs. */
+    clearVisibleHypotheses: () => void;
+
+    /** Set sub-beat division. */
+    setSubBeatDivision: (division: SubBeatDivision) => void;
 }
 
 export type BeatGridStore = BeatGridState & BeatGridActions;
@@ -117,6 +158,8 @@ const initialState: BeatGridState = {
         topK: 3,
         offsetPenaltyWeight: 0.2,
     },
+    visibleHypothesisIds: new Set(),
+    subBeatDivision: 1,
 };
 
 export const useBeatGridStore = create<BeatGridStore>()(
@@ -276,6 +319,54 @@ export const useBeatGridStore = create<BeatGridStore>()(
                     return null;
                 }
                 return activeBeatGrid;
+            },
+
+            // ----------------------------
+            // Candidate visibility (multi-hypothesis display)
+            // ----------------------------
+
+            toggleHypothesisVisibility: (hypothesisId) => {
+                set(
+                    (state) => {
+                        const newSet = new Set(state.visibleHypothesisIds);
+                        if (newSet.has(hypothesisId)) {
+                            newSet.delete(hypothesisId);
+                        } else {
+                            newSet.add(hypothesisId);
+                        }
+                        return { visibleHypothesisIds: newSet };
+                    },
+                    false,
+                    "toggleHypothesisVisibility"
+                );
+            },
+
+            setHypothesisVisible: (hypothesisId, visible) => {
+                set(
+                    (state) => {
+                        const newSet = new Set(state.visibleHypothesisIds);
+                        if (visible) {
+                            newSet.add(hypothesisId);
+                        } else {
+                            newSet.delete(hypothesisId);
+                        }
+                        return { visibleHypothesisIds: newSet };
+                    },
+                    false,
+                    "setHypothesisVisible"
+                );
+            },
+
+            isHypothesisVisible: (hypothesisId) => {
+                return get().visibleHypothesisIds.has(hypothesisId);
+            },
+
+            clearVisibleHypotheses: () => {
+                set({ visibleHypothesisIds: new Set() }, false, "clearVisibleHypotheses");
+            },
+
+            setSubBeatDivision: (division) => {
+                set({ subBeatDivision: division }, false, "setSubBeatDivision");
             },
         }),
         { name: "beat-grid-store" }

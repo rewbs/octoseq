@@ -17,6 +17,7 @@ pub mod signal_stats;
 pub mod signal_state;
 pub mod signal_eval;
 pub mod signal_rhai;
+pub mod signal_explorer;
 pub mod musical_time;
 pub mod frequency_band;
 

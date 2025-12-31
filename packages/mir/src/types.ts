@@ -424,12 +424,28 @@ export type FrequencyKeyframe = {
 // ----------------------------
 
 /**
- * Band MIR function identifiers.
+ * Band MIR function identifiers (STFT-based).
  */
 export type BandMirFunctionId =
     | "bandAmplitudeEnvelope"
     | "bandOnsetStrength"
-    | "bandSpectralFlux";
+    | "bandSpectralFlux"
+    | "bandSpectralCentroid";
+
+/**
+ * Band CQT function identifiers (CQT-based).
+ */
+export type BandCqtFunctionId =
+    | "bandCqtHarmonicEnergy"
+    | "bandCqtBassPitchMotion"
+    | "bandCqtTonalStability";
+
+/**
+ * Band event function identifiers (derived from 1D signals).
+ */
+export type BandEventFunctionId =
+    | "bandOnsetPeaks"
+    | "bandBeatCandidates";
 
 /**
  * Diagnostics for band MIR computation.
@@ -449,7 +465,7 @@ export type BandMirDiagnostics = {
 };
 
 /**
- * Result of a band-scoped MIR computation.
+ * Result of a band-scoped MIR computation (STFT-based).
  */
 export type BandMir1DResult = {
     kind: "bandMir1d";
@@ -467,6 +483,78 @@ export type BandMir1DResult = {
     meta: MirRunMeta;
     /** Diagnostics about energy retention and potential issues. */
     diagnostics: BandMirDiagnostics;
+};
+
+/**
+ * Result of a band-scoped CQT computation.
+ */
+export type BandCqt1DResult = {
+    kind: "bandCqt1d";
+    /** ID of the band this result is for. */
+    bandId: string;
+    /** Label of the band (for display). */
+    bandLabel: string;
+    /** The CQT function that produced this result. */
+    fn: BandCqtFunctionId;
+    /** Frame times aligned to CQT timebase. */
+    times: Float32Array;
+    /** Signal values per frame. */
+    values: Float32Array;
+    /** Execution metadata. */
+    meta: MirRunMeta;
+    /** Diagnostics about energy retention and potential issues. */
+    diagnostics: BandMirDiagnostics;
+};
+
+/**
+ * A band event (onset peak or beat candidate within a band).
+ */
+export type BandMirEvent = {
+    /** Time in seconds. */
+    time: number;
+    /** Relative weight/strength (0-1 normalized). */
+    weight: number;
+    /** Optional beat position if beat grid exists. */
+    beatPosition?: number;
+    /** Optional beat phase if beat grid exists. */
+    beatPhase?: number;
+};
+
+/**
+ * Diagnostics for band event extraction.
+ */
+export type BandEventDiagnostics = {
+    /** Total number of events extracted. */
+    eventCount: number;
+    /** Events per second (density). */
+    eventsPerSecond: number;
+    /** Warning messages (e.g., too sparse or too dense). */
+    warnings: string[];
+};
+
+/**
+ * Result of band event extraction.
+ */
+export type BandEventsResult = {
+    kind: "bandEvents";
+    /** ID of the band this result is for. */
+    bandId: string;
+    /** Label of the band (for display). */
+    bandLabel: string;
+    /** The event function that produced this result. */
+    fn: BandEventFunctionId;
+    /** Extracted events. */
+    events: BandMirEvent[];
+    /** Source signal used for extraction (for debugging). */
+    sourceSignal?: {
+        fn: BandMirFunctionId;
+        times: Float32Array;
+        values: Float32Array;
+    };
+    /** Execution metadata. */
+    meta: MirRunMeta;
+    /** Diagnostics about extraction quality. */
+    diagnostics: BandEventDiagnostics;
 };
 
 export type MirFunctionId =

@@ -73,6 +73,7 @@ use crate::signal_state::SignalState;
 use crate::signal_stats::StatisticsCache;
 use crate::particle_rhai::{register_particle_api, generate_particles_namespace, set_global_particle_seed};
 use crate::post_processing::{PostProcessingChain, PostEffectInstance, EffectParamValue};
+use crate::signal_explorer::{sample_signal_chain, ScriptSignalInfo, SignalChainAnalysis};
 use std::sync::Arc;
 
 /// Global debug options set by scripts.
@@ -166,6 +167,14 @@ pub struct ScriptEngine {
     /// Particle systems extracted from script scope.
     /// Keyed by entity ID assigned when added to scene.
     pub particle_systems: HashMap<u64, crate::particle::ParticleSystem>,
+    /// Script source code for parsing signal declarations.
+    script_source: String,
+    /// Parsed signal variable declarations: variable name -> RHS expression string.
+    /// Used to find signal variables declared in init() that aren't in global scope.
+    parsed_signal_decls: HashMap<String, String>,
+    /// Signals that have been evaluated during init().
+    /// Populated by re-evaluating parsed_signal_decls expressions.
+    evaluated_signals: HashMap<String, Signal>,
 }
 
 impl ScriptEngine {
@@ -498,6 +507,9 @@ impl ScriptEngine {
             feedback_config: crate::feedback::FeedbackConfig::default(),
             feedback_uniforms: crate::feedback::FeedbackUniforms::default(),
             particle_systems: HashMap::new(),
+            script_source: String::new(),
+            parsed_signal_decls: HashMap::new(),
+            evaluated_signals: HashMap::new(),
         }
     }
 
@@ -582,6 +594,9 @@ impl ScriptEngine {
         self.signal_state.clear();
         self.signal_statistics.clear();
         self.particle_systems.clear();
+        self.script_source = script.to_string();
+        self.parsed_signal_decls.clear();
+        self.evaluated_signals.clear();
 
         // Reset feedback config
         PENDING_FEEDBACK_CONFIG.with(|cell| {
@@ -1033,6 +1048,10 @@ feedback.is_enabled = || {{
                     return false;
                 }
                 self.ast = Some(ast);
+
+                // Parse signal declarations from the script source
+                self.parse_signal_declarations();
+
                 true
             }
             Err(e) => {
@@ -1041,6 +1060,28 @@ feedback.is_enabled = || {{
                 false
             }
         }
+    }
+
+    /// Parse the script source to find signal variable declarations.
+    /// This finds patterns like `let foo = inputs.` or `let bar = gen.` etc.
+    fn parse_signal_declarations(&mut self) {
+        use regex::Regex;
+
+        // Pattern to match: let <name> = <signal_expression>
+        // Signal expressions typically start with: inputs., gen., time., or are method chains
+        let re = Regex::new(
+            r"let\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*((?:inputs\.|gen\.|time\.)[^;]+)"
+        ).unwrap();
+
+        for cap in re.captures_iter(&self.script_source) {
+            if let (Some(name), Some(expr)) = (cap.get(1), cap.get(2)) {
+                let name_str = name.as_str().to_string();
+                let expr_str = expr.as_str().trim().to_string();
+                self.parsed_signal_decls.insert(name_str, expr_str);
+            }
+        }
+
+        log::debug!("Parsed {} signal declarations from script", self.parsed_signal_decls.len());
     }
 
     /// Call the init function if it exists.
@@ -2044,6 +2085,183 @@ feedback.is_enabled = || {{
             "Pre-computed statistics for {} signals",
             signals_needing_stats.len()
         );
+    }
+
+    // === Signal Explorer API ===
+
+    /// Get all Signal variables - from both scope and parsed declarations.
+    /// Returns a list of ScriptSignalInfo with variable names and locations.
+    ///
+    /// Note: Line/column information is approximate (we don't have exact source locations
+    /// for variable assignments, so we return 0 for both).
+    pub fn get_signal_variables(&self) -> Vec<ScriptSignalInfo> {
+        let mut signals = Vec::new();
+        let mut seen_names = std::collections::HashSet::new();
+
+        // First, get signals from global scope
+        for (name, _is_const, value) in self.scope.iter() {
+            // Skip internal variables
+            if name.starts_with("__") {
+                continue;
+            }
+
+            // Skip namespace objects
+            if name == "mesh"
+                || name == "line"
+                || name == "scene"
+                || name == "deform"
+                || name == "log"
+                || name == "dbg"
+                || name == "gen"
+                || name == "time"
+                || name == "inputs"
+                || name == "fx"
+                || name == "post"
+                || name == "feedback"
+                || name == "particles"
+            {
+                continue;
+            }
+
+            // Check if this is a Signal type by trying to clone-cast it
+            if value.clone().try_cast::<Signal>().is_some() {
+                seen_names.insert(name.to_string());
+                signals.push(ScriptSignalInfo {
+                    name: name.to_string(),
+                    line: 0,   // Line info not available from scope
+                    column: 0, // Column info not available from scope
+                });
+            }
+        }
+
+        // Also include parsed signal declarations (from init() or other local scopes)
+        for name in self.parsed_signal_decls.keys() {
+            if !seen_names.contains(name) {
+                signals.push(ScriptSignalInfo {
+                    name: name.clone(),
+                    line: 0,
+                    column: 0,
+                });
+            }
+        }
+
+        // Also include already-evaluated signals
+        for name in self.evaluated_signals.keys() {
+            if !seen_names.contains(name) && !self.parsed_signal_decls.contains_key(name) {
+                signals.push(ScriptSignalInfo {
+                    name: name.clone(),
+                    line: 0,
+                    column: 0,
+                });
+            }
+        }
+
+        signals
+    }
+
+    /// Get a Signal variable by name.
+    /// Checks scope first, then evaluated cache, then evaluates parsed expression.
+    /// Returns None if the variable doesn't exist or isn't a Signal.
+    pub fn get_signal(&mut self, name: &str) -> Option<Signal> {
+        // First check scope
+        if let Some(signal) = self.scope.get_value::<Signal>(name) {
+            return Some(signal);
+        }
+
+        // Check evaluated cache
+        if let Some(signal) = self.evaluated_signals.get(name) {
+            return Some(signal.clone());
+        }
+
+        // Try to evaluate from parsed declaration
+        if let Some(expr) = self.parsed_signal_decls.get(name).cloned() {
+            if let Some(signal) = self.evaluate_signal_expression(&expr) {
+                self.evaluated_signals.insert(name.to_string(), signal.clone());
+                return Some(signal);
+            }
+        }
+
+        None
+    }
+
+    /// Evaluate a signal expression string and return the Signal.
+    fn evaluate_signal_expression(&mut self, expr: &str) -> Option<Signal> {
+        let ast = self.ast.as_ref()?;
+
+        // Create a mini-script that returns the expression
+        let eval_script = format!("{{ {} }}", expr);
+
+        match self.engine.compile(&eval_script) {
+            Ok(eval_ast) => {
+                // Merge with main AST to access the same scope/definitions
+                let merged = ast.clone().merge(&eval_ast);
+                match self.engine.eval_ast_with_scope::<Dynamic>(&mut self.scope, &merged) {
+                    Ok(result) => result.try_cast::<Signal>(),
+                    Err(e) => {
+                        log::debug!("Failed to evaluate signal expression '{}': {}", expr, e);
+                        None
+                    }
+                }
+            }
+            Err(e) => {
+                log::debug!("Failed to compile signal expression '{}': {}", expr, e);
+                None
+            }
+        }
+    }
+
+    /// Check if a Signal variable exists (in scope or as parsed declaration).
+    pub fn has_signal(&mut self, name: &str) -> bool {
+        // Check scope
+        if self.scope.get_value::<Signal>(name).is_some() {
+            return true;
+        }
+        // Check evaluated cache
+        if self.evaluated_signals.contains_key(name) {
+            return true;
+        }
+        // Check parsed declarations
+        self.parsed_signal_decls.contains_key(name)
+    }
+
+    /// Analyze a signal chain with localized sampling.
+    ///
+    /// - `signal_name`: Name of the signal variable in the scope
+    /// - `center_time`: Time to center the analysis window around (seconds)
+    /// - `window_beats`: Number of beats to sample before/after center
+    /// - `sample_count`: Number of samples to take
+    /// - `input_signals`: Input signal buffers
+    /// - `band_signals`: Band-scoped signal buffers
+    /// - `musical_time`: Musical time structure for beat conversion
+    ///
+    /// Returns a SignalChainAnalysis with steps and samples, or an error string.
+    pub fn analyze_signal_chain(
+        &mut self,
+        signal_name: &str,
+        center_time: f32,
+        window_beats: f32,
+        sample_count: usize,
+        input_signals: &HashMap<String, InputSignal>,
+        band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+        musical_time: Option<&MusicalTimeStructure>,
+    ) -> Result<SignalChainAnalysis, String> {
+        let signal = self
+            .get_signal(signal_name)
+            .ok_or_else(|| format!("Signal '{}' not found in scope", signal_name))?;
+
+        let analysis = sample_signal_chain(
+            &signal,
+            center_time,
+            window_beats,
+            sample_count,
+            input_signals,
+            band_signals,
+            &self.signal_statistics,
+            &mut self.signal_state,
+            musical_time,
+        );
+
+        Ok(analysis)
     }
 }
 

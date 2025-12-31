@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import type { MusicalTimeSegment, MusicalTimeStructure } from "@octoseq/mir";
 
 export type MusicalTimePanelProps = {
@@ -15,6 +15,8 @@ export type MusicalTimePanelProps = {
     onRemoveSegment?: (id: string) => void;
     onSplitSegment?: (id: string, splitTime: number) => void;
     onClearAll?: () => void;
+    /** Called when a segment boundary is dragged. Updates endTime of segment and startTime of next segment. */
+    onUpdateBoundary?: (segmentId: string, newEndTime: number) => void;
 };
 
 /**
@@ -42,9 +44,15 @@ export function MusicalTimePanel({
     onRemoveSegment,
     onSplitSegment,
     onClearAll,
+    onUpdateBoundary,
 }: MusicalTimePanelProps) {
     const segments = structure?.segments ?? [];
     const hasSegments = segments.length > 0;
+
+    // Drag state for segment boundaries
+    const coverageBarRef = useRef<HTMLDivElement>(null);
+    const [draggingBoundaryIndex, setDraggingBoundaryIndex] = useState<number | null>(null);
+    const [dragPreviewTime, setDragPreviewTime] = useState<number | null>(null);
 
     const handleSplitAtMidpoint = useCallback(
         (segment: MusicalTimeSegment) => {
@@ -53,6 +61,86 @@ export function MusicalTimePanel({
         },
         [onSplitSegment]
     );
+
+    // Convert mouse position to time
+    const getTimeFromMouseEvent = useCallback(
+        (clientX: number): number => {
+            const bar = coverageBarRef.current;
+            if (!bar || audioDuration <= 0) return 0;
+            const rect = bar.getBoundingClientRect();
+            const x = clientX - rect.left;
+            const fraction = Math.max(0, Math.min(1, x / rect.width));
+            return fraction * audioDuration;
+        },
+        [audioDuration]
+    );
+
+    // Handle boundary drag start
+    const handleBoundaryDragStart = useCallback(
+        (e: React.MouseEvent, boundaryIndex: number) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDraggingBoundaryIndex(boundaryIndex);
+            setDragPreviewTime(getTimeFromMouseEvent(e.clientX));
+        },
+        [getTimeFromMouseEvent]
+    );
+
+    // Handle mouse move during drag
+    useEffect(() => {
+        if (draggingBoundaryIndex === null) return;
+
+        const handleMouseMove = (e: MouseEvent) => {
+            const newTime = getTimeFromMouseEvent(e.clientX);
+            // Constrain to valid range (between prev segment start and next segment end)
+            const segment = segments[draggingBoundaryIndex];
+            const nextSegment = segments[draggingBoundaryIndex + 1];
+            if (!segment || !nextSegment) return;
+
+            // Minimum segment duration of 0.5 seconds
+            const minDuration = 0.5;
+            const minTime = segment.startTime + minDuration;
+            const maxTime = nextSegment.endTime - minDuration;
+            const constrainedTime = Math.max(minTime, Math.min(maxTime, newTime));
+            setDragPreviewTime(constrainedTime);
+        };
+
+        const handleMouseUp = () => {
+            if (draggingBoundaryIndex !== null && dragPreviewTime !== null) {
+                const segment = segments[draggingBoundaryIndex];
+                if (segment && onUpdateBoundary) {
+                    onUpdateBoundary(segment.id, dragPreviewTime);
+                }
+            }
+            setDraggingBoundaryIndex(null);
+            setDragPreviewTime(null);
+        };
+
+        document.addEventListener("mousemove", handleMouseMove);
+        document.addEventListener("mouseup", handleMouseUp);
+
+        return () => {
+            document.removeEventListener("mousemove", handleMouseMove);
+            document.removeEventListener("mouseup", handleMouseUp);
+        };
+    }, [draggingBoundaryIndex, dragPreviewTime, segments, getTimeFromMouseEvent, onUpdateBoundary]);
+
+    // Compute display positions (use preview during drag)
+    const getDisplaySegments = useCallback(() => {
+        if (draggingBoundaryIndex === null || dragPreviewTime === null) {
+            return segments;
+        }
+        // Create modified segments for display during drag
+        return segments.map((seg, idx) => {
+            if (idx === draggingBoundaryIndex) {
+                return { ...seg, endTime: dragPreviewTime };
+            }
+            if (idx === draggingBoundaryIndex + 1) {
+                return { ...seg, startTime: dragPreviewTime };
+            }
+            return seg;
+        });
+    }, [segments, draggingBoundaryIndex, dragPreviewTime]);
 
     if (!hasSegments) {
         return (
@@ -167,31 +255,85 @@ export function MusicalTimePanel({
                 })}
             </div>
 
-            {/* Coverage indicator */}
+            {/* Coverage indicator with draggable boundaries */}
             <div className="p-2 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50">
                 <div className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
                     Coverage: {calculateCoverage(segments, audioDuration).toFixed(1)}%
+                    {draggingBoundaryIndex !== null && dragPreviewTime !== null && (
+                        <span className="ml-2 text-blue-500">
+                            Boundary: {formatTime(dragPreviewTime)}
+                        </span>
+                    )}
                 </div>
-                <div className="h-1.5 bg-zinc-200 dark:bg-zinc-700 rounded overflow-hidden">
-                    {segments.map((segment) => {
+                <div
+                    ref={coverageBarRef}
+                    className="relative h-4 bg-zinc-200 dark:bg-zinc-700 rounded cursor-default select-none"
+                >
+                    {/* Segment fills */}
+                    {getDisplaySegments().map((segment, idx) => {
                         const left = (segment.startTime / audioDuration) * 100;
                         const width = ((segment.endTime - segment.startTime) / audioDuration) * 100;
                         const isSelected = segment.id === selectedSegmentId;
                         return (
                             <div
                                 key={segment.id}
-                                className="absolute h-1.5 rounded"
+                                className="absolute h-full transition-all duration-75"
                                 style={{
                                     left: `${left}%`,
                                     width: `${width}%`,
                                     backgroundColor: isSelected
-                                        ? "rgba(59, 130, 246, 0.9)"
-                                        : "rgba(34, 197, 94, 0.7)",
+                                        ? "rgba(59, 130, 246, 0.7)"
+                                        : "rgba(34, 197, 94, 0.5)",
                                 }}
+                                onClick={() => onSelectSegment?.(isSelected ? null : segment.id)}
                             />
                         );
                     })}
+
+                    {/* Draggable boundary handles (between segments, not at start/end) */}
+                    {segments.length > 1 &&
+                        segments.slice(0, -1).map((segment, idx) => {
+                            const boundaryTime =
+                                draggingBoundaryIndex === idx && dragPreviewTime !== null
+                                    ? dragPreviewTime
+                                    : segment.endTime;
+                            const position = (boundaryTime / audioDuration) * 100;
+                            const isDragging = draggingBoundaryIndex === idx;
+
+                            return (
+                                <div
+                                    key={`boundary-${segment.id}`}
+                                    className={`absolute top-0 h-full w-3 -translate-x-1/2 cursor-ew-resize z-10 group ${
+                                        isDragging ? "z-20" : ""
+                                    }`}
+                                    style={{ left: `${position}%` }}
+                                    onMouseDown={(e) => handleBoundaryDragStart(e, idx)}
+                                >
+                                    {/* Visual handle */}
+                                    <div
+                                        className={`absolute top-0 left-1/2 -translate-x-1/2 h-full w-1 transition-all ${
+                                            isDragging
+                                                ? "bg-blue-500 w-1.5"
+                                                : "bg-zinc-400 dark:bg-zinc-500 group-hover:bg-blue-400 group-hover:w-1.5"
+                                        }`}
+                                    />
+                                    {/* Wider hit area indicator on hover */}
+                                    <div
+                                        className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 rounded-full transition-opacity ${
+                                            isDragging
+                                                ? "bg-blue-500 opacity-100"
+                                                : "bg-blue-400 opacity-0 group-hover:opacity-100"
+                                        }`}
+                                    />
+                                </div>
+                            );
+                        })}
                 </div>
+                {segments.length > 1 && (
+                    <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">
+                        Drag boundaries to adjust segment timing
+                    </div>
+                )}
             </div>
         </div>
     );

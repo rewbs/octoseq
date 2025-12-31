@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { GripHorizontal } from "lucide-react";
+import { GenericBeatGridOverlay } from "@/components/beatGrid/GenericBeatGridOverlay";
 import type { WaveSurferViewport } from "./types";
 import {
   decimator,
@@ -53,6 +54,10 @@ export type SignalViewerProps = {
   resizable?: boolean;
   /** Label to display */
   label?: string;
+  /** Whether to show beat grid overlay (default: false) */
+  showBeatGrid?: boolean;
+  /** Audio duration in seconds (required if showBeatGrid is true) */
+  audioDuration?: number;
 };
 
 /**
@@ -73,6 +78,8 @@ export function SignalViewer({
   threshold,
   resizable = true,
   label,
+  showBeatGrid = false,
+  audioDuration = 0,
 }: SignalViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -333,7 +340,7 @@ export function SignalViewer({
   ) => {
     const { times, values } = sig;
     const canvasHeight = height;
-    const baselineY = getBaselineY(baseline, canvasHeight);
+    //const baselineY = getBaselineY(baseline, canvasHeight);
 
     // Decimate
     const decimated = decimator.decimate(times, values, startTime, endTime, targetPoints);
@@ -524,6 +531,14 @@ export function SignalViewer({
           ref={canvasRef}
           className="absolute inset-0 w-full h-full"
         />
+        {/* Beat grid overlay */}
+        {showBeatGrid && audioDuration > 0 && (
+          <GenericBeatGridOverlay
+            viewport={viewport}
+            audioDuration={audioDuration}
+            height={panelHeight}
+          />
+        )}
         {/* Floating value display on hover */}
         {hoverInfo && hoverInfo.value !== null && (
           <div

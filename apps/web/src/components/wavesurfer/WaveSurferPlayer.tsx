@@ -7,10 +7,13 @@ import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
 import WaveSurfer from "wavesurfer.js";
 import Timeline from "wavesurfer.js/dist/plugins/timeline.esm.js";
 import Regions from "wavesurfer.js/dist/plugins/regions.esm.js";
-import { GripHorizontal, Play, Pause, } from "lucide-react";
+import { GripHorizontal, Play, Pause, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useAudioStore } from "@/lib/stores/audioStore";
+import { useBeatGridStore, SUB_BEAT_DIVISIONS } from "@/lib/stores/beatGridStore";
+import { useConfigStore } from "@/lib/stores/configStore";
+import { useMusicalTimeStore } from "@/lib/stores/musicalTimeStore";
 
 const MIN_HEIGHT = 80;
 const MAX_HEIGHT = 1200;
@@ -53,6 +56,7 @@ type RegionsPluginLike = {
 };
 
 const QUERY_REGION_ID = "query";
+const ZOOM_PREVIEW_REGION_ID = "zoom-preview";
 
 export type WaveSurferPlayerHandle = {
   playPause: () => void;
@@ -104,6 +108,9 @@ type WaveSurferPlayerProps = {
    */
   onRegionChange?: (region: { startSec: number; endSec: number } | null) => void;
 
+  /** Called when user clears the region selection. */
+  onClearRegion?: () => void;
+
   /** Query selection state from the parent (null clears the query region). */
   queryRegion?: { startSec: number; endSec: number } | null;
 
@@ -115,6 +122,8 @@ type WaveSurferPlayerProps = {
 
   /** "Add missing match" mode: drag-to-create adds a manual (accepted) candidate. */
   addMissingMode?: boolean;
+  /** When true, region selection creates a query for similarity search. When false, region selection zooms to the area. */
+  searchModeActive?: boolean;
   onSelectCandidateId?: (candidateId: string | null) => void;
   onManualCandidateCreate?: (candidate: { id: string; startSec: number; endSec: number }) => void;
   onManualCandidateUpdate?: (candidate: { id: string; startSec: number; endSec: number }) => void;
@@ -138,6 +147,9 @@ type WaveSurferPlayerProps = {
 
   /** Mute the main audio output (for band auditioning). */
   muted?: boolean;
+
+  /** Called when user clicks on the BPM display (to navigate to tempo view). */
+  onBpmClick?: () => void;
 };
 
 /**
@@ -154,11 +166,13 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     onViewportChange,
     onPlaybackTime,
     onRegionChange,
+    onClearRegion,
     queryRegion,
     candidates,
     activeCandidateId,
     candidateCurveKind,
     addMissingMode,
+    searchModeActive,
     onSelectCandidateId,
     onManualCandidateCreate,
     onManualCandidateUpdate,
@@ -177,6 +191,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     analysisBackend,
     overlayContent,
     muted,
+    onBpmClick,
   }: WaveSurferPlayerProps,
   ref
 ) {
@@ -195,11 +210,14 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   const onManualCandidateCreateRef = useRef<WaveSurferPlayerProps["onManualCandidateCreate"]>(onManualCandidateCreate);
   const onManualCandidateUpdateRef = useRef<WaveSurferPlayerProps["onManualCandidateUpdate"]>(onManualCandidateUpdate);
   const addMissingModeRef = useRef<boolean>(!!addMissingMode);
+  const searchModeActiveRef = useRef<boolean>(!!searchModeActive);
   const candidatesRef = useRef<RefinementCandidate[]>(candidates ?? []);
   const activeCandidateIdRef = useRef<string | null>(activeCandidateId ?? null);
   const regionsPluginRef = useRef<RegionsPluginLike | null>(null);
   const queryRegionRef = useRef<RegionLike | null>(null);
   const onIsPlayingChangeRef = useRef<WaveSurferPlayerProps["onIsPlayingChange"]>(onIsPlayingChange);
+  const setPlayheadTimeRef = useRef<(t: number) => void>(() => { });
+  const setZoomRef = useRef<(z: number) => void>(() => { });
 
   useImperativeHandle(
     ref,
@@ -285,12 +303,14 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     onManualCandidateCreateRef.current = onManualCandidateCreate;
     onManualCandidateUpdateRef.current = onManualCandidateUpdate;
     addMissingModeRef.current = !!addMissingMode;
+    searchModeActiveRef.current = !!searchModeActive;
     candidatesRef.current = candidates ?? [];
     activeCandidateIdRef.current = activeCandidateId ?? null;
   }, [
     onManualCandidateCreate,
     onManualCandidateUpdate,
     addMissingMode,
+    searchModeActive,
     candidates,
     activeCandidateId,
     cursorTimeSec,
@@ -342,6 +362,23 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   const [isPlaying, setIsPlaying] = useState(false);
   const [zoom, setZoom] = useState(0);
   const [regionsReady, setRegionsReady] = useState(false);
+  const [playheadTime, setPlayheadTime] = useState(0);
+
+  // Get beat grid, config, and sample rate for playhead display
+  const activeBeatGrid = useBeatGridStore((s) => s.activeBeatGrid);
+  const selectedHypothesis = useBeatGridStore((s) => s.selectedHypothesis);
+  const subBeatDivision = useBeatGridStore((s) => s.subBeatDivision);
+  const setSubBeatDivision = useBeatGridStore((s) => s.setSubBeatDivision);
+  const hopSize = useConfigStore((s) => s.hopSize);
+  const sampleRate = useAudioStore((s) => s.audioSampleRate);
+  const getBeatPositionAt = useMusicalTimeStore((s) => s.getBeatPositionAt);
+  const musicalTimeStructure = useMusicalTimeStore((s) => s.structure);
+
+  // Keep the refs updated for callback functions
+  useEffect(() => {
+    setPlayheadTimeRef.current = setPlayheadTime;
+    setZoomRef.current = setZoom;
+  }, []);
 
   // Region selection debug readout (for trust + tuning).
   const [activeRegion, setActiveRegion] = useState<{
@@ -632,20 +669,40 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
           const start = Math.min(dragStartTime, t);
           const end = Math.max(dragStartTime, t);
           if (!dragRegionId) {
-            if (!addMissingModeRef.current) {
+            // Determine which type of region to create based on mode
+            const isZoomMode = !addMissingModeRef.current && !searchModeActiveRef.current;
+
+            if (isZoomMode) {
+              // Zoom mode: create a temporary preview region
+              for (const other of regionsPlugin.getRegions()) {
+                if (other.id === ZOOM_PREVIEW_REGION_ID) other.remove();
+              }
+              dragRegionId = ZOOM_PREVIEW_REGION_ID;
+            } else if (!addMissingModeRef.current) {
+              // Search mode: create query region
               for (const other of regionsPlugin.getRegions()) {
                 if (other.id === QUERY_REGION_ID) other.remove();
               }
               dragRegionId = QUERY_REGION_ID;
             }
 
+            // Determine color based on mode
+            let regionColor: string;
+            if (addMissingModeRef.current) {
+              regionColor = "rgba(34, 197, 94, 0.22)"; // Green for manual candidate
+            } else if (isZoomMode) {
+              regionColor = "rgba(59, 130, 246, 0.25)"; // Blue for zoom preview
+            } else {
+              regionColor = "rgba(212, 175, 55, 0.18)"; // Gold for query region
+            }
+
             const region = regionsPlugin.addRegion({
               id: dragRegionId ?? undefined,
               start,
               end,
-              color: addMissingModeRef.current ? "rgba(34, 197, 94, 0.22)" : "rgba(212, 175, 55, 0.18)",
-              drag: true,
-              resize: true,
+              color: regionColor,
+              drag: !isZoomMode, // Disable drag for zoom preview
+              resize: !isZoomMode, // Disable resize for zoom preview
             });
             dragRegionId = region.id;
             ensureRegionElementMeta(region);
@@ -690,6 +747,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         }
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const handlePointerUp = (evt: PointerEvent) => {
         if (!dragMode) return;
         const region = getRegionById(dragRegionId);
@@ -709,10 +767,43 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
 
         if (!region) return;
 
-        if (wasCreate && dragMoved) {
+        if (wasCreate && wasDrag) {
           if (addMissingModeRef.current) {
             onManualCandidateCreateRef.current?.({ id: region.id, startSec: region.start, endSec: region.end });
             onSelectCandidateIdRef.current?.(region.id);
+          } else if (region.id === ZOOM_PREVIEW_REGION_ID) {
+            // Zoom mode: zoom to the selected region and remove the preview
+            const regionStart = region.start;
+            const regionEnd = region.end;
+            const regionDuration = regionEnd - regionStart;
+
+            // Remove the preview region
+            region.remove();
+
+            // Calculate and apply zoom
+            const scrollContainer = getScrollContainer(ws);
+            if (scrollContainer && regionDuration > 0) {
+              const containerWidth = scrollContainer.clientWidth || 800;
+              // Add some padding (10% on each side)
+              const paddedDuration = regionDuration * 1.2;
+              const newZoom = Math.min(10000, Math.round(containerWidth / paddedDuration));
+
+              // Update both the ref and React state so the slider reflects the new zoom
+              zoomRef.current = newZoom;
+              setZoomRef.current(newZoom);
+
+              // Scroll to center the region after zoom is applied
+              requestAnimationFrame(() => {
+                const scrollContainer = getScrollContainer(ws);
+                if (scrollContainer) {
+                  const regionCenter = (regionStart + regionEnd) / 2;
+                  const targetPx = regionCenter * newZoom;
+                  const left = Math.max(0, targetPx - scrollContainer.clientWidth / 2);
+                  const maxLeft = Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth);
+                  scrollContainer.scrollLeft = Math.min(maxLeft, left);
+                }
+              });
+            }
           } else if (region.id === QUERY_REGION_ID) {
             queryRegionRef.current = region;
             applyQueryRegionStyle(region);
@@ -800,6 +891,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       if (Math.abs(t - last.timeSec) >= 0.1 || nowMs - last.atMs >= 33) {
         lastPlaybackEmitRef.current = { atMs: nowMs, timeSec: t };
         onPlaybackTimeRef.current?.(t);
+        setPlayheadTimeRef.current(t);
       }
 
       // Optional external seek.
@@ -1064,31 +1156,126 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
           <input
             type="range"
             min={0}
-            max={1000}
-            step={10}
-            value={zoom}
-            onChange={(e) => setZoom(Number(e.target.value))}
+            max={100}
+            step={1}
+            value={(() => {
+              // Convert zoom value back to slider position (inverse of log scale)
+              if (zoom <= 0) return 0;
+              const k = 6; // Curvature factor
+              const maxZoom = 10000;
+              return Math.log(1 + zoom * (Math.exp(k) - 1) / maxZoom) / k * 100;
+            })()}
+            onChange={(e) => {
+              // Convert slider position to zoom using log scale
+              const sliderValue = Number(e.target.value) / 100; // 0-1
+              const k = 6; // Curvature factor - higher = more log-like
+              const maxZoom = 10000;
+              const newZoom = maxZoom * (Math.exp(k * sliderValue) - 1) / (Math.exp(k) - 1);
+              setZoom(Math.round(newZoom));
+            }}
             disabled={!isReady}
           />
-          <span className="w-4 text-right text-sm tabular-nums text-zinc-600 dark:text-zinc-300">
-            {zoom}
+          <span className="w-10 text-right text-sm tabular-nums text-zinc-600 dark:text-zinc-300">
+            {(zoom / 100).toFixed(0)}%
           </span>
         </div>
 
-        {/* Region info - inline display */}
-        <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-300 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
-          <div className="flex items-center gap-1">
-            <span className="text-zinc-500">Selected:</span>
-            <span className="tabular-nums">{activeRegion ? `${activeRegion.startSec.toFixed(3)}s` : "—"}</span>
-            <span className="text-zinc-400">→</span>
-            <span className="tabular-nums">{activeRegion ? `${activeRegion.endSec.toFixed(3)}s` : "—"}</span>
-            <span className="tabular-nums">({activeRegion ? `${activeRegion.durationSec.toFixed(3)}s` : "—"})</span>
-            <span className="text-zinc-400"> / </span>
-            <span className="tabular-nums">{activeRegion ? `${activeRegion.startSample}` : "—"}</span>
-            <span className="text-zinc-400">→</span>
-            <span className="tabular-nums">{activeRegion ? `${activeRegion.startSample + activeRegion.durationSamples}` : "—"}</span>
-            <span className="tabular-nums">({activeRegion ? activeRegion.durationSamples : "—"})</span>
+        {/* BPM display and sub-beat division */}
+        {(activeBeatGrid || selectedHypothesis || musicalTimeStructure) && (
+          <div className="flex items-center gap-2 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
+            <button
+              type="button"
+              onClick={onBpmClick}
+              className="text-sm font-medium tabular-nums text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:underline cursor-pointer"
+              title="Go to Tempo Hypotheses"
+            >
+              {(() => {
+                // Priority: Musical Time segment at playhead > Beat Grid > Selected Hypothesis
+                const segment = musicalTimeStructure?.segments?.find(
+                  (s) => playheadTime >= s.startTime && playheadTime < s.endTime
+                );
+                if (segment) return `${segment.bpm.toFixed(1)} BPM`;
+                if (activeBeatGrid) return `${activeBeatGrid.bpm.toFixed(1)} BPM`;
+                if (selectedHypothesis) return `${selectedHypothesis.bpm.toFixed(1)} BPM`;
+                return "— BPM";
+              })()}
+            </button>
+            <select
+              value={subBeatDivision}
+              onChange={(e) => setSubBeatDivision(Number(e.target.value) as typeof subBeatDivision)}
+              className="text-xs bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded px-1.5 py-0.5 text-zinc-700 dark:text-zinc-300"
+              title="Sub-beat division"
+            >
+              {SUB_BEAT_DIVISIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
+        )}
+
+        {/* Region info or playhead position - inline display */}
+        <div className="flex items-center gap-3 text-xs text-zinc-600 dark:text-zinc-300 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
+          {activeRegion ? (
+            <div className="flex items-center gap-1">
+              <span className="text-zinc-500">Selected:</span>
+              <span className="tabular-nums">{`${activeRegion.startSec.toFixed(3)}s`}</span>
+              <span className="text-zinc-400">→</span>
+              <span className="tabular-nums">{`${activeRegion.endSec.toFixed(3)}s`}</span>
+              <span className="tabular-nums">({`${activeRegion.durationSec.toFixed(3)}s`})</span>
+              <span className="text-zinc-400"> / </span>
+              <span className="tabular-nums">{activeRegion.startSample}</span>
+              <span className="text-zinc-400">→</span>
+              <span className="tabular-nums">{activeRegion.startSample + activeRegion.durationSamples}</span>
+              <span className="tabular-nums">({activeRegion.durationSamples})</span>
+              {searchModeActive && onClearRegion && (
+                <button
+                  onClick={() => {
+                    // Clear the query region from WaveSurfer
+                    const regionsPlugin = regionsPluginRef.current;
+                    if (regionsPlugin) {
+                      for (const r of regionsPlugin.getRegions()) {
+                        if (r.id === QUERY_REGION_ID) r.remove();
+                      }
+                    }
+                    queryRegionRef.current = null;
+                    setActiveRegion(null);
+                    onClearRegion();
+                  }}
+                  className="ml-1 p-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                  title="Clear selection"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <span className="tabular-nums">{playheadTime.toFixed(3)}s</span>
+              <span className="text-zinc-400">|</span>
+              <span className="tabular-nums">
+                frame {sampleRate && sampleRate > 0 && hopSize > 0 ? (playheadTime * sampleRate / hopSize).toFixed(2) : "—"}
+              </span>
+              <span className="text-zinc-400">|</span>
+              <span className="tabular-nums">
+                {(() => {
+                  // Priority: Musical Time > Beat Grid > Selected Hypothesis
+                  const beatPos = getBeatPositionAt(playheadTime);
+                  if (beatPos) {
+                    return <>beat {(beatPos.beatPosition + 1).toFixed(2)}</>;
+                  }
+                  if (activeBeatGrid) {
+                    return <>beat {(((playheadTime - (activeBeatGrid.phaseOffset + activeBeatGrid.userNudge)) * activeBeatGrid.bpm / 60) + 1).toFixed(2)}</>;
+                  }
+                  if (selectedHypothesis) {
+                    return <>beat {((playheadTime * selectedHypothesis.bpm / 60) + 1).toFixed(2)}</>;
+                  }
+                  return "beat —";
+                })()}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Additional toolbar content from parent */}

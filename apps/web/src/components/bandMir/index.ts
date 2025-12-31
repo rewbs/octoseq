@@ -1,4 +1,5 @@
 export { BandMirSignalViewer, type BandMirSignalViewerProps } from "./BandMirSignalViewer";
+export { BandEventViewer, type BandEventViewerProps } from "./BandEventViewer";
 export {
     BandAmplitudeSelector,
     useBandAmplitudeData,

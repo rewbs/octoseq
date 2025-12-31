@@ -9,13 +9,13 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 
 import { FrequencyBandSidebar, HeatmapWithBandOverlay } from "@/components/frequencyBand";
-import { BandMirSignalViewer, BandAmplitudeSelector, useBandAmplitudeData } from "@/components/bandMir";
+import { BandMirSignalViewer, BandEventViewer, BandAmplitudeSelector, useBandAmplitudeData } from "@/components/bandMir";
 import { MirConfigModal } from "@/components/mir/MirConfigModal";
 import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
 import { SparseEventsViewer } from "@/components/wavesurfer/SparseEventsViewer";
 import { BeatGridOverlay } from "@/components/wavesurfer/BeatGridOverlay";
 import { BeatMarkingOverlay } from "@/components/wavesurfer/BeatMarkingOverlay";
-import { TempoHypothesesViewer } from "@/components/tempo/TempoHypothesesViewer";
+import { TempoHypothesesViewer, type SignalOption } from "@/components/tempo/TempoHypothesesViewer";
 import { MusicalTimePanel } from "@/components/tempo/MusicalTimePanel";
 import { WaveSurferPlayer, type WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
 import { VisualiserPanel } from "@/components/visualiser/VisualiserPanel";
@@ -109,7 +109,7 @@ export default function Home() {
   // MIR store
   const mirResults = useMirStore((s) => s.mirResults);
   const isRunning = useMirStore((s) => s.isRunning);
-  const selected = useMirStore((s) => s.selected);
+  const runningAnalysis = useMirStore((s) => s.runningAnalysis);
   const lastTimings = useMirStore((s) => s.lastTimings);
   const visualTab = useMirStore((s) => s.visualTab);
   const { setSelected, setVisualTab } = useMirStore(
@@ -201,6 +201,7 @@ export default function Home() {
     selectSegment: selectMusicalTimeSegment,
     removeSegment: removeMusicalTimeSegment,
     splitSegmentAt: splitMusicalTimeSegmentAt,
+    updateBoundary: updateMusicalTimeBoundary,
     clearStructure: clearMusicalTime,
     reset: resetMusicalTime,
   } = useMusicalTimeStore(
@@ -210,6 +211,7 @@ export default function Home() {
       selectSegment: s.selectSegment,
       removeSegment: s.removeSegment,
       splitSegmentAt: s.splitSegmentAt,
+      updateBoundary: s.updateBoundary,
       clearStructure: s.clearStructure,
       reset: s.reset,
     }))
@@ -271,6 +273,8 @@ export default function Home() {
     if (visualTab === "spectralFlux") return s.getResultsByFunction("bandSpectralFlux").length;
     return 0;
   });
+  // Subscribe to band MIR cache for tempo signal options refresh
+  const bandMirCacheSize = useBandMirStore((s) => s.cache.size);
   const [bandWaveformProgress, setBandWaveformProgress] = useState({ ready: 0, total: 0 });
   const handleBandWaveformsReadyChange = useCallback(
     (status: { ready: number; total: number }) => {
@@ -287,7 +291,7 @@ export default function Home() {
 
   // ===== ACTION HOOKS =====
   const { runAnalysis, runAllAnalyses, cancelAnalysis } = useMirActions();
-  const { runBandAnalysis } = useBandMirActions();
+  const { runBandAnalysis, runBandCqtAnalysis, runTypedEventExtraction } = useBandMirActions();
   const { runSearch } = useSearchActions();
   const { handleAudioDecoded, triggerFileInput } = useAudioActions({
     fileInputRef,
@@ -331,7 +335,50 @@ export default function Home() {
 
   // ===== BAND AMPLITUDE VIEW =====
   const [selectedBandAmplitudeId, setSelectedBandAmplitudeId] = useState<string | null>(null);
+  const [tempoSignalId, setTempoSignalId] = useState<string | null>("onsetEnvelope");
   const bandAmplitudeData = useBandAmplitudeData(selectedBandAmplitudeId);
+
+  // Build signal options for tempo hypothesis comparison
+  const tempoSignalOptions = useMemo((): SignalOption[] => {
+    const options: SignalOption[] = [];
+
+    // MIR 1D signals
+    const mir1dSignals: Array<{ id: MirFunctionId; label: string }> = [
+      { id: "onsetEnvelope", label: "Onset Envelope" },
+      { id: "spectralFlux", label: "Spectral Flux" },
+      { id: "spectralCentroid", label: "Spectral Centroid" },
+      { id: "cqtHarmonicEnergy", label: "CQT Harmonic Energy" },
+      { id: "cqtBassPitchMotion", label: "CQT Bass Pitch Motion" },
+      { id: "cqtTonalStability", label: "CQT Tonal Stability" },
+    ];
+
+    for (const sig of mir1dSignals) {
+      const result = mirResults[sig.id];
+      options.push({
+        id: sig.id,
+        label: sig.label,
+        group: "mir",
+        data: result?.kind === "1d" ? { times: result.times, values: result.values } : null,
+      });
+    }
+
+    // Band amplitude signals (if available)
+    const bands = bandStructure?.bands ?? [];
+    for (const band of bands) {
+      const bandResult = useBandMirStore.getState().cache.get(`${band.id}:bandOnsetStrength`);
+      if (bandResult) {
+        options.push({
+          id: `band:${band.id}:onsetStrength`,
+          label: `${band.label} Onset`,
+          group: "band",
+          data: { times: bandResult.times, values: bandResult.values },
+        });
+      }
+    }
+
+    return options;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bandMirCacheSize triggers refresh when band analysis completes
+  }, [mirResults, bandStructure, bandMirCacheSize]);
 
   // Auto-compute amplitude envelope when band is selected but data missing
   useEffect(() => {
@@ -716,11 +763,14 @@ export default function Home() {
                 onViewportChange={(vp) => setViewport(normalizeViewport(vp, audioDuration))}
                 onPlaybackTime={(t) => setPlayheadTimeSec(t)}
                 onRegionChange={handleRegionChange}
+                onClearRegion={() => handleRegionChange(null)}
+                searchModeActive={visualTab === "search"}
                 isAnalysing={isRunning}
-                analysisName={mirTabDefinitions.find((t) => t.id === selected)?.label}
+                analysisName={mirTabDefinitions.find((t) => t.id === runningAnalysis)?.label}
                 lastAnalysisMs={lastTimings?.totalMs}
                 analysisBackend={lastTimings?.backend}
                 muted={mainPlayerMuted}
+                onBpmClick={() => setVisualTab("tempoHypotheses")}
                 overlayContent={
                   <>
                     <BeatGridOverlay
@@ -890,6 +940,8 @@ export default function Home() {
                     initialHeight={80}
                     mode="filled"
                     color={{ stroke: "rgb(124, 58, 237)", fill: "rgba(124, 58, 237, 0.3)" }}
+                    showBeatGrid={beatGridState.isVisible}
+                    audioDuration={audioDuration ?? 0}
                   />
                 </div>
               )}
@@ -907,6 +959,8 @@ export default function Home() {
                         threshold={searchControls.threshold}
                         mode="filled"
                         color={{ stroke: "rgb(16, 185, 129)", fill: "rgba(16, 185, 129, 0.3)" }}
+                        showBeatGrid={beatGridState.isVisible}
+                        audioDuration={audioDuration ?? 0}
                       />
                     </div>
                   ) : (
@@ -925,6 +979,8 @@ export default function Home() {
                             onCursorTimeChange={setCursorTimeSec}
                             mode="filled"
                             color={{ stroke: "rgb(168, 85, 247)", fill: "rgba(168, 85, 247, 0.3)" }}
+                            showBeatGrid={beatGridState.isVisible}
+                            audioDuration={audioDuration ?? 0}
                           />
                         </div>
                       ))}
@@ -938,7 +994,10 @@ export default function Home() {
                   <>
                     {visualTab === "spectralCentroid" ||
                       visualTab === "spectralFlux" ||
-                      visualTab === "onsetEnvelope" ? (
+                      visualTab === "onsetEnvelope" ||
+                      visualTab === "cqtHarmonicEnergy" ||
+                      visualTab === "cqtBassPitchMotion" ||
+                      visualTab === "cqtTonalStability" ? (
                       tabResult?.kind === "1d" && tabResult.fn === visualTab ? (
                         <>
                           <SignalViewer
@@ -948,16 +1007,23 @@ export default function Home() {
                             onCursorTimeChange={setCursorTimeSec}
                             mode="filled"
                             color={{ stroke: "rgb(59, 130, 246)", fill: "rgba(59, 130, 246, 0.3)" }}
+                            showBeatGrid={beatGridState.isVisible}
+                            audioDuration={audioDuration ?? 0}
                           />
-                          {/* Band MIR signals for relevant 1D tabs */}
-                          {hasBands && (visualTab === "onsetEnvelope" || visualTab === "spectralFlux") && (
+                          {/* Band MIR signals for relevant 1D tabs (STFT-based) */}
+                          {hasBands && (visualTab === "onsetEnvelope" || visualTab === "spectralFlux" || visualTab === "spectralCentroid") && (
                             <div className="mt-2">
                               <div className="flex items-center gap-2 mb-1">
                                 <Button
                                   size="sm"
                                   variant="outline"
                                   onClick={() => {
-                                    const fn = visualTab === "onsetEnvelope" ? "bandOnsetStrength" : "bandSpectralFlux";
+                                    const fnMap: Record<string, "bandOnsetStrength" | "bandSpectralFlux" | "bandSpectralCentroid"> = {
+                                      onsetEnvelope: "bandOnsetStrength",
+                                      spectralFlux: "bandSpectralFlux",
+                                      spectralCentroid: "bandSpectralCentroid",
+                                    };
+                                    const fn = fnMap[visualTab] ?? "bandOnsetStrength";
                                     void runBandAnalysis(undefined, [fn]);
                                   }}
                                   disabled={isRunning || isBandAnalysisRunning}
@@ -976,11 +1042,76 @@ export default function Home() {
                                 )}
                               </div>
                               <BandMirSignalViewer
-                                fn={visualTab === "onsetEnvelope" ? "bandOnsetStrength" : "bandSpectralFlux"}
+                                fn={visualTab === "onsetEnvelope" ? "bandOnsetStrength" : visualTab === "spectralCentroid" ? "bandSpectralCentroid" : "bandSpectralFlux"}
                                 viewport={viewport}
                                 cursorTimeSec={mirroredCursorTimeSec}
                                 onCursorTimeChange={setCursorTimeSec}
                                 onWaveformsReadyChange={handleBandWaveformsReadyChange}
+                                showBeatGrid={beatGridState.isVisible}
+                                audioDuration={audioDuration ?? 0}
+                              />
+                              {/* Band-scoped event extraction */}
+                              <div className="flex items-center gap-2 mt-2 mb-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    void runTypedEventExtraction(undefined, ["bandOnsetPeaks"]);
+                                  }}
+                                  disabled={isRunning || isBandAnalysisRunning}
+                                >
+                                  Extract Band Events
+                                </Button>
+                              </div>
+                              <BandEventViewer
+                                fn="bandOnsetPeaks"
+                                viewport={viewport}
+                                cursorTimeSec={mirroredCursorTimeSec}
+                                onCursorTimeChange={setCursorTimeSec}
+                                showBeatGrid={beatGridState.isVisible}
+                                audioDuration={audioDuration ?? 0}
+                              />
+                            </div>
+                          )}
+                          {/* Band MIR signals for CQT-based 1D tabs */}
+                          {hasBands && (visualTab === "cqtHarmonicEnergy" || visualTab === "cqtBassPitchMotion" || visualTab === "cqtTonalStability") && (
+                            <div className="mt-2">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const fnMap: Record<string, "bandCqtHarmonicEnergy" | "bandCqtBassPitchMotion" | "bandCqtTonalStability"> = {
+                                      cqtHarmonicEnergy: "bandCqtHarmonicEnergy",
+                                      cqtBassPitchMotion: "bandCqtBassPitchMotion",
+                                      cqtTonalStability: "bandCqtTonalStability",
+                                    };
+                                    const fn = fnMap[visualTab] ?? "bandCqtHarmonicEnergy";
+                                    void runBandCqtAnalysis(undefined, [fn]);
+                                  }}
+                                  disabled={isRunning || isBandAnalysisRunning}
+                                >
+                                  Run Band CQT Analysis
+                                </Button>
+                                {isBandAnalysisRunning && (
+                                  <span
+                                    className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+                                    role="status"
+                                    aria-live="polite"
+                                  >
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    {bandAnalysisLabel}
+                                  </span>
+                                )}
+                              </div>
+                              <BandMirSignalViewer
+                                fn={visualTab === "cqtHarmonicEnergy" ? "bandCqtHarmonicEnergy" : visualTab === "cqtBassPitchMotion" ? "bandCqtBassPitchMotion" : "bandCqtTonalStability"}
+                                viewport={viewport}
+                                cursorTimeSec={mirroredCursorTimeSec}
+                                onCursorTimeChange={setCursorTimeSec}
+                                onWaveformsReadyChange={handleBandWaveformsReadyChange}
+                                showBeatGrid={beatGridState.isVisible}
+                                audioDuration={audioDuration ?? 0}
                               />
                             </div>
                           )}
@@ -992,13 +1123,42 @@ export default function Home() {
 
                     {visualTab === "onsetPeaks" ? (
                       tabResult?.kind === "events" && tabResult.fn === "onsetPeaks" ? (
-                        <SparseEventsViewer
-                          events={tabResult.events}
-                          viewport={viewport}
-                          cursorTimeSec={mirroredCursorTimeSec}
-                          onCursorTimeChange={setCursorTimeSec}
-                          variant="onset"
-                        />
+                        <>
+                          <SparseEventsViewer
+                            events={tabResult.events}
+                            viewport={viewport}
+                            cursorTimeSec={mirroredCursorTimeSec}
+                            onCursorTimeChange={setCursorTimeSec}
+                            variant="onset"
+                            showBeatGrid={beatGridState.isVisible}
+                            audioDuration={audioDuration ?? 0}
+                          />
+                          {/* Band-scoped onset peaks */}
+                          {hasBands && (
+                            <div className="mt-2">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    void runTypedEventExtraction(undefined, ["bandOnsetPeaks"]);
+                                  }}
+                                  disabled={isRunning || isBandAnalysisRunning}
+                                >
+                                  Extract Band Onset Peaks
+                                </Button>
+                              </div>
+                              <BandEventViewer
+                                fn="bandOnsetPeaks"
+                                viewport={viewport}
+                                cursorTimeSec={mirroredCursorTimeSec}
+                                onCursorTimeChange={setCursorTimeSec}
+                                showBeatGrid={beatGridState.isVisible}
+                                audioDuration={audioDuration ?? 0}
+                              />
+                            </div>
+                          )}
+                        </>
                       ) : (
                         <p className="text-sm text-zinc-500">Run Onset Peaks to view output.</p>
                       )
@@ -1006,23 +1166,52 @@ export default function Home() {
 
                     {visualTab === "beatCandidates" ? (
                       tabResult?.kind === "events" && tabResult.fn === "beatCandidates" ? (
-                        <div className="relative">
-                          <SparseEventsViewer
-                            events={tabResult.events}
-                            viewport={viewport}
-                            cursorTimeSec={mirroredCursorTimeSec}
-                            onCursorTimeChange={setCursorTimeSec}
-                            variant="beatCandidate"
-                          />
-                          <BeatGridOverlay
-                            viewport={viewport}
-                            beatGrid={beatGridState.activeBeatGrid}
-                            audioDuration={audioDuration ?? 0}
-                            isVisible={beatGridState.isVisible}
-                            musicalTimeSegments={musicalTimeStructure?.segments ?? []}
-                            selectedSegmentId={musicalTimeSelectedSegmentId}
-                          />
-                        </div>
+                        <>
+                          <div className="relative">
+                            <SparseEventsViewer
+                              events={tabResult.events}
+                              viewport={viewport}
+                              cursorTimeSec={mirroredCursorTimeSec}
+                              onCursorTimeChange={setCursorTimeSec}
+                              variant="beatCandidate"
+                              showBeatGrid={beatGridState.isVisible}
+                              audioDuration={audioDuration ?? 0}
+                            />
+                            <BeatGridOverlay
+                              viewport={viewport}
+                              beatGrid={beatGridState.activeBeatGrid}
+                              audioDuration={audioDuration ?? 0}
+                              isVisible={beatGridState.isVisible}
+                              musicalTimeSegments={musicalTimeStructure?.segments ?? []}
+                              selectedSegmentId={musicalTimeSelectedSegmentId}
+                            />
+                          </div>
+                          {/* Band-scoped beat candidates */}
+                          {hasBands && (
+                            <div className="mt-2">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    void runTypedEventExtraction(undefined, ["bandBeatCandidates"]);
+                                  }}
+                                  disabled={isRunning || isBandAnalysisRunning}
+                                >
+                                  Extract Band Beat Candidates
+                                </Button>
+                              </div>
+                              <BandEventViewer
+                                fn="bandBeatCandidates"
+                                viewport={viewport}
+                                cursorTimeSec={mirroredCursorTimeSec}
+                                onCursorTimeChange={setCursorTimeSec}
+                                showBeatGrid={beatGridState.isVisible}
+                                audioDuration={audioDuration ?? 0}
+                              />
+                            </div>
+                          )}
+                        </>
                       ) : (
                         <p className="text-sm text-zinc-500">Run Beat Candidates to view output.</p>
                       )
@@ -1073,6 +1262,13 @@ export default function Home() {
                             audioDuration={audioDuration}
                             musicalTimeSegmentCount={musicalTimeStructure?.segments.length ?? 0}
                             onPromote={handlePromoteGrid}
+                            // Signal viewer for visual correlation
+                            viewport={viewport}
+                            signalOptions={tempoSignalOptions}
+                            selectedSignalId={tempoSignalId}
+                            onSignalSelect={setTempoSignalId}
+                            cursorTimeSec={mirroredCursorTimeSec}
+                            onCursorTimeChange={setCursorTimeSec}
                           />
                         ) : (
                           <p className="text-sm text-zinc-500">Run Tempo Hypotheses to view output.</p>
@@ -1084,6 +1280,7 @@ export default function Home() {
                           onSelectSegment={selectMusicalTimeSegment}
                           onRemoveSegment={removeMusicalTimeSegment}
                           onSplitSegment={splitMusicalTimeSegmentAt}
+                          onUpdateBoundary={updateMusicalTimeBoundary}
                           onClearAll={clearMusicalTime}
                         />
                       </>
@@ -1114,6 +1311,11 @@ export default function Home() {
                               fMin: 0,
                               fMax: audioSampleRate ? audioSampleRate / 2 : 22050,
                             }}
+                            audioDuration={audioDuration}
+                            beatGrid={beatGridState.activeBeatGrid}
+                            beatGridVisible={beatGridState.isVisible}
+                            musicalTimeSegments={musicalTimeStructure?.segments}
+                            selectedSegmentId={musicalTimeSelectedSegmentId}
                           />
                         </div>
                       ) : (

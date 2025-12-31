@@ -13,4 +13,7 @@ export type MirFunctionId =
     | "hpssPercussive"
     | "mfcc"
     | "mfccDelta"
-    | "mfccDeltaDelta";
+    | "mfccDeltaDelta"
+    | "cqtHarmonicEnergy"
+    | "cqtBassPitchMotion"
+    | "cqtTonalStability";

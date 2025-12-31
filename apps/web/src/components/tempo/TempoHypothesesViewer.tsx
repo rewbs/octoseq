@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useState, useRef, useEffect, useMemo } from "react";
-import { GripHorizontal, Plus, Copy, Trash2, Hand, MousePointerClick } from "lucide-react";
+import { GripHorizontal, Plus, Copy, Trash2, Hand, MousePointerClick, Eye, EyeOff, ChevronDown, ChevronUp } from "lucide-react";
+import { useBeatGridStore } from "@/lib/stores/beatGridStore";
 import type { TempoHypothesis, PhaseHypothesis } from "@octoseq/mir";
+import type { WaveSurferViewport } from "@/components/wavesurfer/types";
+import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
 import type { ExtendedTempoHypothesis, TempoHypothesisSource } from "@/lib/stores/manualTempoStore";
 
 /**
@@ -46,6 +49,17 @@ export type BeatGridControlState = {
 export type DisplayableHypothesis = TempoHypothesis & {
   source?: TempoHypothesisSource;
   sourceHypothesisId?: string;
+};
+
+/** Available signal option for the signal viewer */
+export type SignalOption = {
+  id: string;
+  label: string;
+  group: "mir" | "band";
+  data: {
+    times: Float32Array;
+    values: Float32Array;
+  } | null;
 };
 
 export type TempoHypothesesViewerProps = {
@@ -93,6 +107,19 @@ export type TempoHypothesesViewerProps = {
   musicalTimeSegmentCount?: number;
   /** Callback when user promotes the grid to musical time. */
   onPromote?: (startTime: number, endTime: number) => void;
+  // --- Signal Viewer for visual correlation ---
+  /** Viewport for synchronized signal display */
+  viewport?: WaveSurferViewport | null;
+  /** Available signals for the signal viewer dropdown */
+  signalOptions?: SignalOption[];
+  /** Currently selected signal ID */
+  selectedSignalId?: string | null;
+  /** Callback when signal selection changes */
+  onSignalSelect?: (signalId: string | null) => void;
+  /** Mirrored cursor time for signal viewer */
+  cursorTimeSec?: number | null;
+  /** Callback when cursor time changes from signal viewer interaction */
+  onCursorTimeChange?: (time: number) => void;
 };
 
 /**
@@ -181,7 +208,18 @@ export function TempoHypothesesViewer({
   audioDuration,
   musicalTimeSegmentCount,
   onPromote,
+  // Signal viewer
+  viewport,
+  signalOptions = [],
+  selectedSignalId,
+  onSignalSelect,
+  cursorTimeSec,
+  onCursorTimeChange,
 }: TempoHypothesesViewerProps) {
+  // Beat grid visibility for candidate hypotheses
+  const visibleHypothesisIds = useBeatGridStore((s) => s.visibleHypothesisIds);
+  const toggleHypothesisVisibility = useBeatGridStore((s) => s.toggleHypothesisVisibility);
+
   // Manual BPM input state
   const [manualBpmInput, setManualBpmInput] = useState("");
   const [isEditingBpm, setIsEditingBpm] = useState(false);
@@ -199,6 +237,10 @@ export function TempoHypothesesViewer({
   // Tap-to-nudge state
   const [isTapping, setIsTapping] = useState(false);
   const tapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Signal viewer state
+  const [signalViewerExpanded, setSignalViewerExpanded] = useState(true);
+  const [signalViewerHeight] = useState(80);
 
   // Combine algorithmic and manual hypotheses
   const allHypotheses = useMemo((): DisplayableHypothesis[] => {
@@ -420,8 +462,8 @@ export function TempoHypothesesViewer({
               onClick={onStartBeatMarking}
               disabled={beatMarkingActive}
               className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${beatMarkingActive
-                  ? "bg-blue-600 text-white"
-                  : "bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300"
+                ? "bg-blue-600 text-white"
+                : "bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300"
                 }`}
               title="Click two beats on the waveform to set tempo"
             >
@@ -431,6 +473,75 @@ export function TempoHypothesesViewer({
           )}
         </div>
       </div>
+
+      {/* Signal Viewer for visual correlation with beat grid */}
+      {signalOptions.length > 0 && (
+        <div className="border-b border-zinc-200 dark:border-zinc-700">
+          {/* Signal selector header */}
+          <div className="flex items-center gap-2 px-2 py-1.5 bg-zinc-50/50 dark:bg-zinc-800/50">
+            <button
+              type="button"
+              onClick={() => setSignalViewerExpanded(!signalViewerExpanded)}
+              className="p-0.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded transition-colors"
+            >
+              {signalViewerExpanded ? (
+                <ChevronUp className="w-4 h-4 text-zinc-500" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-zinc-500" />
+              )}
+            </button>
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">Compare signal:</span>
+            <select
+              value={selectedSignalId ?? ""}
+              onChange={(e) => onSignalSelect?.(e.target.value || null)}
+              className="text-xs px-2 py-1 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">None</option>
+              {/* Group by MIR vs Band */}
+              <optgroup label="MIR Signals">
+                {signalOptions
+                  .filter((opt) => opt.group === "mir")
+                  .map((opt) => (
+                    <option key={opt.id} value={opt.id} disabled={!opt.data}>
+                      {opt.label} {!opt.data && "(not computed)"}
+                    </option>
+                  ))}
+              </optgroup>
+              <optgroup label="Band Signals">
+                {signalOptions
+                  .filter((opt) => opt.group === "band")
+                  .map((opt) => (
+                    <option key={opt.id} value={opt.id} disabled={!opt.data}>
+                      {opt.label} {!opt.data && "(not computed)"}
+                    </option>
+                  ))}
+              </optgroup>
+            </select>
+          </div>
+
+          {/* Signal viewer with beat grid overlay */}
+          {signalViewerExpanded && selectedSignalId && viewport && audioDuration && (
+            (() => {
+              const selectedSignal = signalOptions.find((opt) => opt.id === selectedSignalId);
+              if (!selectedSignal?.data) return null;
+
+              return (
+                <SignalViewer
+                  signal={createContinuousSignal(selectedSignal.data.times, selectedSignal.data.values)}
+                  viewport={viewport}
+                  cursorTimeSec={cursorTimeSec}
+                  onCursorTimeChange={onCursorTimeChange ? (t) => t !== null && onCursorTimeChange(t) : undefined}
+                  initialHeight={signalViewerHeight}
+                  resizable={false}
+                  label={selectedSignal.label}
+                  showBeatGrid={true}
+                  audioDuration={audioDuration}
+                />
+              );
+            })()
+          )}
+        </div>
+      )}
 
       <div
         className="p-2 space-y-3 overflow-y-auto"
@@ -562,6 +673,27 @@ export function TempoHypothesesViewer({
 
                             {/* Action buttons */}
                             <div className="mt-1 flex items-center gap-2">
+                              {/* Grid visibility toggle */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleHypothesisVisibility(hyp.id);
+                                }}
+                                className={`px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1 ${visibleHypothesisIds.has(hyp.id)
+                                    ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-500"
+                                  }`}
+                                title={visibleHypothesisIds.has(hyp.id) ? "Hide grid preview" : "Show grid preview"}
+                              >
+                                {visibleHypothesisIds.has(hyp.id) ? (
+                                  <Eye className="w-3 h-3" />
+                                ) : (
+                                  <EyeOff className="w-3 h-3" />
+                                )}
+                                Grid
+                              </button>
+
                               {/* Duplicate button for algorithmic hypotheses */}
                               {hyp.source === "algorithmic" && onDuplicateHypothesis && (
                                 <button
@@ -723,8 +855,8 @@ export function TempoHypothesesViewer({
                   type="button"
                   onClick={handleTap}
                   className={`ml-2 px-3 py-1 text-xs rounded transition-all flex items-center gap-1 ${isTapping
-                      ? "bg-orange-500 text-white scale-95"
-                      : "bg-orange-100 dark:bg-orange-900/30 hover:bg-orange-200 dark:hover:bg-orange-900/50 text-orange-700 dark:text-orange-300"
+                    ? "bg-orange-500 text-white scale-95"
+                    : "bg-orange-100 dark:bg-orange-900/30 hover:bg-orange-200 dark:hover:bg-orange-900/50 text-orange-700 dark:text-orange-300"
                     }`}
                   title="Tap in time with the music to nudge the BPM"
                 >
@@ -826,8 +958,8 @@ export function TempoHypothesesViewer({
                   }
                 }}
                 className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${canPromote
-                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                    : "bg-zinc-200 dark:bg-zinc-700 text-zinc-400 dark:text-zinc-500 cursor-not-allowed"
+                  ? "bg-blue-600 hover:bg-blue-700 text-white"
+                  : "bg-zinc-200 dark:bg-zinc-700 text-zinc-400 dark:text-zinc-500 cursor-not-allowed"
                   }`}
                 title={
                   canPromote

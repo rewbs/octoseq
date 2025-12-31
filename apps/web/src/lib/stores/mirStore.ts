@@ -8,6 +8,7 @@ export type VisualTabId = "search" | "debug" | MirFunctionId;
 
 interface MirState {
   selected: MirFunctionId;
+  runningAnalysis: MirFunctionId | null;
   mirResults: Partial<Record<MirFunctionId, UiMirResult>>;
   isRunning: boolean;
   visualTab: VisualTabId;
@@ -16,6 +17,7 @@ interface MirState {
 
 interface MirActions {
   setSelected: (id: MirFunctionId) => void;
+  setRunningAnalysis: (id: MirFunctionId | null) => void;
   setMirResult: (id: MirFunctionId, result: UiMirResult) => void;
   clearMirResults: () => void;
   setIsRunning: (running: boolean) => void;
@@ -27,6 +29,7 @@ export type MirStore = MirState & MirActions;
 
 const initialState: MirState = {
   selected: "spectralCentroid",
+  runningAnalysis: null,
   mirResults: {},
   isRunning: false,
   visualTab: "search",
@@ -39,6 +42,8 @@ export const useMirStore = create<MirStore>()(
       ...initialState,
 
       setSelected: (id) => set({ selected: id }, false, "setSelected"),
+
+      setRunningAnalysis: (id) => set({ runningAnalysis: id }, false, "setRunningAnalysis"),
 
       setMirResult: (id, result) =>
         set(
@@ -77,4 +82,7 @@ export const mirTabDefinitions: Array<{ id: MirFunctionId; label: string; kind: 
   { id: "mfcc", label: "MFCC (2D)", kind: "2d" },
   { id: "mfccDelta", label: "MFCC Delta (2D)", kind: "2d" },
   { id: "mfccDeltaDelta", label: "MFCC Delta-Delta (2D)", kind: "2d" },
+  { id: "cqtHarmonicEnergy", label: "CQT Harmonic Energy (1D)", kind: "1d" },
+  { id: "cqtBassPitchMotion", label: "CQT Bass Pitch Motion (1D)", kind: "1d" },
+  { id: "cqtTonalStability", label: "CQT Tonal Stability (1D)", kind: "1d" },
 ];
