@@ -167,9 +167,21 @@ pub fn register_event_api(engine: &mut Engine) {
     engine.register_fn("filter_time", |es: &mut EventStream, start: f32, end: f32| {
         es.filter_time(start, end)
     });
+    engine.register_fn("filter_time", |es: &mut EventStream, start: i64, end: i64| {
+        es.filter_time(start as f32, end as f32)
+    });
+    engine.register_fn("filter_time", |es: &mut EventStream, start: i64, end: f32| {
+        es.filter_time(start as f32, end)
+    });
+    engine.register_fn("filter_time", |es: &mut EventStream, start: f32, end: i64| {
+        es.filter_time(start, end as f32)
+    });
 
     engine.register_fn("filter_weight", |es: &mut EventStream, min_weight: f32| {
         es.filter_weight(min_weight)
+    });
+    engine.register_fn("filter_weight", |es: &mut EventStream, min_weight: i64| {
+        es.filter_weight(min_weight as f32)
     });
 
     engine.register_fn("limit", |es: &mut EventStream, max_events: i64| {

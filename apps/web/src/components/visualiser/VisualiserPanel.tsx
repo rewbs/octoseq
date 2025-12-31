@@ -24,6 +24,8 @@ import {
   type ScriptDiagnostic,
   parseScriptApiMetadata,
   parseScriptDiagnosticsJson,
+  validateConfigMaps,
+  type ConfigMapDiagnostic,
 } from "@/lib/scripting";
 import { SignalExplorerPanel } from "@/components/signalExplorer";
 import { useSignalExplorerStore } from "@/lib/stores/signalExplorerStore";
@@ -132,6 +134,9 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   // Target FPS for preview (affects signal sampling)
   const [targetFps, setTargetFps] = useState(DEFAULT_TARGET_FPS);
   const targetFpsRef = useRef(targetFps);
+
+  // Config-map validation diagnostics (stored for reuse in render loop)
+  const configMapDiagsRef = useRef<ConfigMapDiagnostic[]>([]);
 
   // Keep ref in sync with state and update Signal Explorer store
   useEffect(() => {
@@ -248,13 +253,11 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
       // Clean up any previous registrations
       monacoDisposablesRef.current.forEach((d) => d.dispose());
 
-      // Register Rhai language using host-defined Script API metadata.
-      // Callbacks read from refs so they stay current without re-registration.
-      monacoDisposablesRef.current = registerRhaiLanguage(
-        monaco,
-        () => scriptApiRef.current,
-        () => availableBandsRef.current
-      );
+      // Register Rhai language using the TypeScript API registry.
+      // The registry is self-contained - no need for WASM metadata.
+      monacoDisposablesRef.current = registerRhaiLanguage(monaco, {
+        getAvailableBands: () => availableBandsRef.current,
+      });
     },
     []
   );
@@ -300,14 +303,15 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
     }
   }, [disableScope, enableScope]);
 
-  const applyDiagnosticsToEditor = useCallback((diags: ScriptDiagnostic[]) => {
+  const applyDiagnosticsToEditor = useCallback((diags: ScriptDiagnostic[], configMapDiags: ConfigMapDiagnostic[] = []) => {
     const monaco = monacoRef.current;
     const editor = editorRef.current;
     if (!monaco || !editor) return;
     const model = editor.getModel?.();
     if (!model) return;
 
-    const markers = diags
+    // Runtime diagnostics (errors from Rust)
+    const runtimeMarkers = diags
       .filter((d) => d.location && typeof d.location.line === "number" && typeof d.location.column === "number")
       .map((d) => ({
         severity: monaco.MarkerSeverity.Error,
@@ -318,7 +322,19 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
         endColumn: d.location!.column + 1,
       }));
 
-    monaco.editor.setModelMarkers(model as Parameters<typeof monaco.editor.setModelMarkers>[0], "octoseq-rhai", markers);
+    // Config-map validation warnings
+    const configMapMarkers = configMapDiags.map((d) => ({
+      severity: d.severity === "warning" ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Info,
+      message: d.message,
+      startLineNumber: d.startLineNumber,
+      startColumn: d.startColumn,
+      endLineNumber: d.endLineNumber,
+      endColumn: d.endColumn,
+    }));
+
+    // Merge both sets of markers
+    const allMarkers = [...runtimeMarkers, ...configMapMarkers];
+    monaco.editor.setModelMarkers(model as Parameters<typeof monaco.editor.setModelMarkers>[0], "octoseq-rhai", allMarkers);
   }, []);
 
   // Cleanup Monaco disposables on unmount
@@ -532,6 +548,25 @@ fn update(dt, frame) {
 
     return () => clearInterval(intervalId);
   }, [isPlaying]);
+
+  // Re-analyze when windowBeats changes (zoom in/out)
+  useEffect(() => {
+    let prevWindowBeats = useSignalExplorerStore.getState().windowBeats;
+    const unsubscribe = useSignalExplorerStore.subscribe((state) => {
+      if (state.windowBeats !== prevWindowBeats && visRef.current) {
+        prevWindowBeats = state.windowBeats;
+        const { lastValidSignalName, isExpanded } = state;
+        if (lastValidSignalName && isExpanded) {
+          requestSignalAnalysis(
+            visRef.current as Parameters<typeof requestSignalAnalysis>[0],
+            lastValidSignalName,
+            timeRef.current
+          );
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -894,8 +929,12 @@ fn update(dt, frame) {
           : "[]";
       const diags = parseScriptDiagnosticsJson(diagJson);
 
+      // Compute config-map validation diagnostics (static analysis)
+      const configMapDiags = validateConfigMaps(script);
+      configMapDiagsRef.current = configMapDiags;
+
       setScriptDiagnostics(diags);
-      applyDiagnosticsToEditor(diags);
+      applyDiagnosticsToEditor(diags, configMapDiags);
 
       if (success) {
         setScriptError(diags[0]?.message ?? null);
@@ -1012,7 +1051,8 @@ fn update(dt, frame) {
         const diags = parseScriptDiagnosticsJson(diagJson);
         if (diags.length > 0) {
           setScriptDiagnostics(diags);
-          applyDiagnosticsToEditor(diags);
+          // Preserve config-map warnings alongside runtime errors
+          applyDiagnosticsToEditor(diags, configMapDiagsRef.current);
           setScriptError(diags[0]?.message ?? null);
         }
       }

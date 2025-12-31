@@ -92,6 +92,7 @@ pub fn register_signal_api(engine: &mut Engine) {
     // === Arithmetic methods on Signal ===
     engine.register_fn("add", |s: &mut Signal, other: Signal| s.add(other));
     engine.register_fn("add", |s: &mut Signal, value: f32| s.add_scalar(value));
+    engine.register_fn("add", |s: &mut Signal, value: i64| s.add_scalar(value as f32));
     engine.register_fn("mul", |s: &mut Signal, other: Signal| s.mul(other));
     engine.register_fn(
         "scale",
@@ -137,8 +138,10 @@ pub fn register_signal_api(engine: &mut Engine) {
     // === Extended arithmetic ===
     engine.register_fn("sub", |s: &mut Signal, other: Signal| s.sub(other));
     engine.register_fn("sub", |s: &mut Signal, value: f32| s.sub_scalar(value));
+    engine.register_fn("sub", |s: &mut Signal, value: i64| s.sub_scalar(value as f32));
     engine.register_fn("div", |s: &mut Signal, other: Signal| s.div(other));
     engine.register_fn("div", |s: &mut Signal, value: f32| s.div_scalar(value));
+    engine.register_fn("div", |s: &mut Signal, value: i64| s.div_scalar(value as f32));
     engine.register_fn(
         "pow",
         |s: &mut Signal, exponent: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
@@ -250,7 +253,7 @@ pub fn register_signal_api(engine: &mut Engine) {
     // === Explicit sampling (escape hatch) ===
     // WARNING: This is an imperative escape hatch. Only works reliably on Input/BandInput signals.
     // For most use cases, prefer declarative transformations.
-    engine.register_fn("sample_at", |s: &mut Signal, time: f32| -> f32 {
+    fn sample_at_impl(s: &mut Signal, time: f32) -> f32 {
         match &*s.node {
             SignalNode::Input { name, .. } => {
                 // Handle special time signals
@@ -306,6 +309,10 @@ pub fn register_signal_api(engine: &mut Engine) {
                 0.0
             }
         }
+    }
+    engine.register_fn("sample_at", sample_at_impl);
+    engine.register_fn("sample_at", |s: &mut Signal, time: i64| -> f32 {
+        sample_at_impl(s, time as f32)
     });
 
     // === Sampling configuration ===
@@ -317,9 +324,15 @@ pub fn register_signal_api(engine: &mut Engine) {
     engine.register_fn("peak_window", |s: &mut Signal, beats: f32| {
         s.peak_window_beats(beats)
     });
+    engine.register_fn("peak_window", |s: &mut Signal, beats: i64| {
+        s.peak_window_beats(beats as f32)
+    });
     // Peak-preserving with custom window in seconds
     engine.register_fn("peak_window_sec", |s: &mut Signal, seconds: f32| {
         s.peak_window_seconds(seconds)
+    });
+    engine.register_fn("peak_window_sec", |s: &mut Signal, seconds: i64| {
+        s.peak_window_seconds(seconds as f32)
     });
 
     // === Fluent namespace getters ===
@@ -339,12 +352,27 @@ pub fn register_signal_api(engine: &mut Engine) {
     engine.register_fn("moving_average", |b: &mut SmoothBuilder, beats: f32| {
         b.clone().moving_average(beats)
     });
+    engine.register_fn("moving_average", |b: &mut SmoothBuilder, beats: i64| {
+        b.clone().moving_average(beats as f32)
+    });
     engine.register_fn(
         "exponential",
         |b: &mut SmoothBuilder, attack: f32, release: f32| b.clone().exponential(attack, release),
     );
+    engine.register_fn("exponential", |b: &mut SmoothBuilder, attack: i64, release: i64| {
+        b.clone().exponential(attack as f32, release as f32)
+    });
+    engine.register_fn("exponential", |b: &mut SmoothBuilder, attack: i64, release: f32| {
+        b.clone().exponential(attack as f32, release)
+    });
+    engine.register_fn("exponential", |b: &mut SmoothBuilder, attack: f32, release: i64| {
+        b.clone().exponential(attack, release as f32)
+    });
     engine.register_fn("gaussian", |b: &mut SmoothBuilder, sigma: f32| {
         b.clone().gaussian(sigma)
+    });
+    engine.register_fn("gaussian", |b: &mut SmoothBuilder, sigma: i64| {
+        b.clone().gaussian(sigma as f32)
     });
 
     // === NormaliseBuilder methods ===
@@ -353,13 +381,34 @@ pub fn register_signal_api(engine: &mut Engine) {
     engine.register_fn("to_range", |b: &mut NormaliseBuilder, min: f32, max: f32| {
         b.clone().to_range(min, max)
     });
+    engine.register_fn("to_range", |b: &mut NormaliseBuilder, min: i64, max: i64| {
+        b.clone().to_range(min as f32, max as f32)
+    });
+    engine.register_fn("to_range", |b: &mut NormaliseBuilder, min: i64, max: f32| {
+        b.clone().to_range(min as f32, max)
+    });
+    engine.register_fn("to_range", |b: &mut NormaliseBuilder, min: f32, max: i64| {
+        b.clone().to_range(min, max as f32)
+    });
 
     // === GateBuilder methods ===
     engine.register_fn("threshold", |b: &mut GateBuilder, threshold: f32| {
         b.clone().threshold(threshold)
     });
+    engine.register_fn("threshold", |b: &mut GateBuilder, threshold: i64| {
+        b.clone().threshold(threshold as f32)
+    });
     engine.register_fn("hysteresis", |b: &mut GateBuilder, on: f32, off: f32| {
         b.clone().hysteresis(on, off)
+    });
+    engine.register_fn("hysteresis", |b: &mut GateBuilder, on: i64, off: i64| {
+        b.clone().hysteresis(on as f32, off as f32)
+    });
+    engine.register_fn("hysteresis", |b: &mut GateBuilder, on: i64, off: f32| {
+        b.clone().hysteresis(on as f32, off)
+    });
+    engine.register_fn("hysteresis", |b: &mut GateBuilder, on: f32, off: i64| {
+        b.clone().hysteresis(on, off as f32)
     });
 
     // === PickBuilder ===
@@ -373,10 +422,31 @@ pub fn register_signal_api(engine: &mut Engine) {
     // === Generator functions (standalone) ===
     // These are registered as functions, not methods, since they create new Signals
 
+    // Generator functions with f32 parameters
     engine.register_fn("__gen_sin", |freq: f32, phase: f32| {
         Signal::generator(GeneratorNode::Sin {
             freq_beats: freq,
             phase,
+        })
+    });
+    // Overload for i64 (Rhai's default integer type)
+    engine.register_fn("__gen_sin", |freq: i64, phase: i64| {
+        Signal::generator(GeneratorNode::Sin {
+            freq_beats: freq as f32,
+            phase: phase as f32,
+        })
+    });
+    // Mixed overloads
+    engine.register_fn("__gen_sin", |freq: i64, phase: f32| {
+        Signal::generator(GeneratorNode::Sin {
+            freq_beats: freq as f32,
+            phase,
+        })
+    });
+    engine.register_fn("__gen_sin", |freq: f32, phase: i64| {
+        Signal::generator(GeneratorNode::Sin {
+            freq_beats: freq,
+            phase: phase as f32,
         })
     });
 
@@ -387,6 +457,21 @@ pub fn register_signal_api(engine: &mut Engine) {
             duty,
         })
     });
+    // Overload for i64
+    engine.register_fn("__gen_square", |freq: i64, phase: i64, duty: f32| {
+        Signal::generator(GeneratorNode::Square {
+            freq_beats: freq as f32,
+            phase: phase as f32,
+            duty,
+        })
+    });
+    engine.register_fn("__gen_square", |freq: i64, phase: i64, duty: i64| {
+        Signal::generator(GeneratorNode::Square {
+            freq_beats: freq as f32,
+            phase: phase as f32,
+            duty: duty as f32,
+        })
+    });
 
     engine.register_fn("__gen_triangle", |freq: f32, phase: f32| {
         Signal::generator(GeneratorNode::Triangle {
@@ -394,11 +479,49 @@ pub fn register_signal_api(engine: &mut Engine) {
             phase,
         })
     });
+    // Overload for i64
+    engine.register_fn("__gen_triangle", |freq: i64, phase: i64| {
+        Signal::generator(GeneratorNode::Triangle {
+            freq_beats: freq as f32,
+            phase: phase as f32,
+        })
+    });
+    engine.register_fn("__gen_triangle", |freq: i64, phase: f32| {
+        Signal::generator(GeneratorNode::Triangle {
+            freq_beats: freq as f32,
+            phase,
+        })
+    });
+    engine.register_fn("__gen_triangle", |freq: f32, phase: i64| {
+        Signal::generator(GeneratorNode::Triangle {
+            freq_beats: freq,
+            phase: phase as f32,
+        })
+    });
 
     engine.register_fn("__gen_saw", |freq: f32, phase: f32| {
         Signal::generator(GeneratorNode::Saw {
             freq_beats: freq,
             phase,
+        })
+    });
+    // Overload for i64
+    engine.register_fn("__gen_saw", |freq: i64, phase: i64| {
+        Signal::generator(GeneratorNode::Saw {
+            freq_beats: freq as f32,
+            phase: phase as f32,
+        })
+    });
+    engine.register_fn("__gen_saw", |freq: i64, phase: f32| {
+        Signal::generator(GeneratorNode::Saw {
+            freq_beats: freq as f32,
+            phase,
+        })
+    });
+    engine.register_fn("__gen_saw", |freq: f32, phase: i64| {
+        Signal::generator(GeneratorNode::Saw {
+            freq_beats: freq,
+            phase: phase as f32,
         })
     });
 
@@ -416,6 +539,13 @@ pub fn register_signal_api(engine: &mut Engine) {
     engine.register_fn("__gen_perlin", |scale: f32, seed: i64| {
         Signal::generator(GeneratorNode::Perlin {
             scale_beats: scale,
+            seed: seed as u64,
+        })
+    });
+    // Overload for i64 scale
+    engine.register_fn("__gen_perlin", |scale: i64, seed: i64| {
+        Signal::generator(GeneratorNode::Perlin {
+            scale_beats: scale as f32,
             seed: seed as u64,
         })
     });
@@ -465,6 +595,7 @@ pub fn register_signal_api(engine: &mut Engine) {
 
     // === Constant signal ===
     engine.register_fn("__signal_constant", |value: f32| Signal::constant(value));
+    engine.register_fn("__signal_constant", |value: i64| Signal::constant(value as f32));
 }
 
 /// Rhai code to inject at script load time for the Signal API.

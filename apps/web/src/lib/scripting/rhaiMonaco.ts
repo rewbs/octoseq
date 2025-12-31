@@ -9,6 +9,7 @@
 
 import type { ApiMethod, ApiType, ScriptApiMetadata, ScriptApiIndex } from "./scriptApi";
 import { buildScriptApiIndex, formatMethodSignature } from "./scriptApi";
+import { getConfigMapSchema } from "./configMapSchema";
 
 // We use 'any' for Monaco types since @monaco-editor/react provides the instance at runtime
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -434,6 +435,184 @@ function detectBandKeyContext(textUntilPosition: string): { hasQuote: boolean } 
   return { hasQuote };
 }
 
+// =============================================================================
+// Config-Map Context Detection
+// =============================================================================
+
+const DEBUG_CONFIG_MAP = false;
+
+/**
+ * Result of detecting config-map context.
+ */
+export type ConfigMapContext = {
+  /** Function path (e.g., "fx.bloom") */
+  functionPath: string;
+  /** Keys already present in the config map */
+  existingKeys: string[];
+  /** The key being typed (if cursor is on a key) */
+  currentKey?: string;
+  /** Whether the cursor is after a colon (in value position) */
+  inValue: boolean;
+  /** Start index of the config map `#{` in the text */
+  mapStartIndex: number;
+};
+
+/**
+ * Find the nearest unclosed `#{` before the cursor.
+ * Returns the index of `#` or -1 if not found.
+ */
+function findUnclosedConfigMapStart(text: string): number {
+  let braceDepth = 0;
+  let i = text.length - 1;
+
+  while (i >= 0) {
+    const ch = text[i]!;
+
+    // Skip string literals
+    if (ch === '"' || ch === "'") {
+      const str = parseStringLiteralBackward(text, i);
+      if (str) {
+        i = str.startIndex - 1;
+        continue;
+      }
+    }
+
+    if (ch === "}") {
+      braceDepth++;
+    } else if (ch === "{") {
+      braceDepth--;
+      if (braceDepth < 0) {
+        // Check if this is a `#{` config map literal
+        if (i > 0 && text[i - 1] === "#") {
+          return i - 1;
+        }
+        // Regular brace, reset depth
+        braceDepth = 0;
+      }
+    }
+    i--;
+  }
+
+  return -1;
+}
+
+/**
+ * Extract keys already defined in a partial config-map.
+ * Tolerant of incomplete syntax.
+ */
+function parseConfigMapKeys(mapContent: string): string[] {
+  const keys: string[] = [];
+  // Match key: at the start of a line or after comma/brace, handling incomplete values
+  const keyPattern = /(?:^|[,{])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:/gm;
+  let match;
+  while ((match = keyPattern.exec(mapContent)) !== null) {
+    if (match[1]) {
+      keys.push(match[1]);
+    }
+  }
+  return keys;
+}
+
+/**
+ * Parse the function call before a config-map opening `#{`.
+ * Returns the function path (e.g., "fx.bloom") or null.
+ */
+function parseFunctionBeforeConfigMap(textBeforeHash: string): string | null {
+  const text = trimRight(textBeforeHash);
+  if (!text.endsWith("(")) return null;
+
+  // Find the function name/chain before the `(`
+  let i = text.length - 2; // before `(`
+  while (i >= 0 && isWhitespace(text[i]!)) i--;
+
+  if (i < 0 || !isIdentChar(text[i]!)) return null;
+
+  // Scan backwards for the identifier
+  const end = i + 1;
+  while (i >= 0 && isIdentChar(text[i]!)) i--;
+
+  const methodName = text.slice(i + 1, end);
+
+  // Check for a dot before (method call on namespace)
+  let j = i;
+  while (j >= 0 && isWhitespace(text[j]!)) j--;
+
+  if (j >= 0 && text[j] === ".") {
+    // There's a namespace before
+    j--; // skip dot
+    while (j >= 0 && isWhitespace(text[j]!)) j--;
+
+    if (j >= 0 && isIdentChar(text[j]!)) {
+      const nsEnd = j + 1;
+      while (j >= 0 && isIdentChar(text[j]!)) j--;
+      const namespace = text.slice(j + 1, nsEnd);
+      return `${namespace}.${methodName}`;
+    }
+  }
+
+  // Just a bare function name
+  return methodName;
+}
+
+/**
+ * Detect if the cursor is inside a Rhai config-map literal `#{ ... }`.
+ * Returns context about the config map, or null if not inside one.
+ */
+export function detectConfigMapContext(textUntilPosition: string): ConfigMapContext | null {
+  try {
+    const mapStartIndex = findUnclosedConfigMapStart(textUntilPosition);
+    if (mapStartIndex < 0) return null;
+
+    // Get the text before the `#{`
+    const textBeforeHash = textUntilPosition.slice(0, mapStartIndex);
+    const functionPath = parseFunctionBeforeConfigMap(textBeforeHash);
+    if (!functionPath) return null;
+
+    // Get the content inside the map (from `{` to cursor)
+    const mapContent = textUntilPosition.slice(mapStartIndex + 2);
+
+    // Parse existing keys
+    const existingKeys = parseConfigMapKeys(mapContent);
+
+    // Determine if we're typing a key or a value
+    // Look at the content after the last comma or opening brace
+    const lastSeparator = Math.max(mapContent.lastIndexOf(","), 0);
+    const contentAfterSeparator = mapContent.slice(lastSeparator);
+
+    // Check if there's a colon after the last key
+    const colonIndex = contentAfterSeparator.lastIndexOf(":");
+    const inValue = colonIndex >= 0;
+
+    // Try to extract the current key being typed
+    let currentKey: string | undefined;
+    if (!inValue) {
+      // We're typing a key - extract it
+      const keyMatch = contentAfterSeparator.match(/^\s*,?\s*([a-zA-Z_][a-zA-Z0-9_]*)?$/);
+      if (keyMatch && keyMatch[1]) {
+        currentKey = keyMatch[1];
+      }
+    }
+
+    if (DEBUG_CONFIG_MAP) {
+      console.log("[configMap] functionPath:", functionPath);
+      console.log("[configMap] existingKeys:", existingKeys);
+      console.log("[configMap] currentKey:", currentKey);
+      console.log("[configMap] inValue:", inValue);
+    }
+
+    return {
+      functionPath,
+      existingKeys,
+      currentKey,
+      inValue,
+      mapStartIndex,
+    };
+  } catch {
+    // Fail silently - don't break the editor
+    return null;
+  }
+}
+
 function getApiIndex(getApiMetadata: () => ScriptApiMetadata | null): ScriptApiIndex | null {
   const meta = getApiMetadata();
   if (!meta) return null;
@@ -810,6 +989,40 @@ export function createRhaiHoverProvider(
         };
       }
 
+      // Config-map key hover: fx.bloom(#{ threshold: ... })
+      const textUntilWord = model.getValueInRange({
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: position.lineNumber,
+        endColumn: word.endColumn,
+      });
+      const configMapCtx = detectConfigMapContext(textUntilWord);
+      if (configMapCtx) {
+        const schema = getConfigMapSchema(configMapCtx.functionPath);
+        if (schema) {
+          const param = schema.params.find((p) => p.key === wordText);
+          if (param) {
+            const docParts: string[] = [`**${param.key}**: \`${param.type}\``, "", param.description];
+            if (param.default !== undefined) {
+              const defaultStr = typeof param.default === "object"
+                ? JSON.stringify(param.default)
+                : String(param.default);
+              docParts.push("", `Default: \`${defaultStr}\``);
+            }
+            if (param.range) {
+              docParts.push(`Range: ${param.range.min} – ${param.range.max}`);
+            }
+            if (param.enumValues) {
+              docParts.push(`Values: ${param.enumValues.map(v => `"${v}"`).join(", ")}`);
+            }
+            return {
+              range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+              contents: [{ value: docParts.join("\n") }],
+            };
+          }
+        }
+      }
+
       // Member hover: if the token is preceded by `.` then resolve the parent type via metadata.
       const lineContent = model.getLineContent(position.lineNumber);
       const beforeWord = lineContent.substring(0, word.startColumn - 1);
@@ -893,7 +1106,7 @@ export function createRhaiCompletionProvider(
   };
 
   return {
-    triggerCharacters: [".", "[", '"', "'"],
+    triggerCharacters: [".", "[", '"', "'", ","],
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     provideCompletionItems(model: any, position: any) {
@@ -947,6 +1160,42 @@ export function createRhaiCompletionProvider(
           return out;
         });
         return { suggestions };
+      }
+
+      // Config-map key completion: fx.bloom(#{ ... })
+      const configMapCtx = detectConfigMapContext(textUntilPosition);
+      if (configMapCtx && !configMapCtx.inValue) {
+        const schema = getConfigMapSchema(configMapCtx.functionPath);
+        if (schema) {
+          const suggestions: MonacoCompletionItem[] = schema.params
+            .filter((param) => !configMapCtx.existingKeys.includes(param.key))
+            .map((param) => {
+              // Build documentation with default and range info
+              const docParts: string[] = [`**${param.key}**: \`${param.type}\``, "", param.description];
+              if (param.default !== undefined) {
+                const defaultStr = typeof param.default === "object"
+                  ? JSON.stringify(param.default)
+                  : String(param.default);
+                docParts.push("", `Default: \`${defaultStr}\``);
+              }
+              if (param.range) {
+                docParts.push(`Range: ${param.range.min} – ${param.range.max}`);
+              }
+              if (param.enumValues) {
+                docParts.push(`Values: ${param.enumValues.map(v => `"${v}"`).join(", ")}`);
+              }
+
+              return {
+                label: param.key,
+                kind: monaco.languages.CompletionItemKind.Property,
+                insertText: `${param.key}: `,
+                detail: param.type,
+                documentation: { value: docParts.join("\n") },
+                range,
+              };
+            });
+          return { suggestions };
+        }
       }
 
       // Parse local variable types from code up to cursor
@@ -1161,6 +1410,105 @@ export function createRhaiSignatureHelpProvider(
       };
     },
   };
+}
+
+// =============================================================================
+// Config-Map Validation Diagnostics
+// =============================================================================
+
+/**
+ * A diagnostic marker for config-map validation issues.
+ */
+export interface ConfigMapDiagnostic {
+  startLineNumber: number;
+  startColumn: number;
+  endLineNumber: number;
+  endColumn: number;
+  message: string;
+  severity: "warning" | "info";
+}
+
+/**
+ * Validate config-maps in Rhai code and return diagnostics for unknown keys.
+ * This is a gentle validation - it only warns about unknown keys, not type mismatches.
+ */
+export function validateConfigMaps(code: string): ConfigMapDiagnostic[] {
+  const diagnostics: ConfigMapDiagnostic[] = [];
+
+  try {
+    // Pattern to match function calls with config maps: fn(#{ ... })
+    // This regex finds the function path and the opening of the config map
+    const configMapPattern = /([a-zA-Z_][a-zA-Z0-9_]*(?:\.[a-zA-Z_][a-zA-Z0-9_]*)*)\s*\(\s*#\{/g;
+    let match;
+
+    while ((match = configMapPattern.exec(code)) !== null) {
+      const functionPath = match[1]!;
+      const mapStartIndex = match.index + match[0].length - 2; // Position of `#{`
+
+      // Get the schema for this function
+      const schema = getConfigMapSchema(functionPath);
+      if (!schema) continue; // Unknown function, skip
+
+      // Find the matching closing brace
+      let braceDepth = 1;
+      let i = mapStartIndex + 2; // After `#{`
+      let inString = false;
+      let stringChar = "";
+
+      while (i < code.length && braceDepth > 0) {
+        const ch = code[i]!;
+
+        // Handle string literals
+        if (!inString && (ch === '"' || ch === "'")) {
+          inString = true;
+          stringChar = ch;
+        } else if (inString && ch === stringChar && code[i - 1] !== "\\") {
+          inString = false;
+        } else if (!inString) {
+          if (ch === "{") braceDepth++;
+          else if (ch === "}") braceDepth--;
+        }
+        i++;
+      }
+
+      if (braceDepth !== 0) continue; // Unclosed brace, skip
+
+      // Extract the map content
+      const mapContent = code.slice(mapStartIndex + 2, i - 1);
+
+      // Find all keys in the map content
+      const keyPattern = /([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g;
+      let keyMatch;
+
+      while ((keyMatch = keyPattern.exec(mapContent)) !== null) {
+        const key = keyMatch[1]!;
+        const keyStartInMap = keyMatch.index;
+
+        // Check if this key is valid for the schema
+        const validKeys = schema.params.map((p) => p.key);
+        if (!validKeys.includes(key)) {
+          // Calculate line and column from the offset
+          const absoluteOffset = mapStartIndex + 2 + keyStartInMap;
+          const linesBefore = code.slice(0, absoluteOffset).split("\n");
+          const lineNumber = linesBefore.length;
+          const column = linesBefore[linesBefore.length - 1]!.length + 1;
+
+          diagnostics.push({
+            startLineNumber: lineNumber,
+            startColumn: column,
+            endLineNumber: lineNumber,
+            endColumn: column + key.length,
+            message: `Unknown key "${key}" in ${functionPath}(). Valid keys: ${validKeys.join(", ")}`,
+            severity: "warning",
+          });
+        }
+      }
+    }
+  } catch {
+    // Fail silently - don't break the editor
+  }
+
+  return diagnostics;
 }
 
 /**
