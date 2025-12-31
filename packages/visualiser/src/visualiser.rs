@@ -101,6 +101,8 @@ pub struct VisualiserState {
     /// Global seed for deterministic particle systems.
     /// This is used as a base seed when particle systems don't specify their own seed.
     global_seed: u64,
+    /// Stem-scoped input signals (stem_id -> feature -> InputSignal)
+    stem_signals: HashMap<String, HashMap<String, InputSignal>>,
 }
 
 impl VisualiserState {
@@ -114,6 +116,7 @@ impl VisualiserState {
             debug_marker_layer: DebugMarkerLayer::new(),
             current_bpm: 120.0,
             global_seed: 0,
+            stem_signals: HashMap::new(),
         }
     }
 
@@ -163,6 +166,41 @@ impl VisualiserState {
     /// This must be called before `load_script()` for the `inputs.bands["..."]` accessors to exist.
     pub fn set_available_bands(&mut self, bands: Vec<(String, String)>) {
         self.script_engine.set_available_bands(bands);
+    }
+
+    /// Configure which stems should be available in the global `inputs.stems` namespace.
+    /// This must be called before `load_script()` for the `inputs.stems["..."]` accessors to exist.
+    pub fn set_available_stems(&mut self, stems: Vec<(String, String)>) {
+        self.script_engine.set_available_stems(stems);
+    }
+
+    /// Push a stem-scoped signal.
+    /// Stores under both stem_id and label for dual-access support.
+    pub fn push_stem_signal(
+        &mut self,
+        stem_id: &str,
+        stem_label: &str,
+        feature: &str,
+        signal: InputSignal,
+    ) {
+        // Store under stem ID
+        self.stem_signals
+            .entry(stem_id.to_string())
+            .or_default()
+            .insert(feature.to_string(), signal.clone());
+
+        // Also store under label if different from ID
+        if stem_label != stem_id {
+            self.stem_signals
+                .entry(stem_label.to_string())
+                .or_default()
+                .insert(feature.to_string(), signal);
+        }
+    }
+
+    /// Clear all stem signals.
+    pub fn clear_stem_signals(&mut self) {
+        self.stem_signals.clear();
     }
 
     /// Check if a script is loaded.
@@ -319,6 +357,7 @@ impl VisualiserState {
             &sampled_signals,
             named_signals,
             band_signals,
+            &self.stem_signals,
             musical_time,
         );
 
@@ -408,6 +447,7 @@ impl VisualiserState {
             &sampled_signals,
             named_signals,
             band_signals,
+            &self.stem_signals,
             musical_time,
         );
 
@@ -467,6 +507,7 @@ impl VisualiserState {
             sample_count,
             input_signals,
             band_signals,
+            &self.stem_signals,
             musical_time,
         )
     }

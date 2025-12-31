@@ -134,6 +134,7 @@ pub fn node_transform_type(node: &SignalNode) -> TransformType {
         // Sources
         SignalNode::Input { .. }
         | SignalNode::BandInput { .. }
+        | SignalNode::StemInput { .. }
         | SignalNode::Constant(_)
         | SignalNode::Generator(_)
         | SignalNode::EventStreamSource { .. }
@@ -218,6 +219,7 @@ fn get_primary_source(node: &SignalNode) -> Option<&Signal> {
         // Leaf nodes - no source
         SignalNode::Input { .. }
         | SignalNode::BandInput { .. }
+        | SignalNode::StemInput { .. }
         | SignalNode::Constant(_)
         | SignalNode::Generator(_)
         | SignalNode::EventStreamSource { .. }
@@ -329,6 +331,7 @@ pub fn sample_signal(
     dt: f32,
     input_signals: &HashMap<String, InputSignal>,
     band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+    stem_signals: &HashMap<String, HashMap<String, InputSignal>>,
     statistics: &StatisticsCache,
     state: &mut SignalState,
     musical_time: Option<&MusicalTimeStructure>,
@@ -354,6 +357,7 @@ pub fn sample_signal(
             musical_time,
             input_signals,
             band_signals,
+            stem_signals,
             statistics,
             state,
         );
@@ -402,6 +406,7 @@ pub fn sample_signal_chain(
     sample_count: usize,
     input_signals: &HashMap<String, InputSignal>,
     band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+    stem_signals: &HashMap<String, HashMap<String, InputSignal>>,
     statistics: &StatisticsCache,
     state: &mut SignalState,
     musical_time: Option<&MusicalTimeStructure>,
@@ -451,6 +456,7 @@ pub fn sample_signal_chain(
                 frame_dt,
                 input_signals,
                 band_signals,
+                stem_signals,
                 statistics,
                 state,
                 musical_time,

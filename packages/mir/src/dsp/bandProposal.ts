@@ -385,6 +385,7 @@ function createBandFromCandidate(
     return {
         id: generateBandId(),
         label: `Region ${Math.round(candidate.peak.centerHz)} Hz`,
+        sourceId: "mixdown", // Proposals default to mixdown; user assigns sourceId on promotion
         enabled: true,
         timeScope: { kind: "global" },
         frequencyShape: [

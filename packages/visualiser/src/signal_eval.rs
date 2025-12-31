@@ -45,6 +45,9 @@ pub struct EvalContext<'a> {
     /// Band-scoped input signals: band_key -> feature -> InputSignal
     pub band_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
 
+    /// Stem-scoped input signals: stem_id -> feature -> InputSignal
+    pub stem_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
+
     /// Pre-computed statistics for normalization.
     pub statistics: &'a StatisticsCache,
 
@@ -65,6 +68,7 @@ impl<'a> EvalContext<'a> {
         musical_time: Option<&'a MusicalTimeStructure>,
         input_signals: &'a HashMap<String, InputSignal>,
         band_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
+        stem_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
         statistics: &'a StatisticsCache,
         state: &'a mut SignalState,
     ) -> Self {
@@ -75,6 +79,7 @@ impl<'a> EvalContext<'a> {
             musical_time,
             input_signals,
             band_signals,
+            stem_signals,
             statistics,
             state,
             frame_cache: RefCell::new(HashMap::new()),
@@ -188,6 +193,21 @@ impl Signal {
                 .unwrap_or_else(|| {
                     // Log warning once for this band/feature combination
                     ctx.state.warn_missing_band(band_key, feature);
+                    0.0
+                }),
+
+            SignalNode::StemInput {
+                stem_id,
+                feature,
+                sampling,
+            } => ctx
+                .stem_signals
+                .get(stem_id)
+                .and_then(|features| features.get(feature))
+                .map(|sig| self.sample_with_config(sig, *sampling, ctx))
+                .unwrap_or_else(|| {
+                    // Log warning once for this stem/feature combination
+                    ctx.state.warn_missing_stem(stem_id, feature);
                     0.0
                 }),
 
@@ -1129,19 +1149,21 @@ mod tests {
         dt: f32,
         input_signals: &'a HashMap<String, InputSignal>,
         band_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
+        stem_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
         statistics: &'a StatisticsCache,
         state: &'a mut SignalState,
     ) -> EvalContext<'a> {
-        EvalContext::new(time, dt, 0, None, input_signals, band_signals, statistics, state)
+        EvalContext::new(time, dt, 0, None, input_signals, band_signals, stem_signals, statistics, state)
     }
 
     #[test]
     fn test_evaluate_constant() {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
 
         let signal = Signal::constant(42.0);
         assert!((signal.evaluate(&mut ctx) - 42.0).abs() < 0.001);
@@ -1156,9 +1178,10 @@ mod tests {
         );
 
         let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
 
         let signal = Signal::input("energy");
         assert!((signal.evaluate(&mut ctx) - 0.5).abs() < 0.001);
@@ -1181,9 +1204,10 @@ mod tests {
         );
         band_signals.insert("Bass".to_string(), bass_features);
 
+        let stem_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
 
         // Access by label
         let bass_energy = Signal::band_input("Bass", "energy");
@@ -1202,9 +1226,10 @@ mod tests {
     fn test_evaluate_arithmetic() {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
 
         let a = Signal::constant(3.0);
         let b = Signal::constant(4.0);
@@ -1230,9 +1255,10 @@ mod tests {
     fn test_evaluate_gate_threshold() {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
 
         let high = Signal::constant(0.8);
         let low = Signal::constant(0.2);
@@ -1248,9 +1274,10 @@ mod tests {
     fn test_evaluate_sigmoid() {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
 
         let mid = Signal::constant(0.5).sigmoid(10.0);
         assert!((mid.evaluate(&mut ctx) - 0.5).abs() < 0.01);
@@ -1266,11 +1293,12 @@ mod tests {
     fn test_evaluate_generator_sin() {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
 
         // At time 0, beat position 0, sin(0) = 0
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
         let sin = Signal::generator(GeneratorNode::Sin {
             freq_beats: 1.0,
             phase: 0.0,
@@ -1279,7 +1307,7 @@ mod tests {
 
         // At beat position 0.25, sin(0.25 * 2pi) = 1
         // With default 120 BPM, beat 0.25 is at 0.125 seconds
-        let mut ctx = make_test_context(0.125, 0.016, &inputs, &band_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.125, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
         let value = sin.evaluate(&mut ctx);
         assert!((value - 1.0).abs() < 0.1);
     }
@@ -1288,9 +1316,10 @@ mod tests {
     fn test_beat_position_default() {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let ctx = make_test_context(1.0, 0.016, &inputs, &band_signals, &stats, &mut state);
+        let ctx = make_test_context(1.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
 
         // At 120 BPM, 1 second = 2 beats
         assert!((ctx.beat_position() - 2.0).abs() < 0.001);
@@ -1300,11 +1329,43 @@ mod tests {
     fn test_beats_to_seconds_default() {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stats, &mut state);
+        let ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
 
         // At default 120 BPM, 1 beat = 0.5 seconds
         assert!((ctx.beats_to_seconds(1.0) - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_evaluate_stem_input() {
+        let inputs = HashMap::new();
+        let band_signals = HashMap::new();
+        let mut stem_signals = HashMap::new();
+
+        // Set up a stem signal
+        let mut drums_features = HashMap::new();
+        drums_features.insert(
+            "energy".to_string(),
+            InputSignal::new(vec![0.9; 100], 100.0),
+        );
+        stem_signals.insert("drums".to_string(), drums_features);
+
+        let stats = StatisticsCache::new();
+        let mut state = SignalState::new();
+        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
+
+        // Access by ID
+        let drums_energy = Signal::stem_input("drums", "energy");
+        assert!((drums_energy.evaluate(&mut ctx) - 0.9).abs() < 0.001);
+
+        // Unknown stem returns 0
+        let unknown = Signal::stem_input("unknown", "energy");
+        assert!((unknown.evaluate(&mut ctx) - 0.0).abs() < 0.001);
+
+        // Unknown feature returns 0
+        let unknown_feature = Signal::stem_input("drums", "unknown");
+        assert!((unknown_feature.evaluate(&mut ctx) - 0.0).abs() < 0.001);
     }
 }

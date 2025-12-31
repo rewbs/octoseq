@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useEffect, useRef, useState, useCallback } from "react";
+import { memo, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { AudioBufferLike, MusicalTimeStructure } from "@octoseq/mir";
 import { computeBeatPosition } from "@octoseq/mir";
 import { GripHorizontal, GripVertical, Rows3, Columns3, FlaskConical, Loader2 } from "lucide-react";
@@ -11,6 +11,8 @@ import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
 import { useBandMirStore } from "@/lib/stores/bandMirStore";
 import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { useMirStore } from "@/lib/stores/mirStore";
+import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import type { BandMirFunctionId } from "@octoseq/mir";
 
 // We import the mock type if the real package isn't built yet, preventing TS errors.
@@ -771,6 +773,27 @@ fn update(dt, frame) {
       }
     }
 
+    // Push authored event streams (human-curated events)
+    if (typeof vis.push_authored_event_stream === "function") {
+      // First clear any existing authored streams
+      if (typeof vis.clear_authored_event_streams === "function") {
+        vis.clear_authored_event_streams();
+      }
+
+      // Get all authored streams and push them
+      const authoredStreams = useAuthoredEventStore.getState().getAllStreams();
+      for (const stream of authoredStreams) {
+        const events = stream.events.map((e) => ({
+          time: e.time,
+          weight: e.weight,
+          beat_position: e.beatPosition,
+          beat_phase: null,
+          cluster_id: null,
+        }));
+        vis.push_authored_event_stream(stream.name, JSON.stringify(events));
+      }
+    }
+
     // Set the musical time structure on the WASM side for beat-aware Signal operations
     if (typeof vis.set_musical_time === "function") {
       if (musicalTimeStructure && musicalTimeStructure.segments.length > 0) {
@@ -913,6 +936,70 @@ fn update(dt, frame) {
     requestRender();
   }, [bandMirResults, bandEventCache, frequencyBands, isReady, audioDuration, getAllBandMirResults, getAllEventResults, getBandById, requestRender]);
 
+  // Get stem information for the stem signals effect
+  // Note: We select the raw collection and stemOrder to avoid creating new arrays on every render
+  const audioInputCollection = useAudioInputStore((state) => state.collection);
+  const inputMirCache = useMirStore((state) => state.inputMirCache);
+
+  // Compute stems from collection (memoized to avoid infinite loops)
+  const stems = useMemo(() => {
+    if (!audioInputCollection) return [];
+    return audioInputCollection.stemOrder
+      .map((id) => audioInputCollection.inputs[id])
+      .filter((input): input is NonNullable<typeof input> => input !== undefined);
+  }, [audioInputCollection]);
+
+  // Push stem MIR signals to WASM (S2 integration)
+  useEffect(() => {
+    if (!visRef.current || !isReady) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vis = visRef.current as any;
+    const duration = audioDuration ?? 0;
+
+    // Set available stems for script namespace generation
+    if (typeof vis.set_available_stems === "function") {
+      const stemList = stems.map((s: { id: string; label: string }) => [s.id, s.label]);
+      vis.set_available_stems(JSON.stringify(stemList));
+    }
+
+    // Clear previous stem signals
+    if (typeof vis.clear_stem_signals === "function") {
+      vis.clear_stem_signals();
+    }
+
+    // Skip if no stems
+    if (stems.length === 0) return;
+
+    // Map MIR function IDs to stem signal feature names
+    const featureMap: Record<string, string> = {
+      spectralCentroid: "centroid",
+      spectralFlux: "flux",
+      onsetEnvelope: "energy",
+      onsetPeaks: "onset",
+    };
+
+    // Push signals for each stem
+    for (const stem of stems) {
+      // Get all MIR results for this stem from the cache
+      const prefix = `${stem.id}:`;
+      for (const [cacheKey, result] of inputMirCache) {
+        if (!cacheKey.startsWith(prefix)) continue;
+        const fnId = cacheKey.slice(prefix.length);
+        const feature = featureMap[fnId];
+        if (!feature) continue;
+
+        if (result.kind === "1d" && typeof vis.push_stem_signal === "function") {
+          // Normalize to 0-1
+          const norm = normalizeSignal(result.values);
+          const rate = duration > 0 ? result.times.length / duration : 0;
+          vis.push_stem_signal(stem.id, stem.label, feature, norm, rate);
+        }
+      }
+    }
+
+    // Request render when stem signals change (even when paused)
+    requestRender();
+  }, [stems, inputMirCache, isReady, audioDuration, requestRender]);
 
   // Load script when enabled or script changes
   useEffect(() => {

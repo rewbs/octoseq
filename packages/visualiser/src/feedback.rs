@@ -1036,7 +1036,8 @@ mod tests {
         let (mut state, stats) = test_eval_ctx();
         let inputs = HashMap::new();
         let bands = HashMap::new();
-        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stats, &mut state);
+        let stems = HashMap::new();
+        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &stats, &mut state);
 
         let config = FeedbackConfig::new()
             .with_warp(WarpOperator::Spiral)
@@ -1071,7 +1072,8 @@ mod tests {
         let (mut state, stats) = test_eval_ctx();
         let inputs = HashMap::new();
         let bands = HashMap::new();
-        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stats, &mut state);
+        let stems = HashMap::new();
+        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &stats, &mut state);
 
         let config = FeedbackConfig::new()
             .add_warp(WarpOperator::Spiral, WarpParams {

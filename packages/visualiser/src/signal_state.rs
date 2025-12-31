@@ -38,6 +38,10 @@ pub struct SignalState {
     /// Format: "band_key:feature"
     pub warned_missing_bands: HashSet<String>,
 
+    /// Tracks stem/feature combinations that have been warned about being missing.
+    /// Format: "stem_id:feature"
+    pub warned_missing_stems: HashSet<String>,
+
     /// Tracks signals that have warned about missing statistics.
     pub warned_missing_stats: HashSet<SignalId>,
 }
@@ -59,6 +63,7 @@ impl SignalState {
         self.delay_buffers.clear();
         self.warned_no_musical_time = false;
         self.warned_missing_bands.clear();
+        self.warned_missing_stems.clear();
         self.warned_missing_stats.clear();
     }
 
@@ -70,6 +75,19 @@ impl SignalState {
             log::warn!(
                 "Band signal not found: inputs.bands[\"{}\"].{} - returning 0.0",
                 band_key,
+                feature
+            );
+        }
+    }
+
+    /// Warn once about a missing stem/feature combination.
+    /// Logs a warning if this stem/feature hasn't been warned about yet.
+    pub fn warn_missing_stem(&mut self, stem_id: &str, feature: &str) {
+        let key = format!("{}:{}", stem_id, feature);
+        if self.warned_missing_stems.insert(key) {
+            log::warn!(
+                "Stem signal not found: inputs.stems[\"{}\"].{} - returning 0.0",
+                stem_id,
                 feature
             );
         }

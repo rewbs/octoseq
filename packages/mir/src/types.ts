@@ -349,6 +349,8 @@ export type FrequencyBand = {
     id: string;
     /** Human-readable label (editable). */
     label: string;
+    /** The audio source this band belongs to ("mixdown" or stem ID). */
+    sourceId: string;
     /** Whether the band is currently active for processing. */
     enabled: boolean;
     /** Time scope for this band. */
@@ -375,7 +377,7 @@ export type FrequencyBand = {
  */
 export type FrequencyBandStructure = {
     /** Schema version for future migrations. */
-    version: 1;
+    version: 2;
     /** Ordered list of frequency bands (by sortOrder). */
     bands: FrequencyBand[];
     /** ISO timestamp when the structure was created. */

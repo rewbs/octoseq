@@ -43,6 +43,8 @@ struct VisualiserContext {
     band_signals: HashMap<String, HashMap<String, InputSignal>>,
     /// Band ID -> label (for script namespace generation + editor UX).
     band_id_to_label: HashMap<String, String>,
+    /// Stem ID -> label (for tracking/UX, actual signals stored in VisualiserState).
+    stem_id_to_label: HashMap<String, String>,
     /// Musical time structure for beat-aware signal processing
     musical_time: Option<MusicalTimeStructure>,
     /// Frequency band structure for band-aware processing
@@ -257,6 +259,84 @@ impl WasmVisualiser {
         serde_json::to_string(&keys).unwrap_or_else(|_| "[]".to_string())
     }
 
+    // === Stem Signal Methods ===
+    // These methods handle signals scoped to audio stems (separated sources).
+
+    /// Push a stem-scoped signal for use in scripts.
+    /// The signal will be available as `inputs.stems[stem_id].{feature}` in Rhai scripts.
+    /// Stores under both stem_id and stem_label for dual-access support.
+    ///
+    /// - `stem_id`: The unique ID of the stem.
+    /// - `stem_label`: The user-visible label of the stem.
+    /// - `feature`: Signal type ("energy", "onset", "flux").
+    /// - `samples`: Signal data.
+    /// - `sample_rate`: Sample rate of the signal.
+    pub fn push_stem_signal(
+        &self,
+        stem_id: &str,
+        stem_label: &str,
+        feature: &str,
+        samples: &[f32],
+        sample_rate: f32,
+    ) {
+        log::info!(
+            "Rust received stem signal '{}' / '{}' / '{}': {} samples, rate {}",
+            stem_id,
+            stem_label,
+            feature,
+            samples.len(),
+            sample_rate
+        );
+        let mut inner = self.inner.borrow_mut();
+        let signal = InputSignal::new(samples.to_vec(), sample_rate);
+
+        // Store label mapping for tracking
+        inner
+            .stem_id_to_label
+            .insert(stem_id.to_string(), stem_label.to_string());
+
+        // Push to visualiser state (handles dual-key storage)
+        inner.state.push_stem_signal(stem_id, stem_label, feature, signal);
+    }
+
+    /// Clear all stem signals.
+    pub fn clear_stem_signals(&self) {
+        let mut inner = self.inner.borrow_mut();
+        inner.state.clear_stem_signals();
+        inner.stem_id_to_label.clear();
+    }
+
+    /// Get list of stem keys (IDs and labels) that have signals.
+    /// Returns a JSON array of strings.
+    pub fn get_stem_signal_keys(&self) -> String {
+        let inner = self.inner.borrow();
+        let keys: Vec<&str> = inner.stem_id_to_label.keys().map(|s| s.as_str()).collect();
+        serde_json::to_string(&keys).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    /// Set available stems for script namespace generation.
+    /// This registers stem IDs and labels so the script engine can generate
+    /// `inputs.stems["stem_id"]` and `inputs.stems["label"]` accessors.
+    ///
+    /// The JSON format should be an array of [id, label] pairs:
+    /// `[["stem-abc123", "Drums"], ["stem-def456", "Bass"]]`
+    ///
+    /// Returns true if successful, false if parsing failed.
+    pub fn set_available_stems(&self, json: &str) -> bool {
+        match serde_json::from_str::<Vec<(String, String)>>(json) {
+            Ok(stems) => {
+                log::info!("Setting {} available stems for script namespace", stems.len());
+                let mut inner = self.inner.borrow_mut();
+                inner.state.set_available_stems(stems);
+                true
+            }
+            Err(e) => {
+                log::error!("Failed to parse available stems: {}", e);
+                false
+            }
+        }
+    }
+
     // === Band Event Methods ===
     // These methods handle pre-extracted events for frequency bands.
     // Events are extracted in TypeScript and pushed here for script access.
@@ -413,6 +493,87 @@ impl WasmVisualiser {
     pub fn get_event_stream_count(&self, name: &str) -> usize {
         use crate::event_rhai::get_named_event_stream;
         get_named_event_stream(name)
+            .map(|s| s.len())
+            .unwrap_or(0)
+    }
+
+    // === Authored Event Streams ===
+    // These are human-authored events (promoted from candidates or manually created).
+
+    /// Push an authored event stream for script access.
+    ///
+    /// The event stream will be available as `inputs.authored["name"]` in Rhai scripts.
+    /// This is used for user-authored events (promoted or manually created).
+    ///
+    /// The JSON format should be an array of event objects with:
+    /// - time: f32
+    /// - weight: f32
+    /// - beat_position: Option<f32>
+    /// - beat_phase: Option<f32>
+    /// - cluster_id: Option<u32>
+    ///
+    /// Returns true if successful, false if parsing failed.
+    pub fn push_authored_event_stream(&self, name: &str, events_json: &str) -> bool {
+        use crate::event_rhai::store_authored_event_stream;
+        use crate::event_stream::{EventStream, PickEventsOptions};
+
+        #[derive(serde::Deserialize)]
+        struct EventInput {
+            time: f32,
+            weight: f32,
+            beat_position: Option<f32>,
+            beat_phase: Option<f32>,
+            cluster_id: Option<u32>,
+        }
+
+        match serde_json::from_str::<Vec<EventInput>>(events_json) {
+            Ok(inputs) => {
+                let events: Vec<Event> = inputs
+                    .into_iter()
+                    .map(|e| Event {
+                        time: e.time,
+                        weight: e.weight,
+                        beat_position: e.beat_position,
+                        beat_phase: e.beat_phase,
+                        cluster_id: e.cluster_id,
+                        source: Some(format!("authored:{}", name)),
+                    })
+                    .collect();
+
+                let event_count = events.len();
+                let stream = EventStream::new(
+                    events,
+                    format!("authored:{}", name),
+                    PickEventsOptions::default(),
+                );
+
+                store_authored_event_stream(name.to_string(), stream);
+                log::info!(
+                    "Pushed {} authored events for stream '{}'",
+                    event_count,
+                    name
+                );
+                true
+            }
+            Err(e) => {
+                log::error!("Failed to parse authored event stream '{}': {}", name, e);
+                false
+            }
+        }
+    }
+
+    /// Clear all authored event streams.
+    pub fn clear_authored_event_streams(&self) {
+        use crate::event_rhai::clear_authored_event_streams;
+        clear_authored_event_streams();
+        log::info!("Cleared all authored event streams");
+    }
+
+    /// Get the number of events in an authored event stream.
+    /// Returns 0 if no events are stored for this name.
+    pub fn get_authored_event_stream_count(&self, name: &str) -> usize {
+        use crate::event_rhai::get_authored_event_stream;
+        get_authored_event_stream(name)
             .map(|s| s.len())
             .unwrap_or(0)
     }
@@ -1006,6 +1167,7 @@ pub async fn create_visualiser(canvas: HtmlCanvasElement) -> Result<WasmVisualis
             named_signals: HashMap::new(),
             band_signals: HashMap::new(),
             band_id_to_label: HashMap::new(),
+            stem_id_to_label: HashMap::new(),
             musical_time: None,
             frequency_bands: None,
         })),

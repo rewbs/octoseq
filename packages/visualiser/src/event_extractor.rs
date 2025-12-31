@@ -37,6 +37,8 @@ pub struct EventExtractor {
     collect_debug: bool,
     /// Band-scoped input signals (optional).
     band_signals: HashMap<String, HashMap<String, InputSignal>>,
+    /// Stem-scoped input signals (optional).
+    stem_signals: HashMap<String, HashMap<String, InputSignal>>,
 }
 
 impl EventExtractor {
@@ -56,6 +58,7 @@ impl EventExtractor {
             time_step,
             collect_debug: false,
             band_signals: HashMap::new(),
+            stem_signals: HashMap::new(),
         }
     }
 
@@ -65,6 +68,15 @@ impl EventExtractor {
         band_signals: HashMap<String, HashMap<String, InputSignal>>,
     ) -> Self {
         self.band_signals = band_signals;
+        self
+    }
+
+    /// Set stem-scoped input signals for evaluation.
+    pub fn with_stem_signals(
+        mut self,
+        stem_signals: HashMap<String, HashMap<String, InputSignal>>,
+    ) -> Self {
+        self.stem_signals = stem_signals;
         self
     }
 
@@ -169,6 +181,7 @@ impl EventExtractor {
                 self.musical_time.as_ref(),
                 signals,
                 &self.band_signals,
+                &self.stem_signals,
                 &stats,
                 &mut state,
             );

@@ -442,6 +442,9 @@ pub fn clear_band_event_streams() {
 thread_local! {
     /// Named event streams (e.g., "beatCandidates", "onsetPeaks").
     static NAMED_EVENT_STREAMS: RefCell<HashMap<String, EventStream>> = RefCell::new(HashMap::new());
+    /// Authored event streams, keyed by user-defined stream name.
+    /// These represent human-authored events (promoted or manually created).
+    static AUTHORED_EVENT_STREAMS: RefCell<HashMap<String, EventStream>> = RefCell::new(HashMap::new());
 }
 
 /// Store a named event stream for script access via `inputs.<name>`.
@@ -462,6 +465,30 @@ pub fn get_named_event_stream_names() -> Vec<String> {
 /// Clear all named event streams.
 pub fn clear_named_event_streams() {
     NAMED_EVENT_STREAMS.with(|s| s.borrow_mut().clear());
+}
+
+// === Authored Event Streams ===
+// These are human-authored event streams (promoted from candidates or manually created).
+// Accessed via `inputs.authored["name"]` in scripts.
+
+/// Store an authored event stream for script access via `inputs.authored["name"]`.
+pub fn store_authored_event_stream(name: String, stream: EventStream) {
+    AUTHORED_EVENT_STREAMS.with(|s| s.borrow_mut().insert(name, stream));
+}
+
+/// Get an authored event stream by name.
+pub fn get_authored_event_stream(name: &str) -> Option<EventStream> {
+    AUTHORED_EVENT_STREAMS.with(|s| s.borrow().get(name).cloned())
+}
+
+/// Get all authored event stream names.
+pub fn get_authored_event_stream_names() -> Vec<String> {
+    AUTHORED_EVENT_STREAMS.with(|s| s.borrow().keys().cloned().collect())
+}
+
+/// Clear all authored event streams.
+pub fn clear_authored_event_streams() {
+    AUTHORED_EVENT_STREAMS.with(|s| s.borrow_mut().clear());
 }
 
 /// Rhai API documentation for injection into scripts.

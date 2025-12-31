@@ -427,8 +427,7 @@ Focus: making musical meaning navigable, authorable, and trustworthy.
   Curated viewport layouts to avoid combinatorial display chaos.
 
 - **U3** — Candidate Event Layer  
-  Ephemeral, clearly-labelled suggestions from onset detection, peak picking,
-  similarity search, etc.
+  Ephemeral, clearly-labelled suggestions from onset detection, peak picking, similarity search, etc.
 
 - **U4** — Authored Event Streams  
   Top-level, authoritative event streams with clear provenance and editability.

@@ -71,6 +71,70 @@ interface PersistedFrequencyBands {
 }
 
 // ----------------------------
+// Migration
+// ----------------------------
+
+/**
+ * Legacy v1 band structure (without sourceId).
+ */
+type LegacyFrequencyBandV1 = Omit<FrequencyBand, "sourceId">;
+
+/**
+ * Migrate a v1 structure to v2 by adding sourceId to all bands.
+ * Existing bands without sourceId default to "mixdown".
+ */
+function migrateStructureV1ToV2(
+    structure: { version: 1; bands: LegacyFrequencyBandV1[]; createdAt: string; modifiedAt: string }
+): FrequencyBandStructure {
+    return {
+        version: 2,
+        bands: structure.bands.map((band) => ({
+            ...band,
+            sourceId: "mixdown", // Default to mixdown for migrated bands
+        })),
+        createdAt: structure.createdAt,
+        modifiedAt: new Date().toISOString(),
+    };
+}
+
+/**
+ * Migrate a structure from any version to the current version.
+ */
+function migrateStructure(structure: unknown): FrequencyBandStructure | null {
+    if (!structure || typeof structure !== "object") return null;
+
+    const s = structure as Record<string, unknown>;
+
+    // Already v2 - validate it has sourceId on bands
+    if (s.version === 2 && Array.isArray(s.bands)) {
+        // Ensure all bands have sourceId (defensive check)
+        const bands = (s.bands as FrequencyBand[]).map((band) => ({
+            ...band,
+            sourceId: band.sourceId ?? "mixdown",
+        }));
+        return {
+            version: 2,
+            bands,
+            createdAt: s.createdAt as string,
+            modifiedAt: s.modifiedAt as string,
+        };
+    }
+
+    // Migrate from v1
+    if (s.version === 1 && Array.isArray(s.bands)) {
+        return migrateStructureV1ToV2(s as {
+            version: 1;
+            bands: LegacyFrequencyBandV1[];
+            createdAt: string;
+            modifiedAt: string;
+        });
+    }
+
+    console.warn(`Unknown frequency band structure version: ${s.version}`);
+    return null;
+}
+
+// ----------------------------
 // UI State Types (F2)
 // ----------------------------
 
@@ -172,6 +236,12 @@ interface FrequencyBandActions {
     /** Get all enabled bands sorted by sortOrder. */
     getEnabledBands: () => FrequencyBand[];
 
+    /** Get all bands for a specific audio source, sorted by sortOrder. */
+    getBandsForSource: (sourceId: string) => FrequencyBand[];
+
+    /** Get all enabled bands for a specific audio source, sorted by sortOrder. */
+    getEnabledBandsForSource: (sourceId: string) => FrequencyBand[];
+
     // Structure management
     /** Clear all frequency bands. */
     clearStructure: () => void;
@@ -179,8 +249,11 @@ interface FrequencyBandActions {
     /** Ensure a structure exists (creates empty if none). */
     ensureStructure: () => void;
 
-    /** Initialize with standard 6-band frequency split. */
-    initializeWithStandardBands: (duration: number) => void;
+    /** Initialize with standard 6-band frequency split for a specific source. */
+    initializeWithStandardBands: (duration: number, sourceId?: string) => void;
+
+    /** Clear all bands belonging to a specific source (e.g., when stem is removed). */
+    clearBandsForSource: (sourceId: string) => void;
 
     // Persistence
     /** Save to localStorage. */
@@ -353,7 +426,7 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                         modifiedAt: now,
                     }
                     : {
-                        version: 1,
+                        version: 2,
                         bands: [band],
                         createdAt: now,
                         modifiedAt: now,
@@ -490,6 +563,20 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                 return sortBands(structure.bands.filter((b) => b.enabled));
             },
 
+            getBandsForSource: (sourceId) => {
+                const { structure } = get();
+                if (!structure) return [];
+                return sortBands(structure.bands.filter((b) => b.sourceId === sourceId));
+            },
+
+            getEnabledBandsForSource: (sourceId) => {
+                const { structure } = get();
+                if (!structure) return [];
+                return sortBands(
+                    structure.bands.filter((b) => b.sourceId === sourceId && b.enabled)
+                );
+            },
+
             // ----------------------------
             // Structure Management
             // ----------------------------
@@ -518,20 +605,64 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                 }
             },
 
-            initializeWithStandardBands: (duration) => {
-                const { audioIdentity } = get();
+            initializeWithStandardBands: (duration, sourceId = "mixdown") => {
+                const { structure, audioIdentity } = get();
                 const now = new Date().toISOString();
-                const bands = createStandardBands(duration);
+                const newBands = createStandardBands(duration, sourceId);
 
-                const structure: FrequencyBandStructure = {
-                    version: 1,
-                    bands,
-                    createdAt: now,
-                    modifiedAt: now,
-                };
+                // If we have an existing structure, add to it; otherwise create new
+                const newStructure: FrequencyBandStructure = structure
+                    ? {
+                        ...structure,
+                        bands: sortBands([...structure.bands, ...newBands]),
+                        modifiedAt: now,
+                    }
+                    : {
+                        version: 2,
+                        bands: newBands,
+                        createdAt: now,
+                        modifiedAt: now,
+                    };
 
-                set({ structure }, false, "initializeWithStandardBands");
+                set({ structure: newStructure }, false, "initializeWithStandardBands");
                 get()._emitInvalidation({ kind: "structure_imported" });
+
+                if (audioIdentity) {
+                    get().saveToLocalStorage();
+                }
+            },
+
+            clearBandsForSource: (sourceId) => {
+                const { structure, audioIdentity, selectedBandId } = get();
+                if (!structure) return;
+
+                const now = new Date().toISOString();
+                const removedBandIds = structure.bands
+                    .filter((b) => b.sourceId === sourceId)
+                    .map((b) => b.id);
+
+                if (removedBandIds.length === 0) return;
+
+                set(
+                    {
+                        structure: {
+                            ...structure,
+                            bands: structure.bands.filter((b) => b.sourceId !== sourceId),
+                            modifiedAt: now,
+                        },
+                        // Clear selection if the selected band was removed
+                        selectedBandId: removedBandIds.includes(selectedBandId ?? "")
+                            ? null
+                            : selectedBandId,
+                    },
+                    false,
+                    "clearBandsForSource"
+                );
+
+                // Emit invalidation for each removed band
+                for (const bandId of removedBandIds) {
+                    get()._emitInvalidation({ kind: "band_removed", bandId });
+                }
 
                 if (audioIdentity) {
                     get().saveToLocalStorage();
@@ -572,9 +703,9 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
 
                     const persisted = JSON.parse(json) as PersistedFrequencyBands;
 
-                    // Version check
+                    // Version check for persistence wrapper
                     if (persisted.version !== 1) {
-                        console.warn(`Unknown frequency bands version: ${persisted.version}`);
+                        console.warn(`Unknown persistence version: ${persisted.version}`);
                         return false;
                     }
 
@@ -589,9 +720,16 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                         return false;
                     }
 
+                    // Migrate structure if needed (handles v1 -> v2 migration)
+                    const migratedStructure = migrateStructure(persisted.structure);
+                    if (!migratedStructure) {
+                        console.error("Failed to migrate frequency band structure");
+                        return false;
+                    }
+
                     set(
                         {
-                            structure: persisted.structure,
+                            structure: migratedStructure,
                             selectedBandId: null,
                         },
                         false,
@@ -626,10 +764,11 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
 
             importFromJSON: (json) => {
                 try {
-                    const structure = JSON.parse(json) as FrequencyBandStructure;
+                    const parsed = JSON.parse(json);
 
-                    // Basic validation
-                    if (structure.version !== 1 || !Array.isArray(structure.bands)) {
+                    // Migrate structure if needed (handles v1 -> v2 migration)
+                    const structure = migrateStructure(parsed);
+                    if (!structure) {
                         console.error("Invalid frequency band structure");
                         return false;
                     }

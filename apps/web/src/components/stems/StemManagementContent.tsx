@@ -1,0 +1,311 @@
+"use client";
+
+import { useCallback, useRef, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { Upload, Info, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useMirStore } from "@/lib/stores/mirStore";
+import { useCandidateEventStore } from "@/lib/stores/candidateEventStore";
+import type { AudioInput, AudioInputOrigin } from "@/lib/stores/types/audioInput";
+import { StemListItem } from "./StemListItem";
+
+export interface StemManagementContentProps {
+  audioDuration: number;
+}
+
+/**
+ * Content panel for managing stems.
+ * Rendered when the "Stems" tree node is expanded.
+ */
+export function StemManagementContent({ audioDuration }: StemManagementContentProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deletedStem, setDeletedStem] = useState<{
+    stem: AudioInput;
+    index: number;
+    timeoutId: ReturnType<typeof setTimeout>;
+  } | null>(null);
+
+  const {
+    collection,
+    selectedInputId,
+    addStem,
+    renameInput,
+    reorderStems,
+    removeStem,
+    restoreStem,
+    selectInput,
+  } = useAudioInputStore(
+    useShallow((s) => ({
+      collection: s.collection,
+      selectedInputId: s.selectedInputId,
+      addStem: s.addStem,
+      renameInput: s.renameInput,
+      reorderStems: s.reorderStems,
+      removeStem: s.removeStem,
+      restoreStem: s.restoreStem,
+      selectInput: s.selectInput,
+    }))
+  );
+
+  const stems = collection?.stemOrder.map((id) => collection.inputs[id]).filter(Boolean) ?? [];
+
+  // DnD sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5, // 5px movement before drag starts
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+
+      if (over && active.id !== over.id && collection) {
+        const oldIndex = collection.stemOrder.indexOf(active.id as string);
+        const newIndex = collection.stemOrder.indexOf(over.id as string);
+
+        if (oldIndex !== -1 && newIndex !== -1) {
+          const newOrder = [...collection.stemOrder];
+          const [removed] = newOrder.splice(oldIndex, 1);
+          if (removed) {
+            newOrder.splice(newIndex, 0, removed);
+            reorderStems(newOrder);
+          }
+        }
+      }
+    },
+    [collection, reorderStems]
+  );
+
+  const handleFileSelect = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      try {
+        // Decode the audio file
+        const arrayBuffer = await file.arrayBuffer();
+        const audioContext = new AudioContext();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+        // Create blob URL for playback
+        const blob = new Blob([arrayBuffer], { type: file.type });
+        const audioUrl = URL.createObjectURL(blob);
+
+        // Extract file name without extension as label
+        const label = file.name.replace(/\.[^/.]+$/, "");
+
+        const origin: AudioInputOrigin = {
+          kind: "file",
+          fileName: file.name,
+        };
+
+        addStem({
+          audioBuffer: {
+            sampleRate: audioBuffer.sampleRate,
+            numberOfChannels: audioBuffer.numberOfChannels,
+            getChannelData: (channel: number) => audioBuffer.getChannelData(channel),
+          },
+          metadata: {
+            sampleRate: audioBuffer.sampleRate,
+            totalSamples: audioBuffer.length,
+            duration: audioBuffer.duration,
+          },
+          audioUrl,
+          origin,
+          label,
+        });
+      } catch (error) {
+        console.error("Failed to import stem:", error);
+      }
+
+      // Reset the file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    },
+    [addStem]
+  );
+
+  const handleDeleteStem = useCallback(
+    (stemId: string) => {
+      if (!collection) return;
+
+      if (deleteConfirmId === stemId) {
+        // Get the index before removing
+        const index = collection.stemOrder.indexOf(stemId);
+        const stem = removeStem(stemId);
+
+        if (stem) {
+          // Clear any pending undo
+          if (deletedStem) {
+            clearTimeout(deletedStem.timeoutId);
+          }
+
+          // Invalidate MIR cache for this stem
+          useMirStore.getState().invalidateInputMir(stemId);
+
+          // Clear candidate events for this stem
+          useCandidateEventStore.getState().clearForSource(stemId);
+
+          // Set up undo with timeout
+          const timeoutId = setTimeout(() => {
+            setDeletedStem(null);
+          }, 5000); // 5 seconds to undo
+
+          setDeletedStem({ stem, index, timeoutId });
+        }
+
+        setDeleteConfirmId(null);
+      } else {
+        setDeleteConfirmId(stemId);
+        // Clear confirmation after 3 seconds
+        setTimeout(() => setDeleteConfirmId(null), 3000);
+      }
+    },
+    [collection, deleteConfirmId, deletedStem, removeStem]
+  );
+
+  const handleUndoDelete = useCallback(() => {
+    if (deletedStem) {
+      clearTimeout(deletedStem.timeoutId);
+      restoreStem(deletedStem.stem, deletedStem.index);
+      setDeletedStem(null);
+    }
+  }, [deletedStem, restoreStem]);
+
+  const handleDismissUndo = useCallback(() => {
+    if (deletedStem) {
+      clearTimeout(deletedStem.timeoutId);
+      setDeletedStem(null);
+    }
+  }, [deletedStem]);
+
+  return (
+    <div className="flex flex-col">
+      {/* Import Stem Button */}
+      <div className="p-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={audioDuration <= 0}
+        >
+          <Upload className="h-4 w-4 mr-1" />
+          Import Stem
+        </Button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="audio/*"
+          className="hidden"
+          onChange={handleFileSelect}
+        />
+      </div>
+
+      {/* Stem List */}
+      <div className="px-2 space-y-1">
+        {stems.length === 0 ? (
+          <div className="flex items-start gap-2 px-1 py-4 text-xs text-zinc-500 dark:text-zinc-400">
+            <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span>
+              No stems imported yet.
+              <br />
+              Click &quot;Import Stem&quot; to add separated audio tracks.
+            </span>
+          </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={stems.map((s) => s!.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {stems.map((stem, index) => {
+                if (!stem) return null;
+                return (
+                  <StemListItem
+                    key={stem.id}
+                    stemId={stem.id}
+                    label={stem.label}
+                    colorIndex={index}
+                    isSelected={stem.id === selectedInputId}
+                    isDeleting={stem.id === deleteConfirmId}
+                    onSelect={() => selectInput(stem.id)}
+                    onRename={(newLabel) => renameInput(stem.id, newLabel)}
+                    onDelete={() => handleDeleteStem(stem.id)}
+                  />
+                );
+              })}
+            </SortableContext>
+          </DndContext>
+        )}
+      </div>
+
+      {/* Undo Delete Toast */}
+      {deletedStem && (
+        <div className="p-2 border-t border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800">
+            <span className="text-xs text-zinc-600 dark:text-zinc-400">
+              Deleted &quot;{deletedStem.stem.label}&quot;
+            </span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-blue-600 hover:text-blue-700"
+                onClick={handleUndoDelete}
+              >
+                Undo
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-zinc-400 hover:text-zinc-600"
+                onClick={handleDismissUndo}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Toast */}
+      {deleteConfirmId && !deletedStem && (
+        <div className="p-2 border-t border-zinc-200 dark:border-zinc-800">
+          <div className="text-xs text-amber-600 dark:text-amber-400 text-center px-2">
+            This will remove the stem and its analysis data.
+            <br />
+            Click delete again to confirm.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

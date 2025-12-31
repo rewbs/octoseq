@@ -8,7 +8,8 @@ import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 
-import { FrequencyBandSidebar, HeatmapWithBandOverlay } from "@/components/frequencyBand";
+import { HeatmapWithBandOverlay } from "@/components/frequencyBand";
+import { InterpretationTreePanel } from "@/components/interpretationTree";
 import { BandMirSignalViewer, BandEventViewer, BandAmplitudeSelector, useBandAmplitudeData } from "@/components/bandMir";
 import { MirConfigModal } from "@/components/mir/MirConfigModal";
 import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
@@ -715,12 +716,12 @@ export default function Home() {
 
   // ===== RENDER =====
   return (
-    <div className="page-bg px-20 flex flex-col min-h-screen items-center bg-zinc-50 font-sans dark:bg-zinc-950">
+    <div className="page-bg flex flex-col min-h-screen bg-zinc-50 font-sans dark:bg-zinc-950">
       <div className="w-full flex-1 flex">
-        {/* Frequency Band Sidebar */}
-        <FrequencyBandSidebar audioDuration={audioDuration} />
+        {/* Interpretation Tree Panel (replaces FrequencyBandSidebar) */}
+        <InterpretationTreePanel audioDuration={audioDuration} />
 
-        <main className="main-bg flex-1 min-w-0 overflow-hidden bg-white p-2 shadow dark:bg-zinc-950">
+        <main className="main-bg flex-1 min-w-0 overflow-hidden bg-white p-2 pr-4 shadow dark:bg-zinc-950">
           <section>
             <div className="space-y-1.5">
               <WaveSurferPlayer

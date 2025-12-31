@@ -1,9 +1,12 @@
 import { useCallback } from "react";
 import { useAudioStore } from "../audioStore";
+import { useAudioInputStore } from "../audioInputStore";
 import { usePlaybackStore } from "../playbackStore";
 import { useMirStore } from "../mirStore";
 import { useSearchStore } from "../searchStore";
 import { useBandProposalStore } from "../bandProposalStore";
+import { useCandidateEventStore } from "../candidateEventStore";
+import type { AudioInputOrigin } from "../types/audioInput";
 
 interface AudioActionsOptions {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
@@ -18,6 +21,7 @@ export function useAudioActions({ fileInputRef, onAudioLoaded }: AudioActionsOpt
   const handleAudioDecoded = useCallback(
     (a: { sampleRate: number; getChannelData: (n: number) => Float32Array }) => {
       const audioStore = useAudioStore.getState();
+      const audioInputStore = useAudioInputStore.getState();
       const playbackStore = usePlaybackStore.getState();
       const mirStore = useMirStore.getState();
       const searchStore = useSearchStore.getState();
@@ -37,11 +41,30 @@ export function useAudioActions({ fileInputRef, onAudioLoaded }: AudioActionsOpt
       }
 
       // Set metadata
+      const duration = ch0.length / a.sampleRate;
       audioStore.setAudioMetadata({
         fileName,
         sampleRate: a.sampleRate,
         totalSamples: ch0.length,
-        duration: ch0.length / a.sampleRate,
+        duration,
+      });
+
+      // Initialize audio input store with mixdown
+      // Determine origin based on how the audio was loaded
+      const origin: AudioInputOrigin = pendingFileName
+        ? { kind: "url", url: "", fileName: pendingFileName }
+        : { kind: "file", fileName: fileName ?? "Unknown" };
+
+      audioInputStore.updateMixdown({
+        audioBuffer: a as AudioBuffer,
+        metadata: {
+          sampleRate: a.sampleRate,
+          totalSamples: ch0.length,
+          duration,
+        },
+        audioUrl: audioStore.audioUrl,
+        origin,
+        label: fileName ?? "Mixdown",
       });
 
       // Clear MIR results
@@ -52,6 +75,9 @@ export function useAudioActions({ fileInputRef, onAudioLoaded }: AudioActionsOpt
 
       // Reset band proposals (F5) — proposals are ephemeral and scoped to the current audio.
       bandProposalStore.reset();
+
+      // Reset candidate events — candidates are ephemeral and scoped to the current audio.
+      useCandidateEventStore.getState().reset();
 
       // Reset playback state
       playbackStore.setWaveformSeekTo(null);

@@ -100,6 +100,32 @@ impl Signal {
         })
     }
 
+    /// Create a stem-scoped input signal.
+    /// Uses peak-preserving sampling with frame dt as window by default.
+    ///
+    /// - `stem_id`: The stem ID or label (both are supported).
+    /// - `feature`: Signal type ("energy", "onset", "flux", "amplitude", etc.).
+    pub fn stem_input(stem_id: impl Into<String>, feature: impl Into<String>) -> Self {
+        Self::new(SignalNode::StemInput {
+            stem_id: stem_id.into(),
+            feature: feature.into(),
+            sampling: SamplingConfig::default(),
+        })
+    }
+
+    /// Create a stem-scoped input signal with custom sampling configuration.
+    pub fn stem_input_with_sampling(
+        stem_id: impl Into<String>,
+        feature: impl Into<String>,
+        sampling: SamplingConfig,
+    ) -> Self {
+        Self::new(SignalNode::StemInput {
+            stem_id: stem_id.into(),
+            feature: feature.into(),
+            sampling,
+        })
+    }
+
     /// Create a constant signal.
     pub fn constant(value: f32) -> Self {
         Self::new(SignalNode::Constant(value))
@@ -651,6 +677,7 @@ impl Signal {
             // Leaf nodes don't have children
             SignalNode::Input { .. }
             | SignalNode::BandInput { .. }
+            | SignalNode::StemInput { .. }
             | SignalNode::Constant(_)
             | SignalNode::Generator(_)
             | SignalNode::EventStreamSource { .. }
@@ -692,6 +719,9 @@ impl Signal {
             SignalNode::Input { name, .. } => format!("Input(\"{}\")", name),
             SignalNode::BandInput { band_key, feature, .. } => {
                 format!("BandInput(\"{}\", \"{}\")", band_key, feature)
+            }
+            SignalNode::StemInput { stem_id, feature, .. } => {
+                format!("StemInput(\"{}\", \"{}\")", stem_id, feature)
             }
             SignalNode::Constant(v) => format!("Constant({})", v),
             SignalNode::Add(a, b) => {
@@ -948,6 +978,14 @@ pub enum SignalNode {
     /// - `feature`: Signal type ("energy", "onset", "flux").
     BandInput {
         band_key: String,
+        feature: String,
+        sampling: SamplingConfig,
+    },
+    /// Reference to a stem-scoped input signal.
+    /// - `stem_id`: The stem ID or label.
+    /// - `feature`: Signal type ("energy", "onset", "flux", "amplitude", etc.).
+    StemInput {
+        stem_id: String,
         feature: String,
         sampling: SamplingConfig,
     },

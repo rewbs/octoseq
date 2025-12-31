@@ -176,7 +176,7 @@ export function validateBandStructure(structure: FrequencyBandStructure): string
 export function createBandStructure(): FrequencyBandStructure {
     const now = new Date().toISOString();
     return {
-        version: 1,
+        version: 2,
         bands: [],
         createdAt: now,
         modifiedAt: now,
@@ -202,12 +202,15 @@ export function createConstantBand(
         enabled?: boolean;
         sortOrder?: number;
         id?: string;
+        /** The audio source this band belongs to. Defaults to "mixdown". */
+        sourceId?: string;
     }
 ): FrequencyBand {
     const now = new Date().toISOString();
     return {
         id: options?.id ?? generateBandId(),
         label,
+        sourceId: options?.sourceId ?? "mixdown",
         enabled: options?.enabled ?? true,
         timeScope: { kind: "global" },
         frequencyShape: [
@@ -249,12 +252,15 @@ export function createSectionedBand(
         enabled?: boolean;
         sortOrder?: number;
         id?: string;
+        /** The audio source this band belongs to. Defaults to "mixdown". */
+        sourceId?: string;
     }
 ): FrequencyBand {
     const now = new Date().toISOString();
     return {
         id: options?.id ?? generateBandId(),
         label,
+        sourceId: options?.sourceId ?? "mixdown",
         enabled: options?.enabled ?? true,
         timeScope: { kind: "sectioned", startTime, endTime },
         frequencyShape: [
@@ -287,9 +293,10 @@ export function createSectionedBand(
  * - Highs: 4000-20000 Hz
  *
  * @param duration - Track duration in seconds
+ * @param sourceId - The audio source these bands belong to. Defaults to "mixdown".
  * @returns Array of FrequencyBand objects
  */
-export function createStandardBands(duration: number): FrequencyBand[] {
+export function createStandardBands(duration: number, sourceId: string = "mixdown"): FrequencyBand[] {
     const now = new Date().toISOString();
     const bands: Array<{ label: string; lowHz: number; highHz: number }> = [
         { label: "Sub Bass", lowHz: 20, highHz: 60 },
@@ -303,6 +310,7 @@ export function createStandardBands(duration: number): FrequencyBand[] {
     return bands.map((b, index) => ({
         id: generateBandId(),
         label: b.label,
+        sourceId,
         enabled: true,
         timeScope: { kind: "global" } as FrequencyBandTimeScope,
         frequencyShape: [
@@ -329,6 +337,38 @@ export function createStandardBands(duration: number): FrequencyBand[] {
 // ----------------------------
 
 /**
+ * Get all bands belonging to a specific audio source.
+ *
+ * @param structure - Frequency band structure (can be null)
+ * @param sourceId - The audio source ID ("mixdown" or stem ID)
+ * @returns Array of bands for that source, sorted by sortOrder
+ */
+export function bandsForSource(
+    structure: FrequencyBandStructure | null,
+    sourceId: string
+): FrequencyBand[] {
+    if (!structure) return [];
+    return sortBands(structure.bands.filter((band) => band.sourceId === sourceId));
+}
+
+/**
+ * Get all enabled bands belonging to a specific audio source.
+ *
+ * @param structure - Frequency band structure (can be null)
+ * @param sourceId - The audio source ID ("mixdown" or stem ID)
+ * @returns Array of enabled bands for that source, sorted by sortOrder
+ */
+export function enabledBandsForSource(
+    structure: FrequencyBandStructure | null,
+    sourceId: string
+): FrequencyBand[] {
+    if (!structure) return [];
+    return sortBands(
+        structure.bands.filter((band) => band.sourceId === sourceId && band.enabled)
+    );
+}
+
+/**
  * Get all bands active at a given time.
  *
  * A band is active if:
@@ -337,16 +377,19 @@ export function createStandardBands(duration: number): FrequencyBand[] {
  *
  * @param structure - Frequency band structure (can be null)
  * @param time - Time in seconds
+ * @param sourceId - Optional: filter to a specific audio source
  * @returns Array of active bands
  */
 export function bandsActiveAt(
     structure: FrequencyBandStructure | null,
-    time: number
+    time: number,
+    sourceId?: string
 ): FrequencyBand[] {
     if (!structure) return [];
 
     return structure.bands.filter((band) => {
         if (!band.enabled) return false;
+        if (sourceId !== undefined && band.sourceId !== sourceId) return false;
         if (band.timeScope.kind === "global") return true;
         return time >= band.timeScope.startTime && time < band.timeScope.endTime;
     });

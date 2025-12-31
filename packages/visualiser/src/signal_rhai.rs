@@ -563,6 +563,14 @@ pub fn register_signal_api(engine: &mut Engine) {
         },
     );
 
+    // === Stem input signal accessor ===
+    engine.register_fn(
+        "__stem_signal_input",
+        |stem_id: ImmutableString, feature: ImmutableString| {
+            Signal::stem_input(stem_id.as_str(), feature.as_str())
+        },
+    );
+
     // === Band events accessor ===
     // Returns pre-extracted EventStream for a band, or empty if not available.
     engine.register_fn("__band_events_get", |band_id: ImmutableString| {
@@ -585,6 +593,21 @@ pub fn register_signal_api(engine: &mut Engine) {
         use crate::event_stream::{EventStream, PickEventsOptions};
 
         get_named_event_stream(name.as_str()).unwrap_or_else(|| {
+            EventStream::new(
+                Vec::new(),
+                format!("missing_event_stream:{}", name),
+                PickEventsOptions::default(),
+            )
+        })
+    });
+
+    // === Authored event stream accessor ===
+    // Returns authored EventStream by name (e.g., "Kick Events"), or empty if not available.
+    engine.register_fn("__authored_events_get", |name: ImmutableString| {
+        use crate::event_rhai::get_authored_event_stream;
+        use crate::event_stream::{EventStream, PickEventsOptions};
+
+        get_authored_event_stream(name.as_str()).unwrap_or_else(|| {
             EventStream::new(
                 Vec::new(),
                 format!("events:{}", name),
@@ -698,6 +721,59 @@ inputs.bands["{id}"].events = __band_events_get("{id}");
     code
 }
 
+/// Generate Rhai code to add stem signal accessors to the inputs.stems namespace.
+///
+/// Each stem is accessible both by ID and by label (if different).
+/// Stems expose the same signal features as the mixdown (energy, amplitude, flux, etc.).
+///
+/// This generates code like:
+/// ```rhai
+/// inputs.stems = #{};
+/// inputs.stems["stem-abc123"] = #{};
+/// inputs.stems["stem-abc123"].energy = __stem_signal_input("stem-abc123", "energy");
+/// inputs.stems["stem-abc123"].amplitude = __stem_signal_input("stem-abc123", "energy");
+/// inputs.stems["stem-abc123"].flux = __stem_signal_input("stem-abc123", "flux");
+/// inputs.stems["stem-abc123"].centroid = __stem_signal_input("stem-abc123", "centroid");
+/// inputs.stems["stem-abc123"].onset = __stem_signal_input("stem-abc123", "onset");
+/// inputs.stems["stem-abc123"].label = "Drums";
+/// inputs.stems["Drums"] = inputs.stems["stem-abc123"];
+/// ```
+pub fn generate_stems_namespace(stems: &[(String, String)]) -> String {
+    let mut code = String::from("inputs.stems = #{};\ninputs.stems.__type = \"stems_namespace\";\n");
+
+    for (id, label) in stems {
+        // Create stem object with signal accessors (keyed by ID)
+        // These match the signals available on mixdown via inputs.*
+        code.push_str(&format!(
+            r#"inputs.stems["{id}"] = #{{}};
+inputs.stems["{id}"].__type = "stem_signals";
+inputs.stems["{id}"].energy = __stem_signal_input("{id}", "energy");
+inputs.stems["{id}"].amplitude = __stem_signal_input("{id}", "energy");
+inputs.stems["{id}"].flux = __stem_signal_input("{id}", "flux");
+inputs.stems["{id}"].centroid = __stem_signal_input("{id}", "centroid");
+inputs.stems["{id}"].spectralCentroid = __stem_signal_input("{id}", "spectralCentroid");
+inputs.stems["{id}"].onset = __stem_signal_input("{id}", "onset");
+inputs.stems["{id}"].onsetEnvelope = __stem_signal_input("{id}", "onsetEnvelope");
+inputs.stems["{id}"].label = "{label}";
+"#,
+            id = id,
+            label = label
+        ));
+
+        // Also register by label if different from ID
+        if label != id {
+            code.push_str(&format!(
+                r#"inputs.stems["{label}"] = inputs.stems["{id}"];
+"#,
+                label = label,
+                id = id
+            ));
+        }
+    }
+
+    code
+}
+
 /// Generate Rhai code to add named event streams to the inputs namespace.
 ///
 /// This generates code like:
@@ -711,6 +787,29 @@ pub fn generate_event_streams_namespace(event_stream_names: &[&str]) -> String {
     for name in event_stream_names {
         code.push_str(&format!(
             "inputs.{} = __event_stream_get(\"{}\");\n",
+            name, name
+        ));
+    }
+
+    code
+}
+
+/// Generate Rhai code to add the authored event streams namespace.
+///
+/// This generates code like:
+/// ```rhai
+/// inputs.authored = #{};
+/// inputs.authored.__type = "authored_namespace";
+/// inputs.authored["Kick Events"] = __authored_events_get("Kick Events");
+/// inputs.authored["Snare Hits"] = __authored_events_get("Snare Hits");
+/// ```
+pub fn generate_authored_namespace(stream_names: &[&str]) -> String {
+    let mut code = String::from("inputs.authored = #{};\n");
+    code.push_str("inputs.authored.__type = \"authored_namespace\";\n");
+
+    for name in stream_names {
+        code.push_str(&format!(
+            "inputs.authored[\"{}\"] = __authored_events_get(\"{}\");\n",
             name, name
         ));
     }

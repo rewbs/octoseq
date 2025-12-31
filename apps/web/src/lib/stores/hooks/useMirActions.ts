@@ -1,13 +1,15 @@
 import { useCallback, useRef } from "react";
-import type { MirAudioPayload, MirRunRequest, MirResult as MirLibResult, MirFunctionId as MirLibFunctionId } from "@octoseq/mir";
+import type { AudioBufferLike, MirAudioPayload, MirRunRequest, MirResult as MirLibResult, MirFunctionId as MirLibFunctionId } from "@octoseq/mir";
 import { normaliseForWaveform } from "@octoseq/mir";
 import { runMir } from "@octoseq/mir/runner/runMir";
 import { useAudioStore } from "../audioStore";
+import { useAudioInputStore } from "../audioInputStore";
 import { useMirStore } from "../mirStore";
 import { useConfigStore } from "../configStore";
 import { MirWorkerClient, type MirWorkerJob } from "@/lib/mirWorkerClient";
 import type { UiMirResult } from "../types";
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
+import { MIXDOWN_ID } from "../types/audioInput";
 
 /**
  * Hook that provides MIR analysis actions with worker management.
@@ -21,8 +23,27 @@ export function useMirActions() {
     workerRef.current = new MirWorkerClient();
   }
 
-  const runAnalysis = useCallback(async (fnOverride?: MirFunctionId) => {
-    const { audio } = useAudioStore.getState();
+  /**
+   * Run MIR analysis.
+   * @param fnOverride - Optional function ID to run (defaults to mirStore.selected)
+   * @param inputId - Optional input ID to analyze (defaults to mixdown/main audio)
+   */
+  const runAnalysis = useCallback(async (fnOverride?: MirFunctionId, inputId?: string) => {
+    // Determine which audio to analyze
+    const effectiveInputId = inputId ?? MIXDOWN_ID;
+    let audio: AudioBufferLike | null = null;
+
+    if (effectiveInputId === MIXDOWN_ID) {
+      // Use the main audio store for mixdown (backward compatible)
+      audio = useAudioStore.getState().audio;
+    } else {
+      // Use audioInputStore for stems
+      const audioInput = useAudioInputStore.getState().getInputById(effectiveInputId);
+      if (audioInput?.audioBuffer) {
+        audio = audioInput.audioBuffer;
+      }
+    }
+
     if (!audio) return;
 
     const mirStore = useMirStore.getState();
@@ -105,6 +126,19 @@ export function useMirActions() {
         usedGpu: meta.usedGpu,
       });
 
+      // Helper to store result (both in legacy store and per-input cache)
+      const storeResult = (r: UiMirResult) => {
+        // Always store in per-input cache
+        mirStore.setInputMirResult(effectiveInputId, selected, r);
+
+        // For backward compatibility, also store in legacy mirResults if this is the mixdown
+        if (effectiveInputId === MIXDOWN_ID) {
+          mirStore.setMirResult(selected, r);
+        }
+
+        mirStore.setVisualTab(selected);
+      };
+
       if (result.kind === "1d") {
         const norm = normaliseForWaveform(result.values, {
           center: selected === "spectralCentroid",
@@ -112,33 +146,29 @@ export function useMirActions() {
           max: selected === "spectralFlux" ? 1 : undefined,
         });
 
-        const r: UiMirResult = {
+        storeResult({
           kind: "1d",
           fn: selected,
           times: result.times,
           values: norm,
-        };
-        mirStore.setMirResult(selected, r);
-        mirStore.setVisualTab(selected);
+        });
         return;
       }
 
       if (result.kind === "events") {
-        const r: UiMirResult = {
+        storeResult({
           kind: "events",
           fn: selected,
           times: result.times,
           events: result.events,
-        };
-        mirStore.setMirResult(selected, r);
-        mirStore.setVisualTab(selected);
+        });
         return;
       }
 
       if (result.kind === "beatCandidates") {
         // Convert beat candidates to the events format for UI rendering.
         // Beat candidates have a 'source' field but otherwise match the events structure.
-        const r: UiMirResult = {
+        storeResult({
           kind: "events",
           fn: selected,
           times: result.times,
@@ -147,35 +177,29 @@ export function useMirActions() {
             strength: c.strength,
             index: i,
           })),
-        };
-        mirStore.setMirResult(selected, r);
-        mirStore.setVisualTab(selected);
+        });
         return;
       }
 
       if (result.kind === "tempoHypotheses") {
-        const r: UiMirResult = {
+        storeResult({
           kind: "tempoHypotheses",
           fn: selected,
           hypotheses: result.hypotheses,
           inputCandidateCount: result.inputCandidateCount,
-        };
-        mirStore.setMirResult(selected, r);
-        mirStore.setVisualTab(selected);
+        });
         return;
       }
 
       // 2d
-      const r: UiMirResult = {
+      storeResult({
         kind: "2d",
         fn: selected,
         raw: {
           data: result.data,
           times: result.times,
         },
-      };
-      mirStore.setMirResult(selected, r);
-      mirStore.setVisualTab(selected);
+      });
     } catch (e) {
       // If cancelled, do not treat as an error.
       if ((e as Error)?.message === "cancelled") {

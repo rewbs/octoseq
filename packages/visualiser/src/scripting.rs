@@ -54,7 +54,7 @@ static EFFECT_ID_COUNTER: AtomicI64 = AtomicI64::new(0);
 
 use crate::debug_collector::debug_emit;
 use crate::debug_markers::{add_marker_request, DebugMarkerRequest, ShowEventsOptions, MarkerSpreadMode};
-use crate::event_rhai::get_named_event_stream_names;
+use crate::event_rhai::{get_named_event_stream_names, get_authored_event_stream_names};
 use crate::event_stream::EventStream;
 use crate::input::InputSignal;
 use crate::musical_time::MusicalTimeStructure;
@@ -64,8 +64,8 @@ use crate::script_log::{ScriptLogger, reset_frame_log_count};
 use crate::script_diagnostics::{from_eval_error, from_parse_error, ScriptDiagnostic, ScriptPhase};
 use crate::script_introspection::register_introspection_api;
 use crate::signal_rhai::{
-    clear_current_input_signals, generate_bands_namespace, generate_event_streams_namespace,
-    generate_inputs_namespace, register_signal_api, set_current_input_signals, SIGNAL_API_RHAI,
+    clear_current_input_signals, generate_authored_namespace, generate_bands_namespace, generate_event_streams_namespace,
+    generate_inputs_namespace, generate_stems_namespace, register_signal_api, set_current_input_signals, SIGNAL_API_RHAI,
 };
 use crate::signal::Signal;
 use crate::signal_eval::EvalContext;
@@ -149,6 +149,8 @@ pub struct ScriptEngine {
     available_signal_names: Vec<String>,
     /// Available frequency bands: (id, label) pairs
     available_bands: Vec<(String, String)>,
+    /// Available stems: (id, label) pairs
+    available_stems: Vec<(String, String)>,
     /// Runtime state for stateful Signal operations (smooth, gates, delay, etc.)
     signal_state: SignalState,
     /// Precomputed signal statistics for normalization (optional/empty until populated).
@@ -499,6 +501,7 @@ impl ScriptEngine {
             init_called: false,
             available_signal_names: Vec::new(),
             available_bands: Vec::new(),
+            available_stems: Vec::new(),
             signal_state: SignalState::new(),
             signal_statistics: StatisticsCache::new(),
             post_chain: PostProcessingChain::new(),
@@ -550,6 +553,14 @@ impl ScriptEngine {
     /// Each band is represented as a tuple of (id, label).
     pub fn set_available_bands(&mut self, bands: Vec<(String, String)>) {
         self.available_bands = bands;
+    }
+
+    /// Set the available stems for the inputs.stems namespace.
+    /// Call this before load_script to make stem signals available.
+    ///
+    /// Each stem is represented as a tuple of (id, label).
+    pub fn set_available_stems(&mut self, stems: Vec<(String, String)>) {
+        self.available_stems = stems;
     }
 
     /// Initialize scope with API modules and empty entity tracking.
@@ -610,10 +621,18 @@ impl ScriptEngine {
         // Generate bands namespace based on available frequency bands
         let bands_namespace = generate_bands_namespace(&self.available_bands);
 
+        // Generate stems namespace based on available stems
+        let stems_namespace = generate_stems_namespace(&self.available_stems);
+
         // Generate event streams namespace based on available named event streams
         let event_stream_names = get_named_event_stream_names();
         let event_stream_names_refs: Vec<&str> = event_stream_names.iter().map(|s| s.as_str()).collect();
         let event_streams_namespace = generate_event_streams_namespace(&event_stream_names_refs);
+
+        // Generate authored event streams namespace based on available authored streams
+        let authored_stream_names = get_authored_event_stream_names();
+        let authored_stream_names_refs: Vec<&str> = authored_stream_names.iter().map(|s| s.as_str()).collect();
+        let authored_namespace = generate_authored_namespace(&authored_stream_names_refs);
 
         // Generate particles namespace
         let particles_namespace = generate_particles_namespace();
@@ -1026,8 +1045,14 @@ feedback.is_enabled = || {{
 // === Bands Namespace (Band-scoped signal accessors) ===
 {bands_namespace}
 
+// === Stems Namespace (Stem-scoped signal accessors) ===
+{stems_namespace}
+
 // === Event Streams Namespace (Named event streams) ===
 {event_streams_namespace}
+
+// === Authored Event Streams Namespace (Human-curated event streams) ===
+{authored_namespace}
 
 // === Particles Namespace ===
 {particles_namespace}
@@ -1126,7 +1151,7 @@ feedback.is_enabled = || {{
     ///
     /// - `time`/`dt` are used for evaluating any Signal values assigned to entity properties.
     /// - `frame_inputs` are the per-frame sampled numeric inputs passed to the Rhai `update()` function.
-    /// - `input_signals`/`band_signals` are the raw signal buffers used by Signal evaluation.
+    /// - `input_signals`/`band_signals`/`stem_signals` are the raw signal buffers used by Signal evaluation.
     pub fn update(
         &mut self,
         time: f32,
@@ -1134,6 +1159,7 @@ feedback.is_enabled = || {{
         frame_inputs: &HashMap<String, f32>,
         input_signals: &HashMap<String, InputSignal>,
         band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+        stem_signals: &HashMap<String, HashMap<String, InputSignal>>,
         musical_time: Option<&MusicalTimeStructure>,
     ) {
         // Increment frame counter for time.frames signal
@@ -1192,7 +1218,7 @@ feedback.is_enabled = || {{
         }
 
         // Sync entities from scope to scene graph, evaluating any Signal properties at render time.
-        self.sync_entities_from_scope(time, dt, input_signals, band_signals, musical_time);
+        self.sync_entities_from_scope(time, dt, input_signals, band_signals, stem_signals, musical_time);
 
         // Clear thread-local input signals after update is complete
         clear_current_input_signals();
@@ -1208,6 +1234,7 @@ feedback.is_enabled = || {{
         dt: f32,
         input_signals: &HashMap<String, InputSignal>,
         band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+        stem_signals: &HashMap<String, HashMap<String, InputSignal>>,
         musical_time: Option<&MusicalTimeStructure>,
     ) {
         // Get the entities Map and scene_ids Array from scope
@@ -1238,6 +1265,7 @@ feedback.is_enabled = || {{
             musical_time,
             input_signals,
             band_signals,
+            stem_signals,
             &signal_statistics,
             &mut signal_state,
         );
@@ -2028,6 +2056,7 @@ feedback.is_enabled = || {{
         signals_needing_stats: &[(crate::signal::SignalId, Signal)],
         input_signals: &HashMap<String, InputSignal>,
         band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+        stem_signals: &HashMap<String, HashMap<String, InputSignal>>,
         musical_time: Option<&MusicalTimeStructure>,
         duration: f32,
         time_step: f32,
@@ -2053,6 +2082,7 @@ feedback.is_enabled = || {{
                     musical_time,
                     input_signals,
                     band_signals,
+                    stem_signals,
                     &empty_stats,
                     &mut temp_state,
                 );
@@ -2243,6 +2273,7 @@ feedback.is_enabled = || {{
         sample_count: usize,
         input_signals: &HashMap<String, InputSignal>,
         band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+        stem_signals: &HashMap<String, HashMap<String, InputSignal>>,
         musical_time: Option<&MusicalTimeStructure>,
     ) -> Result<SignalChainAnalysis, String> {
         let signal = self
@@ -2256,6 +2287,7 @@ feedback.is_enabled = || {{
             sample_count,
             input_signals,
             band_signals,
+            stem_signals,
             &self.signal_statistics,
             &mut self.signal_state,
             musical_time,
