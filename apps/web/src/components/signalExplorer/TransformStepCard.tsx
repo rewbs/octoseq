@@ -14,6 +14,8 @@ interface TransformStepCardProps {
   isFirst: boolean;
   isLast: boolean;
   timeRange: [number, number];
+  beatTimes?: number[];
+  subBeatTimes?: number[];
 }
 
 /** Color classes for different transform types */
@@ -55,6 +57,8 @@ export const TransformStepCard = memo(function TransformStepCard({
   isFirst,
   isLast,
   timeRange,
+  beatTimes = [],
+  subBeatTimes = [],
 }: TransformStepCardProps) {
   const colorClass =
     transformTypeStyles[step.transform_type] ?? transformTypeStyles.Debug;
@@ -100,6 +104,8 @@ export const TransformStepCard = memo(function TransformStepCard({
           timeRange={timeRange}
           height={32}
           transformType={step.transform_type}
+          beatTimes={beatTimes}
+          subBeatTimes={subBeatTimes}
         />
       </div>
 

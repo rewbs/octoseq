@@ -14,6 +14,10 @@ interface SignalSparklineProps {
   height?: number;
   /** Transform type for color */
   transformType?: TransformType;
+  /** Beat times for overlay (optional) */
+  beatTimes?: number[];
+  /** Sub-beat times for overlay (optional) */
+  subBeatTimes?: number[];
 }
 
 /** Color mapping for different transform types */
@@ -39,6 +43,8 @@ export const SignalSparkline = memo(function SignalSparkline({
   timeRange,
   height = 32,
   transformType = "Source",
+  beatTimes = [],
+  subBeatTimes = [],
 }: SignalSparklineProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -63,6 +69,40 @@ export const SignalSparkline = memo(function SignalSparkline({
     const [startTime, endTime] = timeRange;
     const duration = endTime - startTime || 1;
 
+    // Helper: convert time to x position
+    const timeToX = (t: number) => ((t - startTime) / duration) * width;
+
+    // Draw sub-beat notches first (behind everything)
+    const notchHeight = Math.round(height / 5);
+    if (subBeatTimes.length > 0) {
+      ctx.strokeStyle = "rgba(156, 163, 175, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([1, 2]);
+      for (const beatTime of subBeatTimes) {
+        if (beatTime < startTime || beatTime > endTime) continue;
+        const x = timeToX(beatTime);
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, notchHeight);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+
+    // Draw beat notches (behind the signal but in front of sub-beats)
+    if (beatTimes.length > 0) {
+      ctx.strokeStyle = "rgba(34, 197, 94, 0.5)";
+      ctx.lineWidth = 1;
+      for (const beatTime of beatTimes) {
+        if (beatTime < startTime || beatTime > endTime) continue;
+        const x = timeToX(beatTime);
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, notchHeight);
+        ctx.stroke();
+      }
+    }
+
     // Compute local min/max with padding
     let min = Infinity;
     let max = -Infinity;
@@ -84,7 +124,7 @@ export const SignalSparkline = memo(function SignalSparkline({
     for (let i = 0; i < times.length; i++) {
       const t = times[i] ?? 0;
       const v = values[i] ?? 0;
-      const x = ((t - startTime) / duration) * width;
+      const x = timeToX(t);
       const y = height - ((v - paddedMin) / paddedRange) * (height - 4) - 2;
 
       if (i === 0) ctx.lineTo(x, y);
@@ -101,7 +141,7 @@ export const SignalSparkline = memo(function SignalSparkline({
     for (let i = 0; i < times.length; i++) {
       const t = times[i] ?? 0;
       const v = values[i] ?? 0;
-      const x = ((t - startTime) / duration) * width;
+      const x = timeToX(t);
       const y = height - ((v - paddedMin) / paddedRange) * (height - 4) - 2;
 
       if (i === 0) ctx.moveTo(x, y);
@@ -120,7 +160,7 @@ export const SignalSparkline = memo(function SignalSparkline({
     ctx.lineTo(width / 2, height);
     ctx.stroke();
     ctx.setLineDash([]);
-  }, [times, values, timeRange, height, transformType]);
+  }, [times, values, timeRange, height, transformType, beatTimes, subBeatTimes]);
 
   useEffect(() => {
     render();

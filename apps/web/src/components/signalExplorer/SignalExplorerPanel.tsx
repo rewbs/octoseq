@@ -1,9 +1,11 @@
 "use client";
 
-import { memo } from "react";
-import { ChevronDown, ChevronRight, Activity, Loader2 } from "lucide-react";
+import { memo, useMemo } from "react";
+import { ChevronDown, ChevronRight, Activity, Loader2, ZoomIn, ZoomOut } from "lucide-react";
 import { useSignalExplorerStore } from "@/lib/stores/signalExplorerStore";
+import { useBeatGridStore } from "@/lib/stores/beatGridStore";
 import { TransformStepCard } from "./TransformStepCard";
+import { generateBeatTimes } from "@octoseq/mir";
 
 /** Format time in multiple units */
 function formatTimeMulti(
@@ -35,12 +37,85 @@ export const SignalExplorerPanel = memo(function SignalExplorerPanel({
     isAnalyzing,
     bpm,
     targetFps,
+    windowBeats,
+    zoomIn,
+    zoomOut,
   } = useSignalExplorerStore();
+
+  // Get beat grid data for overlay
+  const activeBeatGrid = useBeatGridStore((s) => s.activeBeatGrid);
+  const selectedHypothesis = useBeatGridStore((s) => s.selectedHypothesis);
+  const phaseHypotheses = useBeatGridStore((s) => s.phaseHypotheses);
+  const activePhaseIndex = useBeatGridStore((s) => s.activePhaseIndex);
+  const userNudge = useBeatGridStore((s) => s.userNudge);
+  const subBeatDivision = useBeatGridStore((s) => s.subBeatDivision);
 
   const hasValidData = lastValidAnalysis !== null;
 
   // Show cursor signal name or last valid
   const displaySignalName = currentCursor?.signalName ?? lastValidSignalName;
+
+  // Compute beat times for the visible time range
+  const { beatTimes, subBeatTimes } = useMemo(() => {
+    if (!lastValidAnalysis) return { beatTimes: [], subBeatTimes: [] };
+
+    const [startTime, endTime] = lastValidAnalysis.time_range;
+    const duration = endTime - startTime;
+    if (duration <= 0) return { beatTimes: [], subBeatTimes: [] };
+
+    // Get beat grid parameters
+    let gridBpm: number | null = null;
+    let phaseOffset = 0;
+    let nudge = 0;
+
+    if (activeBeatGrid) {
+      gridBpm = activeBeatGrid.bpm;
+      phaseOffset = activeBeatGrid.phaseOffset;
+      nudge = activeBeatGrid.userNudge;
+    } else if (selectedHypothesis) {
+      gridBpm = selectedHypothesis.bpm;
+      const activePhase = phaseHypotheses[activePhaseIndex];
+      if (activePhase) {
+        phaseOffset = activePhase.phaseOffset;
+      }
+      nudge = userNudge;
+    }
+
+    if (!gridBpm) return { beatTimes: [], subBeatTimes: [] };
+
+    // Generate beat times for the analysis range (with some margin)
+    const allBeatTimes = generateBeatTimes(gridBpm, phaseOffset, nudge, endTime + 1);
+    const visibleBeatTimes = allBeatTimes.filter((t) => t >= startTime && t <= endTime);
+
+    // Generate sub-beat times if enabled
+    const visibleSubBeatTimes: number[] = [];
+    if (subBeatDivision > 1) {
+      for (let i = 0; i < allBeatTimes.length - 1; i++) {
+        const beatTime = allBeatTimes[i];
+        const nextBeatTime = allBeatTimes[i + 1];
+        if (beatTime === undefined || nextBeatTime === undefined) continue;
+        const beatInterval = nextBeatTime - beatTime;
+        const subBeatInterval = beatInterval / subBeatDivision;
+
+        for (let j = 1; j < subBeatDivision; j++) {
+          const subBeatTime = beatTime + j * subBeatInterval;
+          if (subBeatTime >= startTime && subBeatTime <= endTime) {
+            visibleSubBeatTimes.push(subBeatTime);
+          }
+        }
+      }
+    }
+
+    return { beatTimes: visibleBeatTimes, subBeatTimes: visibleSubBeatTimes };
+  }, [
+    lastValidAnalysis,
+    activeBeatGrid,
+    selectedHypothesis,
+    phaseHypotheses,
+    activePhaseIndex,
+    userNudge,
+    subBeatDivision,
+  ]);
 
   if (!isExpanded) {
     return (
@@ -61,11 +136,11 @@ export const SignalExplorerPanel = memo(function SignalExplorerPanel({
       className={`border border-zinc-200 dark:border-zinc-700 rounded-md bg-zinc-50 dark:bg-zinc-900 ${className}`}
     >
       {/* Header */}
-      <button
-        onClick={toggleExpanded}
-        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-      >
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between px-3 py-2">
+        <button
+          onClick={toggleExpanded}
+          className="flex items-center gap-2 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+        >
           <Activity className="w-3.5 h-3.5" />
           <span>Signal Explorer</span>
           {displaySignalName && (
@@ -76,9 +151,38 @@ export const SignalExplorerPanel = memo(function SignalExplorerPanel({
           {isAnalyzing && (
             <Loader2 className="w-3 h-3 animate-spin text-zinc-400" />
           )}
+          <ChevronDown className="w-4 h-4" />
+        </button>
+
+        {/* Zoom controls */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              zoomIn();
+            }}
+            className="p-1 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded transition-colors"
+            title="Zoom in (show fewer beats)"
+            disabled={windowBeats <= 0.5}
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+          <span className="text-tiny text-zinc-500 dark:text-zinc-400 font-mono min-w-[3ch] text-center">
+            {windowBeats}b
+          </span>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              zoomOut();
+            }}
+            className="p-1 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded transition-colors"
+            title="Zoom out (show more beats)"
+            disabled={windowBeats >= 16}
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
         </div>
-        <ChevronDown className="w-4 h-4" />
-      </button>
+      </div>
 
       {/* Content */}
       <div className="px-3 pb-3 space-y-2">
@@ -148,6 +252,8 @@ export const SignalExplorerPanel = memo(function SignalExplorerPanel({
                     isFirst={idx === 0}
                     isLast={idx === lastValidAnalysis.steps.length - 1}
                     timeRange={lastValidAnalysis.time_range}
+                    beatTimes={beatTimes}
+                    subBeatTimes={subBeatTimes}
                   />
                 );
               })}

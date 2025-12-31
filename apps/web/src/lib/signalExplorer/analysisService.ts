@@ -15,9 +15,6 @@ import { isAnalysisError } from "./types";
 /** Debounce delay in milliseconds */
 const DEBOUNCE_MS = 200;
 
-/** Number of beats before/after center to sample */
-const WINDOW_BEATS = 2;
-
 /** Number of samples to take */
 const SAMPLE_COUNT = 200;
 
@@ -85,11 +82,12 @@ export function requestSignalAnalysis(
         return;
       }
 
-      // Call WASM
+      // Call WASM with current windowBeats from store
+      const windowBeats = store.windowBeats;
       const resultJson = visualiser.analyze_signal_chain(
         signalName,
         centerTime,
-        WINDOW_BEATS,
+        windowBeats,
         SAMPLE_COUNT
       );
 

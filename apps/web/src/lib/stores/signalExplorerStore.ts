@@ -34,6 +34,9 @@ interface SignalExplorerState {
 
   // Target FPS for frame display
   targetFps: number;
+
+  // Zoom level: number of beats shown before/after center (default 2)
+  windowBeats: number;
 }
 
 interface SignalExplorerActions {
@@ -64,6 +67,11 @@ interface SignalExplorerActions {
   // FPS
   setTargetFps: (fps: number) => void;
 
+  // Zoom
+  setWindowBeats: (beats: number) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+
   // Reset
   reset: () => void;
 }
@@ -81,6 +89,7 @@ const initialState: SignalExplorerState = {
   isAnalyzing: false,
   bpm: null,
   targetFps: 30,
+  windowBeats: 2,
 };
 
 export const useSignalExplorerStore = create<SignalExplorerStore>()(
@@ -134,6 +143,23 @@ export const useSignalExplorerStore = create<SignalExplorerStore>()(
       setBpm: (bpm) => set({ bpm }, false, "setBpm"),
 
       setTargetFps: (targetFps) => set({ targetFps }, false, "setTargetFps"),
+
+      setWindowBeats: (windowBeats) =>
+        set({ windowBeats: Math.max(0.5, Math.min(16, windowBeats)) }, false, "setWindowBeats"),
+
+      zoomIn: () =>
+        set(
+          (s) => ({ windowBeats: Math.max(0.5, s.windowBeats / 2) }),
+          false,
+          "zoomIn"
+        ),
+
+      zoomOut: () =>
+        set(
+          (s) => ({ windowBeats: Math.min(16, s.windowBeats * 2) }),
+          false,
+          "zoomOut"
+        ),
 
       reset: () => set(initialState, false, "reset"),
     }),
