@@ -173,7 +173,9 @@ impl MaterialPipelineManager {
         // Load shader module for this material
         let shader = self.load_material_shader(device, &material.id)?;
 
-        // Create solid pipeline
+        // Create main pipeline with the material's topology
+        let topology = material.topology.to_wgpu();
+
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(&format!("Material Pipeline: {}", material.id)),
             layout: Some(&pipeline_layout),
@@ -194,7 +196,7 @@ impl MaterialPipelineManager {
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
+                topology,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: material.cull_mode,
@@ -208,9 +210,9 @@ impl MaterialPipelineManager {
             cache: None,
         });
 
-        // Create wireframe pipeline if needed
-        let wireframe_pipeline = if material.wireframe_only {
-            None // Wireframe-only materials use the solid pipeline with line topology
+        // Create wireframe pipeline if needed (only for triangle-based materials)
+        let wireframe_pipeline = if material.topology != crate::material::MaterialTopology::Triangles {
+            None // Non-triangle materials (Lines, Points) already use their native topology
         } else {
             Some(device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some(&format!("Material Wireframe Pipeline: {}", material.id)),
@@ -269,6 +271,8 @@ impl MaterialPipelineManager {
             "default" => include_str!("shader_material_default.wgsl"),
             "emissive" => include_str!("shader_material_emissive.wgsl"),
             "wire_glow" => include_str!("shader_material_wire_glow.wgsl"),
+            "wire" => include_str!("shader_material_wire.wgsl"),
+            "points" => include_str!("shader_material_points.wgsl"),
             "soft_additive" => include_str!("shader_material_soft_additive.wgsl"),
             "gradient" => include_str!("shader_material_gradient.wgsl"),
             _ => {

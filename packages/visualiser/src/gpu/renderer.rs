@@ -8,6 +8,7 @@ use crate::gpu::pipeline;
 use crate::gpu::material_pipeline::{MaterialPipelineManager, GlobalUniforms};
 use crate::gpu::post_processor::PostProcessor;
 use crate::visualiser::VisualiserState;
+use crate::camera::CameraUniforms;
 use crate::scene_graph::{MeshType, RenderMode, Transform};
 use crate::deformation::apply_deformations;
 use crate::mesh_asset::{MeshAsset, BoundingBox, CUBE_BOUNDS, PLANE_BOUNDS, SPHERE_BOUNDS};
@@ -52,23 +53,11 @@ impl Uniforms {
         }
     }
 
-    fn update_view_proj(&mut self, size: wgpu::Extent3d, _state: &VisualiserState) {
+    fn update_view_proj(&mut self, size: wgpu::Extent3d, camera: &CameraUniforms) {
         let aspect = size.width as f32 / size.height as f32;
 
-        // Fixed camera position for now
-        let dist = 4.0;
-        let view = glam::Mat4::look_at_rh(
-            glam::Vec3::new(dist, dist * 0.5, dist),
-            glam::Vec3::ZERO,
-            glam::Vec3::Y,
-        );
-        let proj = glam::Mat4::perspective_rh(
-            45.0f32.to_radians(),
-            aspect,
-            0.1,
-            100.0,
-        );
-        self.view_proj = (proj * view).to_cols_array_2d();
+        // Use the view-projection matrix from camera uniforms
+        self.view_proj = camera.view_projection_matrix(aspect).to_cols_array_2d();
     }
 
     fn update_model(&mut self, transform: &Transform) {
@@ -224,6 +213,7 @@ struct MeshGeometry {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    num_vertices: u32,
     /// Edge indices for wireframe rendering.
     wireframe_index_buffer: Option<wgpu::Buffer>,
     num_edges: u32,
@@ -236,6 +226,7 @@ struct LoadedMeshBuffers {
     wireframe_index_buffer: wgpu::Buffer,
     num_indices: u32,
     num_edges: u32,
+    num_vertices: u32,
 }
 
 pub struct Renderer {
@@ -315,8 +306,8 @@ impl Renderer {
         // === Mesh Pipeline Setup ===
 
         let mut uniforms = Uniforms::new();
-        let temp_state = VisualiserState::new();
-        uniforms.update_view_proj(size, &temp_state);
+        let default_camera = CameraUniforms::new();
+        uniforms.update_view_proj(size, &default_camera);
 
         // Create a large uniform buffer for dynamic uniform binding (one slot per mesh)
         let uniform_buffer_size = (UNIFORM_ALIGNMENT * MAX_MESHES_PER_FRAME) as u64;
@@ -387,6 +378,7 @@ impl Renderer {
             vertex_buffer: cube_vertex_buffer,
             index_buffer: cube_index_buffer,
             num_indices: cube_indices.len() as u32,
+            num_vertices: cube_vertices.len() as u32,
             wireframe_index_buffer: Some(cube_wireframe_index_buffer),
             num_edges: cube_edge_indices.len() as u32,
         };
@@ -413,6 +405,7 @@ impl Renderer {
             vertex_buffer: plane_vertex_buffer,
             index_buffer: plane_index_buffer,
             num_indices: plane_indices.len() as u32,
+            num_vertices: plane_vertices.len() as u32,
             wireframe_index_buffer: Some(plane_wireframe_index_buffer),
             num_edges: plane_edge_indices.len() as u32,
         };
@@ -439,6 +432,7 @@ impl Renderer {
             vertex_buffer: sphere_vertex_buffer,
             index_buffer: sphere_index_buffer,
             num_indices: sphere_indices.len() as u32,
+            num_vertices: sphere_vertices.len() as u32,
             wireframe_index_buffer: Some(sphere_wireframe_index_buffer),
             num_edges: sphere_edge_indices.len() as u32,
         };
@@ -459,6 +453,7 @@ impl Renderer {
             vertex_buffer: debug_cube_vertex_buffer,
             index_buffer: debug_cube_index_buffer,
             num_indices: 0, // Not used for debug cube (we only draw wireframe)
+            num_vertices: debug_cube_vertices.len() as u32,
             wireframe_index_buffer: None, // We use index_buffer directly for edges
             num_edges: debug_cube_edges.len() as u32,
         };
@@ -756,7 +751,7 @@ impl Renderer {
     pub fn resize(&mut self, width: u32, height: u32, state: &VisualiserState) {
         if width > 0 && height > 0 {
             self.size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
-            self.uniforms.update_view_proj(self.size, state);
+            self.uniforms.update_view_proj(self.size, state.camera_uniforms());
             self.post_processor.resize(&self.device, width, height);
         }
     }
@@ -795,6 +790,7 @@ impl Renderer {
                 wireframe_index_buffer,
                 num_indices: asset.indices.len() as u32,
                 num_edges: asset.edge_indices.len() as u32,
+                num_vertices: asset.vertices.len() as u32,
             });
         }
         self.loaded_mesh_buffers.get(&asset.id).unwrap()
@@ -802,9 +798,10 @@ impl Renderer {
 
     pub fn render(&mut self, view: &wgpu::TextureView, state: &VisualiserState) {
         let scene_graph = state.scene_graph();
+        let camera = state.camera_uniforms();
 
         // Update view projection
-        self.uniforms.update_view_proj(self.size, state);
+        self.uniforms.update_view_proj(self.size, camera);
 
         // Collect meshes to render (we need to clone data to avoid borrow conflicts)
         // Include entity_id for debug bounds checking
@@ -926,6 +923,11 @@ impl Renderer {
                                         .filter(|id| self.material_registry.exists(id));
 
                                     if let Some(mat_id) = material_id {
+                                        // Get material topology
+                                        let material_topology = self.material_registry.get(mat_id)
+                                            .map(|m| m.topology)
+                                            .unwrap_or_default();
+
                                         // Use material pipeline
                                         if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
                                             // Update global uniforms
@@ -955,8 +957,20 @@ impl Renderer {
                                             } else {
                                                 render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
                                             }
-                                            render_pass.set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                                            render_pass.draw_indexed(0..buffers.num_indices, 0, 0..1);
+
+                                            // Draw based on material topology
+                                            if material_topology.uses_edge_indices() {
+                                                // Lines: use edge indices
+                                                render_pass.set_index_buffer(buffers.wireframe_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                                render_pass.draw_indexed(0..buffers.num_edges, 0, 0..1);
+                                            } else if material_topology.uses_indices() {
+                                                // Triangles: use triangle indices
+                                                render_pass.set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                                render_pass.draw_indexed(0..buffers.num_indices, 0, 0..1);
+                                            } else {
+                                                // Points: draw vertices directly without indices
+                                                render_pass.draw(0..buffers.num_vertices, 0..1);
+                                            }
                                         }
                                     } else {
                                         // Fallback to legacy pipeline - use pre-written uniforms with dynamic offset
@@ -1022,6 +1036,7 @@ impl Renderer {
 
                         let num_indices = geometry.num_indices;
                         let num_edges = geometry.num_edges;
+                        let num_vertices = geometry.num_vertices;
 
                         match mesh.render_mode {
                             RenderMode::Solid => {
@@ -1037,6 +1052,11 @@ impl Renderer {
                                     .filter(|id| self.material_registry.exists(id));
 
                                 if let Some(mat_id) = material_id {
+                                    // Get material topology
+                                    let material_topology = self.material_registry.get(mat_id)
+                                        .map(|m| m.topology)
+                                        .unwrap_or_default();
+
                                     // Use material pipeline
                                     if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
                                         // Update global uniforms
@@ -1062,8 +1082,22 @@ impl Renderer {
                                         render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[]);
                                         render_pass.set_bind_group(1, &resources.bind_group, &[]);
                                         render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
-                                        render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                                        render_pass.draw_indexed(0..num_indices, 0, 0..1);
+
+                                        // Draw based on material topology
+                                        if material_topology.uses_edge_indices() {
+                                            // Lines: use edge indices
+                                            if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
+                                                render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                                render_pass.draw_indexed(0..num_edges, 0, 0..1);
+                                            }
+                                        } else if material_topology.uses_indices() {
+                                            // Triangles: use triangle indices
+                                            render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                            render_pass.draw_indexed(0..num_indices, 0, 0..1);
+                                        } else {
+                                            // Points: draw vertices directly without indices
+                                            render_pass.draw(0..num_vertices, 0..1);
+                                        }
                                     }
                                 } else {
                                     // Fallback to legacy pipeline - use pre-written uniforms with dynamic offset
@@ -1283,7 +1317,7 @@ impl Renderer {
         };
 
         // Update view projection matrix
-        self.uniforms.update_view_proj(self.size, state);
+        self.uniforms.update_view_proj(self.size, state.camera_uniforms());
         self.queue.write_buffer(
             &self.mesh_particle_view_buffer,
             0,
@@ -1397,19 +1431,12 @@ impl Renderer {
             let instances = &billboard_instances[..instance_count];
 
             // Update billboard uniforms (view_proj + camera vectors)
-            self.uniforms.update_view_proj(self.size, state);
+            let camera = state.camera_uniforms();
+            self.uniforms.update_view_proj(self.size, camera);
 
-            // Compute camera vectors from the fixed camera position
-            // This matches the camera setup in update_view_proj
-            let dist = 4.0f32;
-            let camera_pos = glam::Vec3::new(dist, dist * 0.5, dist);
-            let target = glam::Vec3::ZERO;
-            let up = glam::Vec3::Y;
-
-            // Compute view-space basis vectors
-            let forward = (target - camera_pos).normalize();
-            let right = forward.cross(up).normalize();
-            let cam_up = right.cross(forward);
+            // Compute camera vectors from dynamic camera uniforms
+            let right = camera.right();
+            let cam_up = camera.camera_up();
 
             let camera_right = [right.x, right.y, right.z, 0.0];
             let camera_up = [cam_up.x, cam_up.y, cam_up.z, 0.0];
@@ -1495,7 +1522,7 @@ impl Renderer {
             };
 
             // Update view projection matrix
-            self.uniforms.update_view_proj(self.size, state);
+            self.uniforms.update_view_proj(self.size, state.camera_uniforms());
             self.queue.write_buffer(
                 &self.mesh_particle_view_buffer,
                 0,

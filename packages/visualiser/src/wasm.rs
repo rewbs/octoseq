@@ -24,6 +24,37 @@ struct EntityPositionDebug {
     position: [f32; 3],
 }
 
+/// Camera state for inspector, serialized to JSON.
+#[derive(Serialize)]
+struct CameraStateDebug {
+    position: [f32; 3],
+    rotation: [f32; 3],
+    target: Option<[f32; 3]>,
+    fov: f32,
+    near: f32,
+    far: f32,
+    mode: &'static str,
+    has_signals: bool,
+    signal_bound: CameraSignalFlagsDebug,
+}
+
+/// Flags indicating which camera properties are signal-bound.
+#[derive(Serialize)]
+struct CameraSignalFlagsDebug {
+    position_x: bool,
+    position_y: bool,
+    position_z: bool,
+    rotation_x: bool,
+    rotation_y: bool,
+    rotation_z: bool,
+    target_x: bool,
+    target_y: bool,
+    target_z: bool,
+    fov: bool,
+    near: bool,
+    far: bool,
+}
+
 #[wasm_bindgen]
 pub struct WasmVisualiser {
     inner: Rc<RefCell<VisualiserContext>>,
@@ -740,6 +771,48 @@ impl WasmVisualiser {
             .collect();
 
         serde_json::to_string(&positions).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    /// Get camera state as JSON for inspector.
+    /// Returns current position, rotation, target, fov, near, far, mode, and signal flags.
+    pub fn get_camera_state_json(&self) -> String {
+        use crate::camera::CameraSignalFlags;
+
+        let inner = self.inner.borrow();
+        let uniforms = inner.state.camera_uniforms();
+        let config = inner.state.camera_config();
+        let flags = CameraSignalFlags::from_config(config);
+
+        let state = CameraStateDebug {
+            position: [uniforms.position[0], uniforms.position[1], uniforms.position[2]],
+            rotation: [uniforms.rotation[0], uniforms.rotation[1], uniforms.rotation[2]],
+            target: if uniforms.mode == 1 {
+                Some([uniforms.target[0], uniforms.target[1], uniforms.target[2]])
+            } else {
+                None
+            },
+            fov: uniforms.fov,
+            near: uniforms.near,
+            far: uniforms.far,
+            mode: if uniforms.mode == 1 { "lookAt" } else { "euler" },
+            has_signals: config.has_signals(),
+            signal_bound: CameraSignalFlagsDebug {
+                position_x: flags.position_x,
+                position_y: flags.position_y,
+                position_z: flags.position_z,
+                rotation_x: flags.rotation_x,
+                rotation_y: flags.rotation_y,
+                rotation_z: flags.rotation_z,
+                target_x: flags.target_x,
+                target_y: flags.target_y,
+                target_z: flags.target_z,
+                fov: flags.fov,
+                near: flags.near,
+                far: flags.far,
+            },
+        };
+
+        serde_json::to_string(&state).unwrap_or_else(|_| "{}".to_string())
     }
 
     pub fn render(&self, dt: f32) {

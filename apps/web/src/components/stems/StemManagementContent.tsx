@@ -16,23 +16,21 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { Upload, Info, X } from "lucide-react";
+import { Upload, Info, X, Combine, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import { useMirStore } from "@/lib/stores/mirStore";
 import { useCandidateEventStore } from "@/lib/stores/candidateEventStore";
+import { useMirActions } from "@/lib/stores/hooks/useMirActions";
+import { generateMixdownFromStems, createBlobUrlFromBuffer } from "@/lib/audio/mixdownGenerator";
 import type { AudioInput, AudioInputOrigin } from "@/lib/stores/types/audioInput";
 import { StemListItem } from "./StemListItem";
-
-export interface StemManagementContentProps {
-  audioDuration: number;
-}
 
 /**
  * Content panel for managing stems.
  * Rendered when the "Stems" tree node is expanded.
  */
-export function StemManagementContent({ audioDuration }: StemManagementContentProps) {
+export function StemManagementContent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletedStem, setDeletedStem] = useState<{
@@ -40,6 +38,10 @@ export function StemManagementContent({ audioDuration }: StemManagementContentPr
     index: number;
     timeoutId: ReturnType<typeof setTimeout>;
   } | null>(null);
+  const [isGeneratingMixdown, setIsGeneratingMixdown] = useState(false);
+
+  // MIR actions for auto-running analysis on stem load
+  const { runAnalysis } = useMirActions();
 
   const {
     collection,
@@ -50,6 +52,8 @@ export function StemManagementContent({ audioDuration }: StemManagementContentPr
     removeStem,
     restoreStem,
     selectInput,
+    updateMixdown,
+    getStems,
   } = useAudioInputStore(
     useShallow((s) => ({
       collection: s.collection,
@@ -60,6 +64,8 @@ export function StemManagementContent({ audioDuration }: StemManagementContentPr
       removeStem: s.removeStem,
       restoreStem: s.restoreStem,
       selectInput: s.selectInput,
+      updateMixdown: s.updateMixdown,
+      getStems: s.getStems,
     }))
   );
 
@@ -100,44 +106,53 @@ export function StemManagementContent({ audioDuration }: StemManagementContentPr
 
   const handleFileSelect = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
+      const files = e.target.files;
+      if (!files || files.length === 0) return;
 
-      try {
-        // Decode the audio file
-        const arrayBuffer = await file.arrayBuffer();
-        const audioContext = new AudioContext();
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+      // Process all selected files
+      const audioContext = new AudioContext();
 
-        // Create blob URL for playback
-        const blob = new Blob([arrayBuffer], { type: file.type });
-        const audioUrl = URL.createObjectURL(blob);
+      for (const file of Array.from(files)) {
+        try {
+          // Decode the audio file
+          const arrayBuffer = await file.arrayBuffer();
+          const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
 
-        // Extract file name without extension as label
-        const label = file.name.replace(/\.[^/.]+$/, "");
+          // Create blob URL for playback
+          const blob = new Blob([arrayBuffer], { type: file.type });
+          const audioUrl = URL.createObjectURL(blob);
 
-        const origin: AudioInputOrigin = {
-          kind: "file",
-          fileName: file.name,
-        };
+          // Extract file name without extension as label
+          const label = file.name.replace(/\.[^/.]+$/, "");
 
-        addStem({
-          audioBuffer: {
-            sampleRate: audioBuffer.sampleRate,
-            numberOfChannels: audioBuffer.numberOfChannels,
-            getChannelData: (channel: number) => audioBuffer.getChannelData(channel),
-          },
-          metadata: {
-            sampleRate: audioBuffer.sampleRate,
-            totalSamples: audioBuffer.length,
-            duration: audioBuffer.duration,
-          },
-          audioUrl,
-          origin,
-          label,
-        });
-      } catch (error) {
-        console.error("Failed to import stem:", error);
+          const origin: AudioInputOrigin = {
+            kind: "file",
+            fileName: file.name,
+          };
+
+          const stemId = addStem({
+            audioBuffer: {
+              sampleRate: audioBuffer.sampleRate,
+              numberOfChannels: audioBuffer.numberOfChannels,
+              getChannelData: (channel: number) => audioBuffer.getChannelData(channel),
+            },
+            metadata: {
+              sampleRate: audioBuffer.sampleRate,
+              totalSamples: audioBuffer.length,
+              duration: audioBuffer.duration,
+            },
+            audioUrl,
+            origin,
+            label,
+          });
+
+          // Auto-run key MIR analyses on the new stem
+          // Wait for analyses to complete before processing next file to avoid cancellation
+          await runAnalysis("onsetEnvelope", stemId);
+          await runAnalysis("spectralFlux", stemId);
+        } catch (error) {
+          console.error(`Failed to import stem "${file.name}":`, error);
+        }
       }
 
       // Reset the file input
@@ -145,7 +160,7 @@ export function StemManagementContent({ audioDuration }: StemManagementContentPr
         fileInputRef.current.value = "";
       }
     },
-    [addStem]
+    [addStem, runAnalysis]
   );
 
   const handleDeleteStem = useCallback(
@@ -202,16 +217,68 @@ export function StemManagementContent({ audioDuration }: StemManagementContentPr
     }
   }, [deletedStem]);
 
+  const handleGenerateMixdown = useCallback(async () => {
+    const allStems = getStems();
+    if (allStems.length === 0) return;
+
+    setIsGeneratingMixdown(true);
+
+    try {
+      // Get audio buffers from all stems
+      const stemBuffers = allStems
+        .map((stem) => stem.audioBuffer)
+        .filter((buffer): buffer is NonNullable<typeof buffer> => buffer != null);
+
+      if (stemBuffers.length === 0) {
+        console.error("No audio buffers found in stems");
+        return;
+      }
+
+      // Generate mixed audio
+      const mixedBuffer = generateMixdownFromStems(stemBuffers);
+      const audioUrl = createBlobUrlFromBuffer(mixedBuffer, mixedBuffer.sampleRate);
+
+      // Calculate duration from the buffer
+      const samples = mixedBuffer.getChannelData(0).length;
+      const duration = samples / mixedBuffer.sampleRate;
+
+      // Update the mixdown in the store
+      const origin: AudioInputOrigin = {
+        kind: "synthetic",
+        generatedFrom: allStems.map((s) => s.id),
+      };
+
+      updateMixdown({
+        audioBuffer: mixedBuffer,
+        metadata: {
+          sampleRate: mixedBuffer.sampleRate,
+          totalSamples: samples,
+          duration,
+        },
+        audioUrl,
+        origin,
+        label: "Generated Mixdown",
+      });
+
+      // Run MIR analysis on the new mixdown
+      await runAnalysis("onsetEnvelope", "mixdown");
+      await runAnalysis("spectralFlux", "mixdown");
+    } catch (error) {
+      console.error("Failed to generate mixdown:", error);
+    } finally {
+      setIsGeneratingMixdown(false);
+    }
+  }, [getStems, updateMixdown, runAnalysis]);
+
   return (
     <div className="flex flex-col">
       {/* Import Stem Button */}
-      <div className="p-2">
+      <div className="p-2 space-y-2">
         <Button
           variant="outline"
           size="sm"
           className="w-full"
           onClick={() => fileInputRef.current?.click()}
-          disabled={audioDuration <= 0}
         >
           <Upload className="h-4 w-4 mr-1" />
           Import Stem
@@ -220,9 +287,25 @@ export function StemManagementContent({ audioDuration }: StemManagementContentPr
           ref={fileInputRef}
           type="file"
           accept="audio/*"
+          multiple
           className="hidden"
           onChange={handleFileSelect}
         />
+        {/* Generate Mixdown Button */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          disabled={stems.length === 0 || isGeneratingMixdown}
+          onClick={handleGenerateMixdown}
+        >
+          {isGeneratingMixdown ? (
+            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+          ) : (
+            <Combine className="h-4 w-4 mr-1" />
+          )}
+          Generate Mixdown
+        </Button>
       </div>
 
       {/* Stem List */}

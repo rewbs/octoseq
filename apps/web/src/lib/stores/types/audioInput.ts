@@ -7,7 +7,7 @@ export type AudioInputOrigin =
   | { kind: "file"; fileName: string }
   | { kind: "url"; url: string; fileName?: string }
   | { kind: "stem"; sourceId: string; method: string }
-  | { kind: "synthetic" };
+  | { kind: "synthetic"; generatedFrom?: string[] };
 
 /**
  * Metadata about an audio input's audio content.

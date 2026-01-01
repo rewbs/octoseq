@@ -11,6 +11,7 @@ export { useManualTempoStore, type ManualTempoStore, type ExtendedTempoHypothesi
 export { useFrequencyBandStore, type FrequencyBandStore, type BandInvalidationEvent, type BandInvalidationCallback } from "./frequencyBandStore";
 export { useBandMirStore, setupBandMirInvalidation, type BandMirStore } from "./bandMirStore";
 export { useBandProposalStore, type BandProposalStore } from "./bandProposalStore";
+export { useProjectStore, type ProjectStore } from "./projectStore";
 export {
   useInspectionStore,
   type InspectionStore,
@@ -36,6 +37,18 @@ export {
 
 // Types
 export type { UiMirResult, SearchResult, MirTimings, DebugSignal, AnalysisResult, RawAnalysisResult } from "./types";
+export type {
+  Project,
+  ProjectSerialized,
+  ProjectAudioReference,
+  ProjectAudioCollection,
+  ProjectScript,
+  ProjectScripts,
+  ProjectInterpretation,
+  ProjectBeatGridState,
+  ProjectUIState,
+  AudioLoadStatus,
+} from "./types/project";
 
 // Action hooks
 export { useMirActions } from "./hooks/useMirActions";
@@ -46,6 +59,7 @@ export { useBandMirActions } from "./hooks/useBandMirActions";
 export { useBandProposalActions } from "./hooks/useBandProposalActions";
 export { useCandidateEventActions } from "./hooks/useCandidateEventActions";
 export { useAuthoredEventActions } from "./hooks/useAuthoredEventActions";
+export { useProjectActions } from "./hooks/useProjectActions";
 
 // Derived state hooks
 export {

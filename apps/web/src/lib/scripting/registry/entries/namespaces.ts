@@ -2,7 +2,7 @@
  * Namespace entries for the API registry.
  *
  * These are the top-level global objects available in Rhai scripts:
- * mesh, line, scene, log, dbg, gen, inputs, feedback, fx, post
+ * mesh, line, scene, log, dbg, gen, inputs, feedback, fx, post, camera
  */
 
 import type { RegistryEntry } from "../types";
@@ -801,6 +801,148 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         ],
         returns: "DeformDescriptor",
         example: "let ns = deform.noise(#{ scale: 1.0, amplitude: 0.1 });",
+      },
+    ],
+  },
+
+  // ============================================================================
+  // camera - Camera control namespace (global singleton)
+  // ============================================================================
+  {
+    kind: "namespace",
+    name: "camera",
+    path: "camera",
+    description:
+      "Camera control singleton. Controls view position, orientation, and projection. Supports signal-binding for audio-reactive camera motion.",
+    properties: [
+      {
+        name: "position",
+        path: "camera.position",
+        type: "Map { x, y, z }",
+        description:
+          "Camera position in world space. Each component accepts Signal | f32.",
+        readonly: false,
+      },
+      {
+        name: "rotation",
+        path: "camera.rotation",
+        type: "Map { x, y, z }",
+        description:
+          "Euler rotation (pitch, yaw, roll) in radians. Used when target is not set.",
+        readonly: false,
+      },
+      {
+        name: "target",
+        path: "camera.target",
+        type: "Map { x, y, z } | ()",
+        description:
+          "Look-at target position. Set to enable LookAt mode; () for Euler mode.",
+        readonly: false,
+      },
+      {
+        name: "up",
+        path: "camera.up",
+        type: "Map { x, y, z }",
+        description: "Up vector for LookAt mode. Default: (0, 1, 0).",
+        readonly: false,
+      },
+      {
+        name: "fov",
+        path: "camera.fov",
+        type: "Signal | f32",
+        description: "Field of view in degrees. Default: 45.",
+        readonly: false,
+      },
+      {
+        name: "near",
+        path: "camera.near",
+        type: "Signal | f32",
+        description: "Near clip plane. Default: 0.1.",
+        readonly: false,
+      },
+      {
+        name: "far",
+        path: "camera.far",
+        type: "Signal | f32",
+        description: "Far clip plane. Default: 100.0.",
+        readonly: false,
+      },
+    ],
+    methods: [
+      {
+        name: "lookAt",
+        path: "camera.lookAt",
+        description:
+          "Set camera to look at a target position (enables LookAt mode).",
+        params: [
+          {
+            name: "target",
+            type: "Map { x, y, z }",
+            description: "Target position to look at.",
+          },
+        ],
+        returns: "void",
+        example: "camera.lookAt(#{ x: 0.0, y: 0.0, z: 0.0 });",
+      },
+      {
+        name: "orbit",
+        path: "camera.orbit",
+        description:
+          "Position camera on a circular orbit around a center point.",
+        params: [
+          {
+            name: "center",
+            type: "Map { x, y, z }",
+            description: "Center point to orbit around.",
+          },
+          {
+            name: "radius",
+            type: "Signal | f32",
+            description: "Distance from center.",
+          },
+          {
+            name: "angle",
+            type: "Signal | f32",
+            description: "Angle in radians around Y-axis.",
+          },
+        ],
+        returns: "void",
+        example: "camera.orbit(#{ x: 0.0, y: 0.0, z: 0.0 }, 5.0, time.seconds * 0.5);",
+      },
+      {
+        name: "dolly",
+        path: "camera.dolly",
+        description:
+          "Move camera forward/backward along view direction. Works in both Euler and LookAt modes.",
+        params: [
+          {
+            name: "distance",
+            type: "f32",
+            description:
+              "How far to move (positive = forward, negative = backward).",
+          },
+        ],
+        returns: "void",
+        example: "camera.dolly(2.0);",
+      },
+      {
+        name: "pan",
+        path: "camera.pan",
+        description: "Move camera laterally (left/right, up/down).",
+        params: [
+          {
+            name: "dx",
+            type: "f32",
+            description: "Horizontal movement (positive = right).",
+          },
+          {
+            name: "dy",
+            type: "f32",
+            description: "Vertical movement (positive = up).",
+          },
+        ],
+        returns: "void",
+        example: "camera.pan(1.0, 0.5);",
       },
     ],
   },

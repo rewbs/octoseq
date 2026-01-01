@@ -27,6 +27,10 @@ export interface TreeNodeProps {
   onSelect?: () => void;
   /** Optional badge to show after the label. */
   badge?: ReactNode;
+  /** Optional action buttons to show (visible on hover or when hasActiveAction is true). */
+  actions?: ReactNode;
+  /** Whether any action is currently active (e.g., soloed). Shows actions without hover. */
+  hasActiveAction?: boolean;
   /** Children nodes to render when expanded. */
   children?: ReactNode;
 }
@@ -47,6 +51,8 @@ export function TreeNode({
   onToggleExpand,
   onSelect,
   badge,
+  actions,
+  hasActiveAction = false,
   children,
 }: TreeNodeProps) {
   const handleChevronClick = (e: React.MouseEvent) => {
@@ -64,7 +70,7 @@ export function TreeNode({
       {/* Node row */}
       <div
         className={cn(
-          "flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer transition-colors text-sm",
+          "group flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer transition-colors text-sm",
           isSelected
             ? "bg-zinc-200 dark:bg-zinc-700"
             : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
@@ -101,6 +107,19 @@ export function TreeNode({
 
         {/* Label */}
         <span className="flex-1 truncate">{label}</span>
+
+        {/* Actions (visible on hover or when active) */}
+        {actions && (
+          <div
+            className={cn(
+              "shrink-0 flex items-center",
+              hasActiveAction ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+              "transition-opacity"
+            )}
+          >
+            {actions}
+          </div>
+        )}
 
         {/* Badge */}
         {badge && (

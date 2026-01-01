@@ -188,6 +188,82 @@ export function SignalViewer({
     return v0 + ratio * (v1 - v0);
   }, [signal]);
 
+  // Draw threshold line helper
+  const drawThresholdLine = (
+    ctx: CanvasRenderingContext2D,
+    thresholdVal: number,
+    w: number,
+    h: number
+  ) => {
+    const y = h * (1 - thresholdVal);
+    ctx.save();
+    ctx.strokeStyle = "rgba(239, 68, 68, 0.7)"; // red-500
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  // Draw zero line when signal spans both positive and negative values
+  const drawZeroLine = (
+    ctx: CanvasRenderingContext2D,
+    bounds: NormalizationBounds,
+    w: number,
+    h: number,
+    baselineMode: BaselineMode
+  ) => {
+    // Only draw if the signal spans zero (has both positive and negative values)
+    if (bounds.min >= 0 || bounds.max <= 0) return;
+
+    // Calculate normalized position of 0
+    const range = bounds.max - bounds.min;
+    if (range <= 0) return;
+    const normalizedZero = (0 - bounds.min) / range;
+
+    // Calculate Y position based on baseline mode
+    let y: number;
+    if (baselineMode === "bottom") {
+      y = h * (1 - normalizedZero);
+    } else if (baselineMode === "center") {
+      // For center baseline, 0.5 normalized is the center
+      const centered = normalizedZero - 0.5;
+      y = h * (0.5 - centered);
+    } else {
+      // Custom baseline
+      const customY = typeof baselineMode === "object" ? baselineMode.y : 0;
+      y = h * (1 - customY) - normalizedZero * h * (1 - customY);
+    }
+
+    ctx.save();
+    ctx.strokeStyle = "rgba(161, 161, 170, 0.5)"; // zinc-400 with transparency
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  // Draw cursor helper
+  const drawCursor = (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    h: number
+  ) => {
+    ctx.save();
+    ctx.strokeStyle = "rgba(239, 68, 68, 0.8)"; // red-500
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+    ctx.restore();
+  };
+
   // Render function
   const render = useCallback(() => {
     const canvas = canvasRef.current;
@@ -255,13 +331,154 @@ export function SignalViewer({
       }
     }
 
+    // Render sparse signal helper (inline)
+    const doRenderSparseSignal = (sig: SparseSignal) => {
+      const { times, strengths } = sig;
+      const canvasHeight = height;
+
+      if (mode === "markers") {
+        const points: RenderPoint[] = [];
+        for (let i = 0; i < times.length; i++) {
+          const time = times[i];
+          const strength = strengths?.[i] ?? 1;
+          if (time !== undefined) {
+            const x = timeToX(time);
+            if (x >= -10 && x <= width + 10) {
+              const y = canvasHeight * (1 - strength);
+              points.push({ x, y, value: strength, time });
+            }
+          }
+        }
+        renderMarkers(ctx, points, {
+          color: mergedColor,
+          canvasHeight,
+        });
+      } else {
+        // Impulses
+        for (let i = 0; i < times.length; i++) {
+          const time = times[i];
+          const strength = strengths?.[i] ?? 1;
+          if (time !== undefined) {
+            const x = timeToX(time);
+            if (x >= -5 && x <= width + 5) {
+              ctx.globalAlpha = (mergedColor.opacity ?? 1) * (0.3 + 0.7 * strength);
+              ctx.strokeStyle = mergedColor.stroke ?? "#3b82f6";
+              ctx.lineWidth = mergedColor.strokeWidth ?? 2;
+              ctx.lineCap = "round";
+              ctx.beginPath();
+              ctx.moveTo(x, canvasHeight);
+              ctx.lineTo(x, canvasHeight * (1 - strength));
+              ctx.stroke();
+            }
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
+    };
+
+    // Render continuous signal helper (inline)
+    const doRenderContinuousSignal = (sig: ContinuousSignal) => {
+      const { times, values } = sig;
+      const canvasHeight = height;
+
+      // Decimate
+      const decimated = decimator.decimate(times, values, startTime, endTime, targetPoints);
+
+      // Convert to render points
+      const points: RenderPoint[] = [];
+      for (let i = 0; i < decimated.times.length; i++) {
+        const time = decimated.times[i];
+        const value = decimated.values[i];
+        if (time === undefined || value === undefined) continue;
+
+        const x = timeToX(time);
+        const normalized = normalizer.normalize(value, bounds);
+
+        let y: number;
+        if (baseline === "bottom") {
+          y = canvasHeight * (1 - clamp(normalized, 0, 1));
+        } else if (baseline === "center") {
+          const centered = clamp(normalized, 0, 1) - 0.5;
+          y = canvasHeight * (0.5 - centered);
+        } else {
+          const customY = typeof baseline === "object" ? baseline.y : 0;
+          const scaledValue = clamp(normalized, 0, 1);
+          y = canvasHeight * (1 - customY) - scaledValue * canvasHeight * (1 - customY);
+        }
+
+        points.push({ x, y, value, time });
+      }
+
+      // Render based on mode
+      switch (mode) {
+        case "line":
+          renderLine(ctx, points, {
+            color: mergedColor,
+            baseline,
+            mode: "line",
+            canvasHeight,
+          });
+          break;
+
+        case "filled":
+          renderLine(ctx, points, {
+            color: mergedColor,
+            baseline,
+            mode: "filled",
+            canvasHeight,
+          });
+          break;
+
+        case "stepped":
+          renderStepped(ctx, points, {
+            color: mergedColor,
+            baseline,
+            filled: false,
+            canvasHeight,
+          });
+          break;
+
+        case "impulses":
+          renderImpulses(ctx, points, {
+            color: mergedColor,
+            baseline,
+            canvasHeight,
+          });
+          break;
+
+        case "markers":
+          renderMarkers(ctx, points, {
+            color: mergedColor,
+            canvasHeight,
+          });
+          break;
+
+        case "heat-strip":
+          renderHeatStrip(
+            ctx,
+            points.map((p) => ({
+              x: p.x,
+              normalized: normalizer.normalize(p.value, bounds),
+            })),
+            {
+              color: mergedColor,
+              canvasHeight,
+            }
+          );
+          break;
+      }
+    };
+
     if (signal.kind === "sparse") {
       // Render sparse events
-      renderSparseSignal(ctx, signal, timeToX, bounds, width, height);
+      doRenderSparseSignal(signal);
     } else {
       // Render continuous signal
-      renderContinuousSignal(ctx, signal, timeToX, bounds, targetPoints, startTime, endTime, width, height);
+      doRenderContinuousSignal(signal);
     }
+
+    // Draw zero line if signal spans both positive and negative values
+    drawZeroLine(ctx, bounds, width, height, baseline);
 
     // Draw threshold line if specified
     if (threshold != null && threshold >= 0 && threshold <= 1) {
@@ -272,198 +489,7 @@ export function SignalViewer({
     if (cursorTimeSec != null && cursorTimeSec >= startTime && cursorTimeSec <= endTime) {
       drawCursor(ctx, timeToX(cursorTimeSec), height);
     }
-  }, [viewport, signal, cursorTimeSec, threshold, mode, baseline, normalization, mergedColor]);
-
-  // Render sparse signal
-  const renderSparseSignal = useCallback((
-    ctx: CanvasRenderingContext2D,
-    sig: SparseSignal,
-    timeToX: (t: number) => number,
-    bounds: NormalizationBounds,
-    width: number,
-    height: number
-  ) => {
-    const { times, strengths } = sig;
-    const canvasHeight = height;
-
-    if (mode === "markers") {
-      const points: RenderPoint[] = [];
-      for (let i = 0; i < times.length; i++) {
-        const time = times[i];
-        const strength = strengths?.[i] ?? 1;
-        if (time !== undefined) {
-          const x = timeToX(time);
-          if (x >= -10 && x <= width + 10) {
-            const y = canvasHeight * (1 - strength);
-            points.push({ x, y, value: strength, time });
-          }
-        }
-      }
-      renderMarkers(ctx, points, {
-        color: mergedColor,
-        canvasHeight,
-      });
-    } else {
-      // Impulses
-      for (let i = 0; i < times.length; i++) {
-        const time = times[i];
-        const strength = strengths?.[i] ?? 1;
-        if (time !== undefined) {
-          const x = timeToX(time);
-          if (x >= -5 && x <= width + 5) {
-            ctx.globalAlpha = (mergedColor.opacity ?? 1) * (0.3 + 0.7 * strength);
-            ctx.strokeStyle = mergedColor.stroke ?? "#3b82f6";
-            ctx.lineWidth = mergedColor.strokeWidth ?? 2;
-            ctx.lineCap = "round";
-            ctx.beginPath();
-            ctx.moveTo(x, canvasHeight);
-            ctx.lineTo(x, canvasHeight * (1 - strength));
-            ctx.stroke();
-          }
-        }
-      }
-      ctx.globalAlpha = 1;
-    }
-  }, [mode, mergedColor]);
-
-  // Render continuous signal
-  const renderContinuousSignal = useCallback((
-    ctx: CanvasRenderingContext2D,
-    sig: ContinuousSignal,
-    timeToX: (t: number) => number,
-    bounds: NormalizationBounds,
-    targetPoints: number,
-    startTime: number,
-    endTime: number,
-    width: number,
-    height: number
-  ) => {
-    const { times, values } = sig;
-    const canvasHeight = height;
-    //const baselineY = getBaselineY(baseline, canvasHeight);
-
-    // Decimate
-    const decimated = decimator.decimate(times, values, startTime, endTime, targetPoints);
-
-    // Convert to render points
-    const points: RenderPoint[] = [];
-    for (let i = 0; i < decimated.times.length; i++) {
-      const time = decimated.times[i];
-      const value = decimated.values[i];
-      if (time === undefined || value === undefined) continue;
-
-      const x = timeToX(time);
-      const normalized = normalizer.normalize(value, bounds);
-
-      let y: number;
-      if (baseline === "bottom") {
-        y = canvasHeight * (1 - clamp(normalized, 0, 1));
-      } else if (baseline === "center") {
-        const centered = clamp(normalized, 0, 1) - 0.5;
-        y = canvasHeight * (0.5 - centered);
-      } else {
-        const customY = typeof baseline === "object" ? baseline.y : 0;
-        const scaledValue = clamp(normalized, 0, 1);
-        y = canvasHeight * (1 - customY) - scaledValue * canvasHeight * (1 - customY);
-      }
-
-      points.push({ x, y, value, time });
-    }
-
-    // Render based on mode
-    switch (mode) {
-      case "line":
-        renderLine(ctx, points, {
-          color: mergedColor,
-          baseline,
-          mode: "line",
-          canvasHeight,
-        });
-        break;
-
-      case "filled":
-        renderLine(ctx, points, {
-          color: mergedColor,
-          baseline,
-          mode: "filled",
-          canvasHeight,
-        });
-        break;
-
-      case "stepped":
-        renderStepped(ctx, points, {
-          color: mergedColor,
-          baseline,
-          filled: false,
-          canvasHeight,
-        });
-        break;
-
-      case "impulses":
-        renderImpulses(ctx, points, {
-          color: mergedColor,
-          baseline,
-          canvasHeight,
-        });
-        break;
-
-      case "markers":
-        renderMarkers(ctx, points, {
-          color: mergedColor,
-          canvasHeight,
-        });
-        break;
-
-      case "heat-strip":
-        renderHeatStrip(
-          ctx,
-          points.map((p) => ({
-            x: p.x,
-            normalized: normalizer.normalize(p.value, bounds),
-          })),
-          {
-            color: mergedColor,
-            canvasHeight,
-          }
-        );
-        break;
-    }
-  }, [mode, baseline, mergedColor]);
-
-  // Draw threshold line
-  const drawThresholdLine = useCallback((
-    ctx: CanvasRenderingContext2D,
-    threshold: number,
-    width: number,
-    height: number
-  ) => {
-    const y = height * (1 - threshold);
-    ctx.save();
-    ctx.strokeStyle = "rgba(239, 68, 68, 0.7)"; // red-500
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
-    ctx.restore();
-  }, []);
-
-  // Draw cursor
-  const drawCursor = useCallback((
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    height: number
-  ) => {
-    ctx.save();
-    ctx.strokeStyle = "rgba(239, 68, 68, 0.8)"; // red-500
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-    ctx.restore();
-  }, []);
+  }, [viewport, signal, cursorTimeSec, threshold, baseline, mode, mergedColor]);
 
   // Re-render when dependencies change
   useEffect(() => {

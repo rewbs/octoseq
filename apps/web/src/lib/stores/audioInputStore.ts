@@ -20,6 +20,9 @@ interface AudioInputState {
 
   /** Currently selected input in the tree UI (for context display, not "active"). */
   selectedInputId: string | null;
+
+  /** ID of the audio source currently displayed in the waveform. Defaults to MIXDOWN_ID. */
+  activeDisplayId: string;
 }
 
 // ----------------------------
@@ -131,6 +134,39 @@ interface AudioInputActions {
    * Get all inputs (mixdown + stems) in display order.
    */
   getAllInputsOrdered: () => AudioInput[];
+
+  /**
+   * Set the active display source for the waveform.
+   */
+  setActiveDisplay: (id: string) => void;
+
+  /**
+   * Get the audio buffer for the currently active display source.
+   */
+  getActiveDisplayBuffer: () => AudioBufferLike | null;
+
+  /**
+   * Get the audio URL for the currently active display source.
+   */
+  getActiveDisplayUrl: () => string | null;
+
+  /**
+   * Clear all stems, keeping only the mixdown.
+   */
+  clearStems: () => void;
+
+  /**
+   * Replace a stem's audio content while keeping its ID and position.
+   * Used when user wants to swap out the audio file for a stem.
+   */
+  replaceStem: (
+    id: string,
+    newData: {
+      audioBuffer: AudioBufferLike;
+      metadata: AudioInputMetadata;
+      audioUrl: string | null;
+    }
+  ) => void;
 }
 
 export type AudioInputStore = AudioInputState & AudioInputActions;
@@ -142,6 +178,7 @@ export type AudioInputStore = AudioInputState & AudioInputActions;
 const initialState: AudioInputState = {
   collection: null,
   selectedInputId: null,
+  activeDisplayId: MIXDOWN_ID,
 };
 
 // ----------------------------
@@ -273,11 +310,15 @@ export const useAudioInputStore = create<AudioInputStore>()(
       // ----------------------------
 
       addStem: (params) => {
-        const { collection } = get();
+        let { collection } = get();
 
+        // Initialize collection if it doesn't exist (stems can be loaded before mixdown)
         if (!collection) {
-          console.warn("Cannot add stem: no collection exists");
-          return "";
+          collection = {
+            version: 1,
+            inputs: {},
+            stemOrder: [],
+          };
         }
 
         const stemId = nanoid();
@@ -442,6 +483,90 @@ export const useAudioInputStore = create<AudioInputStore>()(
         }
 
         return result;
+      },
+
+      // ----------------------------
+      // Active Display (Waveform Switching)
+      // ----------------------------
+
+      setActiveDisplay: (id) => {
+        set({ activeDisplayId: id }, false, "setActiveDisplay");
+      },
+
+      getActiveDisplayBuffer: () => {
+        const { collection, activeDisplayId } = get();
+        if (!collection) return null;
+        const input = collection.inputs[activeDisplayId];
+        return input?.audioBuffer ?? null;
+      },
+
+      getActiveDisplayUrl: () => {
+        const { collection, activeDisplayId } = get();
+        if (!collection) return null;
+        const input = collection.inputs[activeDisplayId];
+        return input?.audioUrl ?? null;
+      },
+
+      clearStems: () => {
+        const { collection, activeDisplayId } = get();
+        if (!collection) return;
+
+        // Keep only mixdown
+        const mixdown = collection.inputs[MIXDOWN_ID];
+        const newInputs: Record<string, AudioInput> = {};
+        if (mixdown) {
+          newInputs[MIXDOWN_ID] = mixdown;
+        }
+
+        set(
+          {
+            collection: {
+              ...collection,
+              inputs: newInputs,
+              stemOrder: [],
+            },
+            // Reset active display to mixdown if current was a stem
+            activeDisplayId: MIXDOWN_ID,
+          },
+          false,
+          "clearStems"
+        );
+      },
+
+      replaceStem: (id, newData) => {
+        const { collection } = get();
+        if (!collection) return;
+
+        const existingStem = collection.inputs[id];
+        if (!existingStem || existingStem.role !== "stem") return;
+
+        // Revoke old blob URL if it exists
+        if (existingStem.audioUrl) {
+          URL.revokeObjectURL(existingStem.audioUrl);
+        }
+
+        const updatedStem: AudioInput = {
+          ...existingStem,
+          audioBuffer: newData.audioBuffer,
+          metadata: newData.metadata,
+          audioUrl: newData.audioUrl,
+          // Update origin to indicate replacement
+          origin: { kind: "file", fileName: "(replaced)" },
+        };
+
+        set(
+          {
+            collection: {
+              ...collection,
+              inputs: {
+                ...collection.inputs,
+                [id]: updatedStem,
+              },
+            },
+          },
+          false,
+          "replaceStem"
+        );
       },
     }),
     { name: "audio-input-store" }

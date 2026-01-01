@@ -24,6 +24,8 @@ interface MirState {
   isRunning: boolean;
   visualTab: VisualTabId;
   lastTimings: MirTimings | null;
+  /** Audio input ID whose MIR results are currently displayed. Defaults to "mixdown". */
+  displayContextInputId: string;
 }
 
 interface MirActions {
@@ -42,6 +44,8 @@ interface MirActions {
   invalidateInputMir: (inputId: string) => void;
   /** Get all cached MIR results for an input */
   getAllInputMirResults: (inputId: string) => Map<MirFunctionId, UiMirResult>;
+  /** Set the audio input ID whose MIR results should be displayed */
+  setDisplayContextInputId: (inputId: string) => void;
 }
 
 export type MirStore = MirState & MirActions;
@@ -54,6 +58,7 @@ const initialState: MirState = {
   isRunning: false,
   visualTab: "search",
   lastTimings: null,
+  displayContextInputId: "mixdown",
 };
 
 export const useMirStore = create<MirStore>()(
@@ -126,6 +131,9 @@ export const useMirStore = create<MirStore>()(
         }
         return results;
       },
+
+      setDisplayContextInputId: (inputId) =>
+        set({ displayContextInputId: inputId }, false, "setDisplayContextInputId"),
     }),
     { name: "mir-store" }
   )
@@ -135,19 +143,20 @@ export const useMirStore = create<MirStore>()(
  * Get the list of available MIR tabs for the visualizer.
  */
 export const mirTabDefinitions: Array<{ id: MirFunctionId; label: string; kind: "1d" | "events" | "2d" | "tempoHypotheses" }> = [
+  { id: "tempoHypotheses", label: "Tempo Hypotheses", kind: "tempoHypotheses" },
+  { id: "amplitudeEnvelope", label: "Amplitude (1D)", kind: "1d" },
   { id: "spectralCentroid", label: "Spectral Centroid (1D)", kind: "1d" },
   { id: "spectralFlux", label: "Spectral Flux (1D)", kind: "1d" },
+  { id: "cqtHarmonicEnergy", label: "CQT Harmonic Energy (1D)", kind: "1d" },
+  { id: "cqtBassPitchMotion", label: "CQT Bass Pitch Motion (1D)", kind: "1d" },
+  { id: "cqtTonalStability", label: "CQT Tonal Stability (1D)", kind: "1d" },
   { id: "onsetEnvelope", label: "Onset Envelope (1D)", kind: "1d" },
   { id: "onsetPeaks", label: "Onset Peaks (events)", kind: "events" },
   { id: "beatCandidates", label: "Beat Candidates (events)", kind: "events" },
-  { id: "tempoHypotheses", label: "Tempo Hypotheses", kind: "tempoHypotheses" },
   { id: "melSpectrogram", label: "Mel Spectrogram (2D)", kind: "2d" },
   { id: "hpssHarmonic", label: "HPSS Harmonic (2D)", kind: "2d" },
   { id: "hpssPercussive", label: "HPSS Percussive (2D)", kind: "2d" },
   { id: "mfcc", label: "MFCC (2D)", kind: "2d" },
   { id: "mfccDelta", label: "MFCC Delta (2D)", kind: "2d" },
   { id: "mfccDeltaDelta", label: "MFCC Delta-Delta (2D)", kind: "2d" },
-  { id: "cqtHarmonicEnergy", label: "CQT Harmonic Energy (1D)", kind: "1d" },
-  { id: "cqtBassPitchMotion", label: "CQT Bass Pitch Motion (1D)", kind: "1d" },
-  { id: "cqtTonalStability", label: "CQT Tonal Stability (1D)", kind: "1d" },
 ];

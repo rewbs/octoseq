@@ -6,11 +6,13 @@ import {
   ChevronRight,
   Music,
   AudioLines,
+  AudioWaveform,
   Layers,
   Layers2,
   Zap,
   Code,
   FileCode,
+  File,
   Type,
   Circle,
   CircleDashed,
@@ -18,6 +20,16 @@ import {
   Sparkles,
   CheckCircle,
   Activity,
+  Folder,
+  TrendingUp,
+  Grid3X3,
+  ScatterChart,
+  Timer,
+  Search,
+  Headphones,
+  SlidersHorizontal,
+  Package,
+  Box,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -29,13 +41,13 @@ import {
   SIDEBAR_MAX_WIDTH,
 } from "@/lib/stores/interpretationTreeStore";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useProjectStore } from "@/lib/stores/projectStore";
+import { useMirStore } from "@/lib/stores/mirStore";
 import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
+import { getMirAnalysisId, getAudioSourceId, getBandId } from "@/lib/nodeTypes";
+import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { TreeNode } from "./TreeNode";
 import { useTreeData, type TreeNodeData } from "./useTreeData";
-import { FrequencyBandContent } from "@/components/frequencyBand/FrequencyBandContent";
-import { StemManagementContent } from "@/components/stems/StemManagementContent";
-import { CandidateEventsContent } from "@/components/candidates/CandidateEventsContent";
-import { AuthoredEventsContent } from "@/components/authored/AuthoredEventsContent";
 
 /**
  * Parse a tree node ID to extract the audio input ID if it's an audio node.
@@ -56,6 +68,40 @@ function parseAudioInputId(nodeId: string): string | null {
   return null;
 }
 
+/**
+ * Parse a tree node ID to extract the script ID if it's a script node.
+ * Returns the script ID for script nodes, or null for non-script nodes.
+ *
+ * Node ID pattern:
+ * - "scripts:{scriptId}" → scriptId
+ * - anything else → null
+ */
+function parseScriptId(nodeId: string): string | null {
+  if (nodeId.startsWith("scripts:")) {
+    return nodeId.slice("scripts:".length);
+  }
+  return null;
+}
+
+/**
+ * Map band MIR function IDs to their corresponding visual tab IDs.
+ * Band functions are displayed within the context of their parent analysis type.
+ */
+const BAND_MIR_TO_VISUAL_TAB: Record<string, string> = {
+  // STFT-based band functions
+  bandAmplitudeEnvelope: "amplitudeEnvelope",
+  bandOnsetStrength: "onsetEnvelope",
+  bandSpectralFlux: "spectralFlux",
+  bandSpectralCentroid: "spectralCentroid",
+  // CQT-based band functions
+  bandCqtHarmonicEnergy: "cqtHarmonicEnergy",
+  bandCqtBassPitchMotion: "cqtBassPitchMotion",
+  bandCqtTonalStability: "cqtTonalStability",
+  // Event functions
+  bandOnsetPeaks: "onsetPeaks",
+  bandBeatCandidates: "beatCandidates",
+};
+
 // ----------------------------
 // Icon Mapping
 // ----------------------------
@@ -68,22 +114,33 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   zap: <Zap className="h-4 w-4" />,
   code: <Code className="h-4 w-4" />,
   "file-code": <FileCode className="h-4 w-4" />,
+  file: <File className="h-4 w-4" />,
   type: <Type className="h-4 w-4" />,
   circle: <Circle className="h-2.5 w-2.5" />,
   "circle-dashed": <CircleDashed className="h-2.5 w-2.5" />,
   sparkles: <Sparkles className="h-4 w-4" />,
   "check-circle": <CheckCircle className="h-4 w-4" />,
   activity: <Activity className="h-4 w-4" />,
+  folder: <Folder className="h-4 w-4" />,
+  "sliders-horizontal": <SlidersHorizontal className="h-4 w-4" />,
+  // MIR analysis type icons
+  "trending-up": <TrendingUp className="h-3.5 w-3.5" />,
+  "grid-3x3": <Grid3X3 className="h-3.5 w-3.5" />,
+  "scatter-chart": <ScatterChart className="h-3.5 w-3.5" />,
+  timer: <Timer className="h-3.5 w-3.5" />,
+  search: <Search className="h-3.5 w-3.5" />,
+  waveform: <AudioWaveform className="h-4 w-4" />,
+  // Asset icons
+  package: <Package className="h-4 w-4" />,
+  box: <Box className="h-4 w-4" />,
 };
 
 // ----------------------------
 // Types
 // ----------------------------
 
-export interface InterpretationTreePanelProps {
-  /** Audio duration for frequency band operations. */
-  audioDuration: number;
-}
+// Props removed - tree no longer needs external dependencies
+// All context-specific content now lives in the Inspector panel
 
 // ----------------------------
 // Icon-Only Node Component
@@ -126,9 +183,10 @@ interface TreeNodeRendererProps {
   level: number;
   expandedNodes: Set<string>;
   selectedNodeId: string | null;
+  soloedBandId: string | null;
   onToggleExpand: (nodeId: string) => void;
   onSelectNode: (nodeId: string) => void;
-  audioDuration: number;
+  onToggleSolo: (bandId: string) => void;
 }
 
 function TreeNodeRenderer({
@@ -136,59 +194,39 @@ function TreeNodeRenderer({
   level,
   expandedNodes,
   selectedNodeId,
+  soloedBandId,
   onToggleExpand,
   onSelectNode,
-  audioDuration,
+  onToggleSolo,
 }: TreeNodeRendererProps) {
   const isExpanded = expandedNodes.has(node.id);
   const isSelected = selectedNodeId === node.id;
   const icon = node.iconName ? ICON_MAP[node.iconName] : undefined;
 
-  // Check for special content nodes
-  const isMixdownNode = node.id === TREE_NODE_IDS.MIXDOWN;
-  const isStemsNode = node.id === TREE_NODE_IDS.STEMS;
-  const isStemNode = node.id.startsWith("audio:stem:") && !node.id.includes(":band:") && !node.id.endsWith(":mir");
-  const isAuthoredEventsNode = node.id === TREE_NODE_IDS.AUTHORED_EVENTS;
-  const isCandidateEventsNode = node.id === TREE_NODE_IDS.CANDIDATE_EVENTS;
+  // Check if this is a band node and extract band ID
+  const bandId = getBandId(node.id);
+  const isBandNode = bandId !== null;
+  const isSoloed = isBandNode && soloedBandId === bandId;
 
-  // Extract sourceId for audio source nodes
-  const sourceId = parseAudioInputId(node.id);
-
-  // Determine which special content to render
-  const renderSpecialContent = () => {
-    // Show band controls for Mixdown and Stem nodes
-    if ((isMixdownNode || isStemNode) && sourceId) {
-      return (
-        <div className="ml-4 mt-1">
-          <FrequencyBandContent audioDuration={audioDuration} sourceId={sourceId} />
-        </div>
-      );
-    }
-    if (isStemsNode) {
-      return (
-        <div className="ml-4 mt-1">
-          <StemManagementContent audioDuration={audioDuration} />
-        </div>
-      );
-    }
-    if (isAuthoredEventsNode) {
-      return (
-        <div className="ml-4 mt-1">
-          <AuthoredEventsContent audioDuration={audioDuration} />
-        </div>
-      );
-    }
-    if (isCandidateEventsNode) {
-      return (
-        <div className="ml-4 mt-1">
-          <CandidateEventsContent audioDuration={audioDuration} />
-        </div>
-      );
-    }
-    return null;
-  };
-
-  const specialContent = renderSpecialContent();
+  // Build actions for band nodes
+  const actions = isBandNode ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggleSolo(bandId);
+      }}
+      className={cn(
+        "p-0.5 rounded transition-colors",
+        isSoloed
+          ? "text-yellow-600 dark:text-yellow-400 bg-yellow-500/20"
+          : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+      )}
+      title={isSoloed ? "Stop soloing" : "Solo (preview this band)"}
+    >
+      <Headphones className="h-3 w-3" />
+    </button>
+  ) : undefined;
 
   return (
     <TreeNode
@@ -203,29 +241,24 @@ function TreeNodeRenderer({
       onToggleExpand={() => onToggleExpand(node.id)}
       onSelect={() => onSelectNode(node.id)}
       badge={node.badge}
+      actions={actions}
+      hasActiveAction={isSoloed}
     >
       {/* Render children when expanded */}
       {node.hasChildren && isExpanded && (
-        <>
-          {/* For special nodes, render their custom content */}
-          {specialContent ? (
-            specialContent
-          ) : (
-            /* Render child nodes recursively */
-            node.children?.map((child) => (
-              <TreeNodeRenderer
-                key={child.id}
-                node={child}
-                level={level + 1}
-                expandedNodes={expandedNodes}
-                selectedNodeId={selectedNodeId}
-                onToggleExpand={onToggleExpand}
-                onSelectNode={onSelectNode}
-                audioDuration={audioDuration}
-              />
-            ))
-          )}
-        </>
+        node.children?.map((child) => (
+          <TreeNodeRenderer
+            key={child.id}
+            node={child}
+            level={level + 1}
+            expandedNodes={expandedNodes}
+            selectedNodeId={selectedNodeId}
+            soloedBandId={soloedBandId}
+            onToggleExpand={onToggleExpand}
+            onSelectNode={onSelectNode}
+            onToggleSolo={onToggleSolo}
+          />
+        ))
       )}
     </TreeNode>
   );
@@ -243,31 +276,33 @@ interface ResizeHandleProps {
 function ResizeHandle({ onResize, onResizeEnd }: ResizeHandleProps) {
   const [isDragging, setIsDragging] = useState(false);
   const startXRef = useRef(0);
+  // Store callbacks in refs to avoid stale closure issues during drag
+  const onResizeRef = useRef(onResize);
+  const onResizeEndRef = useRef(onResizeEnd);
+  onResizeRef.current = onResize;
+  onResizeEndRef.current = onResizeEnd;
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      setIsDragging(true);
-      startXRef.current = e.clientX;
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    startXRef.current = e.clientX;
 
-      const handleMouseMove = (moveEvent: MouseEvent) => {
-        const deltaX = moveEvent.clientX - startXRef.current;
-        startXRef.current = moveEvent.clientX;
-        onResize(deltaX);
-      };
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaX = moveEvent.clientX - startXRef.current;
+      startXRef.current = moveEvent.clientX;
+      onResizeRef.current(deltaX);
+    };
 
-      const handleMouseUp = () => {
-        setIsDragging(false);
-        onResizeEnd();
-        document.removeEventListener("mousemove", handleMouseMove);
-        document.removeEventListener("mouseup", handleMouseUp);
-      };
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      onResizeEndRef.current();
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
 
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-    },
-    [onResize, onResizeEnd]
-  );
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, []);
 
   return (
     <div
@@ -296,7 +331,7 @@ function ResizeHandle({ onResize, onResizeEnd }: ResizeHandleProps) {
 // InterpretationTreePanel Component
 // ----------------------------
 
-export function InterpretationTreePanel({ audioDuration }: InterpretationTreePanelProps) {
+export function InterpretationTreePanel() {
   const sidebarWidth = useInterpretationTreeStore((s) => s.sidebarWidth);
   const setSidebarWidth = useInterpretationTreeStore((s) => s.setSidebarWidth);
   const toggleSidebar = useInterpretationTreeStore((s) => s.toggleSidebar);
@@ -305,10 +340,22 @@ export function InterpretationTreePanel({ audioDuration }: InterpretationTreePan
   const toggleExpanded = useInterpretationTreeStore((s) => s.toggleExpanded);
   const selectNode = useInterpretationTreeStore((s) => s.selectNode);
   const selectAudioInput = useAudioInputStore((s) => s.selectInput);
+  const setActiveDisplay = useAudioInputStore((s) => s.setActiveDisplay);
+  const setActiveScript = useProjectStore((s) => s.setActiveScript);
+  const activeProject = useProjectStore((s) => s.activeProject);
+  const isDirty = useProjectStore((s) => s.isDirty);
+  const setVisualTab = useMirStore((s) => s.setVisualTab);
+  const setDisplayContextInputId = useMirStore((s) => s.setDisplayContextInputId);
+  const soloedBandId = useFrequencyBandStore((s) => s.soloedBandId);
+  const setSoloedBandId = useFrequencyBandStore((s) => s.setSoloedBandId);
+
+  // Project name for header
+  const projectName = activeProject?.name ?? "Untitled Project";
+  const headerTitle = isDirty ? `${projectName} *` : projectName;
 
   const treeData = useTreeData();
 
-  // Handle node selection - also selects audio input if applicable
+  // Handle node selection - also selects audio input, script, or visual tab if applicable
   const handleSelectNode = useCallback(
     (nodeId: string) => {
       // Update tree selection
@@ -318,9 +365,38 @@ export function InterpretationTreePanel({ audioDuration }: InterpretationTreePan
       const audioInputId = parseAudioInputId(nodeId);
       if (audioInputId) {
         selectAudioInput(audioInputId);
+        // Also switch the waveform display to this audio source
+        setActiveDisplay(audioInputId);
+      }
+
+      // If this is a script node, activate it in the project
+      const scriptId = parseScriptId(nodeId);
+      if (scriptId) {
+        setActiveScript(scriptId);
+      }
+
+      // If this is a MIR analysis node, switch to that analysis view
+      const analysisId = getMirAnalysisId(nodeId);
+      if (analysisId) {
+        // Check if this is a band MIR function and map to the corresponding visual tab
+        const visualTabId = BAND_MIR_TO_VISUAL_TAB[analysisId] ?? analysisId;
+        setVisualTab(visualTabId as Parameters<typeof setVisualTab>[0]);
+      }
+
+      // If this is a Bands node, switch to melSpectrogram view (best for viewing bands)
+      if (nodeId.endsWith(":bands")) {
+        setVisualTab("melSpectrogram");
+      }
+
+      // For any node under an audio source (including MIR children), set MIR display context
+      const audioSourceId = getAudioSourceId(nodeId);
+      if (audioSourceId) {
+        setDisplayContextInputId(audioSourceId);
+        // Also switch waveform to the parent audio source
+        setActiveDisplay(audioSourceId);
       }
     },
-    [selectNode, selectAudioInput]
+    [selectNode, selectAudioInput, setActiveDisplay, setActiveScript, setVisualTab, setDisplayContextInputId]
   );
 
   // Determine if we're in icon-only mode
@@ -340,13 +416,29 @@ export function InterpretationTreePanel({ audioDuration }: InterpretationTreePan
     }
   }, [sidebarWidth, setSidebarWidth]);
 
-  // Get only root-level nodes for icon-only mode
-  const rootNodes = treeData.filter(
-    (node) =>
-      node.id === TREE_NODE_IDS.AUDIO ||
-      node.id === TREE_NODE_IDS.EVENT_STREAMS ||
-      node.id === TREE_NODE_IDS.SCRIPTS ||
-      node.id === TREE_NODE_IDS.TEXT
+  // Handle band solo toggle
+  const handleToggleSolo = useCallback(
+    (bandId: string) => {
+      if (soloedBandId === bandId) {
+        setSoloedBandId(null);
+      } else {
+        setSoloedBandId(bandId);
+      }
+    },
+    [soloedBandId, setSoloedBandId]
+  );
+
+  // Get project node and its children for rendering
+  const projectNode = treeData.find((node) => node.id === TREE_NODE_IDS.PROJECT);
+  // Promote project children to root level (since we only handle one project at a time)
+  const rootNodes = projectNode?.children ?? [];
+  // For icon-only mode, show only the main sections
+  const iconOnlyNodes = rootNodes.filter(
+    (child) =>
+      child.id === TREE_NODE_IDS.AUDIO ||
+      child.id === TREE_NODE_IDS.EVENT_STREAMS ||
+      child.id === TREE_NODE_IDS.ASSETS ||
+      child.id === TREE_NODE_IDS.SCRIPTS
   );
 
   return (
@@ -354,12 +446,23 @@ export function InterpretationTreePanel({ audioDuration }: InterpretationTreePan
       className="relative flex flex-col h-full bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800"
       style={{ width: sidebarWidth, minWidth: SIDEBAR_MIN_WIDTH, maxWidth: SIDEBAR_MAX_WIDTH }}
     >
-      {/* Header */}
+      {/* Header - Project name (clickable to select project) */}
       <div className="flex items-center justify-between p-2 border-b border-zinc-200 dark:border-zinc-800">
         {!isIconOnly && (
-          <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
-            Interpretation
-          </span>
+          <button
+            type="button"
+            onClick={() => handleSelectNode(TREE_NODE_IDS.PROJECT)}
+            className={cn(
+              "flex items-center gap-1.5 text-sm font-medium truncate rounded px-1 -ml-1 transition-colors",
+              selectedNodeId === TREE_NODE_IDS.PROJECT
+                ? "text-zinc-900 dark:text-zinc-100 bg-zinc-200 dark:bg-zinc-700"
+                : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            )}
+            title="Select project"
+          >
+            <Folder className="h-4 w-4 shrink-0" />
+            <span className="truncate">{headerTitle}</span>
+          </button>
         )}
         <Button
           variant="ghost"
@@ -379,9 +482,9 @@ export function InterpretationTreePanel({ audioDuration }: InterpretationTreePan
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-1">
         {isIconOnly ? (
-          // Icon-only mode: show just root node icons
+          // Icon-only mode: show project and section icons
           <div className="flex flex-col gap-1">
-            {rootNodes.map((node) => (
+            {iconOnlyNodes.map((node) => (
               <IconOnlyNode
                 key={node.id}
                 node={node}
@@ -395,17 +498,18 @@ export function InterpretationTreePanel({ audioDuration }: InterpretationTreePan
             ))}
           </div>
         ) : (
-          // Full tree mode
-          treeData.map((node) => (
+          // Full tree mode - project children promoted to root level
+          rootNodes.map((node) => (
             <TreeNodeRenderer
               key={node.id}
               node={node}
               level={0}
               expandedNodes={expandedNodes}
               selectedNodeId={selectedNodeId}
+              soloedBandId={soloedBandId}
               onToggleExpand={toggleExpanded}
               onSelectNode={handleSelectNode}
-              audioDuration={audioDuration}
+              onToggleSolo={handleToggleSolo}
             />
           ))
         )}

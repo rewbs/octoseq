@@ -1,5 +1,59 @@
 import type { Spectrogram } from "./spectrogram";
 
+export type AmplitudeEnvelopeConfig = {
+    /** Hop size in samples (determines time resolution). Default: 512 */
+    hopSize?: number;
+    /** Window size for RMS calculation. Default: same as hopSize */
+    windowSize?: number;
+};
+
+export type AmplitudeEnvelopeResult = {
+    times: Float32Array;
+    values: Float32Array;
+};
+
+/**
+ * Amplitude envelope from raw audio samples.
+ *
+ * Computes RMS amplitude over windows of the time-domain signal.
+ * More efficient than spectrogram-based computation for full spectrum.
+ *
+ * @param samples - Mono audio samples
+ * @param sampleRate - Sample rate of the audio
+ * @param config - Configuration options
+ * @returns Times (seconds) and RMS amplitude values
+ */
+export function amplitudeEnvelope(
+    samples: Float32Array,
+    sampleRate: number,
+    config?: AmplitudeEnvelopeConfig
+): AmplitudeEnvelopeResult {
+    const hopSize = config?.hopSize ?? 512;
+    const windowSize = config?.windowSize ?? hopSize;
+
+    const nFrames = Math.floor((samples.length - windowSize) / hopSize) + 1;
+    const times = new Float32Array(nFrames);
+    const values = new Float32Array(nFrames);
+
+    for (let t = 0; t < nFrames; t++) {
+        const start = t * hopSize;
+        const end = Math.min(start + windowSize, samples.length);
+
+        // RMS amplitude
+        let sumSq = 0;
+        for (let i = start; i < end; i++) {
+            const s = samples[i] ?? 0;
+            sumSq += s * s;
+        }
+        const rms = Math.sqrt(sumSq / (end - start));
+
+        times[t] = (start + windowSize / 2) / sampleRate;
+        values[t] = rms;
+    }
+
+    return { times, values };
+}
+
 /**
  * Spectral centroid per frame (Hz).
  *

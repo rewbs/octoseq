@@ -27,21 +27,22 @@ export function useMirActions() {
    * Run MIR analysis.
    * @param fnOverride - Optional function ID to run (defaults to mirStore.selected)
    * @param inputId - Optional input ID to analyze (defaults to mixdown/main audio)
+   * @param cacheKey - Optional cache key for storing results (defaults to inputId). Used for bands.
    */
-  const runAnalysis = useCallback(async (fnOverride?: MirFunctionId, inputId?: string) => {
+  const runAnalysis = useCallback(async (fnOverride?: MirFunctionId, inputId?: string, cacheKey?: string) => {
     // Determine which audio to analyze
     const effectiveInputId = inputId ?? MIXDOWN_ID;
+    // Use cacheKey if provided, otherwise use the input ID
+    const effectiveCacheKey = cacheKey ?? effectiveInputId;
     let audio: AudioBufferLike | null = null;
 
-    if (effectiveInputId === MIXDOWN_ID) {
-      // Use the main audio store for mixdown (backward compatible)
+    // Check audioInputStore first (works for both stems and generated mixdowns)
+    const audioInput = useAudioInputStore.getState().getInputById(effectiveInputId);
+    if (audioInput?.audioBuffer) {
+      audio = audioInput.audioBuffer;
+    } else if (effectiveInputId === MIXDOWN_ID) {
+      // Fall back to main audio store for mixdown (backward compatible with file picker)
       audio = useAudioStore.getState().audio;
-    } else {
-      // Use audioInputStore for stems
-      const audioInput = useAudioInputStore.getState().getInputById(effectiveInputId);
-      if (audioInput?.audioBuffer) {
-        audio = audioInput.audioBuffer;
-      }
     }
 
     if (!audio) return;
@@ -128,8 +129,8 @@ export function useMirActions() {
 
       // Helper to store result (both in legacy store and per-input cache)
       const storeResult = (r: UiMirResult) => {
-        // Always store in per-input cache
-        mirStore.setInputMirResult(effectiveInputId, selected, r);
+        // Always store in per-input cache using the cache key (which may differ from input ID for bands)
+        mirStore.setInputMirResult(effectiveCacheKey, selected, r);
 
         // For backward compatibility, also store in legacy mirResults if this is the mixdown
         if (effectiveInputId === MIXDOWN_ID) {
@@ -222,6 +223,7 @@ export function useMirActions() {
   }, []);
 
   const ALL_MIR_FUNCTIONS: MirFunctionId[] = [
+    "amplitudeEnvelope",
     "spectralCentroid",
     "spectralFlux",
     "melSpectrogram",

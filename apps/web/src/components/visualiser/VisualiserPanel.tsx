@@ -13,6 +13,8 @@ import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { useMirStore } from "@/lib/stores/mirStore";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
+import { useProjectStore } from "@/lib/stores/projectStore";
+import { useMeshAssets } from "@/lib/stores/meshAssetStore";
 import type { BandMirFunctionId } from "@octoseq/mir";
 
 // We import the mock type if the real package isn't built yet, preventing TS errors.
@@ -69,8 +71,7 @@ const FOOTER_RESERVE = 80; // Space reserved for footer + margins
 // Script editor sizing
 const SCRIPT_MIN_HEIGHT = 60;
 const SCRIPT_DEFAULT_HEIGHT = 200;
-const SCRIPT_AUTOSAVE_KEY = "octoseq:visualiser-script:v1";
-const SCRIPT_AUTOSAVE_DEBOUNCE_MS = 400;
+const SCRIPT_SYNC_DEBOUNCE_MS = 400;
 
 // Preview FPS settings
 const MIN_TARGET_FPS = 1;
@@ -312,11 +313,11 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
     const model = editor.getModel?.();
     if (!model) return;
 
-    // Runtime diagnostics (errors from Rust)
+    // Runtime diagnostics (errors and warnings from Rust)
     const runtimeMarkers = diags
       .filter((d) => d.location && typeof d.location.line === "number" && typeof d.location.column === "number")
       .map((d) => ({
-        severity: monaco.MarkerSeverity.Error,
+        severity: d.kind === "warning" ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Error,
         message: `[${d.phase}] ${d.message}`,
         startLineNumber: d.location!.line,
         startColumn: d.location!.column,
@@ -440,60 +441,72 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
 
   // Default demo script - uses scene graph API
   // Uses signals that are always available: time, dt, amplitude, flux
-  const defaultScript = `// Rhai script: Cube reacts to audio
-// The 'frame' parameter has per-frame values: time, dt, amplitude, flux
-// Also: spectralCentroid, spectralFlux, onsetEnvelope (if MIR computed)
-// The global 'inputs' object has Signal accessors: inputs.bands["Bass"].energy, etc.
+  const defaultScript = `let cube = mesh.cube();
 
-let cube;
-let phase = 0.0;
+let smoothAmp = inputs.amplitude.abs().smooth.moving_average(0.5).scale(20);
+let smoothOnsets = inputs.onsetEnvelope.smooth.exponential(0.1, 0.5).scale(10);
+
+cube.rotation.x = smoothAmp;
+cube.scale = smoothOnsets;
+cube.rotation.y = sin(inputs.time);
+camera.lookAt(#{x:gen.perlin(4, 40), y:gen.perlin(2, 41), z:gen.perlin(8, 42)});
+
+
+let bloom = fx.bloom(#{
+  intensity: smoothOnsets.sigmoid(10).scale(10).add(1.0) ,
+  threshold: 0.7});
+
+let fb = feedback.builder()
+    .warp.spiral(sin(inputs.beatPosition), 1, 0.1)
+    .opacity(0.4)
+    .blend.difference()
+    .build();
 
 fn init(ctx) {
-    cube = mesh.cube();
     scene.add(cube);
+    post.add(bloom);
+    feedback.enable(fb);
 }
 
 fn update(dt, frame) {
-    // Use flux (from zoom source) or fall back to constant rotation
-    let flux_val = if frame.contains("flux") { frame.flux } else { 0.0 };
-    phase += dt * (0.5 + flux_val * 2.0);
-
-    cube.rotation.y = phase;
-    cube.rotation.x = 0.1 * (frame.time * 2.0).sin();
-
-    // Scale based on amplitude (from rotation source)
-    let amp = if frame.contains("amplitude") { frame.amplitude } else { 0.0 };
-    cube.scale = 1.0 + amp * 0.5;
 }`;
   const [script, setScript] = useState(defaultScript);
   const [isScriptLoaded, setIsScriptLoaded] = useState(false);
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const stored = window.localStorage.getItem(SCRIPT_AUTOSAVE_KEY);
-      if (stored !== null) {
-        setScript(stored);
-      }
-    } catch (error) {
-      console.warn("Failed to read saved script:", error);
-    } finally {
-      setIsScriptLoaded(true);
-    }
-  }, []);
+  // Subscribe to active script from Project store
+  const activeScript = useProjectStore((s) => {
+    const proj = s.activeProject;
+    if (!proj?.scripts.activeScriptId) return null;
+    return proj.scripts.scripts.find((sc) => sc.id === proj.scripts.activeScriptId) ?? null;
+  });
+  const activeScriptId = activeScript?.id ?? null;
+  const syncScriptContent = useProjectStore((s) => s.syncScriptContent);
 
+  // Track which script ID is currently loaded in the editor
+  const loadedScriptIdRef = useRef<string | null>(null);
+
+  // Load script from Project when active script changes
   useEffect(() => {
-    if (!isScriptLoaded || typeof window === "undefined") return;
+    if (activeScript && activeScript.id !== loadedScriptIdRef.current) {
+      setScript(activeScript.content);
+      loadedScriptIdRef.current = activeScript.id;
+    }
+    // Mark as loaded once we've checked for an active script
+    setIsScriptLoaded(true);
+  }, [activeScript]);
+
+  // Debounced sync back to Project (replaces localStorage autosave)
+  useEffect(() => {
+    if (!activeScriptId || !isScriptLoaded) return;
+    // Skip if content matches what we just loaded (prevents feedback loop)
+    if (loadedScriptIdRef.current === activeScriptId && activeScript?.content === script) return;
+
     const handle = window.setTimeout(() => {
-      try {
-        window.localStorage.setItem(SCRIPT_AUTOSAVE_KEY, script);
-      } catch (error) {
-        console.warn("Failed to autosave script:", error);
-      }
-    }, SCRIPT_AUTOSAVE_DEBOUNCE_MS);
+      syncScriptContent(activeScriptId, script);
+    }, SCRIPT_SYNC_DEBOUNCE_MS);
 
     return () => window.clearTimeout(handle);
-  }, [script, isScriptLoaded]);
+  }, [script, activeScriptId, isScriptLoaded, syncScriptContent, activeScript?.content]);
 
   // Track previous playback time for seek detection
   const prevPlaybackTimeRef = useRef(playbackTime);
@@ -869,6 +882,7 @@ fn update(dt, frame) {
   const getAllEventResults = useBandMirStore((state) => state.getAllEventResults);
   const frequencyBands = useFrequencyBandStore((state) => state.structure?.bands);
   const getBandById = useFrequencyBandStore((state) => state.getBandById);
+  const meshAssets = useMeshAssets();
 
   // Keep available bands for editor completions in a ref (avoids stale closures)
   useEffect(() => {
@@ -1000,6 +1014,50 @@ fn update(dt, frame) {
     // Request render when stem signals change (even when paused)
     requestRender();
   }, [stems, inputMirCache, isReady, audioDuration, requestRender]);
+
+  // Track registered mesh asset IDs to detect changes
+  const registeredMeshAssetsRef = useRef<Set<string>>(new Set());
+
+  // Sync mesh assets to WASM visualiser
+  useEffect(() => {
+    if (!visRef.current || !isReady) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vis = visRef.current as any;
+
+    if (typeof vis.register_mesh_asset !== "function") return;
+
+    const currentAssetIds = new Set(meshAssets.map((a) => a.id));
+    const previousAssetIds = registeredMeshAssetsRef.current;
+
+    // Register new assets
+    for (const asset of meshAssets) {
+      if (!previousAssetIds.has(asset.id)) {
+        const success = vis.register_mesh_asset(asset.name, asset.objContent);
+        if (success) {
+          console.log(`Registered mesh asset: ${asset.name}`);
+        } else {
+          console.warn(`Failed to register mesh asset: ${asset.name}`);
+        }
+      }
+    }
+
+    // Unregister removed assets
+    if (typeof vis.unregister_mesh_asset === "function") {
+      for (const prevId of previousAssetIds) {
+        if (!currentAssetIds.has(prevId)) {
+          // Find the asset name that was removed (we stored by name)
+          // Note: We need to track names too, but for now just clear all
+          // This is a simplification - in practice we'd need a name->id map
+        }
+      }
+    }
+
+    // Update the ref with current asset IDs
+    registeredMeshAssetsRef.current = currentAssetIds;
+
+    // Request render to reflect any new assets
+    requestRender();
+  }, [meshAssets, isReady, requestRender]);
 
   // Load script when enabled or script changes
   useEffect(() => {
@@ -1462,6 +1520,13 @@ fn update(dt, frame) {
           </div>
         )}
 
+        {/* Signal Explorer Panel - vertical mode (between script and canvas) */}
+        {layoutMode === 'vertical' && (
+          <div className="mb-1 rounded-md border border-zinc-200 dark:border-zinc-800 overflow-hidden">
+            <SignalExplorerPanel className="rounded-none border-0" />
+          </div>
+        )}
+
         {/* Canvas Container - always in the same position in the React tree */}
         <div
           ref={containerRef}
@@ -1483,8 +1548,8 @@ fn update(dt, frame) {
               <div className="mt-1 pt-1 border-t border-zinc-600">
                 <div className={
                   debugValues.budgetUsedPercent > 100 ? 'text-red-400' :
-                  debugValues.budgetUsedPercent > 60 ? 'text-yellow-400' :
-                  'text-emerald-400'
+                    debugValues.budgetUsedPercent > 60 ? 'text-yellow-400' :
+                      'text-emerald-400'
                 }>
                   Frame: {debugValues.frameTimeMs.toFixed(1)}ms ({debugValues.budgetUsedPercent.toFixed(0)}%)
                 </div>

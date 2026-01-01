@@ -116,34 +116,52 @@ export function useDebugSignals() {
 
 /**
  * Get tab definitions with availability status.
+ * Uses displayContextInputId to check availability for the current audio source.
  */
 export function useTabDefs() {
   const mirResults = useMirStore((s) => s.mirResults);
+  const displayContextInputId = useMirStore((s) => s.displayContextInputId);
+  const getInputMirResult = useMirStore((s) => s.getInputMirResult);
   const hasSearchResult = useHasSearchResult();
   const hasDebugSignals = useHasDebugSignals();
 
   return useMemo(() => {
-    const mirTabsWithAvailability = mirTabDefinitions.map((t) => ({
-      ...t,
-      hasData: !!mirResults[t.id],
-    }));
+    const mirTabsWithAvailability = mirTabDefinitions.map((t) => {
+      // Check per-input cache first, then fall back to legacy mirResults
+      const hasInputData = !!getInputMirResult(displayContextInputId, t.id);
+      const hasLegacyData = !!mirResults[t.id];
+      return {
+        ...t,
+        hasData: hasInputData || hasLegacyData,
+      };
+    });
 
     return [
       { id: "search" as const, label: "Similarity", hasData: hasSearchResult },
       { id: "debug" as const, label: "Debug Signals", hasData: hasDebugSignals },
       ...mirTabsWithAvailability,
     ];
-  }, [hasSearchResult, hasDebugSignals, mirResults]);
+  }, [hasSearchResult, hasDebugSignals, mirResults, displayContextInputId, getInputMirResult]);
 }
 
 /**
  * Get the current tab's MIR result.
+ * Uses the displayContextInputId to get results for the currently selected audio source.
  */
 export function useTabResult() {
   const visualTab = useMirStore((s) => s.visualTab);
+  const displayContextInputId = useMirStore((s) => s.displayContextInputId);
+  const getInputMirResult = useMirStore((s) => s.getInputMirResult);
   const mirResults = useMirStore((s) => s.mirResults);
-  // Don't return MIR results for search or debug tabs
+
+  // Don't return MIR results for non-MIR tabs
   if (visualTab === "search" || visualTab === "debug") return undefined;
+
+  // Try to get result from per-input cache first (for stems or mixdown)
+  const inputResult = getInputMirResult(displayContextInputId, visualTab);
+  if (inputResult) return inputResult;
+
+  // Fall back to legacy mirResults for backward compatibility (mixdown only)
   return mirResults[visualTab];
 }
 

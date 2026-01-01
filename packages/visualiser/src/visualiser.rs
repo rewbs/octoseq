@@ -238,6 +238,16 @@ impl VisualiserState {
         &self.script_engine.feedback_uniforms
     }
 
+    /// Get the current camera configuration.
+    pub fn camera_config(&self) -> &crate::camera::CameraConfig {
+        &self.script_engine.camera_config
+    }
+
+    /// Get the evaluated camera uniforms (signals resolved to f32 for renderer).
+    pub fn camera_uniforms(&self) -> &crate::camera::CameraUniforms {
+        &self.script_engine.camera_uniforms
+    }
+
     /// Get the current post-processing chain.
     pub fn post_chain(&self) -> &crate::post_processing::PostProcessingChain {
         &self.script_engine.post_chain

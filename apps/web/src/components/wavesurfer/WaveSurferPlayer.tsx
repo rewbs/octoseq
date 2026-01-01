@@ -150,6 +150,12 @@ type WaveSurferPlayerProps = {
 
   /** Called when user clicks on the BPM display (to navigate to tempo view). */
   onBpmClick?: () => void;
+
+  /**
+   * External audio source URL. When provided and changes, the waveform will load this URL.
+   * Used for switching between mixdown and stem audio display.
+   */
+  displayAudioUrl?: string | null;
 };
 
 /**
@@ -192,6 +198,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     overlayContent,
     muted,
     onBpmClick,
+    displayAudioUrl,
   }: WaveSurferPlayerProps,
   ref
 ) {
@@ -380,6 +387,38 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     setZoomRef.current = setZoom;
   }, []);
 
+  // Track the last loaded display URL to avoid redundant loads
+  const lastDisplayAudioUrlRef = useRef<string | null>(null);
+  // Flag to distinguish display URL loads from file picker loads
+  // Display URL loads should NOT trigger onAudioDecoded (we're just switching display, not loading new audio)
+  const isDisplayUrlLoadRef = useRef(false);
+
+  // Handle external audio source switching (for stem/mixdown switching)
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!ws) return;
+    if (!displayAudioUrl) return;
+
+    // Avoid reloading the same URL
+    if (displayAudioUrl === lastDisplayAudioUrlRef.current) return;
+    lastDisplayAudioUrlRef.current = displayAudioUrl;
+
+    // Mark this as a display URL load - should not trigger onAudioDecoded
+    isDisplayUrlLoadRef.current = true;
+
+    // Clear state before loading new audio
+    regionsPluginRef.current?.clearRegions();
+    queryRegionRef.current = null;
+    segmentPlaybackRef.current = null;
+    isPlayingRef.current = false;
+    onRegionChangeRef.current?.(null);
+    onSelectCandidateIdRef.current?.(null);
+    onIsPlayingChangeRef.current?.(false);
+
+    // Load the new audio URL
+    void ws.load(displayAudioUrl);
+  }, [displayAudioUrl]);
+
   // Region selection debug readout (for trust + tuning).
   const [activeRegion, setActiveRegion] = useState<{
     startSec: number;
@@ -486,18 +525,26 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     const onReady = () => {
       setIsReady(true);
 
-      // Expose decoded audio to the app layer for MIR analysis.
-      // WaveSurfer decodes to a WebAudio AudioBuffer; we adapt it to the
-      // minimal AudioBufferLike shape that @octoseq/mir expects.
-      const cb = onAudioDecodedRef.current;
-      if (cb) {
-        const decoded = ws.getDecodedData();
-        if (decoded) {
-          cb({
-            sampleRate: decoded.sampleRate,
-            numberOfChannels: decoded.numberOfChannels,
-            getChannelData: (ch: number) => decoded.getChannelData(ch),
-          });
+      // Only call onAudioDecoded for file picker loads, NOT for display URL switching.
+      // Display URL switching just changes which audio is shown in the waveform,
+      // it doesn't mean new audio was loaded that needs MIR analysis.
+      const isDisplayUrlLoad = isDisplayUrlLoadRef.current;
+      isDisplayUrlLoadRef.current = false; // Reset for next load
+
+      if (!isDisplayUrlLoad) {
+        // Expose decoded audio to the app layer for MIR analysis.
+        // WaveSurfer decodes to a WebAudio AudioBuffer; we adapt it to the
+        // minimal AudioBufferLike shape that @octoseq/mir expects.
+        const cb = onAudioDecodedRef.current;
+        if (cb) {
+          const decoded = ws.getDecodedData();
+          if (decoded) {
+            cb({
+              sampleRate: decoded.sampleRate,
+              numberOfChannels: decoded.numberOfChannels,
+              getChannelData: (ch: number) => decoded.getChannelData(ch),
+            });
+          }
         }
       }
 
@@ -1302,6 +1349,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
           <div
             ref={setContainerEl}
             className="w-full overflow-x-auto"
+            style={{ overscrollBehaviorX: "contain" }}
             onMouseMove={handleCursorHover}
             onMouseLeave={handleCursorLeave}
           />

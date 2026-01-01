@@ -7,9 +7,13 @@ import { devtools, persist } from "zustand/middleware";
 
 /** Well-known node IDs for the interpretation tree structure. */
 export const TREE_NODE_IDS = {
-  // Root nodes
+  // Project root
+  PROJECT: "project",
+
+  // Top-level sections (children of project)
   AUDIO: "audio",
   EVENT_STREAMS: "event-streams",
+  CUSTOM_SIGNALS: "custom-signals",
   SCRIPTS: "scripts",
   TEXT: "text",
 
@@ -22,8 +26,12 @@ export const TREE_NODE_IDS = {
   AUTHORED_EVENTS: "event-streams:authored",
   CANDIDATE_EVENTS: "event-streams:candidates",
 
-  // Scripts children
+  // Scripts children (MAIN_SCRIPT kept for backward compatibility)
   MAIN_SCRIPT: "scripts:main",
+
+  // Assets section
+  ASSETS: "assets",
+  THREE_D_OBJECTS: "assets:3d-objects",
 } as const;
 
 // ----------------------------
@@ -39,6 +47,13 @@ export const SIDEBAR_DEFAULT_WIDTH = 256;
 /** Maximum sidebar width in pixels. */
 export const SIDEBAR_MAX_WIDTH = 400;
 
+/** Default inspector drawer height in pixels. */
+export const INSPECTOR_DEFAULT_HEIGHT = 200;
+/** Minimum inspector drawer height in pixels. */
+export const INSPECTOR_MIN_HEIGHT = 100;
+/** Maximum inspector drawer height in pixels. */
+export const INSPECTOR_MAX_HEIGHT = 500;
+
 // ----------------------------
 // Store State
 // ----------------------------
@@ -52,6 +67,9 @@ interface InterpretationTreeState {
 
   /** Sidebar width in pixels. */
   sidebarWidth: number;
+
+  /** Inspector drawer height in pixels. */
+  inspectorHeight: number;
 }
 
 // ----------------------------
@@ -80,6 +98,9 @@ interface InterpretationTreeActions {
   /** Toggle between collapsed (icon-only) and expanded states. */
   toggleSidebar: () => void;
 
+  /** Set inspector drawer height in pixels. */
+  setInspectorHeight: (height: number) => void;
+
   /** Check if a node is expanded. */
   isExpanded: (nodeId: string) => boolean;
 
@@ -93,8 +114,9 @@ export type InterpretationTreeStore = InterpretationTreeState & InterpretationTr
 // Initial State
 // ----------------------------
 
-/** Default expanded nodes - Audio and Scripts sections. */
+/** Default expanded nodes - Project root, Audio, and Scripts sections. */
 const DEFAULT_EXPANDED_NODES = new Set([
+  TREE_NODE_IDS.PROJECT,
   TREE_NODE_IDS.AUDIO,
   TREE_NODE_IDS.MIXDOWN,
   TREE_NODE_IDS.SCRIPTS,
@@ -104,6 +126,7 @@ const initialState: InterpretationTreeState = {
   expandedNodes: DEFAULT_EXPANDED_NODES,
   selectedNodeId: null,
   sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
+  inspectorHeight: INSPECTOR_DEFAULT_HEIGHT,
 };
 
 // ----------------------------
@@ -191,6 +214,18 @@ export const useInterpretationTreeStore = create<InterpretationTreeStore>()(
         },
 
         // ----------------------------
+        // Inspector
+        // ----------------------------
+
+        setInspectorHeight: (height) => {
+          const clampedHeight = Math.max(
+            INSPECTOR_MIN_HEIGHT,
+            Math.min(INSPECTOR_MAX_HEIGHT, height)
+          );
+          set({ inspectorHeight: clampedHeight }, false, "setInspectorHeight");
+        },
+
+        // ----------------------------
         // Reset
         // ----------------------------
 
@@ -224,6 +259,7 @@ export const useInterpretationTreeStore = create<InterpretationTreeStore>()(
               expandedNodes: Array.from(value.state.expandedNodes || []),
               selectedNodeId: value.state.selectedNodeId,
               sidebarWidth: value.state.sidebarWidth,
+              inspectorHeight: value.state.inspectorHeight,
             };
             const toStore = {
               ...value,

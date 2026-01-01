@@ -61,7 +61,7 @@ use crate::musical_time::MusicalTimeStructure;
 use crate::scene_graph::{SceneGraph, EntityId, MeshType, RenderMode, LineMode, SceneEntity, LineStrip as SceneLineStrip};
 use crate::deformation::{Deformation, DeformAxis};
 use crate::script_log::{ScriptLogger, reset_frame_log_count};
-use crate::script_diagnostics::{from_eval_error, from_parse_error, ScriptDiagnostic, ScriptPhase};
+use crate::script_diagnostics::{from_eval_error, from_parse_error, lint_script, ScriptDiagnostic, ScriptPhase};
 use crate::script_introspection::register_introspection_api;
 use crate::signal_rhai::{
     clear_current_input_signals, generate_authored_namespace, generate_bands_namespace, generate_event_streams_namespace,
@@ -73,6 +73,8 @@ use crate::signal_state::SignalState;
 use crate::signal_stats::StatisticsCache;
 use crate::particle_rhai::{register_particle_api, generate_particles_namespace, set_global_particle_seed};
 use crate::post_processing::{PostProcessingChain, PostEffectInstance, EffectParamValue};
+use crate::camera::{CameraConfig, CameraUniforms};
+use crate::camera_rhai::{generate_camera_namespace, sync_camera_from_scope};
 use crate::signal_explorer::{sample_signal_chain, ScriptSignalInfo, SignalChainAnalysis};
 use std::sync::Arc;
 
@@ -166,6 +168,10 @@ pub struct ScriptEngine {
     pub feedback_config: crate::feedback::FeedbackConfig,
     /// Evaluated feedback uniforms (signals resolved to f32 values for GPU upload).
     pub feedback_uniforms: crate::feedback::FeedbackUniforms,
+    /// Camera configuration with signal support.
+    pub camera_config: CameraConfig,
+    /// Evaluated camera uniforms (signals resolved to f32 values for renderer).
+    pub camera_uniforms: CameraUniforms,
     /// Particle systems extracted from script scope.
     /// Keyed by entity ID assigned when added to scene.
     pub particle_systems: HashMap<u64, crate::particle::ParticleSystem>,
@@ -189,7 +195,7 @@ impl ScriptEngine {
         engine.set_max_call_levels(64);
         engine.set_max_operations(100_000); // Prevent infinite loops
         engine.set_max_string_size(10_000);
-        engine.set_max_array_size(1_000);
+        engine.set_max_array_size(100_000);  // Allow larger arrays for mesh assets
         engine.set_max_map_size(500);
 
         // Register standalone logging functions (these can be called from anywhere)
@@ -509,6 +515,8 @@ impl ScriptEngine {
             frame_count: 0,
             feedback_config: crate::feedback::FeedbackConfig::default(),
             feedback_uniforms: crate::feedback::FeedbackUniforms::default(),
+            camera_config: CameraConfig::default(),
+            camera_uniforms: CameraUniforms::new(),
             particle_systems: HashMap::new(),
             script_source: String::new(),
             parsed_signal_decls: HashMap::new(),
@@ -637,6 +645,9 @@ impl ScriptEngine {
         // Generate particles namespace
         let particles_namespace = generate_particles_namespace();
 
+        // Generate camera namespace
+        let camera_namespace = generate_camera_namespace();
+
         // Wrap user script with API definitions.
         // Note: Rhai Maps require string keys, so we convert IDs to strings using `"" + id`.
         //
@@ -664,6 +675,8 @@ mesh.cube = || {{
     entity.renderMode = "solid";
     entity.wireframeColor = #{{ r: 1.0, g: 1.0, b: 1.0, a: 1.0 }};
     entity.deformations = [];
+    entity.material = ();
+    entity.materialParams = #{{}};
 
     __entities["" + id] = entity;
     entity
@@ -685,6 +698,8 @@ mesh.plane = || {{
     entity.renderMode = "solid";
     entity.wireframeColor = #{{ r: 1.0, g: 1.0, b: 1.0, a: 1.0 }};
     entity.deformations = [];
+    entity.material = ();
+    entity.materialParams = #{{}};
 
     __entities["" + id] = entity;
     entity
@@ -706,6 +721,8 @@ mesh.sphere = || {{
     entity.renderMode = "solid";
     entity.wireframeColor = #{{ r: 1.0, g: 1.0, b: 1.0, a: 1.0 }};
     entity.deformations = [];
+    entity.material = ();
+    entity.materialParams = #{{}};
 
     __entities["" + id] = entity;
     entity
@@ -728,6 +745,8 @@ mesh.load = |asset_id| {{
     entity.renderMode = "solid";
     entity.wireframeColor = #{{ r: 1.0, g: 1.0, b: 1.0, a: 1.0 }};
     entity.deformations = [];
+    entity.material = ();
+    entity.materialParams = #{{}};
 
     __entities["" + id] = entity;
     entity
@@ -867,6 +886,12 @@ scene.remove = |entity| {{
     if idx >= 0 {{
         __scene_ids.remove(idx);
     }}
+}};
+
+scene.clear = || {{
+    __scene_ids.clear();
+    __entities.clear();
+    __next_id = 1;
 }};
 
 scene.group = || {{
@@ -1057,6 +1082,9 @@ feedback.is_enabled = || {{
 // === Particles Namespace ===
 {particles_namespace}
 
+// === Camera Namespace ===
+{camera_namespace}
+
 // === User Script ===
 "#);
 
@@ -1066,6 +1094,12 @@ feedback.is_enabled = || {{
 
         match self.engine.compile(&full_script) {
             Ok(ast) => {
+                // Run lint checks on the user script (before prelude)
+                let lint_warnings = lint_script(script);
+                for warning in lint_warnings {
+                    self.push_diagnostic(warning);
+                }
+
                 // Run the script once to initialize global state and API
                 if let Err(e) = self.engine.run_ast_with_scope(&mut self.scope, &ast) {
                     let diag = from_eval_error(ScriptPhase::Init, &e, self.user_line_offset);
@@ -1336,6 +1370,9 @@ feedback.is_enabled = || {{
         // Update the scope with merged entities
         self.scope.set_value("__entities", entities.clone());
 
+        // Collect IDs of entities that should exist
+        let mut valid_entity_ids: std::collections::HashSet<EntityId> = std::collections::HashSet::new();
+
         // Sync each entity
         for (_key, value) in entities.iter() {
             let entity_map = match value.clone().try_cast::<rhai::Map>() {
@@ -1354,6 +1391,7 @@ feedback.is_enabled = || {{
             };
 
             let entity_id = EntityId(id);
+            valid_entity_ids.insert(entity_id);
 
             // Create entity in scene graph if it doesn't exist
             if !self.scene_graph.exists(entity_id) {
@@ -1493,12 +1531,12 @@ feedback.is_enabled = || {{
                             .unwrap_or(1.0);
                     }
 
-                    // Sync deformations
+                    // Sync deformations (with Signal support for numeric params)
                     if let Some(deforms) = entity_map.get("deformations").and_then(|d| d.clone().try_cast::<rhai::Array>()) {
                         mesh.deformations.clear();
                         for deform_dyn in deforms.iter() {
                             if let Some(deform_map) = deform_dyn.clone().try_cast::<rhai::Map>() {
-                                if let Some(deformation) = parse_deformation(&deform_map) {
+                                if let Some(deformation) = parse_deformation(&deform_map, &mut eval_ctx, &mut frame_cache) {
                                     mesh.deformations.push(deformation);
                                 }
                             }
@@ -1511,7 +1549,7 @@ feedback.is_enabled = || {{
                     }
 
                     // Sync material params
-                    if let Some(params_map) = entity_map.get("params").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                    if let Some(params_map) = entity_map.get("materialParams").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
                         mesh.material_params.clear();
                         for (param_name, param_value) in params_map.iter() {
                             if let Some(value) = parse_material_param_value(param_value, &mut eval_ctx, &mut frame_cache) {
@@ -1626,11 +1664,27 @@ feedback.is_enabled = || {{
             }
         }
 
+        // Remove entities from scene graph that are no longer in __entities
+        let entity_ids_to_remove: Vec<EntityId> = self.scene_graph
+            .scene_entities()
+            .map(|(id, _)| id)
+            .filter(|id| !valid_entity_ids.contains(id))
+            .collect();
+
+        for entity_id in entity_ids_to_remove {
+            self.scene_graph.entities.remove(&entity_id);
+        }
+
         // Sync post-processing effects from scope
         self.sync_post_effects_from_scope(&mut eval_ctx, &mut frame_cache);
 
         // Sync feedback configuration from scope
         self.sync_feedback_from_scope(&mut eval_ctx, &mut frame_cache);
+
+        // Sync camera configuration from scope
+        let (camera_config, camera_uniforms) = sync_camera_from_scope(&self.scope, &mut eval_ctx);
+        self.camera_config = camera_config;
+        self.camera_uniforms = camera_uniforms;
 
         // Sync particle systems from scope
         self.sync_particle_systems_from_scope(&mut eval_ctx, &scene_id_set);
@@ -2304,7 +2358,37 @@ impl Default for ScriptEngine {
 }
 
 /// Parse a Deformation from a Rhai Map.
-fn parse_deformation(deform_map: &rhai::Map) -> Option<Deformation> {
+fn parse_deformation(
+    deform_map: &rhai::Map,
+    ctx: &mut crate::signal_eval::EvalContext<'_>,
+    cache: &mut std::collections::HashMap<crate::signal::SignalId, f32>,
+) -> Option<Deformation> {
+    use crate::signal::Signal;
+
+    // Helper to evaluate a numeric value that might be a Signal
+    fn eval_f32(
+        value: &rhai::Dynamic,
+        default: f32,
+        ctx: &mut crate::signal_eval::EvalContext<'_>,
+        cache: &mut std::collections::HashMap<crate::signal::SignalId, f32>,
+    ) -> f32 {
+        if let Ok(f) = value.as_float() {
+            return f as f32;
+        }
+        if let Ok(i) = value.as_int() {
+            return i as f32;
+        }
+        if let Some(signal) = value.clone().try_cast::<Signal>() {
+            if let Some(v) = cache.get(&signal.id) {
+                return *v;
+            }
+            let v = signal.evaluate(ctx);
+            cache.insert(signal.id, v);
+            return v;
+        }
+        default
+    }
+
     let deform_type = deform_map.get("__type")
         .and_then(|d| d.clone().into_string().ok())?;
 
@@ -2315,11 +2399,11 @@ fn parse_deformation(deform_map: &rhai::Map) -> Option<Deformation> {
                 .and_then(|s| DeformAxis::from_str(&s))
                 .unwrap_or(DeformAxis::Y);
             let amount = deform_map.get("amount")
-                .and_then(|d| d.as_float().ok())
-                .unwrap_or(0.0) as f32;
+                .map(|d| eval_f32(d, 0.0, ctx, cache))
+                .unwrap_or(0.0);
             let center = deform_map.get("center")
-                .and_then(|d| d.as_float().ok())
-                .unwrap_or(0.0) as f32;
+                .map(|d| eval_f32(d, 0.0, ctx, cache))
+                .unwrap_or(0.0);
             Some(Deformation::Twist { axis, amount, center })
         }
         "deform_bend" => {
@@ -2328,11 +2412,11 @@ fn parse_deformation(deform_map: &rhai::Map) -> Option<Deformation> {
                 .and_then(|s| DeformAxis::from_str(&s))
                 .unwrap_or(DeformAxis::Y);
             let amount = deform_map.get("amount")
-                .and_then(|d| d.as_float().ok())
-                .unwrap_or(0.0) as f32;
+                .map(|d| eval_f32(d, 0.0, ctx, cache))
+                .unwrap_or(0.0);
             let center = deform_map.get("center")
-                .and_then(|d| d.as_float().ok())
-                .unwrap_or(0.0) as f32;
+                .map(|d| eval_f32(d, 0.0, ctx, cache))
+                .unwrap_or(0.0);
             Some(Deformation::Bend { axis, amount, center })
         }
         "deform_wave" => {
@@ -2345,23 +2429,23 @@ fn parse_deformation(deform_map: &rhai::Map) -> Option<Deformation> {
                 .and_then(|s| DeformAxis::from_str(&s))
                 .unwrap_or(DeformAxis::Y);
             let amplitude = deform_map.get("amplitude")
-                .and_then(|d| d.as_float().ok())
-                .unwrap_or(0.0) as f32;
+                .map(|d| eval_f32(d, 0.0, ctx, cache))
+                .unwrap_or(0.0);
             let frequency = deform_map.get("frequency")
-                .and_then(|d| d.as_float().ok())
-                .unwrap_or(1.0) as f32;
+                .map(|d| eval_f32(d, 1.0, ctx, cache))
+                .unwrap_or(1.0);
             let phase = deform_map.get("phase")
-                .and_then(|d| d.as_float().ok())
-                .unwrap_or(0.0) as f32;
+                .map(|d| eval_f32(d, 0.0, ctx, cache))
+                .unwrap_or(0.0);
             Some(Deformation::Wave { axis, direction, amplitude, frequency, phase })
         }
         "deform_noise" => {
             let scale = deform_map.get("scale")
-                .and_then(|d| d.as_float().ok())
-                .unwrap_or(1.0) as f32;
+                .map(|d| eval_f32(d, 1.0, ctx, cache))
+                .unwrap_or(1.0);
             let amplitude = deform_map.get("amplitude")
-                .and_then(|d| d.as_float().ok())
-                .unwrap_or(0.0) as f32;
+                .map(|d| eval_f32(d, 0.0, ctx, cache))
+                .unwrap_or(0.0);
             let seed = deform_map.get("seed")
                 .and_then(|d| d.as_int().ok())
                 .unwrap_or(0) as u32;
@@ -2519,7 +2603,8 @@ mod tests {
         let dt = frame_inputs.get("dt").copied().unwrap_or(0.0);
         let input_signals: HashMap<String, InputSignal> = HashMap::new();
         let band_signals: HashMap<String, HashMap<String, InputSignal>> = HashMap::new();
-        engine.update(time, dt, frame_inputs, &input_signals, &band_signals, None);
+        let stem_signals: HashMap<String, HashMap<String, InputSignal>> = HashMap::new();
+        engine.update(time, dt, frame_inputs, &input_signals, &band_signals, &stem_signals, None);
     }
 
     #[test]

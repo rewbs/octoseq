@@ -17,6 +17,8 @@ pub enum ScriptDiagnosticKind {
     HostApiMisuse,
     /// Internal/host error (e.g. the injected prelude failed).
     HostError,
+    /// Lint warning (not an error, but potentially problematic).
+    Warning,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -126,4 +128,54 @@ pub fn from_eval_error(
         location,
         raw: Some(raw),
     }
+}
+
+/// Lint the script source for common issues and return warnings.
+///
+/// Currently checks for:
+/// - `scene.add()` calls outside of `init()` function
+pub fn lint_script(source: &str) -> Vec<ScriptDiagnostic> {
+    let mut warnings = Vec::new();
+
+    // Track if we're inside a function definition
+    let mut in_init_fn = false;
+    let mut brace_depth = 0;
+    let mut init_fn_brace_depth = 0;
+
+    for (line_idx, line) in source.lines().enumerate() {
+        let line_num = (line_idx + 1) as u32;
+        let trimmed = line.trim();
+
+        // Check for function definition start
+        if trimmed.starts_with("fn init") && trimmed.contains('(') {
+            in_init_fn = true;
+            // Count opening braces on this line to set the depth
+            init_fn_brace_depth = brace_depth + trimmed.matches('{').count();
+        }
+
+        // Track brace depth
+        brace_depth += trimmed.matches('{').count();
+        brace_depth = brace_depth.saturating_sub(trimmed.matches('}').count());
+
+        // Check if we've exited the init function
+        if in_init_fn && brace_depth < init_fn_brace_depth {
+            in_init_fn = false;
+        }
+
+        // Check for scene.add() outside of init()
+        if !in_init_fn && trimmed.contains("scene.add(") {
+            // Find the column position
+            let column = line.find("scene.add(").map(|c| c as u32 + 1).unwrap_or(1);
+
+            warnings.push(ScriptDiagnostic {
+                kind: ScriptDiagnosticKind::Warning,
+                phase: ScriptPhase::Compile,
+                message: "scene.add() called outside of init() - entities may accumulate on script re-evaluation. Consider moving to init() or calling scene.clear() first.".to_string(),
+                location: Some(ScriptLocation { line: line_num, column }),
+                raw: None,
+            });
+        }
+    }
+
+    warnings
 }

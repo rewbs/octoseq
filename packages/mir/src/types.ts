@@ -560,6 +560,7 @@ export type BandEventsResult = {
 };
 
 export type MirFunctionId =
+    | "amplitudeEnvelope"
     | "spectralCentroid"
     | "spectralFlux"
     | "melSpectrogram"

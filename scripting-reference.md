@@ -20,6 +20,7 @@ Complete API reference for Rhai scripts in Octoseq. All numeric parameters (`f32
   - [post](#post---effect-chain-management)
   - [feedback](#feedback---temporal-feedback)
   - [particles](#particles---particle-systems)
+  - [camera](#camera---camera-control)
 - [Types](#types)
   - [Signal](#signal)
   - [EventStream](#eventstream)
@@ -197,6 +198,50 @@ Dynamically populated namespace with analysis signals.
 | `rate_per_beat` | `f32` | Emission rate (proportional mode) |
 | `threshold` | `f32` | Trigger threshold (threshold mode) |
 | `instances_per_burst` | `i64` | Burst count (threshold mode) |
+
+### `camera` - Camera Control
+
+Global camera singleton. Controls view position, orientation, and projection. Supports signal-binding for audio-reactive camera motion.
+
+#### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `position` | `Map { x, y, z }` | Camera position in world space (each component: `Signal \| f32`) |
+| `rotation` | `Map { x, y, z }` | Euler rotation (pitch, yaw, roll) in radians. Used when `target` is not set |
+| `target` | `Map { x, y, z } \| ()` | Look-at target position. Set to enable LookAt mode; `()` for Euler mode |
+| `up` | `Map { x, y, z }` | Up vector for LookAt mode. Default: (0, 1, 0) |
+| `fov` | `Signal \| f32` | Field of view in degrees. Default: 45 |
+| `near` | `Signal \| f32` | Near clip plane. Default: 0.1 |
+| `far` | `Signal \| f32` | Far clip plane. Default: 100.0 |
+
+#### Methods
+
+| Method | Arguments | Returns | Description |
+|--------|-----------|---------|-------------|
+| `lookAt(target)` | `target: Map { x, y, z }` | — | Set camera to look at target position (enables LookAt mode) |
+| `orbit(center, radius, angle)` | `center: Map { x, y, z }`, `radius: f32`, `angle: f32` | — | Position camera on orbit around center point |
+| `dolly(distance)` | `distance: f32` | — | Move camera forward/backward along view direction |
+| `pan(dx, dy)` | `dx: f32`, `dy: f32` | — | Move camera laterally (left/right, up/down) |
+
+#### Coordinate Modes
+
+The camera operates in one of two modes:
+
+- **Euler mode** (default): When `camera.target` is `()`, orientation is derived from `camera.rotation` (pitch, yaw, roll)
+- **LookAt mode**: When `camera.target` is set to a position, the camera automatically orients to look at that point
+
+#### Defaults
+
+| Property | Default Value |
+|----------|---------------|
+| `position` | (4.0, 2.0, 4.0) |
+| `rotation` | (0.0, 0.0, 0.0) |
+| `target` | `()` (unset, Euler mode) |
+| `up` | (0.0, 1.0, 0.0) |
+| `fov` | 45.0 |
+| `near` | 0.1 |
+| `far` | 100.0 |
 
 ---
 
@@ -563,4 +608,26 @@ let fb = feedback.builder()
     .blend.add()
     .build();
 feedback.enable(fb);
+```
+
+### Camera Examples
+
+```rhai
+// Static camera positioning
+camera.position = #{ x: 0.0, y: 5.0, z: 10.0 };
+camera.lookAt(#{ x: 0.0, y: 0.0, z: 0.0 });
+camera.fov = 60.0;
+
+// Audio-reactive camera (signal-driven)
+camera.position.z = inputs.energy
+    .smooth.exponential(0.1, 0.3)
+    .scale(-5.0)
+    .offset(10.0);
+
+camera.fov = gen.sin(0.25, 0.0)
+    .scale(10.0)
+    .offset(60.0);
+
+// Orbit around origin
+camera.orbit(#{ x: 0.0, y: 0.0, z: 0.0 }, 5.0, time.seconds * 0.5);
 ```

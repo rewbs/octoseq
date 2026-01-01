@@ -3,6 +3,7 @@
 import { useRef, useCallback, useMemo, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { TimeAlignedHeatmapPixi, type TimeAlignedHeatmapData, type HeatmapColorScheme } from "@/components/heatmap/TimeAlignedHeatmapPixi";
+import { HeatmapPlayheadOverlay } from "@/components/heatmap/HeatmapPlayheadOverlay";
 import { FrequencyBandOverlay } from "./FrequencyBandOverlay";
 import { BeatGridOverlay } from "@/components/wavesurfer/BeatGridOverlay";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
@@ -62,6 +63,9 @@ export type HeatmapWithBandOverlayProps = {
 
     /** Selected segment ID for highlighting. */
     selectedSegmentId?: string | null;
+
+    /** Playhead/cursor time for position indicator. */
+    playheadTimeSec?: number | null;
 };
 
 // Default mel config (matches typical spectrogram settings)
@@ -92,6 +96,7 @@ export function HeatmapWithBandOverlay({
     beatGridVisible = true,
     musicalTimeSegments = [],
     selectedSegmentId = null,
+    playheadTimeSec = null,
 }: HeatmapWithBandOverlayProps) {
     const { ref: containerRef, size: containerSize } = useElementSize<HTMLDivElement>();
     const overlayContainerRef = useRef<HTMLDivElement>(null);
@@ -215,7 +220,7 @@ export function HeatmapWithBandOverlay({
             {/* Beat grid overlay positioned on top of heatmap */}
             {viewport && audioDuration > 0 && (
                 <div
-                    className="absolute inset-x-0 top-0"
+                    className="absolute inset-x-0 top-0 z-10"
                     style={{ padding: "4px" }}
                 >
                     <BeatGridOverlay
@@ -226,6 +231,21 @@ export function HeatmapWithBandOverlay({
                         isVisible={beatGridVisible}
                         musicalTimeSegments={musicalTimeSegments}
                         selectedSegmentId={selectedSegmentId}
+                    />
+                </div>
+            )}
+
+            {/* Playhead/cursor overlay */}
+            {viewport && (
+                <div
+                    className="absolute inset-x-0 top-0 pointer-events-none z-10"
+                    style={{ padding: "4px" }}
+                >
+                    <HeatmapPlayheadOverlay
+                        viewport={viewport}
+                        timeSec={playheadTimeSec}
+                        height={overlayHeight - 16}
+                        widthPx={width}
                     />
                 </div>
             )}

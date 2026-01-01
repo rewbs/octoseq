@@ -45,11 +45,11 @@ export const ENTITY_ENTRIES: RegistryEntry[] = [
         path: "MeshEntity.material",
         type: "string",
         description:
-          'Material ID (e.g., "default", "emissive", "wire_glow", "soft_additive", "gradient").',
+          'Material ID (e.g., "default", "emissive", "wire_glow", "wire", "soft_additive", "gradient").',
       },
       {
-        name: "params",
-        path: "MeshEntity.params",
+        name: "materialParams",
+        path: "MeshEntity.materialParams",
         type: "MaterialParams",
         description: "Material parameters map. Keys depend on the selected material.",
       },

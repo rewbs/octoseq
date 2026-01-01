@@ -1,0 +1,21 @@
+"use client";
+
+import { AuthoredEventsContent } from "@/components/authored/AuthoredEventsContent";
+import { useAudioStore } from "@/lib/stores/audioStore";
+
+/**
+ * Inspector view for Authored Events.
+ * Shows stream management and creation controls.
+ * Import functionality is in the main AuthoredEventsPanel.
+ */
+export function AuthoredEventsInspector() {
+  const audioDuration = useAudioStore((s) => s.audioDuration);
+
+  return (
+    <div className="flex flex-col">
+      <div className="p-2">
+        <AuthoredEventsContent audioDuration={audioDuration} />
+      </div>
+    </div>
+  );
+}

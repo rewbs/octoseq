@@ -62,7 +62,12 @@ fn update(dt, frame) {
 let cube = mesh.cube();      // Create a cube
 let plane = mesh.plane();    // Create a plane
 let sphere = mesh.sphere();  // Create a sphere
+
+// Load a custom mesh from the Assets panel
+let teapot = mesh.load("Teapot");  // Load by asset name
 ```
+
+The `mesh.load()` function creates an instance of a 3D mesh asset that was loaded in the **Assets > 3D Objects** panel. The asset name must match the name shown in the panel (case-sensitive).
 
 Mesh entities have the following properties:
 
@@ -2127,15 +2132,15 @@ Parameters marked with `†` can accept either a constant (`f32`) or a `Signal` 
 
 ### Sandbox Limits
 
-| Limit                      | Value             |
-| -------------------------- | ----------------- |
-| Expression recursion depth | 64                |
-| Function call depth        | 64                |
-| Operations per frame       | 100,000           |
-| Max string size            | 10,000 characters |
-| Max array size             | 1,000 elements    |
-| Max map size               | 500 entries       |
-| Log messages per frame     | 100               |
+| Limit                      | Value              |
+| -------------------------- | ------------------ |
+| Expression recursion depth | 64                 |
+| Function call depth        | 64                 |
+| Operations per frame       | 100,000            |
+| Max string size            | 10,000 characters  |
+| Max array size             | 100,000 elements   |
+| Max map size               | 500 entries        |
+| Log messages per frame     | 100                |
 
 ---
 

@@ -40,6 +40,10 @@ pub mod post_processing;
 pub mod feedback;
 pub mod feedback_rhai;
 
+// Camera control
+pub mod camera;
+pub mod camera_rhai;
+
 // Debug visualization
 pub mod debug_markers;
 

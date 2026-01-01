@@ -90,7 +90,8 @@ export { spectrogram } from "./dsp/spectrogram";
 // Derived spectral features (CPU, reuse spectrogram)
 // ----------------------------
 
-export { spectralCentroid, spectralFlux } from "./dsp/spectral";
+export type { AmplitudeEnvelopeConfig, AmplitudeEnvelopeResult } from "./dsp/spectral";
+export { amplitudeEnvelope, spectralCentroid, spectralFlux } from "./dsp/spectral";
 
 // ----------------------------
 // Onsets / Peaks
@@ -121,6 +122,22 @@ export { generateTempoHypotheses } from "./dsp/tempoHypotheses";
 // ----------------------------
 
 export { computePhaseHypotheses, generateBeatTimes } from "./dsp/phaseAlignment";
+
+// ----------------------------
+// Peak Picking
+// ----------------------------
+
+export {
+    pickPeaks,
+    pickPeaksAdaptive,
+    computeAdaptiveThreshold,
+    applyHysteresisGate,
+    DEFAULT_PEAK_PICKING_PARAMS,
+    type PeakPickingParams,
+    type PeakPickingResult,
+    type AdaptivePeakPickingResult,
+    type HysteresisGateParams,
+} from "./dsp/peakPicking";
 
 // ----------------------------
 // Musical Time (B4)
@@ -290,6 +307,38 @@ export {
 
 export type { BandProposalOptions } from "./dsp/bandProposal";
 export { generateBandProposals } from "./dsp/bandProposal";
+
+// ----------------------------
+// Custom Signal Reduction
+// ----------------------------
+
+export type {
+    ReductionInput,
+    ReductionAlgorithmId,
+    BinRangeOptions,
+    OnsetStrengthOptions,
+    SpectralFluxOptions,
+    ReductionOptions,
+    ReductionResult,
+    // Polarity
+    PolarityMode,
+    // Stabilization
+    StabilizationMode,
+    EnvelopeMode,
+    StabilizationOptions,
+} from "./dsp/customSignalReduction";
+export {
+    reduce2DToSignal,
+    getReductionAlgorithmLabel,
+    getReductionAlgorithmDescription,
+    // Polarity
+    applyPolarity,
+    // Stabilization
+    stabilizeSignal,
+    // Statistics
+    computePercentiles,
+    computeLocalStats,
+} from "./dsp/customSignalReduction";
 
 // ----------------------------
 // Visualisation utilities

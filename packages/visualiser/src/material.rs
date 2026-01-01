@@ -148,6 +148,39 @@ impl ParamDef {
     }
 }
 
+/// Primitive topology for materials.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MaterialTopology {
+    /// Triangle list (standard solid rendering).
+    #[default]
+    Triangles,
+    /// Line list (wireframe rendering using edge indices).
+    Lines,
+    /// Point list (render vertices as points).
+    Points,
+}
+
+impl MaterialTopology {
+    /// Convert to wgpu primitive topology.
+    pub fn to_wgpu(&self) -> wgpu::PrimitiveTopology {
+        match self {
+            MaterialTopology::Triangles => wgpu::PrimitiveTopology::TriangleList,
+            MaterialTopology::Lines => wgpu::PrimitiveTopology::LineList,
+            MaterialTopology::Points => wgpu::PrimitiveTopology::PointList,
+        }
+    }
+
+    /// Check if this topology uses edge indices (Lines) vs triangle indices (Triangles).
+    pub fn uses_edge_indices(&self) -> bool {
+        matches!(self, MaterialTopology::Lines)
+    }
+
+    /// Check if this topology requires indices at all.
+    pub fn uses_indices(&self) -> bool {
+        !matches!(self, MaterialTopology::Points)
+    }
+}
+
 /// Blend modes for materials.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BlendMode {
@@ -213,8 +246,8 @@ pub struct Material {
     pub cull_mode: Option<wgpu::Face>,
     /// Whether to write to depth buffer.
     pub depth_write: bool,
-    /// Whether this is a wireframe-only material.
-    pub wireframe_only: bool,
+    /// Primitive topology for this material.
+    pub topology: MaterialTopology,
 }
 
 impl Material {
@@ -247,7 +280,7 @@ pub struct MaterialBuilder {
     blend_mode: BlendMode,
     cull_mode: Option<wgpu::Face>,
     depth_write: bool,
-    wireframe_only: bool,
+    topology: MaterialTopology,
 }
 
 impl MaterialBuilder {
@@ -263,7 +296,7 @@ impl MaterialBuilder {
             blend_mode: BlendMode::Opaque,
             cull_mode: Some(wgpu::Face::Back),
             depth_write: false,
-            wireframe_only: false,
+            topology: MaterialTopology::Triangles,
         }
     }
 
@@ -307,8 +340,8 @@ impl MaterialBuilder {
         self
     }
 
-    pub fn wireframe_only(mut self, wireframe: bool) -> Self {
-        self.wireframe_only = wireframe;
+    pub fn topology(mut self, topology: MaterialTopology) -> Self {
+        self.topology = topology;
         self
     }
 
@@ -323,7 +356,7 @@ impl MaterialBuilder {
             blend_mode: self.blend_mode,
             cull_mode: self.cull_mode,
             depth_write: self.depth_write,
-            wireframe_only: self.wireframe_only,
+            topology: self.topology,
         }
     }
 }
@@ -387,11 +420,40 @@ impl MaterialRegistry {
                     .with_description("Glow intensity"))
                 .blend_mode(BlendMode::Additive)
                 .cull_mode(None)
-                .wireframe_only(true)
+                .topology(MaterialTopology::Lines)
                 .build()
         );
 
-        // 4. Soft Additive - for particles and soft glows
+        // 4. Wire - simple wireframe material (no glow)
+        self.register(
+            Material::builder("wire")
+                .name("Wire")
+                .description("Simple wireframe material without glow effects")
+                .param(ParamDef::color("wire_color", [1.0, 1.0, 1.0, 1.0])
+                    .with_description("Wire color"))
+                .blend_mode(BlendMode::AlphaBlend)
+                .cull_mode(None)
+                .topology(MaterialTopology::Lines)
+                .build()
+        );
+
+        // 5. Points - render vertices as points
+        self.register(
+            Material::builder("points")
+                .name("Points")
+                .description("Render mesh vertices as points")
+                .param(ParamDef::color("point_color", [1.0, 1.0, 1.0, 1.0])
+                    .with_description("Point color"))
+                .param(ParamDef::float("point_size", 1.0)
+                    .with_range(0.1, 10.0)
+                    .with_description("Point size (visual scaling in shader)"))
+                .blend_mode(BlendMode::AlphaBlend)
+                .cull_mode(None)
+                .topology(MaterialTopology::Points)
+                .build()
+        );
+
+        // 5. Soft Additive - for particles and soft glows
         self.register(
             Material::builder("soft_additive")
                 .name("Soft Additive")
@@ -476,9 +538,11 @@ mod tests {
         assert!(registry.exists("default"));
         assert!(registry.exists("emissive"));
         assert!(registry.exists("wire_glow"));
+        assert!(registry.exists("wire"));
+        assert!(registry.exists("points"));
         assert!(registry.exists("soft_additive"));
         assert!(registry.exists("gradient"));
-        assert_eq!(registry.len(), 5);
+        assert_eq!(registry.len(), 7);
     }
 
     #[test]

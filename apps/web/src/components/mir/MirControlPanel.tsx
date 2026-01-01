@@ -2,6 +2,7 @@
  * MIR function identifiers for analysis operations.
  */
 export type MirFunctionId =
+    | "amplitudeEnvelope"
     | "spectralCentroid"
     | "spectralFlux"
     | "melSpectrogram"

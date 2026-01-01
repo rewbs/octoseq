@@ -6,7 +6,7 @@ import { onsetEnvelopeFromMel, onsetEnvelopeFromMelGpu } from "../dsp/onset";
 import { peakPick } from "../dsp/peakPick";
 import { hpss } from "../dsp/hpss";
 import { hpssGpu } from "../dsp/hpssGpu";
-import { spectralCentroid, spectralFlux } from "../dsp/spectral";
+import { amplitudeEnvelope, spectralCentroid, spectralFlux } from "../dsp/spectral";
 import { spectrogram, type AudioBufferLike, type Spectrogram, type SpectrogramConfig } from "../dsp/spectrogram";
 import { cqtSpectrogram, withCqtDefaults } from "../dsp/cqt";
 import { harmonicEnergy, bassPitchMotion, tonalStability } from "../dsp/cqtSignals";
@@ -87,6 +87,29 @@ export async function runMir(
         hopSize: 512,
         window: "hann",
     };
+
+    // Amplitude envelope: compute directly from raw audio (no spectrogram needed)
+    if (request.fn === "amplitudeEnvelope") {
+        const cpuStart = nowMs();
+        const result = amplitudeEnvelope(audio.mono, audio.sampleRate, {
+            hopSize: specConfig.hopSize,
+            windowSize: specConfig.fftSize,
+        });
+        const cpuEnd = nowMs();
+        return {
+            kind: "1d",
+            times: result.times,
+            values: result.values,
+            meta: {
+                backend: "cpu",
+                usedGpu: false,
+                timings: {
+                    totalMs: cpuEnd - t0,
+                    cpuMs: cpuEnd - cpuStart,
+                },
+            },
+        };
+    }
 
     // CPU: spectrogram + centroid/flux are CPU-only today.
     const cpuStart = nowMs();

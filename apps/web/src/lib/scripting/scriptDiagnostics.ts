@@ -4,7 +4,7 @@
  * See: `packages/visualiser/src/script_diagnostics.rs`
  */
 
-export type ScriptDiagnosticKind = "parse_error" | "runtime_error" | "host_api_misuse" | "host_error";
+export type ScriptDiagnosticKind = "parse_error" | "runtime_error" | "host_api_misuse" | "host_error" | "warning";
 export type ScriptPhase = "compile" | "init" | "update";
 
 export interface ScriptLocation {
