@@ -276,7 +276,7 @@ export default function Home() {
   const bandMirCacheSize = useBandMirStore((s) => s.cache.size);
   // No-op callback - components report progress but we don't display it
   const handleBandWaveformsReadyChange = useCallback(
-    () => {},
+    () => { },
     []
   ) as (status: { ready: number; total: number }) => void;
 
@@ -842,7 +842,7 @@ export default function Home() {
                         alt="Octoseq"
                         width={36}
                         height={36}
-                        className="h-14 w-14 rounded-3xl bg-stone-200 p-1 dark:bg-stone-800"
+                        className="h-14 w-14 rounded-3xl bg-stone-200 p-1 dark:bg-stone-800 hover:scale-125 hover:rotate-180 transition-all"
                       />
                       <div className="absolute top-8 inset-0 flex items-center justify-center">
                         <p className="w-full text-tiny tracking-[0.25em] font font-mono  text-zinc-900 dark:text-zinc-100 text-shadow-lg text-shadow-stone-500/50 dark:text-shadow-stone-100/50 text-center backdrop-blur-lg backdrop-opacity-20 ">

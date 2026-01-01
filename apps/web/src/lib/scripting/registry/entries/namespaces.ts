@@ -438,104 +438,195 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
   },
 
   // ============================================================================
-  // inputs - Signal accessors namespace
+  // timing - Time and musical timing signals
   // ============================================================================
   {
     kind: "namespace",
-    name: "inputs",
-    path: "inputs",
+    name: "timing",
+    path: "timing",
     description:
-      "Signal accessors namespace. Properties return Signal objects. Available in both init() and update().",
+      "Time and musical timing signals. Available in both init() and update().",
     properties: [
       {
         name: "time",
-        path: "inputs.time",
+        path: "timing.time",
         type: "Signal",
         description: "Playback time in seconds.",
         readonly: true,
       },
       {
         name: "dt",
-        path: "inputs.dt",
+        path: "timing.dt",
         type: "Signal",
         description: "Delta time in seconds.",
         readonly: true,
       },
       {
-        name: "amplitude",
-        path: "inputs.amplitude",
-        type: "Signal",
-        description: "Audio amplitude (normalized).",
-        readonly: true,
-      },
-      {
-        name: "flux",
-        path: "inputs.flux",
-        type: "Signal",
-        description: "Spectral flux (alias for spectralFlux).",
-        readonly: true,
-      },
-      {
-        name: "spectralCentroid",
-        path: "inputs.spectralCentroid",
-        type: "Signal",
-        description: "Spectral centroid (brightness).",
-        readonly: true,
-      },
-      {
-        name: "spectralFlux",
-        path: "inputs.spectralFlux",
-        type: "Signal",
-        description: "Spectral flux (rate of spectral change).",
-        readonly: true,
-      },
-      {
-        name: "onsetEnvelope",
-        path: "inputs.onsetEnvelope",
-        type: "Signal",
-        description: "Onset detection envelope.",
-        readonly: true,
-      },
-      {
-        name: "searchSimilarity",
-        path: "inputs.searchSimilarity",
-        type: "Signal",
-        description: "Search similarity curve (0-1).",
-        readonly: true,
-      },
-      {
         name: "beatPosition",
-        path: "inputs.beatPosition",
+        path: "timing.beatPosition",
         type: "Signal",
         description: "Continuous beat position (beatIndex + beatPhase).",
         readonly: true,
       },
       {
         name: "beatIndex",
-        path: "inputs.beatIndex",
+        path: "timing.beatIndex",
         type: "Signal",
         description: "Current beat index (integer-valued).",
         readonly: true,
       },
       {
         name: "beatPhase",
-        path: "inputs.beatPhase",
+        path: "timing.beatPhase",
         type: "Signal",
         description: "Phase within current beat (0-1).",
         readonly: true,
       },
       {
         name: "bpm",
-        path: "inputs.bpm",
+        path: "timing.bpm",
         type: "Signal",
         description: "Tempo in beats per minute.",
         readonly: true,
       },
+    ],
+    methods: [],
+  },
+
+  // ============================================================================
+  // inputs - Audio input signals namespace
+  // ============================================================================
+  {
+    kind: "namespace",
+    name: "inputs",
+    path: "inputs",
+    description:
+      "Audio input signals namespace. Contains mix (mixdown), stems, bands, and custom signals.",
+    properties: [
+      {
+        name: "mix",
+        path: "inputs.mix",
+        type: "MixSignals",
+        description: "Mixdown audio signals (rms, energy, centroid, flux, onset).",
+        readonly: true,
+      },
+      {
+        name: "stems",
+        path: "inputs.stems",
+        type: "Stems",
+        description: 'Stem-scoped signal accessors: inputs.stems["Drums"].energy.',
+        readonly: true,
+      },
+      {
+        name: "customSignals",
+        path: "inputs.customSignals",
+        type: "CustomSignals",
+        description: 'User-defined 1D signals: inputs.customSignals["mySignal"].',
+        readonly: true,
+      },
+      {
+        name: "customEvents",
+        path: "inputs.customEvents",
+        type: "CustomEvents",
+        description: 'User-authored event streams: inputs.customEvents["beats"].',
+        readonly: true,
+      },
+    ],
+    methods: [],
+  },
+
+  // ============================================================================
+  // inputs.mix - Mixdown audio signals
+  // ============================================================================
+  {
+    kind: "namespace",
+    name: "mix",
+    path: "inputs.mix",
+    description:
+      "Mixdown (full mix) audio signal accessors.",
+    properties: [
+      {
+        name: "rms",
+        path: "inputs.mix.rms",
+        type: "Signal",
+        description: "RMS amplitude (normalized 0-1).",
+        readonly: true,
+      },
+      {
+        name: "energy",
+        path: "inputs.mix.energy",
+        type: "Signal",
+        description: "Audio energy level.",
+        readonly: true,
+      },
+      {
+        name: "centroid",
+        path: "inputs.mix.centroid",
+        type: "Signal",
+        description: "Spectral centroid (brightness).",
+        readonly: true,
+      },
+      {
+        name: "flux",
+        path: "inputs.mix.flux",
+        type: "Signal",
+        description: "Spectral flux (rate of spectral change).",
+        readonly: true,
+      },
+      {
+        name: "onset",
+        path: "inputs.mix.onset",
+        type: "Signal",
+        description: "Onset detection envelope.",
+        readonly: true,
+      },
+      {
+        name: "searchSimilarity",
+        path: "inputs.mix.searchSimilarity",
+        type: "Signal",
+        description: "Search similarity curve (0-1).",
+        readonly: true,
+      },
+      {
+        name: "harmonic",
+        path: "inputs.mix.harmonic",
+        type: "Signal",
+        description: "CQT harmonic energy - measures tonal presence vs noise (0-1).",
+        readonly: true,
+      },
+      {
+        name: "bassMotion",
+        path: "inputs.mix.bassMotion",
+        type: "Signal",
+        description: "CQT bass pitch motion - measures bassline activity and low-end groove.",
+        readonly: true,
+      },
+      {
+        name: "tonal",
+        path: "inputs.mix.tonal",
+        type: "Signal",
+        description: "CQT tonal stability - measures harmonic stability vs modulation (0-1).",
+        readonly: true,
+      },
       {
         name: "bands",
-        path: "inputs.bands",
+        path: "inputs.mix.bands",
         type: "Bands",
-        description: 'Band-scoped signal accessors: inputs.bands["Bass"].energy.',
+        description: 'Frequency band signals: inputs.mix.bands["Bass"].energy.',
+        readonly: true,
+      },
+      {
+        name: "beatCandidates",
+        path: "inputs.mix.beatCandidates",
+        type: "EventStream",
+        description: "Beat candidate events extracted from the mixdown.",
+        readonly: true,
+      },
+      {
+        name: "onsetPeaks",
+        path: "inputs.mix.onsetPeaks",
+        type: "EventStream",
+        description: "Onset peak events extracted from the mixdown.",
         readonly: true,
       },
     ],

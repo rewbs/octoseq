@@ -76,6 +76,10 @@ struct VisualiserContext {
     band_id_to_label: HashMap<String, String>,
     /// Stem ID -> label (for tracking/UX, actual signals stored in VisualiserState).
     stem_id_to_label: HashMap<String, String>,
+    /// Custom signals: user-defined 1D signals extracted from 2D data
+    custom_signals: HashMap<String, InputSignal>,
+    /// Custom signal ID -> label for namespace generation
+    custom_signal_id_to_label: HashMap<String, String>,
     /// Musical time structure for beat-aware signal processing
     musical_time: Option<MusicalTimeStructure>,
     /// Frequency band structure for band-aware processing
@@ -368,6 +372,87 @@ impl WasmVisualiser {
         }
     }
 
+    // === Custom Signal Methods ===
+    // These methods handle user-defined 1D signals extracted from 2D data.
+
+    /// Push a custom signal for use in scripts.
+    /// The signal will be available as `inputs.customSignals["signal_id"]` in Rhai scripts.
+    ///
+    /// - `signal_id`: The unique ID of the custom signal.
+    /// - `label`: The user-visible label of the signal.
+    /// - `samples`: Signal data.
+    /// - `sample_rate`: Sample rate of the signal.
+    pub fn push_custom_signal(
+        &self,
+        signal_id: &str,
+        label: &str,
+        samples: &[f32],
+        sample_rate: f32,
+    ) {
+        log::info!(
+            "Rust received custom signal '{}' / '{}': {} samples, rate {}",
+            signal_id,
+            label,
+            samples.len(),
+            sample_rate
+        );
+        let mut inner = self.inner.borrow_mut();
+        let signal = InputSignal::new(samples.to_vec(), sample_rate);
+
+        // Store under signal ID
+        inner
+            .custom_signals
+            .insert(signal_id.to_string(), signal.clone());
+        inner
+            .custom_signal_id_to_label
+            .insert(signal_id.to_string(), label.to_string());
+
+        // Also store under label if different from ID
+        if label != signal_id {
+            inner
+                .custom_signals
+                .insert(label.to_string(), signal);
+        }
+    }
+
+    /// Clear all custom signals.
+    pub fn clear_custom_signals(&self) {
+        let mut inner = self.inner.borrow_mut();
+        inner.custom_signals.clear();
+        inner.custom_signal_id_to_label.clear();
+    }
+
+    /// Get list of custom signal keys (IDs and labels).
+    /// Returns a JSON array of strings.
+    pub fn get_custom_signal_keys(&self) -> String {
+        let inner = self.inner.borrow();
+        let keys: Vec<&str> = inner.custom_signals.keys().map(|s| s.as_str()).collect();
+        serde_json::to_string(&keys).unwrap_or_else(|_| "[]".to_string())
+    }
+
+    /// Set available custom signals for script namespace generation.
+    /// This registers custom signal IDs and labels so the script engine can generate
+    /// `inputs.customSignals["signal_id"]` accessors.
+    ///
+    /// The JSON format should be an array of [id, label] pairs:
+    /// `[["signal-abc123", "My Signal"], ["signal-def456", "Another Signal"]]`
+    ///
+    /// Returns true if successful, false if parsing failed.
+    pub fn set_available_custom_signals(&self, json: &str) -> bool {
+        match serde_json::from_str::<Vec<(String, String)>>(json) {
+            Ok(signals) => {
+                log::info!("Setting {} available custom signals for script namespace", signals.len());
+                let mut inner = self.inner.borrow_mut();
+                inner.state.set_available_custom_signals(signals);
+                true
+            }
+            Err(e) => {
+                log::error!("Failed to parse available custom signals: {}", e);
+                false
+            }
+        }
+    }
+
     // === Band Event Methods ===
     // These methods handle pre-extracted events for frequency bands.
     // Events are extracted in TypeScript and pushed here for script access.
@@ -636,6 +721,14 @@ impl WasmVisualiser {
         bands.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
         inner.state.set_available_bands(bands);
 
+        let mut custom_signals: Vec<(String, String)> = inner
+            .custom_signal_id_to_label
+            .iter()
+            .map(|(id, label)| (id.clone(), label.clone()))
+            .collect();
+        custom_signals.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+        inner.state.set_available_custom_signals(custom_signals);
+
         let result = inner.state.load_script(script);
         if !result {
             log::error!("Failed to load script: {:?}", inner.state.get_script_error());
@@ -826,6 +919,7 @@ impl WasmVisualiser {
             ctx.zoom_signal.as_ref(),
             &ctx.named_signals,
             &ctx.band_signals,
+            &ctx.custom_signals,
             ctx.musical_time.as_ref(),
         );
 
@@ -877,6 +971,7 @@ impl WasmVisualiser {
             ctx.zoom_signal.as_ref(),
             &ctx.named_signals,
             &ctx.band_signals,
+            &ctx.custom_signals,
             ctx.musical_time.as_ref(),
             &budget,
             get_time,
@@ -1241,6 +1336,8 @@ pub async fn create_visualiser(canvas: HtmlCanvasElement) -> Result<WasmVisualis
             band_signals: HashMap::new(),
             band_id_to_label: HashMap::new(),
             stem_id_to_label: HashMap::new(),
+            custom_signals: HashMap::new(),
+            custom_signal_id_to_label: HashMap::new(),
             musical_time: None,
             frequency_bands: None,
         })),

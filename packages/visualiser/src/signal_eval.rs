@@ -48,6 +48,9 @@ pub struct EvalContext<'a> {
     /// Stem-scoped input signals: stem_id -> feature -> InputSignal
     pub stem_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
 
+    /// Custom signals: signal_id -> InputSignal
+    pub custom_signals: &'a HashMap<String, InputSignal>,
+
     /// Pre-computed statistics for normalization.
     pub statistics: &'a StatisticsCache,
 
@@ -69,6 +72,7 @@ impl<'a> EvalContext<'a> {
         input_signals: &'a HashMap<String, InputSignal>,
         band_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
         stem_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
+        custom_signals: &'a HashMap<String, InputSignal>,
         statistics: &'a StatisticsCache,
         state: &'a mut SignalState,
     ) -> Self {
@@ -80,6 +84,7 @@ impl<'a> EvalContext<'a> {
             input_signals,
             band_signals,
             stem_signals,
+            custom_signals,
             statistics,
             state,
             frame_cache: RefCell::new(HashMap::new()),
@@ -171,6 +176,7 @@ impl Signal {
                     "time.dt" => ctx.dt,
                     "time.frames" => ctx.frame_count as f32,
                     "time.beats" => ctx.beat_position(),
+                    "time.beatIndex" => ctx.beat_position().floor(),
                     "time.phase" => ctx.beat_position().fract(),
                     "time.bpm" => ctx.current_bpm(),
                     _ => ctx
@@ -208,6 +214,16 @@ impl Signal {
                 .unwrap_or_else(|| {
                     // Log warning once for this stem/feature combination
                     ctx.state.warn_missing_stem(stem_id, feature);
+                    0.0
+                }),
+
+            SignalNode::CustomSignalInput { signal_id, sampling } => ctx
+                .custom_signals
+                .get(signal_id)
+                .map(|sig| self.sample_with_config(sig, *sampling, ctx))
+                .unwrap_or_else(|| {
+                    // Log warning once for this custom signal
+                    ctx.state.warn_missing_custom_signal(signal_id);
                     0.0
                 }),
 

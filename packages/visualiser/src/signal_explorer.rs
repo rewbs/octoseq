@@ -135,6 +135,7 @@ pub fn node_transform_type(node: &SignalNode) -> TransformType {
         SignalNode::Input { .. }
         | SignalNode::BandInput { .. }
         | SignalNode::StemInput { .. }
+        | SignalNode::CustomSignalInput { .. }
         | SignalNode::Constant(_)
         | SignalNode::Generator(_)
         | SignalNode::EventStreamSource { .. }
@@ -220,6 +221,7 @@ fn get_primary_source(node: &SignalNode) -> Option<&Signal> {
         SignalNode::Input { .. }
         | SignalNode::BandInput { .. }
         | SignalNode::StemInput { .. }
+        | SignalNode::CustomSignalInput { .. }
         | SignalNode::Constant(_)
         | SignalNode::Generator(_)
         | SignalNode::EventStreamSource { .. }
@@ -349,6 +351,9 @@ pub fn sample_signal(
     };
     let mut current_value = 0.0f32;
 
+    // Custom signals not yet supported in signal explorer
+    let empty_custom_signals: HashMap<String, InputSignal> = HashMap::new();
+
     for (i, &time) in times.iter().enumerate() {
         let mut ctx = EvalContext::new(
             time,
@@ -358,6 +363,7 @@ pub fn sample_signal(
             input_signals,
             band_signals,
             stem_signals,
+            &empty_custom_signals,
             statistics,
             state,
         );

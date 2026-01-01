@@ -301,7 +301,8 @@ async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet: boo
     for i in 0..total_frames {
         let empty_signals: HashMap<String, InputSignal> = HashMap::new();
         let empty_band_signals: HashMap<String, HashMap<String, InputSignal>> = HashMap::new();
-        state.update(dt, Some(&signal), None, &empty_signals, &empty_band_signals, None);
+        let empty_custom_signals: HashMap<String, InputSignal> = HashMap::new();
+        state.update(dt, Some(&signal), None, &empty_signals, &empty_band_signals, &empty_custom_signals, None);
 
         // Render to texture
         renderer.render(&texture_view, &state);

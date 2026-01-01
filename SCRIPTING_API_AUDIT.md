@@ -575,29 +575,56 @@ Bands use a slightly different pattern - availability is inferred from pushed si
 | Component | Changes Required |
 |-----------|-----------------|
 | **Rust (signal.rs)** | Add `CustomSignalInput` variant to `SignalNode` |
-| **Rust (signal_rhai.rs)** | Restructure namespace generation: `inputs.mix`, hierarchical bands, consistent naming, custom signals |
+| **Rust (signal_rhai.rs)** | Restructure namespace generation: `timing`, `inputs.mix`, hierarchical bands, consistent naming, custom signals, custom events |
 | **Rust (scripting.rs)** | Add `available_custom_signals`, refactor `load_script()` for new structure |
 | **Rust (wasm.rs)** | Add WASM exports for custom signals, update band/stem event streams |
-| **TS (signals.ts)** | Add `MixSignals`, `Stems`, `StemSignals`, `CustomSignals`, `AuthoredEvents` types; update `BandSignals` |
-| **TS (namespaces.ts)** | Replace top-level signals with `mix`, add `stems`, `customSignals`, `authored` |
-| **TS (registry/index.ts)** | Add chain resolution for `inputs.mix`, nested bands, custom signals, authored |
+| **TS (signals.ts)** | Add `TimingSignals`, `MixSignals`, `Stems`, `StemSignals`, `CustomSignals`, `CustomEvents` types; update `BandSignals` |
+| **TS (namespaces.ts)** | Add `timing` namespace, replace top-level signals with `mix`, add `stems`, `customSignals`, `customEvents` |
+| **TS (registry/index.ts)** | Add chain resolution for `timing`, `inputs.mix`, nested bands, custom signals, custom events |
 | **TS (VisualiserPanel.tsx)** | Update band pushing for source context, add event streams, integrate custom signals |
-| **Docs (scripting.md)** | Full rewrite of `inputs` section: `mix`, `stems`, `customSignals`, `authored`, consistent naming |
+| **Docs (scripting.md)** | Full rewrite: add `timing` namespace, `inputs.mix`, `stems`, `customSignals`, `customEvents`, consistent naming |
 
 ---
 
 ## Success Criteria
 
 After implementation:
+
+**Timing Namespace**
+- [ ] `timing.time` returns playback time signal
+- [ ] `timing.dt` returns delta time signal
+- [ ] `timing.beatPosition` returns continuous beat position
+- [ ] `timing.beatIndex` returns integer beat number
+- [ ] `timing.beatPhase` returns phase within beat (0-1)
+- [ ] `timing.bpm` returns tempo signal
+
+**Inputs Namespace**
 - [ ] `inputs.mix.energy` returns mixdown energy signal
+- [ ] `inputs.mix.centroid` returns mixdown spectral centroid
+- [ ] `inputs.mix.flux` returns mixdown spectral flux
+- [ ] `inputs.mix.onset` returns mixdown onset signal
 - [ ] `inputs.mix.bands["Bass"].onset` returns band onset signal
+- [ ] `inputs.mix.bands["Bass"].centroid` returns band centroid signal
+- [ ] `inputs.mix.beatCandidates` returns mixdown beat candidates EventStream
+- [ ] `inputs.mix.onsetPeaks` returns mixdown onset peaks EventStream
 - [ ] `inputs.stems["Drums"].centroid` returns stem centroid signal
 - [ ] `inputs.stems["Drums"].bands["Kick"].flux` returns stem-scoped band signal
-- [ ] `inputs.customSignals["My Signal"]` returns custom signal
-- [ ] `inputs.authored["Kick Events"]` returns authored event stream
-- [ ] `inputs.mix.beatCandidates` returns mixdown beat candidates
+- [ ] `inputs.stems["Drums"].beatCandidates` returns stem beat candidates
 - [ ] `inputs.stems["Drums"].onsetPeaks` returns stem onset peaks
-- [ ] Monaco autocomplete shows `mix`, `stems`, `customSignals`, `authored` under `inputs`
+- [ ] `inputs.customSignals["My Signal"]` returns custom signal
+- [ ] `inputs.customEvents["Kick Events"]` returns authored event stream
+
+**Monaco IDE**
+- [ ] Monaco autocomplete shows `timing` as global namespace
+- [ ] Monaco shows `time`, `dt`, `beatPosition`, `beatIndex`, `beatPhase`, `bpm` under `timing`
+- [ ] Monaco autocomplete shows `mix`, `stems`, `customSignals`, `customEvents` under `inputs`
 - [ ] Monaco shows nested `bands` under both `inputs.mix` and `inputs.stems[id]`
-- [ ] Documentation accurately describes all accessible namespaces with consistent naming
+
+**Documentation**
+- [ ] `timing` namespace documented with all signals
+- [ ] `inputs.mix` documented with all signals and event streams
+- [ ] `inputs.stems` documented with bands sub-namespace
+- [ ] `inputs.customSignals` documented
+- [ ] `inputs.customEvents` documented
+- [ ] Consistent naming (`centroid`, `flux`, `onset`, `energy`) documented throughout
 - [ ] No "why can't my script see this?" surprises

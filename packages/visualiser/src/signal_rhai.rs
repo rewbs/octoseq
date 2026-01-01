@@ -20,6 +20,7 @@ use crate::signal::{
 thread_local! {
     static CURRENT_INPUT_SIGNALS: RefCell<Option<HashMap<String, InputSignal>>> = const { RefCell::new(None) };
     static CURRENT_BAND_SIGNALS: RefCell<Option<HashMap<String, HashMap<String, InputSignal>>>> = const { RefCell::new(None) };
+    static CURRENT_CUSTOM_SIGNALS: RefCell<Option<HashMap<String, InputSignal>>> = const { RefCell::new(None) };
 }
 
 /// Set the input signals for the current thread (call before script execution).
@@ -35,12 +36,22 @@ pub fn set_current_input_signals(
     });
 }
 
+/// Set the custom signals for the current thread (call before script execution).
+pub fn set_current_custom_signals(custom_signals: HashMap<String, InputSignal>) {
+    CURRENT_CUSTOM_SIGNALS.with(|cell| {
+        *cell.borrow_mut() = Some(custom_signals);
+    });
+}
+
 /// Clear the input signals for the current thread (call after script execution).
 pub fn clear_current_input_signals() {
     CURRENT_INPUT_SIGNALS.with(|cell| {
         *cell.borrow_mut() = None;
     });
     CURRENT_BAND_SIGNALS.with(|cell| {
+        *cell.borrow_mut() = None;
+    });
+    CURRENT_CUSTOM_SIGNALS.with(|cell| {
         *cell.borrow_mut() = None;
     });
 }
@@ -616,6 +627,12 @@ pub fn register_signal_api(engine: &mut Engine) {
         })
     });
 
+    // === Custom signal accessor ===
+    // Returns a Signal that reads from a custom signal by ID.
+    engine.register_fn("__custom_signal_input", |id: ImmutableString| {
+        Signal::custom_signal_input(id.as_str())
+    });
+
     // === Constant signal ===
     engine.register_fn("__signal_constant", |value: f32| Signal::constant(value));
     engine.register_fn("__signal_constant", |value: i64| Signal::constant(value as f32));
@@ -623,7 +640,7 @@ pub fn register_signal_api(engine: &mut Engine) {
 
 /// Rhai code to inject at script load time for the Signal API.
 ///
-/// This provides the `gen` namespace, `time` namespace, and `inputs` object.
+/// This provides the `gen` namespace, `timing` namespace, and `inputs` object.
 pub const SIGNAL_API_RHAI: &str = r#"
 // === Signal Generators Namespace ===
 let gen = #{};
@@ -636,73 +653,111 @@ gen.noise = |noise_type, seed| __gen_noise(noise_type, seed);
 gen.perlin = |scale, seed| __gen_perlin(scale, seed);
 gen.constant = |value| __signal_constant(value);
 
-// === Time Namespace ===
-// Canonical time signals for declarative time-based animation.
+// === Timing Namespace (global) ===
+// Global timing signals - not derived from specific audio sources.
 // These are Signals, not numbers - use them in signal graphs.
+let timing = #{};
+timing.__type = "timing_namespace";
+timing.time = __signal_input("time.seconds");
+timing.dt = __signal_input("time.dt");
+timing.beatPosition = __signal_input("time.beats");
+timing.beatIndex = __signal_input("time.beatIndex");
+timing.beatPhase = __signal_input("time.phase");
+timing.bpm = __signal_input("time.bpm");
+
+// === Legacy time namespace (for backwards compatibility during transition) ===
+// TODO: Remove after migration period
 let time = #{};
 time.__type = "time_namespace";
-time.seconds = __signal_input("time.seconds");
+time.seconds = timing.time;
 time.frames = __signal_input("time.frames");
-time.beats = __signal_input("time.beats");
-time.phase = __signal_input("time.phase");
-time.bpm = __signal_input("time.bpm");
-time.dt = __signal_input("time.dt");
+time.beats = timing.beatPosition;
+time.phase = timing.beatPhase;
+time.bpm = timing.bpm;
+time.dt = timing.dt;
 
 // === Inputs Namespace ===
-// This object provides Signal-returning accessors for input signals.
+// This object provides Signal-returning accessors for audio-derived input signals.
 // Each available signal is added dynamically at script load time.
-// Scripts access signals as: inputs.energy, inputs.spectralCentroid, etc.
+// Scripts access signals via: inputs.mix.energy, inputs.stems["Drums"].flux, etc.
 "#;
 
-/// Generate Rhai code to populate the inputs namespace based on available signals.
+/// Generate Rhai code to populate the inputs namespace with the `mix` sub-namespace.
 ///
 /// This generates code like:
 /// ```rhai
-/// inputs.energy = __signal_input("energy");
-/// inputs.spectralCentroid = __signal_input("spectralCentroid");
+/// let inputs = #{};
+/// inputs.mix = #{};
+/// inputs.mix.energy = __signal_input("energy");
+/// inputs.mix.centroid = __signal_input("centroid");
+/// inputs.mix.flux = __signal_input("flux");
+/// inputs.mix.onset = __signal_input("onset");
 /// ```
+///
+/// Note: Top-level signals have been moved to `inputs.mix` for consistency.
+/// Use consistent naming: centroid (not spectralCentroid), flux (not spectralFlux),
+/// onset (not onsetEnvelope), energy (as-is).
 pub fn generate_inputs_namespace(signal_names: &[&str]) -> String {
-    let mut code = String::from("let inputs = #{};\ninputs.__type = \"inputs_signals\";\n");
+    let mut code = String::from("let inputs = #{};\ninputs.__type = \"inputs_namespace\";\n");
+
+    // Create the mix sub-namespace for mixdown audio signals
+    code.push_str("inputs.mix = #{};\n");
+    code.push_str("inputs.mix.__type = \"mix_signals\";\n");
 
     for name in signal_names {
+        // Map old names to new consistent names
+        let (display_name, internal_name) = match *name {
+            "spectralCentroid" => ("centroid", "spectralCentroid"),
+            "spectralFlux" => ("flux", "spectralFlux"),
+            "onsetEnvelope" => ("onset", "onsetEnvelope"),
+            "amplitudeEnvelope" => ("energy", "amplitudeEnvelope"),
+            other => (other, other),
+        };
+
         code.push_str(&format!(
-            "inputs.{} = __signal_input(\"{}\");\n",
-            name, name
+            "inputs.mix.{} = __signal_input(\"{}\");\n",
+            display_name, internal_name
         ));
     }
 
     code
 }
 
-/// Generate Rhai code for the inputs.bands namespace.
+/// Generate Rhai code for the inputs.mix.bands namespace.
 ///
 /// Creates entries for both band IDs and labels for dual-access support.
-/// Each band has energy, onset, flux, amplitude (alias for energy), and events properties.
+/// Each band has energy, onset, flux, centroid properties and event streams.
 ///
 /// This generates code like:
 /// ```rhai
-/// inputs.bands = #{};
-/// inputs.bands["band-abc123"] = #{};
-/// inputs.bands["band-abc123"].energy = __band_signal_input("band-abc123", "energy");
-/// inputs.bands["band-abc123"].onset = __band_signal_input("band-abc123", "onset");
-/// inputs.bands["band-abc123"].flux = __band_signal_input("band-abc123", "flux");
-/// inputs.bands["band-abc123"].amplitude = __band_signal_input("band-abc123", "energy");
-/// inputs.bands["band-abc123"].events = __band_events_get("band-abc123");
-/// inputs.bands["Bass"] = inputs.bands["band-abc123"];
+/// inputs.mix.bands = #{};
+/// inputs.mix.bands["band-abc123"] = #{};
+/// inputs.mix.bands["band-abc123"].energy = __band_signal_input("band-abc123", "energy");
+/// inputs.mix.bands["band-abc123"].onset = __band_signal_input("band-abc123", "onset");
+/// inputs.mix.bands["band-abc123"].flux = __band_signal_input("band-abc123", "flux");
+/// inputs.mix.bands["band-abc123"].centroid = __band_signal_input("band-abc123", "centroid");
+/// inputs.mix.bands["band-abc123"].beatCandidates = __band_events_get("band-abc123:beatCandidates");
+/// inputs.mix.bands["band-abc123"].onsetPeaks = __band_events_get("band-abc123:onsetPeaks");
+/// inputs.mix.bands["Bass"] = inputs.mix.bands["band-abc123"];
 /// ```
+///
+/// Note: Uses consistent naming (centroid, flux, onset, energy).
+/// Removed amplitude alias - just use energy.
 pub fn generate_bands_namespace(bands: &[(String, String)]) -> String {
-    let mut code = String::from("inputs.bands = #{};\ninputs.bands.__type = \"bands_namespace\";\n");
+    let mut code = String::from("inputs.mix.bands = #{};\ninputs.mix.bands.__type = \"bands_namespace\";\n");
 
     for (id, label) in bands {
         // Create band object with signal accessors (keyed by ID)
+        // Using consistent naming: centroid (not spectralCentroid), flux, onset, energy
         code.push_str(&format!(
-            r#"inputs.bands["{id}"] = #{{}};
-inputs.bands["{id}"].__type = "band_signals";
-inputs.bands["{id}"].energy = __band_signal_input("{id}", "energy");
-inputs.bands["{id}"].onset = __band_signal_input("{id}", "onset");
-inputs.bands["{id}"].flux = __band_signal_input("{id}", "flux");
-inputs.bands["{id}"].amplitude = __band_signal_input("{id}", "energy");
-inputs.bands["{id}"].events = __band_events_get("{id}");
+            r#"inputs.mix.bands["{id}"] = #{{}};
+inputs.mix.bands["{id}"].__type = "band_signals";
+inputs.mix.bands["{id}"].energy = __band_signal_input("{id}", "energy");
+inputs.mix.bands["{id}"].onset = __band_signal_input("{id}", "onset");
+inputs.mix.bands["{id}"].flux = __band_signal_input("{id}", "flux");
+inputs.mix.bands["{id}"].centroid = __band_signal_input("{id}", "centroid");
+inputs.mix.bands["{id}"].beatCandidates = __band_events_get("{id}:beatCandidates");
+inputs.mix.bands["{id}"].onsetPeaks = __band_events_get("{id}:onsetPeaks");
 "#,
             id = id
         ));
@@ -710,7 +765,7 @@ inputs.bands["{id}"].events = __band_events_get("{id}");
         // Also register by label if different from ID
         if label != id {
             code.push_str(&format!(
-                r#"inputs.bands["{label}"] = inputs.bands["{id}"];
+                r#"inputs.mix.bands["{label}"] = inputs.mix.bands["{id}"];
 "#,
                 label = label,
                 id = id
@@ -724,37 +779,42 @@ inputs.bands["{id}"].events = __band_events_get("{id}");
 /// Generate Rhai code to add stem signal accessors to the inputs.stems namespace.
 ///
 /// Each stem is accessible both by ID and by label (if different).
-/// Stems expose the same signal features as the mixdown (energy, amplitude, flux, etc.).
+/// Stems expose the same signal features as the mixdown (energy, centroid, flux, onset).
 ///
 /// This generates code like:
 /// ```rhai
 /// inputs.stems = #{};
 /// inputs.stems["stem-abc123"] = #{};
 /// inputs.stems["stem-abc123"].energy = __stem_signal_input("stem-abc123", "energy");
-/// inputs.stems["stem-abc123"].amplitude = __stem_signal_input("stem-abc123", "energy");
 /// inputs.stems["stem-abc123"].flux = __stem_signal_input("stem-abc123", "flux");
 /// inputs.stems["stem-abc123"].centroid = __stem_signal_input("stem-abc123", "centroid");
 /// inputs.stems["stem-abc123"].onset = __stem_signal_input("stem-abc123", "onset");
+/// inputs.stems["stem-abc123"].beatCandidates = __event_stream_get("stem:stem-abc123:beatCandidates");
+/// inputs.stems["stem-abc123"].onsetPeaks = __event_stream_get("stem:stem-abc123:onsetPeaks");
 /// inputs.stems["stem-abc123"].label = "Drums";
+/// inputs.stems["stem-abc123"].bands = #{};
 /// inputs.stems["Drums"] = inputs.stems["stem-abc123"];
 /// ```
+///
+/// Note: Uses consistent naming (centroid, flux, onset, energy) - no aliases.
 pub fn generate_stems_namespace(stems: &[(String, String)]) -> String {
     let mut code = String::from("inputs.stems = #{};\ninputs.stems.__type = \"stems_namespace\";\n");
 
     for (id, label) in stems {
         // Create stem object with signal accessors (keyed by ID)
-        // These match the signals available on mixdown via inputs.*
+        // Using consistent naming: centroid (not spectralCentroid), flux, onset, energy
         code.push_str(&format!(
             r#"inputs.stems["{id}"] = #{{}};
 inputs.stems["{id}"].__type = "stem_signals";
 inputs.stems["{id}"].energy = __stem_signal_input("{id}", "energy");
-inputs.stems["{id}"].amplitude = __stem_signal_input("{id}", "energy");
 inputs.stems["{id}"].flux = __stem_signal_input("{id}", "flux");
 inputs.stems["{id}"].centroid = __stem_signal_input("{id}", "centroid");
-inputs.stems["{id}"].spectralCentroid = __stem_signal_input("{id}", "spectralCentroid");
 inputs.stems["{id}"].onset = __stem_signal_input("{id}", "onset");
-inputs.stems["{id}"].onsetEnvelope = __stem_signal_input("{id}", "onsetEnvelope");
+inputs.stems["{id}"].beatCandidates = __event_stream_get("stem:{id}:beatCandidates");
+inputs.stems["{id}"].onsetPeaks = __event_stream_get("stem:{id}:onsetPeaks");
 inputs.stems["{id}"].label = "{label}";
+inputs.stems["{id}"].bands = #{{}};
+inputs.stems["{id}"].bands.__type = "bands_namespace";
 "#,
             id = id,
             label = label
@@ -774,19 +834,19 @@ inputs.stems["{id}"].label = "{label}";
     code
 }
 
-/// Generate Rhai code to add named event streams to the inputs namespace.
+/// Generate Rhai code to add named event streams to the inputs.mix namespace.
 ///
 /// This generates code like:
 /// ```rhai
-/// inputs.beatCandidates = __event_stream_get("beatCandidates");
-/// inputs.onsetPeaks = __event_stream_get("onsetPeaks");
+/// inputs.mix.beatCandidates = __event_stream_get("beatCandidates");
+/// inputs.mix.onsetPeaks = __event_stream_get("onsetPeaks");
 /// ```
 pub fn generate_event_streams_namespace(event_stream_names: &[&str]) -> String {
     let mut code = String::new();
 
     for name in event_stream_names {
         code.push_str(&format!(
-            "inputs.{} = __event_stream_get(\"{}\");\n",
+            "inputs.mix.{} = __event_stream_get(\"{}\");\n",
             name, name
         ));
     }
@@ -794,24 +854,65 @@ pub fn generate_event_streams_namespace(event_stream_names: &[&str]) -> String {
     code
 }
 
-/// Generate Rhai code to add the authored event streams namespace.
+/// Generate Rhai code to add the custom events namespace (authored event streams).
 ///
 /// This generates code like:
 /// ```rhai
-/// inputs.authored = #{};
-/// inputs.authored.__type = "authored_namespace";
-/// inputs.authored["Kick Events"] = __authored_events_get("Kick Events");
-/// inputs.authored["Snare Hits"] = __authored_events_get("Snare Hits");
+/// inputs.customEvents = #{};
+/// inputs.customEvents.__type = "custom_events_namespace";
+/// inputs.customEvents["Kick Events"] = __authored_events_get("Kick Events");
+/// inputs.customEvents["Snare Hits"] = __authored_events_get("Snare Hits");
 /// ```
-pub fn generate_authored_namespace(stream_names: &[&str]) -> String {
-    let mut code = String::from("inputs.authored = #{};\n");
-    code.push_str("inputs.authored.__type = \"authored_namespace\";\n");
+pub fn generate_custom_events_namespace(stream_names: &[&str]) -> String {
+    let mut code = String::from("inputs.customEvents = #{};\n");
+    code.push_str("inputs.customEvents.__type = \"custom_events_namespace\";\n");
 
     for name in stream_names {
         code.push_str(&format!(
-            "inputs.authored[\"{}\"] = __authored_events_get(\"{}\");\n",
+            "inputs.customEvents[\"{}\"] = __authored_events_get(\"{}\");\n",
             name, name
         ));
+    }
+
+    code
+}
+
+/// Legacy alias for backwards compatibility.
+/// TODO: Remove after migration period.
+pub fn generate_authored_namespace(stream_names: &[&str]) -> String {
+    generate_custom_events_namespace(stream_names)
+}
+
+/// Generate Rhai code to add custom signals to the inputs namespace.
+///
+/// Custom signals are user-defined 1D signals extracted from 2D spectral data.
+/// Each signal is accessible by both ID and name.
+///
+/// This generates code like:
+/// ```rhai
+/// inputs.customSignals = #{};
+/// inputs.customSignals.__type = "custom_signals_namespace";
+/// inputs.customSignals["sig-abc123"] = __custom_signal_input("sig-abc123");
+/// inputs.customSignals["Bass Energy"] = inputs.customSignals["sig-abc123"];
+/// ```
+pub fn generate_custom_signals_namespace(signals: &[(String, String)]) -> String {
+    let mut code = String::from("inputs.customSignals = #{};\n");
+    code.push_str("inputs.customSignals.__type = \"custom_signals_namespace\";\n");
+
+    for (id, name) in signals {
+        // Register by ID
+        code.push_str(&format!(
+            "inputs.customSignals[\"{}\"] = __custom_signal_input(\"{}\");\n",
+            id, id
+        ));
+
+        // Also register by name if different from ID
+        if name != id {
+            code.push_str(&format!(
+                "inputs.customSignals[\"{}\"] = inputs.customSignals[\"{}\"];\n",
+                name, id
+            ));
+        }
     }
 
     code
@@ -827,9 +928,11 @@ mod tests {
         let code = generate_inputs_namespace(&names);
 
         assert!(code.contains("let inputs = #{};"));
-        assert!(code.contains("inputs.energy = __signal_input(\"energy\");"));
-        assert!(code.contains("inputs.spectralCentroid = __signal_input(\"spectralCentroid\");"));
-        assert!(code.contains("inputs.onsetEnvelope = __signal_input(\"onsetEnvelope\");"));
+        assert!(code.contains("inputs.mix = #{};"));
+        // Note: spectralCentroid is mapped to centroid, onsetEnvelope to onset
+        assert!(code.contains("inputs.mix.energy = __signal_input(\"energy\");"));
+        assert!(code.contains("inputs.mix.centroid = __signal_input(\"spectralCentroid\");"));
+        assert!(code.contains("inputs.mix.onset = __signal_input(\"onsetEnvelope\");"));
     }
 
     #[test]
@@ -850,21 +953,22 @@ mod tests {
         ];
         let code = generate_bands_namespace(&bands);
 
-        // Check structure
-        assert!(code.contains("inputs.bands = #{};"));
+        // Check structure - bands are now under inputs.mix
+        assert!(code.contains("inputs.mix.bands = #{};"));
 
         // Check band-123 / Bass
-        assert!(code.contains(r#"inputs.bands["band-123"] = #{};"#));
-        assert!(code.contains(r#"inputs.bands["band-123"].energy = __band_signal_input("band-123", "energy");"#));
-        assert!(code.contains(r#"inputs.bands["band-123"].onset = __band_signal_input("band-123", "onset");"#));
-        assert!(code.contains(r#"inputs.bands["band-123"].flux = __band_signal_input("band-123", "flux");"#));
-        assert!(code.contains(r#"inputs.bands["band-123"].amplitude = __band_signal_input("band-123", "energy");"#));
-        assert!(code.contains(r#"inputs.bands["band-123"].events = __band_events_get("band-123");"#));
-        assert!(code.contains(r#"inputs.bands["Bass"] = inputs.bands["band-123"];"#));
+        assert!(code.contains(r#"inputs.mix.bands["band-123"] = #{};"#));
+        assert!(code.contains(r#"inputs.mix.bands["band-123"].energy = __band_signal_input("band-123", "energy");"#));
+        assert!(code.contains(r#"inputs.mix.bands["band-123"].onset = __band_signal_input("band-123", "onset");"#));
+        assert!(code.contains(r#"inputs.mix.bands["band-123"].flux = __band_signal_input("band-123", "flux");"#));
+        assert!(code.contains(r#"inputs.mix.bands["band-123"].centroid = __band_signal_input("band-123", "centroid");"#));
+        assert!(code.contains(r#"inputs.mix.bands["band-123"].beatCandidates = __band_events_get("band-123:beatCandidates");"#));
+        assert!(code.contains(r#"inputs.mix.bands["band-123"].onsetPeaks = __band_events_get("band-123:onsetPeaks");"#));
+        assert!(code.contains(r#"inputs.mix.bands["Bass"] = inputs.mix.bands["band-123"];"#));
 
         // Check band-456 / Mids
-        assert!(code.contains(r#"inputs.bands["band-456"] = #{};"#));
-        assert!(code.contains(r#"inputs.bands["Mids"] = inputs.bands["band-456"];"#));
+        assert!(code.contains(r#"inputs.mix.bands["band-456"] = #{};"#));
+        assert!(code.contains(r#"inputs.mix.bands["Mids"] = inputs.mix.bands["band-456"];"#));
     }
 
     #[test]
@@ -873,12 +977,43 @@ mod tests {
         let bands = vec![("MyBand".to_string(), "MyBand".to_string())];
         let code = generate_bands_namespace(&bands);
 
-        // Should have the band object
-        assert!(code.contains(r#"inputs.bands["MyBand"] = #{};"#));
-        assert!(code.contains(r#"inputs.bands["MyBand"].energy"#));
+        // Should have the band object under inputs.mix.bands
+        assert!(code.contains(r#"inputs.mix.bands["MyBand"] = #{};"#));
+        assert!(code.contains(r#"inputs.mix.bands["MyBand"].energy"#));
 
         // Should NOT have a duplicate alias line
-        let alias_count = code.matches(r#"inputs.bands["MyBand"] = inputs.bands["MyBand"]"#).count();
+        let alias_count = code.matches(r#"inputs.mix.bands["MyBand"] = inputs.mix.bands["MyBand"]"#).count();
         assert_eq!(alias_count, 0);
+    }
+
+    #[test]
+    fn test_generate_custom_signals_namespace() {
+        let signals = vec![
+            ("sig-123".to_string(), "Bass Energy".to_string()),
+            ("sig-456".to_string(), "sig-456".to_string()), // Same ID and name
+        ];
+        let code = generate_custom_signals_namespace(&signals);
+
+        // Check structure
+        assert!(code.contains("inputs.customSignals = #{};"));
+
+        // Check sig-123 / Bass Energy
+        assert!(code.contains(r#"inputs.customSignals["sig-123"] = __custom_signal_input("sig-123");"#));
+        assert!(code.contains(r#"inputs.customSignals["Bass Energy"] = inputs.customSignals["sig-123"];"#));
+
+        // Check sig-456 - no alias since ID and name are the same
+        assert!(code.contains(r#"inputs.customSignals["sig-456"] = __custom_signal_input("sig-456");"#));
+        let alias_count = code.matches(r#"inputs.customSignals["sig-456"] = inputs.customSignals["sig-456"]"#).count();
+        assert_eq!(alias_count, 0);
+    }
+
+    #[test]
+    fn test_generate_custom_events_namespace() {
+        let streams = vec!["Kick Events", "Snare Hits"];
+        let code = generate_custom_events_namespace(&streams);
+
+        assert!(code.contains("inputs.customEvents = #{};"));
+        assert!(code.contains(r#"inputs.customEvents["Kick Events"] = __authored_events_get("Kick Events");"#));
+        assert!(code.contains(r#"inputs.customEvents["Snare Hits"] = __authored_events_get("Snare Hits");"#));
     }
 }

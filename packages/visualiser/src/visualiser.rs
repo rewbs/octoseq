@@ -174,6 +174,12 @@ impl VisualiserState {
         self.script_engine.set_available_stems(stems);
     }
 
+    /// Configure which custom signals should be available in the global `inputs.customSignals` namespace.
+    /// This must be called before `load_script()` for the `inputs.customSignals["..."]` accessors to exist.
+    pub fn set_available_custom_signals(&mut self, signals: Vec<(String, String)>) {
+        self.script_engine.set_available_custom_signals(signals);
+    }
+
     /// Push a stem-scoped signal.
     /// Stores under both stem_id and label for dual-access support.
     pub fn push_stem_signal(
@@ -307,6 +313,7 @@ impl VisualiserState {
         zoom_signal: Option<&InputSignal>,
         named_signals: &HashMap<String, InputSignal>,
         band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+        custom_signals: &HashMap<String, InputSignal>,
         musical_time: Option<&MusicalTimeStructure>,
     ) {
         self.time += dt;
@@ -368,6 +375,7 @@ impl VisualiserState {
             named_signals,
             band_signals,
             &self.stem_signals,
+            custom_signals,
             musical_time,
         );
 
@@ -394,6 +402,7 @@ impl VisualiserState {
         zoom_signal: Option<&InputSignal>,
         named_signals: &HashMap<String, InputSignal>,
         band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+        custom_signals: &HashMap<String, InputSignal>,
         musical_time: Option<&MusicalTimeStructure>,
         budget: &FrameBudget,
         get_time: F,
@@ -458,6 +467,7 @@ impl VisualiserState {
             named_signals,
             band_signals,
             &self.stem_signals,
+            custom_signals,
             musical_time,
         );
 

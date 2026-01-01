@@ -131,7 +131,8 @@ pub fn run_analysis_with_bands(
 
     // Pre-compute statistics for signals that need normalization
     let signals_needing_stats = engine.collect_signals_requiring_statistics();
-    let stem_signals = std::collections::HashMap::new();
+    let stem_signals: std::collections::HashMap<String, std::collections::HashMap<String, crate::input::InputSignal>> = std::collections::HashMap::new();
+    let custom_signals: std::collections::HashMap<String, crate::input::InputSignal> = std::collections::HashMap::new();
     if !signals_needing_stats.is_empty() {
         log::info!(
             "Pre-computing statistics for {} signals before analysis...",
@@ -165,7 +166,7 @@ pub fn run_analysis_with_bands(
         }
 
         // Call update (scene graph changes are ignored)
-        engine.update(time, dt, &sampled, signals, band_signals, &stem_signals, None);
+        engine.update(time, dt, &sampled, signals, band_signals, &stem_signals, &custom_signals, None);
     }
 
     // Collect results
@@ -273,7 +274,8 @@ pub fn run_analysis_with_events_and_bands(
 
     // Pre-compute statistics for signals that need normalization
     let signals_needing_stats = engine.collect_signals_requiring_statistics();
-    let stem_signals = std::collections::HashMap::new();
+    let stem_signals: std::collections::HashMap<String, std::collections::HashMap<String, crate::input::InputSignal>> = std::collections::HashMap::new();
+    let custom_signals: std::collections::HashMap<String, crate::input::InputSignal> = std::collections::HashMap::new();
     if !signals_needing_stats.is_empty() {
         log::info!(
             "Pre-computing statistics for {} signals before analysis...",
@@ -306,7 +308,7 @@ pub fn run_analysis_with_events_and_bands(
         }
 
         // Call update
-        engine.update(time, dt, &sampled, signals, band_signals, &stem_signals, musical_time);
+        engine.update(time, dt, &sampled, signals, band_signals, &stem_signals, &custom_signals, musical_time);
     }
 
     // Collect debug signals

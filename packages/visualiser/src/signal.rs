@@ -126,6 +126,28 @@ impl Signal {
         })
     }
 
+    /// Create a custom signal input.
+    /// Uses peak-preserving sampling with frame dt as window by default.
+    ///
+    /// - `signal_id`: The custom signal ID.
+    pub fn custom_signal_input(signal_id: impl Into<String>) -> Self {
+        Self::new(SignalNode::CustomSignalInput {
+            signal_id: signal_id.into(),
+            sampling: SamplingConfig::default(),
+        })
+    }
+
+    /// Create a custom signal input with custom sampling configuration.
+    pub fn custom_signal_input_with_sampling(
+        signal_id: impl Into<String>,
+        sampling: SamplingConfig,
+    ) -> Self {
+        Self::new(SignalNode::CustomSignalInput {
+            signal_id: signal_id.into(),
+            sampling,
+        })
+    }
+
     /// Create a constant signal.
     pub fn constant(value: f32) -> Self {
         Self::new(SignalNode::Constant(value))
@@ -678,6 +700,7 @@ impl Signal {
             SignalNode::Input { .. }
             | SignalNode::BandInput { .. }
             | SignalNode::StemInput { .. }
+            | SignalNode::CustomSignalInput { .. }
             | SignalNode::Constant(_)
             | SignalNode::Generator(_)
             | SignalNode::EventStreamSource { .. }
@@ -722,6 +745,9 @@ impl Signal {
             }
             SignalNode::StemInput { stem_id, feature, .. } => {
                 format!("StemInput(\"{}\", \"{}\")", stem_id, feature)
+            }
+            SignalNode::CustomSignalInput { signal_id, .. } => {
+                format!("CustomSignalInput(\"{}\")", signal_id)
             }
             SignalNode::Constant(v) => format!("Constant({})", v),
             SignalNode::Add(a, b) => {
@@ -987,6 +1013,12 @@ pub enum SignalNode {
     StemInput {
         stem_id: String,
         feature: String,
+        sampling: SamplingConfig,
+    },
+    /// Reference to a custom signal (user-defined 1D signal extracted from 2D data).
+    /// - `signal_id`: The custom signal ID.
+    CustomSignalInput {
+        signal_id: String,
         sampling: SamplingConfig,
     },
     /// Constant value.

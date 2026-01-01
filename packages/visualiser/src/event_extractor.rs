@@ -169,6 +169,9 @@ impl EventExtractor {
         // Create evaluation context components
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
+        // Custom signals not yet supported in event extractor
+        let empty_custom_signals: std::collections::HashMap<String, crate::input::InputSignal> =
+            std::collections::HashMap::new();
 
         for i in 0..step_count {
             let t = i as f32 * self.time_step;
@@ -182,6 +185,7 @@ impl EventExtractor {
                 signals,
                 &self.band_signals,
                 &self.stem_signals,
+                &empty_custom_signals,
                 &stats,
                 &mut state,
             );

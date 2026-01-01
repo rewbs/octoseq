@@ -42,6 +42,9 @@ pub struct SignalState {
     /// Format: "stem_id:feature"
     pub warned_missing_stems: HashSet<String>,
 
+    /// Tracks custom signals that have been warned about being missing.
+    pub warned_missing_custom_signals: HashSet<String>,
+
     /// Tracks signals that have warned about missing statistics.
     pub warned_missing_stats: HashSet<SignalId>,
 }
@@ -64,6 +67,7 @@ impl SignalState {
         self.warned_no_musical_time = false;
         self.warned_missing_bands.clear();
         self.warned_missing_stems.clear();
+        self.warned_missing_custom_signals.clear();
         self.warned_missing_stats.clear();
     }
 
@@ -89,6 +93,17 @@ impl SignalState {
                 "Stem signal not found: inputs.stems[\"{}\"].{} - returning 0.0",
                 stem_id,
                 feature
+            );
+        }
+    }
+
+    /// Warn once about a missing custom signal.
+    /// Logs a warning if this custom signal hasn't been warned about yet.
+    pub fn warn_missing_custom_signal(&mut self, signal_id: &str) {
+        if self.warned_missing_custom_signals.insert(signal_id.to_string()) {
+            log::warn!(
+                "Custom signal not found: inputs.customSignals[\"{}\"] - returning 0.0",
+                signal_id
             );
         }
     }
