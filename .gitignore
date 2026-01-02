@@ -28,7 +28,7 @@ pnpm-debug.log*
 packages/visualiser/frames
 packages/visualiser/target
 
-
+.tmp
 .cargo-home
 
 **/src/generated/**
