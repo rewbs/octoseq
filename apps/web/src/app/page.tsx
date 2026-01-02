@@ -39,14 +39,6 @@ import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 import { mirTabDefinitions } from "@/lib/stores/mirStore";
 import { computePhaseHypotheses, type BeatCandidate } from "@octoseq/mir";
 
-import {
-  SignInButton,
-  SignUpButton,
-  SignedIn,
-  SignedOut,
-  UserButton,
-} from '@clerk/nextjs';
-
 // Stores and hooks
 import {
   useAudioStore,

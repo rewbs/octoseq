@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useInspectionStore } from "@/lib/stores/inspectionStore";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
-import { useMirStore, mirTabDefinitions } from "@/lib/stores/mirStore";
+import { mirTabDefinitions } from "@/lib/stores/mirStore";
 import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
 import { InspectionViewModeSelector } from "./InspectionViewModeSelector";
 import { SingleSignalInspector } from "./SingleSignalInspector";
@@ -133,7 +133,7 @@ export function MirInspectionPanel({
       </div>
 
       {/* Content */}
-      <div className="min-h-[100px]">
+      <div className="min-h-25">
         {viewMode === "compare-all" ? (
           <ComparisonInspector
             functionId={selectedFunction}

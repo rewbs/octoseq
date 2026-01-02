@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { GripHorizontal } from "lucide-react";
 import { GenericBeatGridOverlay } from "@/components/beatGrid/GenericBeatGridOverlay";
 import type { WaveSurferViewport } from "./types";
@@ -12,7 +12,6 @@ import {
   renderImpulses,
   renderMarkers,
   renderHeatStrip,
-  getBaselineY,
   clamp,
   type ContinuousSignal,
   type SparseSignal,
@@ -91,8 +90,9 @@ export function SignalViewer({
   const startYRef = useRef(0);
   const startHeightRef = useRef(0);
 
-  // Cached bounds
-  const boundsRef = useRef<NormalizationBounds | null>(null);
+  // Cached bounds (memoized to avoid setState in effects)
+  const bounds = useMemo(() => normalizer.computeBounds(signal, normalization), [signal, normalization]);
+  const boundsRef = useRef<NormalizationBounds | null>(bounds);
 
   // Hover state for value display
   const [hoverInfo, setHoverInfo] = useState<{
@@ -106,14 +106,21 @@ export function SignalViewer({
   // Store viewport bounds for display
   const viewportBoundsRef = useRef<{ min: number; max: number } | null>(null);
 
-  // Default colors based on theme
-  const defaultColor: ColorConfig = {
-    stroke: "rgb(59, 130, 246)", // blue-500
-    fill: "rgba(59, 130, 246, 0.3)",
-    strokeWidth: 1.5,
-    opacity: 1,
-  };
-  const mergedColor = { ...defaultColor, ...color };
+  // Cache container width for positioning hover tooltip without reading refs during render.
+  const [containerWidth, setContainerWidth] = useState<number>(200);
+
+  // Default colors based on theme (memoized so mergedColor deps don't change every render).
+  const defaultColor: ColorConfig = useMemo(
+    () => ({
+      stroke: "rgb(59, 130, 246)", // blue-500
+      fill: "rgba(59, 130, 246, 0.3)",
+      strokeWidth: 1.5,
+      opacity: 1,
+    }),
+    []
+  );
+  // Memoize to keep `render` callback dependencies stable.
+  const mergedColor = useMemo(() => ({ ...defaultColor, ...color }), [defaultColor, color]);
 
   // Resize handlers
   const handleResizeStart = useCallback((e: ReactMouseEvent) => {
@@ -149,10 +156,10 @@ export function SignalViewer({
     };
   }, []);
 
-  // Compute normalization bounds when signal changes
+  // Keep ref in sync (used by the render() callback)
   useEffect(() => {
-    boundsRef.current = normalizer.computeBounds(signal, normalization);
-  }, [signal, normalization]);
+    boundsRef.current = bounds;
+  }, [bounds]);
 
   // Get value at a specific time using binary search
   const getValueAtTime = useCallback((time: number): number | null => {
@@ -502,12 +509,21 @@ export function SignalViewer({
     if (!container) return;
 
     const resizeObserver = new ResizeObserver(() => {
+      // Avoid reading refs during render: keep width in state.
+      setContainerWidth(container.getBoundingClientRect().width);
       render();
     });
     resizeObserver.observe(container);
 
     return () => resizeObserver.disconnect();
   }, [render]);
+
+  // Initialize width once on mount (before any ResizeObserver events)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    setContainerWidth(container.getBoundingClientRect().width);
+  }, []);
 
   // Handle mouse events for cursor
   const handleMouseMove = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
@@ -570,7 +586,7 @@ export function SignalViewer({
           <div
             className="absolute top-1 z-20 pointer-events-none"
             style={{
-              left: `${Math.min(Math.max(hoverInfo.x, 60), (containerRef.current?.getBoundingClientRect().width ?? 200) - 60)}px`,
+              left: `${Math.min(Math.max(hoverInfo.x, 60), containerWidth - 60)}px`,
               transform: "translateX(-50%)",
             }}
           >
@@ -578,8 +594,8 @@ export function SignalViewer({
               <div className="font-mono font-medium">{hoverInfo.value.toFixed(4)}</div>
               <div className="text-tiny opacity-70 mt-0.5">
                 <span>vp: {hoverInfo.viewportMin.toFixed(2)}–{hoverInfo.viewportMax.toFixed(2)}</span>
-                {boundsRef.current && (
-                  <span className="ml-1.5">all: {boundsRef.current.min.toFixed(2)}–{boundsRef.current.max.toFixed(2)}</span>
+                {bounds && (
+                  <span className="ml-1.5">all: {bounds.min.toFixed(2)}–{bounds.max.toFixed(2)}</span>
                 )}
               </div>
             </div>
@@ -588,7 +604,7 @@ export function SignalViewer({
       </div>
       {resizable && (
         <div
-          className="absolute bottom-0 left-0 right-0 h-4 flex items-center justify-center cursor-ns-resize bg-gradient-to-t from-zinc-200/50 dark:from-zinc-800/50 to-transparent hover:from-zinc-300/70 dark:hover:from-zinc-700/70 transition-colors"
+          className="absolute bottom-0 left-0 right-0 h-4 flex items-center justify-center cursor-ns-resize bg-linear-to-t from-zinc-200/50 dark:from-zinc-800/50 to-transparent hover:from-zinc-300/70 dark:hover:from-zinc-700/70 transition-colors"
           onMouseDown={handleResizeStart}
         >
           <GripHorizontal className="w-4 h-4 text-zinc-400 dark:text-zinc-600" />

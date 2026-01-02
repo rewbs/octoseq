@@ -1,5 +1,4 @@
 {
-  "$schema": "https://json.schemastore.org/launch",
   "version": "0.2.0",
   "configurations": [
     {
@@ -7,11 +6,12 @@
       "type": "node-terminal",
       "request": "launch",
       "command": "pnpm --filter web dev",
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env"
     },
     {
       "name": "Web: Chrome (attach to Next dev)",
-      "type": "pwa-chrome",
+      "type": "chrome",
       "request": "launch",
       "url": "http://localhost:3000",
       "webRoot": "${workspaceFolder}/apps/web",

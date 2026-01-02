@@ -96,7 +96,7 @@ function CandidateStreamRow({
       {/* Source label */}
       <div className="absolute top-1 left-2 z-10">
         <span
-          className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-200/60 dark:bg-zinc-800/60 backdrop-blur-sm italic"
+          className="text-tiny font-medium px-1.5 py-0.5 rounded bg-zinc-200/60 dark:bg-zinc-800/60 backdrop-blur-sm italic"
           style={{ color: stream.color.stroke }}
         >
           {stream.sourceLabel} - {getEventTypeLabel(stream.eventType)}

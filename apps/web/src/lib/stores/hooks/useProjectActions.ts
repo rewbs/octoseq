@@ -403,6 +403,15 @@ export function useProjectActions() {
       setActiveProject(project);
       hydrateStoresFromProject();
 
+      // Mark all audio references as pending (they need to be re-attached)
+      const setAudioLoadStatus = useProjectStore.getState().setAudioLoadStatus;
+      if (project.audio.mixdown) {
+        setAudioLoadStatus(project.audio.mixdown.id, "pending");
+      }
+      for (const stem of project.audio.stems) {
+        setAudioLoadStatus(stem.id, "pending");
+      }
+
       return true;
     },
     [importFromJson, setActiveProject, hydrateStoresFromProject]

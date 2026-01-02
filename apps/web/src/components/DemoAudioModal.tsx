@@ -45,13 +45,13 @@ export function DemoAudioModal({ onSelectDemo }: DemoAudioModalProps) {
             >
               <div className="flex items-center gap-3 min-w-0">
                 {loading === demo.path ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-zinc-400 flex-shrink-0" />
+                  <Loader2 className="h-4 w-4 animate-spin text-zinc-400 shrink-0" />
                 ) : (
-                  <Music className="h-4 w-4 text-zinc-400 flex-shrink-0" />
+                  <Music className="h-4 w-4 text-zinc-400 shrink-0" />
                 )}
                 <span className="truncate font-medium">{demo.name}</span>
               </div>
-              <span className="text-xs text-zinc-500 dark:text-zinc-400 ml-2 flex-shrink-0">
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 ml-2 shrink-0">
                 {demo.sizeFormatted}
               </span>
             </button>

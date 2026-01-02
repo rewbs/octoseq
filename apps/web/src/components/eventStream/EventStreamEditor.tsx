@@ -553,7 +553,7 @@ export function EventStreamEditor({
 
       {/* Hint */}
       <div className="absolute top-1 right-2 z-10">
-        <span className="text-[10px] text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-200/60 dark:bg-zinc-800/60 backdrop-blur-sm">
+        <span className="text-tiny text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-200/60 dark:bg-zinc-800/60 backdrop-blur-sm">
           Click to add • Drag to move • Delete to remove
         </span>
       </div>
@@ -584,7 +584,7 @@ export function EventStreamEditor({
 
       {/* Resize grip */}
       <div
-        className="absolute bottom-0 left-0 right-0 h-4 flex items-center justify-center cursor-ns-resize bg-gradient-to-t from-zinc-200/50 dark:from-zinc-800/50 to-transparent hover:from-zinc-300/70 dark:hover:from-zinc-700/70 transition-colors"
+        className="absolute bottom-0 left-0 right-0 h-4 flex items-center justify-center cursor-ns-resize bg-linear-to-t from-zinc-200/50 dark:from-zinc-800/50 to-transparent hover:from-zinc-300/70 dark:hover:from-zinc-700/70 transition-colors"
         onMouseDown={handleResizeStart}
       >
         <GripHorizontal className="w-4 h-4 text-zinc-400 dark:text-zinc-600" />

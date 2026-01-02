@@ -39,7 +39,7 @@ export function MissingAudioBanner({ onReattach }: MissingAudioBannerProps) {
 
   return (
     <div className="flex items-center gap-3 px-3 py-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md">
-      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+      <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
       <span className="text-sm text-amber-800 dark:text-amber-200 flex-1">
         {missingCount} audio file{missingCount > 1 ? "s" : ""} could not be loaded
       </span>

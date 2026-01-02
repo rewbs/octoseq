@@ -495,7 +495,7 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
         <select
           value={selectedSourceKey}
           onChange={handleSourceChange}
-          className="h-7 px-2 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 dark:text-zinc-100 max-w-[200px]"
+          className="h-7 px-2 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 dark:text-zinc-100 max-w-50"
         >
           <option value="">Select signal...</option>
           {Array.from(groupedSources.entries()).map(([groupLabel, sources]) => (
@@ -606,7 +606,7 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
               <div className="absolute left-0 top-full mt-1 z-10 hidden group-hover:block w-56 p-2 text-xs bg-zinc-800 text-zinc-200 rounded shadow-lg">
                 <p className="mb-1"><strong>Simple:</strong> Only min gap between peaks.</p>
                 <p><strong>Hysteresis:</strong> Signal must drop below off-threshold before
-                a new peak can trigger. Prevents retriggering during sustained high values.</p>
+                  a new peak can trigger. Prevents retriggering during sustained high values.</p>
               </div>
             </div>
             <select
@@ -650,7 +650,7 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
               step={0.01}
               className="w-20 h-1.5 accent-amber-500"
             />
-            <span className="text-zinc-600 dark:text-zinc-300 font-mono text-[10px] leading-tight">
+            <span className="text-zinc-600 dark:text-zinc-300 font-mono text-tiny leading-tight">
               {(minDistance * 1000).toFixed(0)}ms
               {minGapBeats !== null && (
                 <span className="text-zinc-400"> · {minGapBeats.toFixed(2)}b</span>

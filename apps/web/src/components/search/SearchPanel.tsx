@@ -321,7 +321,7 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
           <Button size="sm" variant="outline" onClick={onPrevCandidate} disabled={!audio || filteredTotal === 0} className="h-6 px-2 text-xs">
             ← Prev
           </Button>
-          <span className="tabular-nums text-zinc-500 min-w-[4rem] text-center">
+          <span className="tabular-nums text-zinc-500 min-w-16 text-center">
             {hasActive && activeFilteredIndex >= 0 ? `${activeFilteredIndex + 1}/${filteredTotal}` : filteredTotal > 0 ? `—/${filteredTotal}` : "—"}
           </span>
           <Button size="sm" variant="outline" onClick={onNextCandidate} disabled={!audio || filteredTotal === 0} className="h-6 px-2 text-xs">

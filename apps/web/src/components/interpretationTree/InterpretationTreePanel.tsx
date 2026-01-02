@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -261,7 +261,7 @@ function TreeNodeRenderer({
         className={cn(
           "px-1 py-0.5 rounded transition-colors flex items-center gap-1",
           !hasAudio
-            ? "text-red-600 dark:text-red-400 bg-red-500/20 animate-pulse"
+            ? "text-blue-600 dark:text-blue-400 bg-blue-500/20 border border-blue-500 animate-pulse-glow-blue"
             : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
         )}
         title={hasAudio ? "Change audio" : "Load audio"}
@@ -325,8 +325,11 @@ function ResizeHandle({ onResize, onResizeEnd }: ResizeHandleProps) {
   // Store callbacks in refs to avoid stale closure issues during drag
   const onResizeRef = useRef(onResize);
   const onResizeEndRef = useRef(onResizeEnd);
-  onResizeRef.current = onResize;
-  onResizeEndRef.current = onResizeEnd;
+
+  useLayoutEffect(() => {
+    onResizeRef.current = onResize;
+    onResizeEndRef.current = onResizeEnd;
+  });
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -385,7 +388,10 @@ function HorizontalResizeHandle({ onResize }: HorizontalResizeHandleProps) {
   const [isDragging, setIsDragging] = useState(false);
   const startYRef = useRef(0);
   const onResizeRef = useRef(onResize);
-  onResizeRef.current = onResize;
+
+  useLayoutEffect(() => {
+    onResizeRef.current = onResize;
+  });
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

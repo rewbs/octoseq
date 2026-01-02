@@ -38,15 +38,15 @@ export function AutosaveRecoveryDialog({
       open={open}
       onOpenChange={(isOpen) => {
         if (!isOpen) {
-          // Don't allow dismissing by clicking outside or pressing escape
-          // User must make an explicit choice
+          // X button, clicking outside, or pressing Escape triggers discard
+          onDismiss();
         }
       }}
     >
       <div className="flex flex-col gap-4">
         {/* Icon and message */}
         <div className="flex items-start gap-4">
-          <div className="flex-shrink-0 rounded-full bg-amber-100 p-2 dark:bg-amber-900/30">
+          <div className="shrink-0 rounded-full bg-amber-100 p-2 dark:bg-amber-900/30">
             <FileWarning className="h-6 w-6 text-amber-600 dark:text-amber-400" />
           </div>
           <div className="flex-1">

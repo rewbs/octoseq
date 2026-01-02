@@ -160,9 +160,26 @@
   animation: pulse-glow-red 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+@keyframes pulse-glow-blue {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 15px 5px rgba(59, 130, 246, 0.6);
+    transform: scale(1.02);
+  }
+}
+
+.animate-pulse-glow-blue {
+  animation: pulse-glow-blue 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 /* Analysis overlay animations */
 @keyframes analysis-pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
     transform: scale(1);
   }

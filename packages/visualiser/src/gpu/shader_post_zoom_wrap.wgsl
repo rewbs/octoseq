@@ -56,9 +56,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let t = zoomed;
         let period = floor(t);
         let frac_part = fract(t);
-        // If period is odd, reverse the fraction
-        let is_odd = fract(period * 0.5) > 0.25;
-        wrapped_uv = select(frac_part, 1.0 - frac_part, vec2<bool>(is_odd, is_odd));
+        // If period is odd, reverse the fraction (component-wise)
+        let is_odd = fract(period * 0.5) > vec2(0.25);
+        wrapped_uv = select(frac_part, 1.0 - frac_part, is_odd);
     }
 
     return textureSample(input_texture, input_sampler, wrapped_uv);

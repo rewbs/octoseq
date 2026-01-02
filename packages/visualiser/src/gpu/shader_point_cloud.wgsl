@@ -18,7 +18,6 @@ struct VertexInput {
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
-    @builtin(point_size) point_size: f32,
 }
 
 @vertex
@@ -26,7 +25,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     let world_pos = uniforms.model * vec4<f32>(input.position, 1.0);
     out.clip_position = uniforms.view_proj * world_pos;
-    out.point_size = uniforms.point_size;
     return out;
 }
 

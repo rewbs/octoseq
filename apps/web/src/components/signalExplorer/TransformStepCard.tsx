@@ -74,7 +74,7 @@ export const TransformStepCard = memo(function TransformStepCard({
         {/* Header row */}
         <div className="flex items-center justify-between gap-2 mb-1">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className="text-[10px] font-medium uppercase opacity-60 shrink-0">
+            <span className="text-tiny font-medium uppercase opacity-60 shrink-0">
               {step.transform_type}
             </span>
             <span
@@ -86,7 +86,7 @@ export const TransformStepCard = memo(function TransformStepCard({
           </div>
 
           {/* Stats */}
-          <div className="flex items-center gap-2 text-[10px] font-mono opacity-70 shrink-0">
+          <div className="flex items-center gap-2 text-tiny font-mono opacity-70 shrink-0">
             <span title="Current value">
               {formatNumber(samples.stats.current_value)}
             </span>

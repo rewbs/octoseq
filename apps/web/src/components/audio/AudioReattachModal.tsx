@@ -6,6 +6,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useMirActions } from "@/lib/stores/hooks/useMirActions";
 import type { ProjectAudioReference } from "@/lib/stores/types/project";
 import type { AudioBufferLike } from "@octoseq/mir";
 
@@ -23,6 +24,7 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
   const audioLoadStatus = useProjectStore((s) => s.audioLoadStatus);
   const audioLoadErrors = useProjectStore((s) => s.audioLoadErrors);
   const setAudioLoadStatus = useProjectStore((s) => s.setAudioLoadStatus);
+  const { runAllAnalysesForInput } = useMirActions();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeRefId, setActiveRefId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -94,6 +96,9 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
         }
 
         setAudioLoadStatus(activeRefId, "loaded");
+
+        // Trigger MIR analyses for the re-attached audio
+        runAllAnalysesForInput(activeRefId);
       } catch (error) {
         console.error("Failed to load audio:", error);
         setAudioLoadStatus(
@@ -109,7 +114,7 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
         }
       }
     },
-    [activeRefId, setAudioLoadStatus]
+    [activeRefId, setAudioLoadStatus, runAllAnalysesForInput]
   );
 
   const getStatusIcon = (refId: string) => {
@@ -165,12 +170,12 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
                 key={ref.id}
                 className="flex items-center gap-3 p-3 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50"
               >
-                <div className="flex-shrink-0">{getStatusIcon(ref.id)}</div>
+                <div className="shrink-0">{getStatusIcon(ref.id)}</div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <FileAudio className="h-4 w-4 text-zinc-400 flex-shrink-0" />
+                    <FileAudio className="h-4 w-4 text-zinc-400 shrink-0" />
                     <span className="text-sm font-medium truncate">{ref.label}</span>
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 flex-shrink-0">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 shrink-0">
                       {ref.role}
                     </span>
                   </div>

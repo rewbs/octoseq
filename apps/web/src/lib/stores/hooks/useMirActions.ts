@@ -250,5 +250,18 @@ export function useMirActions() {
     }
   }, [runAnalysis]);
 
-  return { runAnalysis, runAllAnalyses, cancelAnalysis };
+  /**
+   * Run all MIR analyses for a specific audio input.
+   * @param inputId - The input ID to analyze
+   */
+  const runAllAnalysesForInput = useCallback(async (inputId: string) => {
+    const audioInput = useAudioInputStore.getState().getInputById(inputId);
+    if (!audioInput?.audioBuffer) return;
+
+    for (const fn of ALL_MIR_FUNCTIONS) {
+      await runAnalysis(fn, inputId);
+    }
+  }, [runAnalysis]);
+
+  return { runAnalysis, runAllAnalyses, runAllAnalysesForInput, cancelAnalysis };
 }

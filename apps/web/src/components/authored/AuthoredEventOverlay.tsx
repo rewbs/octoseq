@@ -82,7 +82,7 @@ function AuthoredStreamRow({
   interactive,
 }: AuthoredStreamRowProps) {
   const inspectedStreamId = useAuthoredEventStore((s) => s.inspectedStreamId);
-  const selectedEventIds = useAuthoredEventStore((s) => s.selectedEventIds);
+  //const selectedEventIds = useAuthoredEventStore((s) => s.selectedEventIds);
   const { addEventAtTime, inspectStream } = useAuthoredEventActions();
 
   const isInspected = inspectedStreamId === stream.id;
@@ -140,7 +140,7 @@ function AuthoredStreamRow({
       {/* Source label */}
       <div className="absolute top-1 left-2 z-10">
         <span
-          className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-200/60 dark:bg-zinc-800/60 backdrop-blur-sm"
+          className="text-tiny font-medium px-1.5 py-0.5 rounded bg-zinc-200/60 dark:bg-zinc-800/60 backdrop-blur-sm"
           style={{ color: stream.color.stroke }}
         >
           {stream.name}
@@ -151,7 +151,7 @@ function AuthoredStreamRow({
       {/* Interactive hint when inspected */}
       {interactive && isInspected && (
         <div className="absolute top-1 right-2 z-10">
-          <span className="text-[10px] text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-200/60 dark:bg-zinc-800/60 backdrop-blur-sm">
+          <span className="text-tiny text-zinc-400 px-1.5 py-0.5 rounded bg-zinc-200/60 dark:bg-zinc-800/60 backdrop-blur-sm">
             Click to add event
           </span>
         </div>
