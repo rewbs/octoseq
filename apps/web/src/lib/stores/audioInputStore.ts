@@ -23,6 +23,9 @@ interface AudioInputState {
 
   /** ID of the audio source currently displayed in the waveform. Defaults to MIXDOWN_ID. */
   activeDisplayId: string;
+
+  /** Callback to trigger the file input dialog. Set by page.tsx on mount. */
+  triggerFileInput: (() => void) | null;
 }
 
 // ----------------------------
@@ -156,6 +159,12 @@ interface AudioInputActions {
   clearStems: () => void;
 
   /**
+   * Register the file input trigger callback.
+   * Called by page.tsx on mount.
+   */
+  setTriggerFileInput: (callback: (() => void) | null) => void;
+
+  /**
    * Replace a stem's audio content while keeping its ID and position.
    * Used when user wants to swap out the audio file for a stem.
    */
@@ -179,6 +188,7 @@ const initialState: AudioInputState = {
   collection: null,
   selectedInputId: null,
   activeDisplayId: MIXDOWN_ID,
+  triggerFileInput: null,
 };
 
 // ----------------------------
@@ -531,6 +541,10 @@ export const useAudioInputStore = create<AudioInputStore>()(
           false,
           "clearStems"
         );
+      },
+
+      setTriggerFileInput: (callback) => {
+        set({ triggerFileInput: callback }, false, "setTriggerFileInput");
       },
 
       replaceStem: (id, newData) => {

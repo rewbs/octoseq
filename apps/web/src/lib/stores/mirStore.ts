@@ -56,7 +56,7 @@ const initialState: MirState = {
   mirResults: {},
   inputMirCache: new Map(),
   isRunning: false,
-  visualTab: "search",
+  visualTab: "melSpectrogram",
   lastTimings: null,
   displayContextInputId: "mixdown",
 };

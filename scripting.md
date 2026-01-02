@@ -81,6 +81,37 @@ Mesh entities have the following properties:
 
 The `color` property multiplies with the mesh's vertex colors, so white (`{r: 1.0, g: 1.0, b: 1.0, a: 1.0}`) shows the original vertex colors unchanged.
 
+### Entity Instancing
+
+Create multiple copies of an entity that share geometry but have independent properties:
+
+```rhai
+let base = mesh.cube();
+base.position.x = 1.0;
+base.color = #{ r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
+
+// Create instances with copied properties
+let copy1 = base.instance();
+copy1.position.x = -1.0;
+copy1.color.g = 1.0;  // Different color
+
+let copy2 = base.instance();
+copy2.position.y = 2.0;
+
+scene.add(base);
+scene.add(copy1);
+scene.add(copy2);
+```
+
+Instances share the underlying geometry (no memory duplication) but have their own:
+- Transform (position, rotation, scale)
+- Material and material parameters
+- Color
+- Deformations (copied as empty array)
+- Visibility and lighting flags
+
+If a property contains a Signal, the Signal reference is copied - both instances will evaluate the same Signal but can have different results if transforms differ.
+
 ### Creating Line Strips
 
 ```rhai
@@ -138,6 +169,80 @@ fn update(dt, frame) {
 let trace = line.trace(inputs.mix.rms, #{ max_points: 256 });
 // No update() code needed - engine evaluates Signal automatically
 ```
+
+### Creating Ribbons (line.ribbon)
+
+Ribbons are thick extruded lines that create 3D path visualizations from Signal history:
+
+```rhai
+// Create a ribbon that traces a Signal with visual thickness
+let ribbon = line.ribbon(inputs.mix.rms, #{
+    max_points: 256,    // Ring buffer size (default: 256)
+    mode: "strip",      // "strip" (flat) or "tube" (cylindrical)
+    width: 0.1,         // Ribbon width/diameter (default: 0.1)
+    twist: 0.0,         // Twist rate in radians per unit (default: 0.0)
+    tube_segments: 8    // Segments for tube mode (default: 8)
+});
+```
+
+| Property/Method | Type            | Description                                |
+| --------------- | --------------- | ------------------------------------------ |
+| `color`         | `{r, g, b, a}`  | RGBA color (0.0-1.0 range)                 |
+| `width`         | `f32 \| Signal` | Ribbon width (or diameter for tube mode)   |
+| `twist`         | `f32 \| Signal` | Twist rate along ribbon length             |
+| `clear()`       | method          | Clear all points                           |
+
+**Mode comparison:**
+- **strip**: Flat ribbon perpendicular to the view direction
+- **tube**: Cylindrical tube around the path, best for 3D orbits
+
+### Creating Radial Primitives
+
+Radial primitives create circular patterns centered at the origin:
+
+```rhai
+// Create a ring/arc in the XY plane
+let ring = radial.ring(#{
+    radius: 1.0,        // Distance from center (default: 1.0)
+    thickness: 0.1,     // Ring thickness (default: 0.1)
+    start_angle: 0.0,   // Start angle in radians (default: 0.0)
+    end_angle: TAU,     // End angle in radians (default: TAU = full circle)
+    segments: 64        // Smoothness (default: 64)
+});
+
+// Create a signal-modulated circular waveform
+let wave = radial.wave(inputs.mix.rms, #{
+    base_radius: 1.0,   // Base radius (default: 1.0)
+    amplitude: 0.5,     // Modulation amplitude (default: 0.5)
+    wave_frequency: 4,  // Waves per revolution (default: 4)
+    resolution: 128     // Line segments (default: 128)
+});
+```
+
+The radial wave creates a pulsing, flower-like pattern where the Signal modulates how much the wave deviates from the base radius.
+
+### Creating Point Clouds
+
+Point clouds create dense fields of GL points with deterministic positions:
+
+```rhai
+let cloud = points.cloud(#{
+    count: 1000,        // Number of points (default: 100)
+    spread: 2.0,        // Distribution size (default: 1.0)
+    mode: "sphere",     // "uniform" (cube) or "sphere" (default: "uniform")
+    seed: 42,           // Random seed for reproducibility (default: 0)
+    point_size: 3.0     // Point size in pixels (default: 2.0)
+});
+```
+
+| Property   | Type            | Description                    |
+| ---------- | --------------- | ------------------------------ |
+| `color`    | `{r, g, b, a}`  | Point color (RGBA 0.0-1.0)     |
+| `point_size` | `f32 \| Signal` | Size of each point in pixels |
+
+**Modes:**
+- **uniform**: Points distributed in a cube with half-extent = spread
+- **sphere**: Points distributed on a sphere surface with radius = spread
 
 ### Scene Management
 
@@ -787,6 +892,96 @@ let envelope = events.to_signal(#{
 | `overlap_mode`       | `"sum"`, `"max"`           | How overlapping envelopes combine      |
 | `group_within_beats` | `f32`                      | Group events closer than this distance |
 | `merge_mode`         | `"sum"`, `"max"`, `"mean"` | How grouped event weights combine      |
+
+### Event Distance Signals
+
+Create signals based on temporal distance to events:
+
+```rhai
+let kicks = inputs.mix.kick.events(0.3);
+
+// Distance from previous event (0 at event, grows linearly)
+let time_since_kick = kicks.beats_from_prev();       // In beats
+let seconds_since = kicks.seconds_from_prev();       // In seconds
+let frames_since = kicks.frames_from_prev();         // In frames
+
+// Distance to next event (shrinks to 0 at event)
+let beats_to_kick = kicks.beats_to_next();           // In beats
+let seconds_to = kicks.seconds_to_next();            // In seconds
+let frames_to = kicks.frames_to_next();              // In frames
+
+// Create anticipation effect that builds before each kick
+let anticipation = kicks.beats_to_next()
+    .clamp(0.0, 1.0)
+    .sub(1.0)
+    .neg();  // 0 far from kick, 1 at kick
+```
+
+**Edge cases:**
+- Before first event: `*_from_prev()` returns distance to first event
+- After last event: `*_to_next()` returns distance to track end
+- Empty events: Returns 0.0
+
+### Event Count and Density Signals
+
+Count events within a time window:
+
+```rhai
+let kicks = inputs.mix.kick.events(0.3);
+
+// Count events in a window looking backwards
+let recent_kicks = kicks.count_prev_beats(4.0);      // Events in last 4 beats
+let recent_secs = kicks.count_prev_seconds(2.0);     // Events in last 2 seconds
+let recent_frames = kicks.count_prev_frames(60.0);   // Events in last 60 frames
+
+// Count events in a window looking forwards
+let upcoming = kicks.count_next_beats(4.0);          // Events in next 4 beats
+let upcoming_secs = kicks.count_next_seconds(2.0);   // Events in next 2 seconds
+
+// Density: count / window_size (events per unit time)
+let kick_rate = kicks.density_prev_beats(8.0);       // Kicks per beat over 8 beats
+let kick_hz = kicks.density_prev_seconds(4.0);       // Kicks per second over 4 seconds
+
+// Use activity to control intensity
+let activity = kicks.count_prev_beats(8.0);
+cube.scale = activity.scale(0.1).add(1.0);
+```
+
+**Window parameter:** Can be a constant or a Signal for dynamic windows.
+
+### Event Phase Signal
+
+Get position between events as a 0-1 value:
+
+```rhai
+let beats = inputs.mix.beat.events(0.5);
+
+// Phase: 0 at previous event, 1 at next event
+let phase = beats.beat_phase_between();
+
+// Create smooth breathing motion between beats
+let breath = phase.scale(6.28318).sin();  // Full sine cycle between events
+
+// Eased anticipation
+let anticipation = phase.scale(2.0).clamp(0.0, 1.0);  // Build up in second half
+```
+
+**Edge cases:**
+- Before first event: Returns 0.0
+- After last event: Returns 1.0
+- Single event or no events: Returns 0.0
+
+### Impulse Alias
+
+`impulse()` is an alias for `to_signal()`:
+
+```rhai
+let kicks = inputs.mix.kick.events(0.3);
+
+// These are equivalent
+let impulse1 = kicks.impulse();
+let impulse2 = kicks.to_signal();
+```
 
 ---
 
@@ -1672,6 +1867,59 @@ fn update(dt, frame) {
 | `.blend.difference()` | Subtractive (psychedelic effects) |
 | `.blend.max()` | Maximum of both values |
 
+#### Feedback Sampling Mode
+
+By default, feedback samples the scene render **before** post-processing effects are applied. This means post-FX like bloom and color grading are applied fresh each frame on top of the feedback result.
+
+You can change this behavior so feedback samples **after** post-processing effects, creating interesting cumulative effects where bloom, grain, or color grading accumulate over time:
+
+```rhai
+fn init(ctx) {
+    // Feedback samples AFTER post-FX (bloom/grain accumulate in feedback)
+    let fb = feedback.builder()
+        .warp.spiral(0.5, 0.02)
+        .color.decay(0.92)
+        .sample_after_effects()  // Key: sample post-FX result
+        .build();
+    feedback.enable(fb);
+
+    // Add post-FX that will be included in feedback
+    post.add(fx.bloom(#{ threshold: 0.6, intensity: 0.5 }));
+    post.add(fx.grain(#{ amount: 0.02 }));
+}
+```
+
+| Method | Pipeline Order | Use Case |
+|--------|----------------|----------|
+| `.sample_before_effects()` | scene → feedback → post-FX (default) | Fresh post-FX each frame |
+| `.sample_after_effects()` | scene → post-FX → feedback | Accumulating bloom/grain effects |
+
+**Example: Accumulating Bloom Trails**
+
+```rhai
+let sphere = mesh.sphere();
+
+fn init(ctx) {
+    scene.add(sphere);
+    sphere.material = "emissive";
+
+    // Bloom accumulates in feedback for glowing trails
+    let fb = feedback.builder()
+        .warp.radial(0.3, 1.01)
+        .color.decay(0.95)
+        .sample_after_effects()
+        .build();
+    feedback.enable(fb);
+
+    post.add(fx.bloom(#{ threshold: 0.5, intensity: 0.8 }));
+}
+
+fn update(dt, frame) {
+    sphere.position.x = (frame.time * 0.5).sin() * 2.0;
+    sphere.params.emission_intensity = 1.5;
+}
+```
+
 #### Disabling Feedback
 
 ```rhai
@@ -1837,6 +2085,11 @@ fn update(dt, frame) {
 | `fx.colorGrade()` | Color correction | `brightness`, `contrast`, `saturation`, `gamma`, `tint` |
 | `fx.vignette()` | Darkened edges | `intensity`, `smoothness`, `color` |
 | `fx.distortion()` | Barrel/pincushion | `amount`, `center` |
+| `fx.zoomWrap()` | Zoom with edge wrapping | `amount` (<1=zoom in), `center`, `wrap_mode` ("repeat"/"mirror") |
+| `fx.radialBlur()` | Radial motion blur | `strength`, `center`, `samples` (2-32) |
+| `fx.directionalBlur()` | Directional motion blur | `amount` (pixels), `angle` (radians), `samples` (2-32) |
+| `fx.chromaticAberration()` | RGB channel separation | `amount`, `angle` (radians) |
+| `fx.grain()` | Deterministic film grain | `amount`, `scale`, `seed` |
 
 #### Chain Management
 
@@ -2154,6 +2407,211 @@ Parameters marked with `†` can accept either a constant (`f32`) or a `Signal` 
 | Max array size             | 100,000 elements   |
 | Max map size               | 500 entries        |
 | Log messages per frame     | 100                |
+
+---
+
+## Lighting
+
+Octoseq provides a simple directional lighting system with ambient and rim lighting support. All lighting parameters accept Signals for audio-reactive control.
+
+### Global Lighting Configuration
+
+The `lighting` namespace controls the global light source:
+
+```rhai
+fn init(ctx) {
+    // Enable lighting
+    lighting.enabled = true;
+
+    // Set light direction (points FROM the light)
+    lighting.direction = #{ x: -0.5, y: -1.0, z: -0.3 };
+
+    // Light properties
+    lighting.intensity = 1.0;          // Light intensity multiplier
+    lighting.color = #{ r: 1.0, g: 0.95, b: 0.9 };  // Warm white
+    lighting.ambient = 0.3;            // Ambient fill (0.0-1.0)
+
+    // Rim lighting (edge highlights)
+    lighting.rim_intensity = 0.3;      // Rim light strength
+    lighting.rim_power = 2.0;          // Rim falloff (higher = sharper)
+}
+```
+
+#### Lighting Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `enabled` | `bool` | `false` | Enable/disable global lighting |
+| `direction` | `{x, y, z}` | `(0, -1, 0)` | Light direction (points from light) |
+| `intensity` | `Signal \| f32` | `1.0` | Light intensity multiplier |
+| `color` | `{r, g, b}` | `(1, 1, 1)` | Light color (0-1 range) |
+| `ambient` | `Signal \| f32` | `0.3` | Ambient light intensity |
+| `rim_intensity` | `Signal \| f32` | `0.0` | Rim lighting intensity |
+| `rim_power` | `Signal \| f32` | `2.0` | Rim lighting falloff power |
+
+### Audio-Reactive Lighting
+
+All numeric lighting properties accept Signals:
+
+```rhai
+fn init(ctx) {
+    lighting.enabled = true;
+
+    // Pulsing light intensity synced to audio
+    lighting.intensity = inputs.mix.energy
+        .smooth.exponential(0.05, 0.2)
+        .normalise.robust()
+        .scale(0.5)
+        .add(0.5);
+
+    // Rim glow on beats
+    let beat_envelope = inputs.mix.onset
+        .smooth.exponential(0.02, 0.15)
+        .normalise.robust()
+        .pick.events(#{ hysteresis_beats: 0.4, target_density: 2.0 })
+        .to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.2 });
+
+    lighting.rim_intensity = beat_envelope.scale(0.5);
+}
+```
+
+### Per-Entity Lighting Control
+
+Individual mesh entities can control their lighting behavior:
+
+```rhai
+let lit_cube = mesh.cube();
+let unlit_floor = mesh.plane();
+let glowing_sphere = mesh.sphere();
+
+fn init(ctx) {
+    // Normal lit mesh (default)
+    lit_cube.lit = true;
+    scene.add(lit_cube);
+
+    // Unlit mesh (flat colors, ignores lighting)
+    unlit_floor.lit = false;
+    unlit_floor.position = #{ x: 0.0, y: -1.0, z: 0.0 };
+    scene.add(unlit_floor);
+
+    // Mesh with emissive glow
+    glowing_sphere.lit = true;
+    glowing_sphere.emissive = 0.5;  // Adds glow unaffected by lighting
+    scene.add(glowing_sphere);
+
+    lighting.enabled = true;
+}
+```
+
+#### Per-Entity Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `lit` | `bool` | `true` | Whether this mesh is affected by global lighting |
+| `emissive` | `Signal \| f32` | `0.0` | Emissive intensity (adds glow unaffected by lighting) |
+
+### Lighting Model
+
+Octoseq uses a simple but effective lighting model:
+
+- **Half-Lambert diffuse**: Softer shadows than traditional Lambert (`NdotL * 0.5 + 0.5`)
+- **Rim lighting**: Highlights edges facing away from the camera
+- **Ambient**: Constant fill light for shadowed areas
+- **Per-entity emissive**: Adds to base color, unaffected by light direction
+
+### OBJ Mesh Normals
+
+Loaded OBJ meshes automatically use their vertex normals for lighting:
+
+- If the OBJ file contains normals, they are used directly
+- If normals are missing, they are computed as area-weighted vertex normals from face geometry
+
+Built-in primitives have appropriate normals:
+- **Cube**: Per-face normals (flat shading)
+- **Sphere**: Smooth normals (normalized position)
+- **Plane**: Y-up normals `(0, 1, 0)`
+
+---
+
+## Blob Shadows
+
+Octoseq provides simple blob/contact shadows that render a soft ellipse on a ground plane beneath entities. These are not real shadows based on light direction, but stylized fake shadows for visual grounding.
+
+### Enabling Blob Shadows
+
+```rhai
+fn init(ctx) {
+    let cube = mesh.cube();
+    cube.position.y = 2.0;
+
+    // Enable blob shadow
+    cube.shadow.enabled = true;
+    cube.shadow.plane_y = 0.0;   // Shadow on ground plane
+    cube.shadow.opacity = 0.5;
+    cube.shadow.radius = 1.5;    // Uniform radius
+    cube.shadow.softness = 0.3;  // Soft edges
+
+    scene.add(cube);
+}
+```
+
+### Shadow Properties
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `enabled` | `bool` | `false` | Enable/disable the shadow |
+| `plane_y` | `Signal \| f32` | `0.0` | Y position of shadow plane |
+| `opacity` | `Signal \| f32` | `0.5` | Shadow opacity (0.0-1.0) |
+| `radius` | `Signal \| f32` | `1.0` | Uniform radius (sets both radius_x and radius_z) |
+| `radius_x` | `Signal \| f32` | `1.0` | Shadow radius in X direction |
+| `radius_z` | `Signal \| f32` | `1.0` | Shadow radius in Z direction |
+| `softness` | `Signal \| f32` | `0.3` | Edge softness (0 = hard, 1 = very soft) |
+| `offset_x` | `Signal \| f32` | `0.0` | X offset from entity position |
+| `offset_z` | `Signal \| f32` | `0.0` | Z offset from entity position |
+| `color` | `Map { r, g, b }` | `(0, 0, 0)` | Shadow color (RGB, 0-1 range) |
+
+### Audio-Reactive Shadows
+
+All numeric shadow properties accept Signals:
+
+```rhai
+fn init(ctx) {
+    let sphere = mesh.sphere();
+    sphere.position.y = inputs.mix.energy.scale(2.0).offset(1.0);
+
+    // Audio-reactive shadow
+    sphere.shadow.enabled = true;
+    sphere.shadow.plane_y = 0.0;
+
+    // Shadow grows/shrinks with energy
+    sphere.shadow.radius = inputs.mix.energy.scale(1.0).offset(1.0);
+
+    // Shadow fades as object rises
+    sphere.shadow.opacity = inputs.mix.energy.scale(-0.3).offset(0.6);
+
+    scene.add(sphere);
+}
+```
+
+### Elliptical Shadows
+
+For non-uniform shadows, use separate `radius_x` and `radius_z`:
+
+```rhai
+fn init(ctx) {
+    let cube = mesh.cube();
+    cube.scale = 2.0;
+    cube.position.y = 1.0;
+
+    // Elliptical shadow
+    cube.shadow.enabled = true;
+    cube.shadow.radius_x = 2.5;  // Wider in X
+    cube.shadow.radius_z = 1.5;  // Narrower in Z
+    cube.shadow.softness = 0.4;
+
+    scene.add(cube);
+}
+```
 
 ---
 

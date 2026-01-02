@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useProjectStore } from "../projectStore";
 import { useFrequencyBandStore } from "../frequencyBandStore";
 import { useMusicalTimeStore } from "../musicalTimeStore";
@@ -8,8 +8,15 @@ import { useAuthoredEventStore } from "../authoredEventStore";
 import { useBeatGridStore } from "../beatGridStore";
 import { useInterpretationTreeStore } from "../interpretationTreeStore";
 import { useAudioInputStore } from "../audioInputStore";
+import { useCustomSignalStore } from "../customSignalStore";
+import { useMeshAssetStore } from "../meshAssetStore";
+import { usePlaybackStore } from "../playbackStore";
+import { useAutosaveStore } from "../autosaveStore";
+import { useAutosave } from "./useAutosave";
+import { clearAutosave } from "../../persistence/autosave";
 import type { ProjectAudioCollection, ProjectAudioReference, ProjectBeatGridState } from "../types/project";
 import type { AuthoredEventStream } from "../types/authoredEvent";
+import type { AutosaveRecord } from "../../persistence/types";
 
 /**
  * Hook that provides project lifecycle actions and sets up store synchronization.
@@ -30,8 +37,17 @@ export function useProjectActions() {
   const isDirty = useProjectStore((s) => s.isDirty);
   const markClean = useProjectStore((s) => s.markClean);
 
+  // Autosave state
+  const autosaveStatus = useAutosaveStore((s) => s.status);
+  const lastAutosaveAt = useAutosaveStore((s) => s.lastSavedAt);
+  const wasRecovered = useAutosaveStore((s) => s.wasRecovered);
+  const clearRecovered = useAutosaveStore((s) => s.clearRecovered);
+
   // Track if initial sync has been done
   const initialSyncDone = useRef(false);
+
+  // Pending recovery state
+  const [pendingRecovery, setPendingRecovery] = useState<AutosaveRecord | null>(null);
 
   // ----------------------------
   // Store Sync Subscriptions
@@ -90,14 +106,30 @@ export function useProjectActions() {
       const relevantChange =
         state.expandedNodes !== prevState.expandedNodes ||
         state.selectedNodeId !== prevState.selectedNodeId ||
-        state.sidebarWidth !== prevState.sidebarWidth;
+        state.sidebarWidth !== prevState.sidebarWidth ||
+        state.inspectorHeight !== prevState.inspectorHeight;
 
       if (relevantChange && useProjectStore.getState().activeProject) {
         useProjectStore.getState().syncUIState({
           treeExpandedNodes: Array.from(state.expandedNodes),
           treeSelectedNodeId: state.selectedNodeId,
           sidebarWidth: state.sidebarWidth,
+          inspectorHeight: state.inspectorHeight,
         });
+      }
+    });
+
+    // Subscribe to custom signal changes
+    const unsubCustomSignals = useCustomSignalStore.subscribe((state, prevState) => {
+      if (state.structure !== prevState.structure && useProjectStore.getState().activeProject) {
+        useProjectStore.getState().syncCustomSignals(state.structure);
+      }
+    });
+
+    // Subscribe to mesh asset changes
+    const unsubMeshAssets = useMeshAssetStore.subscribe((state, prevState) => {
+      if (state.structure !== prevState.structure && useProjectStore.getState().activeProject) {
+        useProjectStore.getState().syncMeshAssets(state.structure);
       }
     });
 
@@ -106,14 +138,16 @@ export function useProjectActions() {
       if (state.collection !== prevState.collection && useProjectStore.getState().activeProject) {
         const collection = state.collection;
         if (collection) {
+          const mixdownInput = collection.inputs.mixdown;
           const audioCollection: ProjectAudioCollection = {
-            mixdown: collection.inputs.mixdown
+            mixdown: mixdownInput
               ? {
-                  id: collection.inputs.mixdown.id,
-                  label: collection.inputs.mixdown.label,
-                  role: collection.inputs.mixdown.role,
-                  metadata: collection.inputs.mixdown.metadata!,
-                  origin: collection.inputs.mixdown.origin,
+                  id: mixdownInput.id,
+                  label: mixdownInput.label,
+                  role: mixdownInput.role,
+                  metadata: mixdownInput.metadata!,
+                  origin: mixdownInput.origin,
+                  assetId: mixdownInput.assetId,
                 }
               : null,
             stems: collection.stemOrder
@@ -127,6 +161,7 @@ export function useProjectActions() {
                   metadata: stem.metadata,
                   origin: stem.origin,
                   orderIndex: index,
+                  assetId: stem.assetId,
                 } as ProjectAudioReference;
               })
               .filter((s): s is ProjectAudioReference => s !== null),
@@ -142,6 +177,8 @@ export function useProjectActions() {
       unsubAuthored();
       unsubBeatGrid();
       unsubTree();
+      unsubCustomSignals();
+      unsubMeshAssets();
       unsubAudio();
     };
   }, []);
@@ -215,6 +252,16 @@ export function useProjectActions() {
       }
     }
 
+    // Hydrate custom signals
+    if (project.interpretation.customSignals) {
+      useCustomSignalStore.getState().loadFromProject(project.interpretation.customSignals);
+    }
+
+    // Hydrate mesh assets
+    if (project.meshAssets) {
+      useMeshAssetStore.getState().loadFromProject(project.meshAssets);
+    }
+
     // Hydrate tree state
     if (project.uiState) {
       const treeStore = useInterpretationTreeStore.getState();
@@ -226,6 +273,15 @@ export function useProjectActions() {
       }
       if (project.uiState.sidebarWidth) {
         treeStore.setSidebarWidth(project.uiState.sidebarWidth);
+      }
+      if (project.uiState.inspectorHeight) {
+        treeStore.setInspectorHeight(project.uiState.inspectorHeight);
+      }
+      // Restore playhead position
+      if (project.uiState.lastPlayheadPosition && project.uiState.lastPlayheadPosition > 0) {
+        usePlaybackStore.getState().setPlayheadTimeSec(project.uiState.lastPlayheadPosition);
+        // Also set cursor time to match
+        usePlaybackStore.getState().setCursorTimeSec(project.uiState.lastPlayheadPosition);
       }
     }
   }, []);
@@ -274,11 +330,22 @@ export function useProjectActions() {
           });
         }
 
+        const customSignalStructure = useCustomSignalStore.getState().structure;
+        if (customSignalStructure) {
+          useProjectStore.getState().syncCustomSignals(customSignalStructure);
+        }
+
+        const meshAssetStructure = useMeshAssetStore.getState().structure;
+        if (meshAssetStructure) {
+          useProjectStore.getState().syncMeshAssets(meshAssetStructure);
+        }
+
         const treeState = useInterpretationTreeStore.getState();
         useProjectStore.getState().syncUIState({
           treeExpandedNodes: Array.from(treeState.expandedNodes),
           treeSelectedNodeId: treeState.selectedNodeId,
           sidebarWidth: treeState.sidebarWidth,
+          inspectorHeight: treeState.inspectorHeight,
         });
       }
 
@@ -290,7 +357,11 @@ export function useProjectActions() {
   /**
    * Save project to JSON and trigger download.
    */
-  const handleSaveProject = useCallback(() => {
+  const handleSaveProject = useCallback(async () => {
+    // Sync current playhead position before saving
+    const currentPlayhead = usePlaybackStore.getState().playheadTimeSec;
+    useProjectStore.getState().syncUIState({ lastPlayheadPosition: currentPlayhead });
+
     const json = exportToJson();
     if (!json) return null;
 
@@ -310,6 +381,13 @@ export function useProjectActions() {
 
     // Mark as clean after save
     markClean();
+
+    // Clear autosave after explicit save (no need to keep recovery data)
+    try {
+      await clearAutosave();
+    } catch (error) {
+      console.error("Failed to clear autosave after save:", error);
+    }
 
     return filename;
   }, [exportToJson, markClean]);
@@ -357,24 +435,83 @@ export function useProjectActions() {
     useMusicalTimeStore.getState().reset();
     useAuthoredEventStore.getState().reset();
     useBeatGridStore.getState().clear();
+    useCustomSignalStore.getState().reset();
+    useMeshAssetStore.getState().reset();
+    usePlaybackStore.getState().setPlayheadTimeSec(0);
+    usePlaybackStore.getState().setCursorTimeSec(0);
   }, [resetProject]);
+
+  // ----------------------------
+  // Autosave Integration
+  // ----------------------------
+
+  const {
+    hasRecovery,
+    acceptRecovery,
+    dismissRecovery,
+    formatTimestamp,
+  } = useAutosave({
+    onRecoveryAvailable: (record) => {
+      setPendingRecovery(record);
+    },
+    onRecoveryComplete: () => {
+      // Hydrate stores after recovery
+      hydrateStoresFromProject();
+    },
+    onError: (error) => {
+      console.error("[Autosave] Error:", error);
+    },
+  });
+
+  /**
+   * Accept the pending autosave recovery.
+   */
+  const handleAcceptRecovery = useCallback(async () => {
+    const success = await acceptRecovery();
+    if (success) {
+      setPendingRecovery(null);
+      initialSyncDone.current = true;
+    }
+    return success;
+  }, [acceptRecovery]);
+
+  /**
+   * Dismiss the pending autosave recovery and create a new project.
+   */
+  const handleDismissRecovery = useCallback(async () => {
+    await dismissRecovery();
+    setPendingRecovery(null);
+    // Create a new project since we dismissed recovery
+    handleCreateProject("Untitled Project", true);
+    initialSyncDone.current = true;
+  }, [dismissRecovery, handleCreateProject]);
 
   // ----------------------------
   // Auto-create project on mount if none exists
   // ----------------------------
 
   useEffect(() => {
+    // Don't auto-create if there's a pending recovery
+    if (pendingRecovery) return;
+
     if (!initialSyncDone.current && !activeProject) {
       // Auto-create a project on first mount
       handleCreateProject("Untitled Project", true);
       initialSyncDone.current = true;
     }
-  }, [activeProject, handleCreateProject]);
+  }, [activeProject, handleCreateProject, pendingRecovery]);
 
   return {
     // State
     activeProject,
     isDirty,
+
+    // Autosave state
+    autosaveStatus,
+    lastAutosaveAt,
+    wasRecovered,
+    clearRecovered,
+    pendingRecovery,
 
     // Actions
     createProject: handleCreateProject,
@@ -384,5 +521,10 @@ export function useProjectActions() {
     resetProject: handleResetProject,
     renameProject,
     hydrateStoresFromProject,
+
+    // Recovery actions
+    acceptRecovery: handleAcceptRecovery,
+    dismissRecovery: handleDismissRecovery,
+    formatAutosaveTimestamp: formatTimestamp,
   };
 }

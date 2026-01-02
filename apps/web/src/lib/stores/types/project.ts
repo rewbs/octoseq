@@ -17,6 +17,7 @@ import type { AudioInputMetadata, AudioInputOrigin } from "./audioInput";
 import type { AuthoredEventStream } from "./authoredEvent";
 import type { SubBeatDivision } from "../beatGridStore";
 import type { CustomSignalStructure } from "./customSignal";
+import type { MeshAssetStructure } from "./meshAsset";
 
 // ----------------------------
 // Audio References
@@ -40,6 +41,12 @@ export interface ProjectAudioReference {
   origin: AudioInputOrigin;
   /** Order index for stems. */
   orderIndex?: number;
+  /**
+   * Reference to asset in the local asset registry.
+   * Used for persistent storage of audio data.
+   * Optional for backwards compatibility with v1 projects.
+   */
+  assetId?: string;
 }
 
 /**
@@ -150,6 +157,10 @@ export interface ProjectUIState {
   treeSelectedNodeId: string | null;
   /** Sidebar width in pixels. */
   sidebarWidth: number;
+  /** Inspector panel height in pixels. */
+  inspectorHeight: number;
+  /** Last playhead position in seconds (for restoring on reload). */
+  lastPlayheadPosition: number;
 }
 
 // ----------------------------
@@ -166,6 +177,24 @@ export interface ProjectUIState {
  * - Projects own references, not raw data (audio buffers are runtime-only)
  * - Projects are explicitly authored, not auto-generated
  * - Projects are the unit of save/load/share
+ *
+ * ## Persistence Boundary
+ *
+ * **Must Persist:**
+ * - Project metadata (id, name, timestamps)
+ * - Audio references (not buffers - those are runtime-only)
+ * - Frequency bands, musical time, authored events, beat grid
+ * - Custom signals (definitions, not cached results)
+ * - Scripts (full content)
+ * - Mesh assets (3D objects with OBJ content)
+ * - UI state (tree, sidebar, inspector, playhead)
+ *
+ * **Must NOT Persist:**
+ * - Candidate events (ephemeral proposals)
+ * - Debug/probe signals
+ * - Runtime caches (percentiles, FFT buffers, GPU resources)
+ * - Playback running/paused state
+ * - Audio buffers (decoded audio - runtime only)
  */
 export interface Project {
   /** Stable unique identifier (nanoid). */
@@ -183,6 +212,8 @@ export interface Project {
   interpretation: ProjectInterpretation;
   /** Visualization scripts. */
   scripts: ProjectScripts;
+  /** 3D mesh assets loaded into the project. */
+  meshAssets: MeshAssetStructure | null;
   /** Persisted UI state. */
   uiState: ProjectUIState;
 }
@@ -252,10 +283,13 @@ export function createEmptyProject(name: string): Project {
       scripts: [],
       activeScriptId: null,
     },
+    meshAssets: null,
     uiState: {
       treeExpandedNodes: ["project", "audio", "mixdown", "scripts"],
       treeSelectedNodeId: null,
       sidebarWidth: 280,
+      inspectorHeight: 200,
+      lastPlayheadPosition: 0,
     },
   };
 }

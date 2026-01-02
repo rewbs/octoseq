@@ -443,12 +443,12 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   // Uses signals that are always available: time, dt, amplitude, flux
   const defaultScript = `let cube = mesh.cube();
 
-let smoothAmp = inputs.amplitude.abs().smooth.moving_average(0.5).scale(20);
-let smoothOnsets = inputs.onsetEnvelope.smooth.exponential(0.1, 0.5).scale(10);
+let smoothAmp = inputs.mix.energy.smooth.moving_average(0.5).scale(20);
+let smoothOnsets = inputs.mix.onset.smooth.exponential(0.1, 0.5).scale(10);
 
 cube.rotation.x = smoothAmp;
 cube.scale = smoothOnsets;
-cube.rotation.y = sin(inputs.time);
+cube.rotation.y = sin(timing.time);
 camera.lookAt(#{x:gen.perlin(4, 40), y:gen.perlin(2, 41), z:gen.perlin(8, 42)});
 
 
@@ -457,7 +457,7 @@ let bloom = fx.bloom(#{
   threshold: 0.7});
 
 let fb = feedback.builder()
-    .warp.spiral(sin(inputs.beatPosition), 1, 0.1)
+    .warp.spiral(sin(timing.beatPosition), 1, 0.1)
     .opacity(0.4)
     .blend.difference()
     .build();

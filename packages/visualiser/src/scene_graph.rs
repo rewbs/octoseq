@@ -5,6 +5,8 @@
 
 use std::collections::{HashMap, HashSet};
 
+use glam::Vec2;
+
 use crate::deformation::Deformation;
 use crate::material::ParamValue;
 
@@ -20,6 +22,14 @@ pub enum MeshType {
     Sphere,
     /// Reference to a loaded mesh asset by ID.
     Asset(String),
+    /// A radial ring/arc in the XY plane (facing +Z).
+    RadialRing {
+        radius: f32,
+        thickness: f32,
+        start_angle: f32,
+        end_angle: f32,
+        segments: u32,
+    },
 }
 
 /// Rendering mode for meshes.
@@ -66,6 +76,46 @@ impl Default for Transform {
             position: Vec3::default(),
             rotation: Vec3::default(),
             scale: Vec3::splat(1.0),
+        }
+    }
+}
+
+/// Blob shadow configuration for a mesh instance.
+/// Renders a soft ellipse on a ground plane to simulate contact shadows.
+#[derive(Debug, Clone)]
+pub struct BlobShadowConfig {
+    /// Whether the shadow is enabled.
+    pub enabled: bool,
+    /// Y position of the shadow plane.
+    pub plane_y: f32,
+    /// Shadow opacity (0.0 = invisible, 1.0 = fully opaque).
+    pub opacity: f32,
+    /// Shadow radius in X direction.
+    pub radius_x: f32,
+    /// Shadow radius in Z direction.
+    pub radius_z: f32,
+    /// Shadow softness (0.0 = hard edge, 1.0 = very soft).
+    pub softness: f32,
+    /// Shadow offset in X from entity position.
+    pub offset_x: f32,
+    /// Shadow offset in Z from entity position.
+    pub offset_z: f32,
+    /// Shadow color (RGB, 0.0-1.0).
+    pub color: [f32; 3],
+}
+
+impl Default for BlobShadowConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            plane_y: 0.0,
+            opacity: 0.5,
+            radius_x: 1.0,
+            radius_z: 1.0,
+            softness: 0.3,
+            offset_x: 0.0,
+            offset_z: 0.0,
+            color: [0.0, 0.0, 0.0], // Black shadow
         }
     }
 }
@@ -117,6 +167,12 @@ pub struct MeshInstance {
     pub material_id: Option<String>,
     /// Material parameter bindings (evaluated each frame).
     pub material_params: MaterialParams,
+    /// Whether this mesh is affected by global lighting. Default: true.
+    pub lit: bool,
+    /// Emissive intensity multiplier (adds to base color, unaffected by lighting). Default: 0.0.
+    pub emissive: f32,
+    /// Blob shadow configuration for this mesh.
+    pub shadow: BlobShadowConfig,
 }
 
 impl MeshInstance {
@@ -131,6 +187,9 @@ impl MeshInstance {
             deformations: Vec::new(),
             material_id: None, // Use default material
             material_params: MaterialParams::new(),
+            lit: true,     // Default: affected by lighting
+            emissive: 0.0, // Default: no emission
+            shadow: BlobShadowConfig::default(),
         }
     }
 }
@@ -258,12 +317,270 @@ impl Default for Group {
     }
 }
 
-/// A scene entity - mesh, line, or group.
+/// Distribution mode for point clouds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PointCloudMode {
+    /// Uniform random distribution in a cube.
+    #[default]
+    Uniform,
+    /// Points distributed on the surface of a sphere.
+    Sphere,
+}
+
+/// A point cloud primitive - a set of GL points with deterministic positions.
+#[derive(Debug, Clone)]
+pub struct PointCloud {
+    /// Number of points.
+    pub count: usize,
+    /// Distribution spread (half-extent for uniform, radius for sphere).
+    pub spread: f32,
+    /// Distribution mode.
+    pub mode: PointCloudMode,
+    /// Random seed for deterministic positions.
+    pub seed: u64,
+    /// Point size in pixels.
+    pub point_size: f32,
+    /// Pre-computed point positions (generated from seed).
+    pub positions: Vec<Vec3>,
+    /// Transform.
+    pub transform: Transform,
+    /// Visibility.
+    pub visible: bool,
+    /// RGBA color.
+    pub color: [f32; 4],
+}
+
+impl PointCloud {
+    /// Create a new point cloud with deterministic positions based on seed.
+    pub fn new(count: usize, spread: f32, mode: PointCloudMode, seed: u64, point_size: f32) -> Self {
+        let positions = Self::generate_positions(count, spread, mode, seed);
+        Self {
+            count,
+            spread,
+            mode,
+            seed,
+            point_size,
+            positions,
+            transform: Transform::default(),
+            visible: true,
+            color: [1.0, 1.0, 1.0, 1.0],
+        }
+    }
+
+    /// Generate deterministic positions from seed.
+    fn generate_positions(count: usize, spread: f32, mode: PointCloudMode, seed: u64) -> Vec<Vec3> {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut positions = Vec::with_capacity(count);
+        for i in 0..count {
+            // Simple deterministic pseudo-random based on seed and index
+            let mut hasher = DefaultHasher::new();
+            seed.hash(&mut hasher);
+            (i as u64).hash(&mut hasher);
+            let h1 = hasher.finish();
+
+            hasher = DefaultHasher::new();
+            h1.hash(&mut hasher);
+            let h2 = hasher.finish();
+
+            hasher = DefaultHasher::new();
+            h2.hash(&mut hasher);
+            let h3 = hasher.finish();
+
+            // Convert to [0, 1) range
+            let r1 = (h1 as f32) / (u64::MAX as f32);
+            let r2 = (h2 as f32) / (u64::MAX as f32);
+            let r3 = (h3 as f32) / (u64::MAX as f32);
+
+            let pos = match mode {
+                PointCloudMode::Uniform => {
+                    // Uniform distribution in [-spread, spread] cube
+                    Vec3::new(
+                        (r1 * 2.0 - 1.0) * spread,
+                        (r2 * 2.0 - 1.0) * spread,
+                        (r3 * 2.0 - 1.0) * spread,
+                    )
+                }
+                PointCloudMode::Sphere => {
+                    // Uniform distribution on sphere surface
+                    let theta = r1 * std::f32::consts::TAU;
+                    let phi = (r2 * 2.0 - 1.0).acos();
+                    Vec3::new(
+                        spread * phi.sin() * theta.cos(),
+                        spread * phi.sin() * theta.sin(),
+                        spread * phi.cos(),
+                    )
+                }
+            };
+            positions.push(pos);
+        }
+        positions
+    }
+
+    /// Regenerate positions if parameters changed.
+    pub fn update(&mut self, count: usize, spread: f32, mode: PointCloudMode, seed: u64, point_size: f32) {
+        if self.count != count || self.spread != spread || self.mode != mode || self.seed != seed {
+            self.count = count;
+            self.spread = spread;
+            self.mode = mode;
+            self.seed = seed;
+            self.positions = Self::generate_positions(count, spread, mode, seed);
+        }
+        self.point_size = point_size;
+    }
+}
+
+/// A radial wave - signal-modulated circular line.
+/// The radius at each angle is: base_radius + amplitude * signal_value * sin(angle * wave_frequency)
+#[derive(Debug, Clone)]
+pub struct RadialWave {
+    /// Base radius.
+    pub base_radius: f32,
+    /// Amplitude of wave modulation.
+    pub amplitude: f32,
+    /// Number of waves per revolution.
+    pub wave_frequency: f32,
+    /// Number of line segments around the circle.
+    pub resolution: usize,
+    /// Current signal value (evaluated each frame).
+    pub signal_value: f32,
+    /// Transform.
+    pub transform: Transform,
+    /// Visibility.
+    pub visible: bool,
+    /// RGBA color.
+    pub color: [f32; 4],
+}
+
+impl RadialWave {
+    /// Create a new radial wave.
+    pub fn new(base_radius: f32, amplitude: f32, wave_frequency: f32, resolution: usize) -> Self {
+        Self {
+            base_radius,
+            amplitude,
+            wave_frequency,
+            resolution,
+            signal_value: 0.0,
+            transform: Transform::default(),
+            visible: true,
+            color: [1.0, 1.0, 1.0, 1.0],
+        }
+    }
+
+    /// Generate line points for rendering.
+    /// Returns points in XY plane (facing +Z).
+    pub fn generate_points(&self) -> Vec<Vec3> {
+        let mut points = Vec::with_capacity(self.resolution + 1);
+        for i in 0..=self.resolution {
+            let angle = (i as f32 / self.resolution as f32) * std::f32::consts::TAU;
+            let radius = self.base_radius + self.amplitude * self.signal_value * (angle * self.wave_frequency).sin();
+            points.push(Vec3::new(
+                radius * angle.cos(),
+                radius * angle.sin(),
+                0.0,
+            ));
+        }
+        points
+    }
+}
+
+/// Ribbon render mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RibbonMode {
+    /// Flat strip with two edges.
+    Strip,
+    /// Cylindrical tube.
+    Tube,
+}
+
+/// A ribbon - signal-driven extruded path.
+/// Each frame, a new point is added based on the signal value.
+/// Points form a continuous path that can be rendered as a strip or tube.
+#[derive(Debug, Clone)]
+pub struct Ribbon {
+    /// Maximum points in the ring buffer.
+    pub max_points: usize,
+    /// Render mode.
+    pub mode: RibbonMode,
+    /// Width of the ribbon (strip) or diameter (tube).
+    pub width: f32,
+    /// Twist amount (rotation per point).
+    pub twist: f32,
+    /// Ring buffer of points (x, y coordinates from signal).
+    pub points: Vec<Vec2>,
+    /// Current write position in ring buffer.
+    pub cursor: usize,
+    /// Number of valid points.
+    pub count: usize,
+    /// Transform.
+    pub transform: Transform,
+    /// Visibility.
+    pub visible: bool,
+    /// RGBA color.
+    pub color: [f32; 4],
+}
+
+impl Ribbon {
+    /// Create a new ribbon.
+    pub fn new(max_points: usize, mode: RibbonMode, width: f32, twist: f32) -> Self {
+        Self {
+            max_points,
+            mode,
+            width,
+            twist,
+            points: vec![Vec2::ZERO; max_points],
+            cursor: 0,
+            count: 0,
+            transform: Transform::default(),
+            visible: true,
+            color: [1.0, 1.0, 1.0, 1.0],
+        }
+    }
+
+    /// Push a new point to the ribbon.
+    pub fn push(&mut self, x: f32, y: f32) {
+        self.points[self.cursor] = Vec2::new(x, y);
+        self.cursor = (self.cursor + 1) % self.max_points;
+        if self.count < self.max_points {
+            self.count += 1;
+        }
+    }
+
+    /// Clear all points.
+    pub fn clear(&mut self) {
+        self.cursor = 0;
+        self.count = 0;
+    }
+
+    /// Generate 3D positions for rendering (strip mode).
+    /// Returns points along the center line of the ribbon in 3D space.
+    pub fn generate_center_points(&self) -> Vec<Vec3> {
+        let mut result = Vec::with_capacity(self.count);
+        for i in 0..self.count {
+            let idx = if self.count < self.max_points {
+                i
+            } else {
+                (self.cursor + i) % self.max_points
+            };
+            let p = self.points[idx];
+            // Map x, y to 3D: x along X axis, y along Y axis, z based on position in ribbon
+            let z = (i as f32 / self.max_points as f32) * 2.0 - 1.0;
+            result.push(Vec3::new(p.x, p.y, z));
+        }
+        result
+    }
+}
+
+/// A scene entity - mesh, line, group, point cloud, radial wave, or ribbon.
 #[derive(Debug, Clone)]
 pub enum SceneEntity {
     Mesh(MeshInstance),
     Line(LineStrip),
     Group(Group),
+    PointCloud(PointCloud),
+    RadialWave(RadialWave),
+    Ribbon(Ribbon),
 }
 
 impl SceneEntity {
@@ -273,6 +590,9 @@ impl SceneEntity {
             SceneEntity::Mesh(m) => &m.transform,
             SceneEntity::Line(l) => &l.transform,
             SceneEntity::Group(g) => &g.transform,
+            SceneEntity::PointCloud(p) => &p.transform,
+            SceneEntity::RadialWave(w) => &w.transform,
+            SceneEntity::Ribbon(r) => &r.transform,
         }
     }
 
@@ -282,6 +602,9 @@ impl SceneEntity {
             SceneEntity::Mesh(m) => &mut m.transform,
             SceneEntity::Line(l) => &mut l.transform,
             SceneEntity::Group(g) => &mut g.transform,
+            SceneEntity::PointCloud(p) => &mut p.transform,
+            SceneEntity::RadialWave(w) => &mut w.transform,
+            SceneEntity::Ribbon(r) => &mut r.transform,
         }
     }
 
@@ -291,6 +614,9 @@ impl SceneEntity {
             SceneEntity::Mesh(m) => m.visible,
             SceneEntity::Line(l) => l.visible,
             SceneEntity::Group(g) => g.visible,
+            SceneEntity::PointCloud(p) => p.visible,
+            SceneEntity::RadialWave(w) => w.visible,
+            SceneEntity::Ribbon(r) => r.visible,
         }
     }
 
@@ -300,6 +626,9 @@ impl SceneEntity {
             SceneEntity::Mesh(m) => m.visible = visible,
             SceneEntity::Line(l) => l.visible = visible,
             SceneEntity::Group(g) => g.visible = visible,
+            SceneEntity::PointCloud(p) => p.visible = visible,
+            SceneEntity::RadialWave(w) => w.visible = visible,
+            SceneEntity::Ribbon(r) => r.visible = visible,
         }
     }
 }
@@ -463,6 +792,42 @@ impl SceneGraph {
             .filter_map(|(id, entity)| {
                 if let SceneEntity::Group(group) = entity {
                     Some((id, group))
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Get all point clouds in the scene.
+    pub fn point_clouds(&self) -> impl Iterator<Item = (EntityId, &PointCloud)> {
+        self.scene_entities()
+            .filter_map(|(id, entity)| {
+                if let SceneEntity::PointCloud(cloud) = entity {
+                    Some((id, cloud))
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Get all radial waves in the scene.
+    pub fn radial_waves(&self) -> impl Iterator<Item = (EntityId, &RadialWave)> {
+        self.scene_entities()
+            .filter_map(|(id, entity)| {
+                if let SceneEntity::RadialWave(wave) = entity {
+                    Some((id, wave))
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Get all ribbons in the scene.
+    pub fn ribbons(&self) -> impl Iterator<Item = (EntityId, &Ribbon)> {
+        self.scene_entities()
+            .filter_map(|(id, entity)| {
+                if let SceneEntity::Ribbon(ribbon) = entity {
+                    Some((id, ribbon))
                 } else {
                     None
                 }

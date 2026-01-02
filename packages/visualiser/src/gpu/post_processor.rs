@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 use bytemuck::{Pod, Zeroable};
 
-use crate::feedback::{FeedbackConfig, FeedbackUniforms};
+use crate::feedback::{FeedbackConfig, FeedbackSamplingMode, FeedbackUniforms};
 use crate::gpu::bloom_processor::{BloomProcessor, BloomParams};
 use crate::post_processing::{PostProcessingChain, PostEffectRegistry, EffectParamValue};
 
@@ -413,6 +413,11 @@ impl PostProcessor {
             "color_grade" => include_str!("shader_post_color_grade.wgsl"),
             "vignette" => include_str!("shader_post_vignette.wgsl"),
             "distortion" => include_str!("shader_post_distortion.wgsl"),
+            "zoom_wrap" => include_str!("shader_post_zoom_wrap.wgsl"),
+            "radial_blur" => include_str!("shader_post_radial_blur.wgsl"),
+            "directional_blur" => include_str!("shader_post_directional_blur.wgsl"),
+            "chromatic_aberration" => include_str!("shader_post_chromatic_aberration.wgsl"),
+            "grain" => include_str!("shader_post_grain.wgsl"),
             _ => return Err(format!("Unknown effect: {}", effect_id)),
         };
 
@@ -921,5 +926,308 @@ impl PostProcessor {
     /// Check if feedback was applied this frame.
     pub fn feedback_applied(&self) -> bool {
         self.feedback_applied_this_frame
+    }
+
+    /// Process both feedback and post-processing in the correct order based on sampling mode.
+    ///
+    /// This is the recommended entry point for combined feedback + post-FX processing.
+    /// It handles the ordering:
+    /// - PreFx (default): feedback → post-FX
+    /// - PostFx: post-FX → feedback
+    ///
+    /// # Arguments
+    /// * `device` - wgpu device
+    /// * `encoder` - command encoder
+    /// * `queue` - wgpu queue
+    /// * `output_view` - final render target
+    /// * `feedback_config` - feedback configuration
+    /// * `feedback_uniforms` - pre-evaluated feedback uniforms
+    /// * `post_chain` - post-processing effect chain
+    /// * `evaluated_params` - pre-evaluated effect parameters
+    pub fn process_all(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        queue: &wgpu::Queue,
+        output_view: &wgpu::TextureView,
+        feedback_config: &FeedbackConfig,
+        feedback_uniforms: &FeedbackUniforms,
+        post_chain: &PostProcessingChain,
+        evaluated_params: &HashMap<String, Vec<EffectParamValue>>,
+    ) {
+        match feedback_config.sampling_mode {
+            FeedbackSamplingMode::PreFx => {
+                // Default: feedback samples scene, then post-FX is applied
+                self.process_feedback(device, encoder, queue, feedback_config, feedback_uniforms);
+                self.process(device, encoder, queue, output_view, post_chain, evaluated_params);
+            }
+            FeedbackSamplingMode::PostFx => {
+                // Post-FX first, then feedback samples the processed result
+                self.process_feedback_post_fx(
+                    device,
+                    encoder,
+                    queue,
+                    output_view,
+                    feedback_config,
+                    feedback_uniforms,
+                    post_chain,
+                    evaluated_params,
+                );
+            }
+        }
+    }
+
+    /// Process with PostFx sampling mode: post-FX first, then feedback.
+    ///
+    /// The flow is:
+    /// 1. Apply post-FX chain to scene → intermediate
+    /// 2. Feedback samples from post-FX result
+    /// 3. Output feedback result to final target
+    fn process_feedback_post_fx(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        queue: &wgpu::Queue,
+        output_view: &wgpu::TextureView,
+        feedback_config: &FeedbackConfig,
+        feedback_uniforms: &FeedbackUniforms,
+        post_chain: &PostProcessingChain,
+        evaluated_params: &HashMap<String, Vec<EffectParamValue>>,
+    ) {
+        self.feedback_applied_this_frame = false;
+        let has_effects = post_chain.has_enabled_effects();
+        let has_feedback = feedback_config.enabled;
+
+        // Handle trivial cases
+        if !has_effects && !has_feedback {
+            // Nothing to do - just blit scene to output
+            self.blit(encoder, &self.scene_view, output_view, &self.blit_bind_group);
+            return;
+        }
+
+        if !has_feedback {
+            // No feedback, just run post-FX normally
+            // Note: feedback_applied_this_frame is already false
+            self.process(device, encoder, queue, output_view, post_chain, evaluated_params);
+            return;
+        }
+
+        // We have feedback. First, run post-FX if any.
+        let post_fx_result_view = if has_effects {
+            // Run post-FX chain to intermediate[1] (we'll use 0 for feedback output)
+            self.process_to_intermediate(device, encoder, queue, post_chain, evaluated_params, 1);
+            &self.intermediate_views[1]
+        } else {
+            &self.scene_view
+        };
+
+        // Clear feedback texture on first use
+        if self.feedback_needs_clear {
+            self.clear_feedback(encoder);
+            self.feedback_needs_clear = false;
+        }
+
+        // Update feedback uniforms
+        queue.write_buffer(&self.feedback_uniform_buffer, 0, bytemuck::bytes_of(feedback_uniforms));
+
+        // Create texture bind group for feedback pass
+        // Bindings: 0 = post-FX result (or scene), 1 = feedback (previous), 2 = sampler
+        let feedback_texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Feedback Texture Bind Group (PostFx mode)"),
+            layout: &self.feedback_texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(post_fx_result_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&self.feedback_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+
+        // Render feedback pass directly to output
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Feedback Pass (PostFx mode)"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: output_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            render_pass.set_pipeline(&self.feedback_pipeline);
+            render_pass.set_bind_group(0, &feedback_texture_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.feedback_uniform_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.quad_vertex_buffer.slice(..));
+            render_pass.draw(0..6, 0..1);
+        }
+
+        // Copy output to feedback texture for next frame
+        // We need to copy from output, but we can't read from swapchain.
+        // Instead, we'll render feedback to intermediate[0] AND output simultaneously.
+        // Actually, we need to render to intermediate[0] first, then blit to output.
+        // Let me refactor this...
+
+        // Render feedback to intermediate[0]
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Feedback Pass to Intermediate (PostFx mode)"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.intermediate_views[0],
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            render_pass.set_pipeline(&self.feedback_pipeline);
+            render_pass.set_bind_group(0, &feedback_texture_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.feedback_uniform_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.quad_vertex_buffer.slice(..));
+            render_pass.draw(0..6, 0..1);
+        }
+
+        // Copy to feedback texture for next frame
+        let size = wgpu::Extent3d {
+            width: self.width,
+            height: self.height,
+            depth_or_array_layers: 1,
+        };
+
+        encoder.copy_texture_to_texture(
+            wgpu::ImageCopyTexture {
+                texture: &self.intermediate_textures[0],
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::ImageCopyTexture {
+                texture: &self.feedback_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            size,
+        );
+
+        // Blit intermediate[0] to output
+        let blit_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Blit Bind Group (PostFx feedback)"),
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&self.intermediate_views[0]),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        });
+        self.blit(encoder, &self.intermediate_views[0], output_view, &blit_bind_group);
+
+        self.feedback_applied_this_frame = true;
+    }
+
+    /// Process post-FX chain to an intermediate texture (for PostFx sampling mode).
+    fn process_to_intermediate(
+        &self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        queue: &wgpu::Queue,
+        chain: &PostProcessingChain,
+        evaluated_params: &HashMap<String, Vec<EffectParamValue>>,
+        target_intermediate: usize,
+    ) {
+        let enabled_effects: Vec<_> = chain.enabled_effects().collect();
+        let num_effects = enabled_effects.len();
+
+        if num_effects == 0 {
+            return;
+        }
+
+        let other_intermediate = 1 - target_intermediate;
+
+        // Process effects in chain order
+        let mut current_input_view = &self.scene_view;
+
+        for (i, effect) in enabled_effects.iter().enumerate() {
+            // Compute output index by working backwards from target.
+            // This ensures each effect reads from a different texture than it writes to.
+            // Pattern (from end): last->target, second-to-last->other, third-to-last->target, etc.
+            let k = num_effects - 1 - i; // distance from end
+            let output_idx = if k % 2 == 0 { target_intermediate } else { other_intermediate };
+            let output = &self.intermediate_views[output_idx];
+
+            // Check if this is a bloom effect
+            if effect.effect_id == "bloom" {
+                let bloom_params = if let Some(params) = evaluated_params.get(&effect.effect_id) {
+                    let threshold = params.get(0).map(|p| p.as_float()).unwrap_or(0.8);
+                    let intensity = params.get(1).map(|p| p.as_float()).unwrap_or(0.5);
+                    let radius = params.get(2).map(|p| p.as_float()).unwrap_or(4.0);
+                    let downsample = params.get(3).map(|p| p.as_float() as u32).unwrap_or(2);
+                    BloomParams {
+                        threshold,
+                        intensity,
+                        radius,
+                        downsample,
+                    }
+                } else {
+                    BloomParams::default()
+                };
+
+                self.bloom_processor.process(
+                    device,
+                    encoder,
+                    queue,
+                    current_input_view,
+                    output,
+                    &bloom_params,
+                );
+            } else {
+                if let Some(params) = evaluated_params.get(&effect.effect_id) {
+                    self.update_effect_uniforms(queue, &effect.effect_id, params);
+                }
+
+                let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some(&format!("Effect Texture Bind Group: {}", effect.effect_id)),
+                    layout: &self.texture_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(current_input_view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&self.sampler),
+                        },
+                    ],
+                });
+
+                self.render_effect(encoder, output, &effect.effect_id, &texture_bind_group);
+            }
+
+            // Update input for next pass
+            current_input_view = output;
+        }
     }
 }

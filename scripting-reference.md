@@ -9,7 +9,9 @@ Complete API reference for Rhai scripts in Octoseq. All numeric parameters (`f32
 - [Namespaces](#namespaces)
   - [mesh](#mesh---mesh-creation)
   - [deform](#deform---deformation-builders)
-  - [line](#line---line-strip-creation)
+  - [line](#line---line-and-ribbon-creation)
+  - [radial](#radial---radial-primitives)
+  - [points](#points---point-cloud-creation)
   - [scene](#scene---scene-management)
   - [log](#log---logging)
   - [dbg](#dbg---debug-utilities)
@@ -52,12 +54,26 @@ Complete API reference for Rhai scripts in Octoseq. All numeric parameters (`f32
 | `wave(options)` | `options: Map { axis, direction, amplitude, frequency, phase }` | `Deformation` | Create wave deformation |
 | `noise(options)` | `options: Map { scale, amplitude, seed }` | `Deformation` | Create noise-based deformation |
 
-### `line` - Line Strip Creation
+### `line` - Line and Ribbon Creation
 
 | Function | Arguments | Returns | Description |
 |----------|-----------|---------|-------------|
 | `strip(options)` | `options: Map { max_points?, mode? }` | `Entity` | Create manual line strip (mode: "line" or "points") |
 | `trace(signal, options)` | `signal: Signal`, `options: Map { max_points?, mode?, x_scale?, y_scale?, y_offset? }` | `Entity` | Create signal-driven trace line |
+| `ribbon(signal, options)` | `signal: Signal`, `options: Map { max_points?, mode?, width?, twist?, tube_segments? }` | `Entity` | Create thick extruded ribbon (mode: "strip" or "tube") |
+
+### `radial` - Radial Primitives
+
+| Function | Arguments | Returns | Description |
+|----------|-----------|---------|-------------|
+| `ring(options)` | `options: Map { radius?, thickness?, start_angle?, end_angle?, segments? }` | `Entity` | Create ring/arc mesh in XY plane |
+| `wave(signal, options)` | `signal: Signal`, `options: Map { base_radius?, amplitude?, wave_frequency?, resolution? }` | `Entity` | Create signal-modulated radial waveform |
+
+### `points` - Point Cloud Creation
+
+| Function | Arguments | Returns | Description |
+|----------|-----------|---------|-------------|
+| `cloud(options)` | `options: Map { count?, spread?, mode?, seed?, point_size? }` | `Entity` | Create point cloud (mode: "uniform" or "sphere") |
 
 ### `scene` - Scene Management
 
@@ -412,6 +428,60 @@ Collection of temporal point events.
 |--------|-----------|---------|-------------|
 | `to_signal()` | — | `Signal` | Convert to impulse signal |
 | `to_signal(options)` | `options: Map` | `Signal` | Convert with envelope options |
+| `impulse()` | — | `Signal` | Alias for `to_signal()` |
+
+#### Distance Signals
+
+Create signals based on temporal distance to events. Values are linear (no easing).
+
+| Method | Arguments | Returns | Description |
+|--------|-----------|---------|-------------|
+| `beats_from_prev()` | — | `Signal` | Beats elapsed since previous event (0 at event, grows linearly) |
+| `beats_to_next()` | — | `Signal` | Beats remaining until next event (shrinks to 0 at event) |
+| `seconds_from_prev()` | — | `Signal` | Seconds elapsed since previous event |
+| `seconds_to_next()` | — | `Signal` | Seconds remaining until next event |
+| `frames_from_prev()` | — | `Signal` | Frames elapsed since previous event |
+| `frames_to_next()` | — | `Signal` | Frames remaining until next event |
+
+**Edge cases:**
+- Before first event: `*_from_prev()` returns distance to first event
+- After last event: `*_to_next()` returns distance to track end
+- Empty events: Returns 0.0
+
+#### Count Signals
+
+Count events within a time window. Window parameter can be a constant or Signal.
+
+| Method | Arguments | Returns | Description |
+|--------|-----------|---------|-------------|
+| `count_prev_beats(window)` | `window: f32 \| Signal` | `Signal` | Events in previous N beats |
+| `count_next_beats(window)` | `window: f32 \| Signal` | `Signal` | Events in next N beats |
+| `count_prev_seconds(window)` | `window: f32 \| Signal` | `Signal` | Events in previous N seconds |
+| `count_next_seconds(window)` | `window: f32 \| Signal` | `Signal` | Events in next N seconds |
+| `count_prev_frames(window)` | `window: f32 \| Signal` | `Signal` | Events in previous N frames |
+| `count_next_frames(window)` | `window: f32 \| Signal` | `Signal` | Events in next N frames |
+
+#### Density Signals
+
+Event density within a time window (count / window_size). Returns pure ratio with no smoothing.
+
+| Method | Arguments | Returns | Description |
+|--------|-----------|---------|-------------|
+| `density_prev_beats(window)` | `window: f32 \| Signal` | `Signal` | Events per beat in previous N beats |
+| `density_next_beats(window)` | `window: f32 \| Signal` | `Signal` | Events per beat in next N beats |
+| `density_prev_seconds(window)` | `window: f32 \| Signal` | `Signal` | Events per second in previous N seconds |
+| `density_next_seconds(window)` | `window: f32 \| Signal` | `Signal` | Events per second in next N seconds |
+
+#### Phase Signal
+
+| Method | Arguments | Returns | Description |
+|--------|-----------|---------|-------------|
+| `beat_phase_between()` | — | `Signal` | Position between events (0 at previous, 1 at next) |
+
+**Edge cases:**
+- Before first event: Returns 0.0
+- After last event: Returns 1.0
+- Single/no events: Returns 0.0
 
 #### Event-to-Signal Options
 
@@ -474,6 +544,12 @@ Base type for all scene objects (Mesh, Line, Group).
 | `deformations` | `Array[Deformation]` | List of deformations |
 | `material` | `string` | Material ID |
 | `params` | `Map` | Custom material parameters |
+
+#### Mesh Methods
+
+| Method | Arguments | Returns | Description |
+|--------|-----------|---------|-------------|
+| `instance()` | — | `Entity` | Create copy sharing geometry with independent properties |
 
 #### Line Methods
 
@@ -630,4 +706,30 @@ camera.fov = gen.sin(0.25, 0.0)
 
 // Orbit around origin
 camera.orbit(#{ x: 0.0, y: 0.0, z: 0.0 }, 5.0, time.seconds * 0.5);
+```
+
+### Event Distance & Density Example
+
+```rhai
+let kicks = inputs.bands.kick.events.filter_weight(0.3);
+
+// Anticipation that builds before each kick
+let anticipation = kicks.beats_to_next()
+    .clamp(0.0, 1.0)
+    .sub(1.0)
+    .neg();  // 0 far from kick, 1 at kick
+
+// Intensity based on recent kick activity
+let activity = kicks.count_prev_beats(8.0);
+cube.scale = activity.scale(0.1).add(1.0);
+
+// Smooth breathing motion between beats
+let beats = inputs.mix.beat.events(0.5);
+let phase = beats.beat_phase_between();
+let breath = phase.scale(6.28318).sin().scale(0.5).add(1.0);
+cube.position.y = breath;
+
+// Kick density for color intensity
+let kick_rate = kicks.density_prev_beats(4.0);
+cube.color.r = kick_rate.clamp(0.0, 2.0).scale(0.5);
 ```

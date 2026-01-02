@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import {
   useAudioStore,
   useSearchStore,
+  useSearchActions,
   useRefinementLabelsAvailable,
   useActiveCandidate,
   useFilteredCandidates,
@@ -57,6 +58,9 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
     addMissingMode,
     loopCandidate,
     autoPlayOnNavigate,
+    searchResult,
+    searchDirty,
+    isSearchRunning,
   } = useSearchStore(
     useShallow((s) => ({
       searchControls: s.searchControls,
@@ -66,8 +70,14 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
       addMissingMode: s.addMissingMode,
       loopCandidate: s.loopCandidate,
       autoPlayOnNavigate: s.autoPlayOnNavigate,
+      searchResult: s.searchResult,
+      searchDirty: s.searchDirty,
+      isSearchRunning: s.isSearchRunning,
     }))
   );
+
+  // Search action
+  const { runSearch } = useSearchActions();
 
   // Search store actions
   const {
@@ -176,8 +186,37 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
 
   return (
     <div className="rounded-md border border-zinc-200 bg-zinc-50 p-1.5 text-xs dark:border-zinc-800 dark:bg-zinc-950">
-      {/* Row 1: Threshold + Precision + Checkboxes */}
+      {/* Row 1: Search button + Threshold + Precision + Checkboxes */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        {/* Search button */}
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={() => {
+              if (refinement.queryRegion)
+                void runSearch(refinement.queryRegion, searchControls).catch((e) => {
+                  if ((e as Error)?.message === "cancelled") return;
+                  console.error("[SEARCH] failed", e);
+                });
+            }}
+            disabled={!audio || !refinement.queryRegion || isSearchRunning}
+            className="h-6"
+          >
+            Search
+          </Button>
+          {searchDirty && searchResult ? (
+            <span className="text-amber-600 dark:text-amber-400">
+              Params changed
+            </span>
+          ) : null}
+          {isSearchRunning ? (
+            <span className="inline-flex items-center gap-1 text-zinc-600 dark:text-zinc-300">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+              Running…
+            </span>
+          ) : null}
+        </div>
+
         <label className="flex items-center gap-1.5">
           <span className="text-zinc-600 dark:text-zinc-300 w-16">{thresholdLabel}</span>
           <input

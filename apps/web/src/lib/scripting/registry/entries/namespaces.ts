@@ -87,6 +87,129 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         example: "let trace = line.trace(inputs.amplitude, #{ max_points: 256 });",
         notes: "Plots (time * x_scale, (value + y_offset) * y_scale) each frame.",
       },
+      {
+        name: "ribbon",
+        path: "line.ribbon",
+        description:
+          "Create a ribbon (thick extruded line) from Signal history. Supports strip (flat) and tube (cylindrical) modes.",
+        params: [
+          {
+            name: "signal",
+            type: "Signal",
+            description: "The Signal to trace. Evaluated each frame.",
+          },
+          {
+            name: "options",
+            type: "RibbonOptions",
+            description: "Options map (max_points, mode, width, twist, tube_segments).",
+          },
+        ],
+        returns: "RibbonEntity",
+        chainsTo: "RibbonEntity",
+        example: 'let ribbon = line.ribbon(inputs.amplitude, #{ width: 0.1, mode: "strip" });',
+        notes:
+          "Ribbon records signal values over time and extrudes them into a 3D path. Strip mode creates a flat ribbon; tube mode creates a cylindrical tube.",
+      },
+    ],
+  },
+
+  // ============================================================================
+  // radial - Radial primitive factory namespace
+  // ============================================================================
+  {
+    kind: "namespace",
+    name: "radial",
+    path: "radial",
+    description:
+      "Radial primitive factory. Create ring and arc meshes in the XY plane.",
+    properties: [],
+    methods: [
+      {
+        name: "ring",
+        path: "radial.ring",
+        description:
+          "Create a radial ring/arc mesh in the XY plane (facing +Z). Supports partial arcs and Signal-driven parameters.",
+        params: [
+          {
+            name: "options",
+            type: "RadialRingOptions",
+            description: "Ring configuration options.",
+          },
+        ],
+        returns: "MeshEntity",
+        chainsTo: "MeshEntity",
+        example: `let ring = radial.ring(#{
+  radius: 2.0,
+  thickness: 0.2,
+  start_angle: 0.0,
+  end_angle: 3.14159
+});`,
+        notes: "All numeric options (radius, thickness, angles) accept Signal | f32.",
+      },
+      {
+        name: "wave",
+        path: "radial.wave",
+        description:
+          "Create a signal-modulated radial wave. Renders as a closed circular line with radius varying based on the signal value.",
+        params: [
+          {
+            name: "signal",
+            type: "Signal",
+            description: "The Signal to modulate the wave amplitude. Evaluated each frame.",
+          },
+          {
+            name: "options",
+            type: "RadialWaveOptions",
+            description: "Wave configuration options.",
+          },
+        ],
+        returns: "RadialWaveEntity",
+        chainsTo: "RadialWaveEntity",
+        example: `let wave = radial.wave(inputs.amplitude, #{
+  base_radius: 1.0,
+  amplitude: 0.5,
+  wave_frequency: 4,
+  resolution: 128
+});`,
+        notes: "radius(angle) = base_radius + amplitude * signal_value * sin(angle * wave_frequency)",
+      },
+    ],
+  },
+
+  // ============================================================================
+  // points - Point cloud factory namespace
+  // ============================================================================
+  {
+    kind: "namespace",
+    name: "points",
+    path: "points",
+    description:
+      "Point cloud factory. Create GL point primitives with deterministic distribution.",
+    properties: [],
+    methods: [
+      {
+        name: "cloud",
+        path: "points.cloud",
+        description:
+          "Create a point cloud with deterministic pseudo-random distribution. Points are rendered as GL points.",
+        params: [
+          {
+            name: "options",
+            type: "PointCloudOptions",
+            description: "Point cloud configuration options.",
+          },
+        ],
+        returns: "PointCloudEntity",
+        chainsTo: "PointCloudEntity",
+        example: `let cloud = points.cloud(#{
+  count: 1000,
+  spread: 2.0,
+  mode: "sphere",
+  seed: 42,
+  point_size: 3.0
+});`,
+        notes: "Use 'seed' for deterministic positions. Modes: 'uniform' (cube), 'sphere'.",
+      },
     ],
   },
 
@@ -761,6 +884,86 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         example: "let dist = fx.distortion(#{ amount: 0.1 });",
         notes: "Parameters: amount (-1 to 1), center {x, y}.",
       },
+      {
+        name: "zoomWrap",
+        path: "fx.zoomWrap",
+        description: "Create a zoom effect with edge wrapping.",
+        params: [
+          {
+            name: "options",
+            type: "ZoomWrapOptions",
+            description: "Zoom with wrap parameters.",
+          },
+        ],
+        returns: "PostEffect",
+        chainsTo: "PostEffect",
+        example: 'let zoom = fx.zoomWrap(#{ amount: 0.99, wrap_mode: "mirror" });',
+        notes: "Parameters: amount (0.5-2.0, <1 = zoom in), center {x, y}, wrap_mode.",
+      },
+      {
+        name: "radialBlur",
+        path: "fx.radialBlur",
+        description: "Create a radial motion blur effect.",
+        params: [
+          {
+            name: "options",
+            type: "RadialBlurOptions",
+            description: "Radial blur parameters.",
+          },
+        ],
+        returns: "PostEffect",
+        chainsTo: "PostEffect",
+        example: "let blur = fx.radialBlur(#{ strength: 0.3, samples: 16 });",
+        notes: "Parameters: strength (0-1), center {x, y}, samples (2-32).",
+      },
+      {
+        name: "directionalBlur",
+        path: "fx.directionalBlur",
+        description: "Create a directional motion blur effect.",
+        params: [
+          {
+            name: "options",
+            type: "DirectionalBlurOptions",
+            description: "Directional blur parameters.",
+          },
+        ],
+        returns: "PostEffect",
+        chainsTo: "PostEffect",
+        example: "let blur = fx.directionalBlur(#{ amount: 5.0, angle: 0.0 });",
+        notes: "Parameters: amount (0-20 px), angle (radians), samples (2-32).",
+      },
+      {
+        name: "chromaticAberration",
+        path: "fx.chromaticAberration",
+        description: "Create a chromatic aberration (RGB split) effect.",
+        params: [
+          {
+            name: "options",
+            type: "ChromaticAberrationOptions",
+            description: "Chromatic aberration parameters.",
+          },
+        ],
+        returns: "PostEffect",
+        chainsTo: "PostEffect",
+        example: "let aberr = fx.chromaticAberration(#{ amount: 2.0 });",
+        notes: "Parameters: amount (0-10), angle (radians).",
+      },
+      {
+        name: "grain",
+        path: "fx.grain",
+        description: "Create a deterministic film grain noise effect.",
+        params: [
+          {
+            name: "options",
+            type: "GrainOptions",
+            description: "Grain parameters.",
+          },
+        ],
+        returns: "PostEffect",
+        chainsTo: "PostEffect",
+        example: "let grain = fx.grain(#{ amount: 0.03, seed: 42 });",
+        notes: "Parameters: amount (0-0.5), scale (0.1-10), seed (int).",
+      },
     ],
   },
 
@@ -1036,5 +1239,75 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         example: "camera.pan(1.0, 0.5);",
       },
     ],
+  },
+
+  // ============================================================================
+  // lighting - Global lighting control namespace
+  // ============================================================================
+  {
+    kind: "namespace",
+    name: "lighting",
+    path: "lighting",
+    description:
+      "Global lighting control singleton. Configures directional light, ambient, and rim lighting. All numeric properties accept Signal | f32 for audio-reactive lighting.",
+    properties: [
+      {
+        name: "enabled",
+        path: "lighting.enabled",
+        type: "bool",
+        description:
+          "Enable/disable global lighting. When false, all objects render unlit (flat colors). Default: false.",
+        readonly: false,
+      },
+      {
+        name: "direction",
+        path: "lighting.direction",
+        type: "Map { x, y, z }",
+        description:
+          "Light direction vector. Points FROM the light. Each component accepts Signal | f32. Default: (0, -1, 0) (light from above).",
+        readonly: false,
+      },
+      {
+        name: "intensity",
+        path: "lighting.intensity",
+        type: "Signal | f32",
+        description:
+          "Light intensity multiplier. Default: 1.0.",
+        readonly: false,
+      },
+      {
+        name: "color",
+        path: "lighting.color",
+        type: "Map { r, g, b }",
+        description:
+          "Light color (RGB, 0-1 range). Each component accepts Signal | f32. Default: (1, 1, 1) white.",
+        readonly: false,
+      },
+      {
+        name: "ambient",
+        path: "lighting.ambient",
+        type: "Signal | f32",
+        description:
+          "Ambient light intensity. Fills in shadowed areas. Default: 0.3.",
+        readonly: false,
+      },
+      {
+        name: "rim_intensity",
+        path: "lighting.rim_intensity",
+        type: "Signal | f32",
+        description:
+          "Rim lighting intensity. Highlights edges facing away from camera. Default: 0.0.",
+        readonly: false,
+      },
+      {
+        name: "rim_power",
+        path: "lighting.rim_power",
+        type: "Signal | f32",
+        description:
+          "Rim lighting falloff power. Higher = sharper rim. Default: 2.0.",
+        readonly: false,
+      },
+    ],
+    methods: [],
   },
 ];

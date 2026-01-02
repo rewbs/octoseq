@@ -779,4 +779,190 @@ export const CONFIG_MAP_ENTRIES: RegistryEntry[] = [
       },
     ],
   },
+
+  // ============================================================================
+  // radial.ring - Radial ring options
+  // ============================================================================
+  {
+    kind: "config-map",
+    name: "radial.ring",
+    path: "radial.ring",
+    description: "Options for creating a radial ring/arc mesh.",
+    properties: [],
+    methods: [],
+    configMapKeys: [
+      {
+        name: "radius",
+        type: "float | Signal",
+        description: "Distance from center to middle of ring.",
+        default: 1.0,
+        range: { min: 0.0, max: 100.0 },
+      },
+      {
+        name: "thickness",
+        type: "float | Signal",
+        description: "Width of the ring (inner to outer edge).",
+        default: 0.1,
+        range: { min: 0.0, max: 10.0 },
+      },
+      {
+        name: "start_angle",
+        type: "float | Signal",
+        description: "Starting angle in radians (0 = +X axis).",
+        default: 0.0,
+      },
+      {
+        name: "end_angle",
+        type: "float | Signal",
+        description: "Ending angle in radians (2π = full circle).",
+        default: 6.283185,
+      },
+      {
+        name: "segments",
+        type: "int",
+        description: "Number of segments around the arc. Higher = smoother.",
+        default: 64,
+        range: { min: 3, max: 256 },
+      },
+    ],
+  },
+
+  // ============================================================================
+  // radial.wave - Radial wave options
+  // ============================================================================
+  {
+    kind: "config-map",
+    name: "radial.wave",
+    path: "radial.wave",
+    description: "Options for creating a radial wave.",
+    properties: [],
+    methods: [],
+    configMapKeys: [
+      {
+        name: "base_radius",
+        type: "float | Signal",
+        description: "Base radius of the wave.",
+        default: 1.0,
+        range: { min: 0.0, max: 100.0 },
+      },
+      {
+        name: "amplitude",
+        type: "float | Signal",
+        description: "Amplitude of wave modulation.",
+        default: 0.5,
+        range: { min: 0.0, max: 10.0 },
+      },
+      {
+        name: "wave_frequency",
+        type: "float | Signal",
+        description: "Number of wave cycles per revolution.",
+        default: 4,
+        range: { min: 1, max: 32 },
+      },
+      {
+        name: "resolution",
+        type: "int",
+        description: "Number of line segments around the circle. Higher = smoother.",
+        default: 128,
+        range: { min: 16, max: 512 },
+      },
+    ],
+  },
+
+  // ============================================================================
+  // points.cloud - Point cloud options
+  // ============================================================================
+  {
+    kind: "config-map",
+    name: "points.cloud",
+    path: "points.cloud",
+    description: "Options for creating a point cloud.",
+    properties: [],
+    methods: [],
+    configMapKeys: [
+      {
+        name: "count",
+        type: "int",
+        description: "Number of points in the cloud.",
+        default: 100,
+        range: { min: 1, max: 10000 },
+      },
+      {
+        name: "spread",
+        type: "float | Signal",
+        description: "Size of the distribution volume (cube half-extent or sphere radius).",
+        default: 1.0,
+        range: { min: 0.0, max: 100.0 },
+      },
+      {
+        name: "mode",
+        type: '"uniform" | "sphere"',
+        description: "Distribution mode: 'uniform' (cube) or 'sphere'.",
+        default: "uniform",
+        enumValues: ["uniform", "sphere"],
+      },
+      {
+        name: "seed",
+        type: "int",
+        description: "Random seed for deterministic point positions.",
+        default: 0,
+      },
+      {
+        name: "point_size",
+        type: "float | Signal",
+        description: "Size of each point in pixels.",
+        default: 2.0,
+        range: { min: 0.5, max: 32.0 },
+      },
+    ],
+  },
+
+  // ============================================================================
+  // line.ribbon - Ribbon options
+  // ============================================================================
+  {
+    kind: "config-map",
+    name: "line.ribbon",
+    path: "line.ribbon",
+    description: "Options for creating a ribbon (thick extruded line).",
+    properties: [],
+    methods: [],
+    configMapKeys: [
+      {
+        name: "max_points",
+        type: "int",
+        description: "Maximum number of points in the ribbon history.",
+        default: 256,
+        range: { min: 2, max: 4096 },
+      },
+      {
+        name: "mode",
+        type: '"strip" | "tube"',
+        description: "Ribbon mode: 'strip' (flat ribbon) or 'tube' (cylindrical).",
+        default: "strip",
+        enumValues: ["strip", "tube"],
+      },
+      {
+        name: "width",
+        type: "float | Signal",
+        description: "Width of the ribbon (or diameter for tube mode).",
+        default: 0.1,
+        range: { min: 0.001, max: 10.0 },
+      },
+      {
+        name: "twist",
+        type: "float | Signal",
+        description: "Twist rate along the ribbon length (radians per unit distance).",
+        default: 0.0,
+        range: { min: -10.0, max: 10.0 },
+      },
+      {
+        name: "tube_segments",
+        type: "int",
+        description: "Number of segments around the tube circumference (tube mode only).",
+        default: 8,
+        range: { min: 3, max: 32 },
+      },
+    ],
+  },
 ];

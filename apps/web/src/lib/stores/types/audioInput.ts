@@ -39,6 +39,16 @@ export interface AudioInput {
   origin: AudioInputOrigin;
   /** ISO timestamp when this input was added. */
   createdAt: string;
+  /**
+   * Reference to asset in the local asset registry.
+   * Populated on-demand when audio is persisted to IndexedDB.
+   */
+  assetId?: string;
+  /**
+   * Original ArrayBuffer from file (for asset registration).
+   * Kept temporarily during loading, then cleared after registration.
+   */
+  rawBuffer?: ArrayBuffer;
 }
 
 /**

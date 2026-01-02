@@ -2,6 +2,11 @@
 //!
 //! This module provides support for loading external 3D meshes from OBJ format
 //! and preparing them for rendering, including wireframe edge extraction.
+//!
+//! ## Normal Handling
+//!
+//! OBJ meshes use provided normals when available. Normals are generated only
+//! when missing, using area-weighted averaging of adjacent face normals.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -77,7 +82,7 @@ impl BoundingBox {
 pub struct MeshAsset {
     /// Unique identifier for this asset.
     pub id: String,
-    /// Vertex data (position + color).
+    /// Vertex data (position + normal + color).
     pub vertices: Vec<Vertex>,
     /// Triangle indices for solid rendering.
     pub indices: Vec<u16>,
@@ -105,7 +110,8 @@ impl MeshAsset {
     /// Parse a mesh asset from OBJ format content.
     ///
     /// The OBJ content should be a valid Wavefront OBJ string.
-    /// Only vertex positions and faces are used; normals, UVs, and materials are ignored.
+    /// Vertex positions and faces are required. Normals are used when present;
+    /// otherwise they are computed using area-weighted averaging.
     pub fn from_obj(id: String, obj_content: &str) -> Result<Self, String> {
         let mut cursor = std::io::Cursor::new(obj_content.as_bytes());
 
@@ -127,9 +133,11 @@ impl MeshAsset {
         }
 
         // Combine all models into a single mesh
-        let mut all_vertices = Vec::new();
+        let mut all_positions: Vec<[f32; 3]> = Vec::new();
+        let mut all_normals: Vec<[f32; 3]> = Vec::new();
         let mut all_indices = Vec::new();
         let mut vertex_offset = 0u16;
+        let mut has_normals = true;
 
         for model in &models {
             let mesh = &model.mesh;
@@ -139,24 +147,31 @@ impl MeshAsset {
                 continue;
             }
 
-            // Create vertices with default white color
             let vertex_count = mesh.positions.len() / 3;
+
+            // Check if this model has normals
+            let model_has_normals = mesh.normals.len() == mesh.positions.len();
+            if !model_has_normals {
+                has_normals = false;
+            }
+
+            // Extract positions and normals
             for i in 0..vertex_count {
                 let position = [
                     mesh.positions[i * 3],
                     mesh.positions[i * 3 + 1],
                     mesh.positions[i * 3 + 2],
                 ];
+                all_positions.push(position);
 
-                // Use vertex position-based coloring for visual interest
-                // Normalize position to get a color gradient
-                let color = [
-                    (position[0].abs() * 0.5 + 0.5).clamp(0.3, 1.0),
-                    (position[1].abs() * 0.5 + 0.5).clamp(0.3, 1.0),
-                    (position[2].abs() * 0.5 + 0.5).clamp(0.3, 1.0),
-                ];
-
-                all_vertices.push(Vertex { position, color });
+                if model_has_normals {
+                    let normal = [
+                        mesh.normals[i * 3],
+                        mesh.normals[i * 3 + 1],
+                        mesh.normals[i * 3 + 2],
+                    ];
+                    all_normals.push(normal);
+                }
             }
 
             // Extract indices with offset
@@ -168,11 +183,33 @@ impl MeshAsset {
             vertex_offset += vertex_count as u16;
         }
 
-        if all_vertices.is_empty() {
+        if all_positions.is_empty() {
             return Err("OBJ file contains no vertices".to_string());
         }
 
-        Ok(Self::new(id, all_vertices, all_indices))
+        // Compute normals if not provided by any model
+        let normals = if has_normals && all_normals.len() == all_positions.len() {
+            all_normals
+        } else {
+            compute_vertex_normals(&all_positions, &all_indices)
+        };
+
+        // Build final vertices with position, normal, and color
+        let vertices: Vec<Vertex> = all_positions
+            .iter()
+            .zip(normals.iter())
+            .map(|(position, normal)| {
+                // Use vertex position-based coloring for visual interest
+                let color = [
+                    (position[0].abs() * 0.5 + 0.5).clamp(0.3, 1.0),
+                    (position[1].abs() * 0.5 + 0.5).clamp(0.3, 1.0),
+                    (position[2].abs() * 0.5 + 0.5).clamp(0.3, 1.0),
+                ];
+                Vertex::new(*position, *normal, color)
+            })
+            .collect();
+
+        Ok(Self::new(id, vertices, all_indices))
     }
 
     /// Get the number of triangles in the mesh.
@@ -207,6 +244,68 @@ fn extract_edges(indices: &[u16]) -> Vec<u16> {
 
     // Flatten to index array
     edges.into_iter().flat_map(|(a, b)| [a, b]).collect()
+}
+
+/// Compute area-weighted vertex normals from face normals.
+///
+/// For each vertex, accumulates the (unnormalized) face normal of each adjacent triangle.
+/// The resulting normal is normalized. This gives area-weighted averaging since
+/// larger triangles contribute proportionally more to the normal.
+fn compute_vertex_normals(positions: &[[f32; 3]], indices: &[u16]) -> Vec<[f32; 3]> {
+    let mut normals = vec![[0.0f32; 3]; positions.len()];
+
+    // Process each triangle and accumulate face normals to vertices
+    for tri in indices.chunks(3) {
+        if tri.len() != 3 {
+            continue;
+        }
+
+        let i0 = tri[0] as usize;
+        let i1 = tri[1] as usize;
+        let i2 = tri[2] as usize;
+
+        // Skip degenerate triangles
+        if i0 >= positions.len() || i1 >= positions.len() || i2 >= positions.len() {
+            continue;
+        }
+
+        let p0 = positions[i0];
+        let p1 = positions[i1];
+        let p2 = positions[i2];
+
+        // Compute edge vectors
+        let e1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+        let e2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+
+        // Cross product (unnormalized face normal, magnitude = 2 * triangle area)
+        let face_normal = [
+            e1[1] * e2[2] - e1[2] * e2[1],
+            e1[2] * e2[0] - e1[0] * e2[2],
+            e1[0] * e2[1] - e1[1] * e2[0],
+        ];
+
+        // Accumulate to each vertex (area-weighted)
+        for &idx in &[i0, i1, i2] {
+            normals[idx][0] += face_normal[0];
+            normals[idx][1] += face_normal[1];
+            normals[idx][2] += face_normal[2];
+        }
+    }
+
+    // Normalize all vertex normals
+    for normal in &mut normals {
+        let len = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
+        if len > 1e-6 {
+            normal[0] /= len;
+            normal[1] /= len;
+            normal[2] /= len;
+        } else {
+            // Degenerate normal, use Y-up as fallback
+            *normal = [0.0, 1.0, 0.0];
+        }
+    }
+
+    normals
 }
 
 /// Registry for loaded mesh assets.
@@ -270,9 +369,9 @@ mod tests {
     #[test]
     fn test_bounding_box_from_vertices() {
         let vertices = vec![
-            Vertex { position: [-1.0, 0.0, 0.0], color: [1.0; 3] },
-            Vertex { position: [1.0, 0.0, 0.0], color: [1.0; 3] },
-            Vertex { position: [0.0, 2.0, 0.0], color: [1.0; 3] },
+            Vertex::new([-1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0; 3]),
+            Vertex::new([1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0; 3]),
+            Vertex::new([0.0, 2.0, 0.0], [0.0, 1.0, 0.0], [1.0; 3]),
         ];
 
         let bounds = BoundingBox::from_vertices(&vertices);

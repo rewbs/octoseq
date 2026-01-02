@@ -29,6 +29,7 @@ import type { AudioBufferLike } from "@octoseq/mir";
 import type { RefinementCandidate } from "@/lib/searchRefinement";
 import type { WaveSurferViewport } from "./types";
 import { AnalysisOverlay } from "./AnalysisOverlay";
+import { SignedOut, SignInButton, SignUpButton, SignedIn, UserButton } from "@clerk/nextjs";
 
 // Minimal typing to avoid depending on WaveSurfer's internal plugin registry.
 type RegionLike = {
@@ -1185,7 +1186,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         }}
       />
 
-      <div className="flex flex-wrap items-center gap-2 p-2 rounded-md ">
+      <div className="flex items-center gap-2 p-2 rounded-md w-full ">
         {/* Additional toolbar content from parent (left) */}
         {toolbarLeft}
         <div className="flex gap-2 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
@@ -1271,11 +1272,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
               <span className="text-zinc-400">→</span>
               <span className="tabular-nums">{`${activeRegion.endSec.toFixed(3)}s`}</span>
               <span className="tabular-nums">({`${activeRegion.durationSec.toFixed(3)}s`})</span>
-              <span className="text-zinc-400"> / </span>
-              <span className="tabular-nums">{activeRegion.startSample}</span>
-              <span className="text-zinc-400">→</span>
-              <span className="tabular-nums">{activeRegion.startSample + activeRegion.durationSamples}</span>
-              <span className="tabular-nums">({activeRegion.durationSamples})</span>
               {searchModeActive && onClearRegion && (
                 <button
                   onClick={() => {
@@ -1327,6 +1323,16 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
 
         {/* Additional toolbar content from parent */}
         {toolbarRight}
+        <div className="flex items-center justify-center  ml-auto gap-2">
+          <SignedOut>
+            <SignInButton>
+              <Button size="sm" className="bg-blue-400 dark:bg-blue-700">Sign In</Button>
+            </SignInButton>
+          </SignedOut>
+          <SignedIn>
+            <UserButton />
+          </SignedIn>
+        </div>
       </div>
 
       <div

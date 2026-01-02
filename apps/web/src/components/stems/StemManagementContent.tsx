@@ -281,7 +281,7 @@ export function StemManagementContent() {
           onClick={() => fileInputRef.current?.click()}
         >
           <Upload className="h-4 w-4 mr-1" />
-          Import Stem
+          Import Stems
         </Button>
         <input
           ref={fileInputRef}

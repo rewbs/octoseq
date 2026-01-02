@@ -15,15 +15,35 @@ use crate::gpu::mesh::Vertex;
 const MAX_MATERIAL_UNIFORM_SIZE: u64 = 256;
 
 /// Global uniforms shared by all materials.
+///
+/// Total size: 256 bytes (16-byte aligned blocks).
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct GlobalUniforms {
-    pub view_proj: [[f32; 4]; 4],
-    pub model: [[f32; 4]; 4],
-    pub time: f32,
-    pub dt: f32,
-    pub _padding: [f32; 2],
+    // Core transforms
+    pub view_proj: [[f32; 4]; 4],    // 64 bytes
+    pub model: [[f32; 4]; 4],        // 64 bytes
+
+    // Time
+    pub time: f32,                    // 4 bytes
+    pub dt: f32,                      // 4 bytes
+    pub _time_padding: [f32; 2],      // 8 bytes (16-byte alignment)
+
+    // Lighting
+    pub light_direction: [f32; 4],    // 16 bytes (xyz, w unused)
+    pub light_color: [f32; 4],        // 16 bytes (rgb, a = 1.0)
+    pub light_intensity: f32,         // 4 bytes
+    pub ambient_intensity: f32,       // 4 bytes
+    pub rim_intensity: f32,           // 4 bytes
+    pub rim_power: f32,               // 4 bytes
+    pub lighting_enabled: u32,        // 4 bytes (0 = disabled, 1 = enabled)
+    pub entity_emissive: f32,         // 4 bytes (per-entity emissive intensity)
+    pub _light_padding: [u32; 2],     // 8 bytes (16-byte alignment)
+
+    // Camera position (for rim lighting and view-dependent effects)
+    pub camera_position: [f32; 4],    // 16 bytes (xyz, w unused)
 }
+// Total: 64 + 64 + 16 + 16 + 16 + 16 + 16 + 16 = 224 bytes
 
 impl Default for GlobalUniforms {
     fn default() -> Self {
@@ -32,7 +52,18 @@ impl Default for GlobalUniforms {
             model: glam::Mat4::IDENTITY.to_cols_array_2d(),
             time: 0.0,
             dt: 0.0,
-            _padding: [0.0; 2],
+            _time_padding: [0.0; 2],
+            // Lighting defaults (disabled)
+            light_direction: [0.0, -1.0, 0.0, 0.0],
+            light_color: [1.0, 1.0, 1.0, 1.0],
+            light_intensity: 1.0,
+            ambient_intensity: 0.3,
+            rim_intensity: 0.0,
+            rim_power: 2.0,
+            lighting_enabled: 0,
+            entity_emissive: 0.0,
+            _light_padding: [0; 2],
+            camera_position: [0.0, 0.0, 0.0, 0.0],
         }
     }
 }

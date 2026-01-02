@@ -434,8 +434,9 @@ mod tests {
         let inputs = HashMap::new();
         let bands = HashMap::new();
         let stems = HashMap::new();
+        let custom_signals = HashMap::new();
         let mut ctx =
-            EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &stats, &mut state);
+            EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom_signals, &stats, &mut state, None);
 
         let config = CameraConfig {
             position: Vec3Signal::new(5.0, 3.0, 5.0),
@@ -466,8 +467,9 @@ mod tests {
         let inputs = HashMap::new();
         let bands = HashMap::new();
         let stems = HashMap::new();
+        let custom_signals = HashMap::new();
         let mut ctx =
-            EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &stats, &mut state);
+            EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom_signals, &stats, &mut state, None);
 
         let config = CameraConfig {
             position: Vec3Signal::new(5.0, 3.0, 5.0),

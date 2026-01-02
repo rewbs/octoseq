@@ -163,6 +163,146 @@ pub fn register_event_api(engine: &mut Engine) {
         es.to_signal_with_options(opts)
     });
 
+    // impulse() - explicit alias for to_signal()
+    engine.register_fn("impulse", |es: &mut EventStream| -> Signal { es.impulse() });
+
+    // === Temporal Distance Methods ===
+    engine.register_fn("beats_from_prev", |es: &mut EventStream| -> Signal {
+        es.beats_from_prev()
+    });
+    engine.register_fn("beats_to_next", |es: &mut EventStream| -> Signal {
+        es.beats_to_next()
+    });
+    engine.register_fn("seconds_from_prev", |es: &mut EventStream| -> Signal {
+        es.seconds_from_prev()
+    });
+    engine.register_fn("seconds_to_next", |es: &mut EventStream| -> Signal {
+        es.seconds_to_next()
+    });
+    engine.register_fn("frames_from_prev", |es: &mut EventStream| -> Signal {
+        es.frames_from_prev()
+    });
+    engine.register_fn("frames_to_next", |es: &mut EventStream| -> Signal {
+        es.frames_to_next()
+    });
+
+    // === Event Count Methods ===
+    // count_prev_beats
+    engine.register_fn("count_prev_beats", |es: &mut EventStream, window: f64| -> Signal {
+        es.count_prev_beats(window as f32)
+    });
+    engine.register_fn("count_prev_beats", |es: &mut EventStream, window: i64| -> Signal {
+        es.count_prev_beats(window as f32)
+    });
+    engine.register_fn("count_prev_beats", |es: &mut EventStream, window: Signal| -> Signal {
+        es.count_prev_beats(window)
+    });
+
+    // count_next_beats
+    engine.register_fn("count_next_beats", |es: &mut EventStream, window: f64| -> Signal {
+        es.count_next_beats(window as f32)
+    });
+    engine.register_fn("count_next_beats", |es: &mut EventStream, window: i64| -> Signal {
+        es.count_next_beats(window as f32)
+    });
+    engine.register_fn("count_next_beats", |es: &mut EventStream, window: Signal| -> Signal {
+        es.count_next_beats(window)
+    });
+
+    // count_prev_seconds
+    engine.register_fn("count_prev_seconds", |es: &mut EventStream, window: f64| -> Signal {
+        es.count_prev_seconds(window as f32)
+    });
+    engine.register_fn("count_prev_seconds", |es: &mut EventStream, window: i64| -> Signal {
+        es.count_prev_seconds(window as f32)
+    });
+    engine.register_fn("count_prev_seconds", |es: &mut EventStream, window: Signal| -> Signal {
+        es.count_prev_seconds(window)
+    });
+
+    // count_next_seconds
+    engine.register_fn("count_next_seconds", |es: &mut EventStream, window: f64| -> Signal {
+        es.count_next_seconds(window as f32)
+    });
+    engine.register_fn("count_next_seconds", |es: &mut EventStream, window: i64| -> Signal {
+        es.count_next_seconds(window as f32)
+    });
+    engine.register_fn("count_next_seconds", |es: &mut EventStream, window: Signal| -> Signal {
+        es.count_next_seconds(window)
+    });
+
+    // count_prev_frames
+    engine.register_fn("count_prev_frames", |es: &mut EventStream, window: f64| -> Signal {
+        es.count_prev_frames(window as f32)
+    });
+    engine.register_fn("count_prev_frames", |es: &mut EventStream, window: i64| -> Signal {
+        es.count_prev_frames(window as f32)
+    });
+    engine.register_fn("count_prev_frames", |es: &mut EventStream, window: Signal| -> Signal {
+        es.count_prev_frames(window)
+    });
+
+    // count_next_frames
+    engine.register_fn("count_next_frames", |es: &mut EventStream, window: f64| -> Signal {
+        es.count_next_frames(window as f32)
+    });
+    engine.register_fn("count_next_frames", |es: &mut EventStream, window: i64| -> Signal {
+        es.count_next_frames(window as f32)
+    });
+    engine.register_fn("count_next_frames", |es: &mut EventStream, window: Signal| -> Signal {
+        es.count_next_frames(window)
+    });
+
+    // === Event Density Methods ===
+    // density_prev_beats
+    engine.register_fn("density_prev_beats", |es: &mut EventStream, window: f64| -> Signal {
+        es.density_prev_beats(window as f32)
+    });
+    engine.register_fn("density_prev_beats", |es: &mut EventStream, window: i64| -> Signal {
+        es.density_prev_beats(window as f32)
+    });
+    engine.register_fn("density_prev_beats", |es: &mut EventStream, window: Signal| -> Signal {
+        es.density_prev_beats(window)
+    });
+
+    // density_next_beats
+    engine.register_fn("density_next_beats", |es: &mut EventStream, window: f64| -> Signal {
+        es.density_next_beats(window as f32)
+    });
+    engine.register_fn("density_next_beats", |es: &mut EventStream, window: i64| -> Signal {
+        es.density_next_beats(window as f32)
+    });
+    engine.register_fn("density_next_beats", |es: &mut EventStream, window: Signal| -> Signal {
+        es.density_next_beats(window)
+    });
+
+    // density_prev_seconds
+    engine.register_fn("density_prev_seconds", |es: &mut EventStream, window: f64| -> Signal {
+        es.density_prev_seconds(window as f32)
+    });
+    engine.register_fn("density_prev_seconds", |es: &mut EventStream, window: i64| -> Signal {
+        es.density_prev_seconds(window as f32)
+    });
+    engine.register_fn("density_prev_seconds", |es: &mut EventStream, window: Signal| -> Signal {
+        es.density_prev_seconds(window)
+    });
+
+    // density_next_seconds
+    engine.register_fn("density_next_seconds", |es: &mut EventStream, window: f64| -> Signal {
+        es.density_next_seconds(window as f32)
+    });
+    engine.register_fn("density_next_seconds", |es: &mut EventStream, window: i64| -> Signal {
+        es.density_next_seconds(window as f32)
+    });
+    engine.register_fn("density_next_seconds", |es: &mut EventStream, window: Signal| -> Signal {
+        es.density_next_seconds(window)
+    });
+
+    // === Phase Method ===
+    engine.register_fn("beat_phase_between", |es: &mut EventStream| -> Signal {
+        es.beat_phase_between()
+    });
+
     // === EventStream filtering methods ===
     engine.register_fn("filter_time", |es: &mut EventStream, start: f32, end: f32| {
         es.filter_time(start, end)

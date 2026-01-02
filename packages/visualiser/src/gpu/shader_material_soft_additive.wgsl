@@ -1,12 +1,23 @@
 // Soft Additive material shader
-// Soft additive blending for particles and glows
+// Soft additive blending for particles and glows (unlit)
 
 struct GlobalUniforms {
     view_proj: mat4x4<f32>,
     model: mat4x4<f32>,
     time: f32,
     dt: f32,
-    _padding: vec2<f32>,
+    _time_padding: vec2<f32>,
+    // Lighting (unused in soft_additive shader)
+    light_direction: vec4<f32>,
+    light_color: vec4<f32>,
+    light_intensity: f32,
+    ambient_intensity: f32,
+    rim_intensity: f32,
+    rim_power: f32,
+    lighting_enabled: u32,
+    entity_emissive: f32,
+    _light_padding: vec2<u32>,
+    camera_position: vec4<f32>,
 }
 
 struct MaterialUniforms {
@@ -23,7 +34,8 @@ var<uniform> material: MaterialUniforms;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
-    @location(1) color: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) color: vec3<f32>,
 }
 
 struct VertexOutput {
@@ -44,11 +56,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Base color multiplied by vertex color
+    // Soft additive is always unlit
     let base = vec4<f32>(in.color, 1.0) * material.base_color;
-
-    // Apply softness to alpha (reduces intensity for soft look)
     let soft_alpha = base.a * (1.0 - material.softness * 0.5);
-
     return vec4<f32>(base.rgb, soft_alpha);
 }

@@ -424,6 +424,88 @@ impl PostEffectRegistry {
                     .with_description("Distortion center (normalized)"))
                 .build()
         );
+
+        // Zoom with wrap effect
+        // Note: Parameter order must match shader uniform struct layout
+        self.register(
+            PostEffect::builder("zoom_wrap")
+                .name("Zoom Wrap")
+                .description("Zoom in/out with edge wrapping (repeat or mirror)")
+                .param(EffectParamDef::float("amount", 1.0)
+                    .with_range(0.5, 2.0)
+                    .with_description("Zoom scale factor (<1 = zoom in, >1 = zoom out)"))
+                .param(EffectParamDef::float("wrap_mode", 0.0)
+                    .with_range(0.0, 1.0)
+                    .with_description("Wrap mode: 0 = repeat, 1 = mirror"))
+                .param(EffectParamDef::vec2("center", [0.5, 0.5])
+                    .with_description("Zoom center in normalized coordinates"))
+                .build()
+        );
+
+        // Radial blur effect
+        // Note: Parameter order must match shader uniform struct layout
+        self.register(
+            PostEffect::builder("radial_blur")
+                .name("Radial Blur")
+                .description("Motion blur radiating from a center point")
+                .param(EffectParamDef::float("strength", 0.0)
+                    .with_range(0.0, 1.0)
+                    .with_description("Blur strength"))
+                .param(EffectParamDef::float("samples", 8.0)
+                    .with_range(2.0, 32.0)
+                    .with_description("Number of blur samples (higher = smoother)"))
+                .param(EffectParamDef::vec2("center", [0.5, 0.5])
+                    .with_description("Blur center in normalized coordinates"))
+                .build()
+        );
+
+        // Directional blur effect
+        self.register(
+            PostEffect::builder("directional_blur")
+                .name("Directional Blur")
+                .description("Motion blur in a specific direction")
+                .param(EffectParamDef::float("amount", 0.0)
+                    .with_range(0.0, 20.0)
+                    .with_description("Blur amount in pixels"))
+                .param(EffectParamDef::float("angle", 0.0)
+                    .with_range(0.0, 6.283185)
+                    .with_description("Blur direction in radians"))
+                .param(EffectParamDef::float("samples", 8.0)
+                    .with_range(2.0, 32.0)
+                    .with_description("Number of blur samples"))
+                .build()
+        );
+
+        // Chromatic aberration effect
+        self.register(
+            PostEffect::builder("chromatic_aberration")
+                .name("Chromatic Aberration")
+                .description("RGB channel separation effect")
+                .param(EffectParamDef::float("amount", 0.0)
+                    .with_range(0.0, 10.0)
+                    .with_description("Separation amount"))
+                .param(EffectParamDef::float("angle", 0.0)
+                    .with_range(0.0, 6.283185)
+                    .with_description("Separation direction in radians"))
+                .build()
+        );
+
+        // Film grain effect
+        self.register(
+            PostEffect::builder("grain")
+                .name("Film Grain")
+                .description("Add deterministic film grain noise")
+                .param(EffectParamDef::float("amount", 0.0)
+                    .with_range(0.0, 0.5)
+                    .with_description("Grain intensity"))
+                .param(EffectParamDef::float("scale", 1.0)
+                    .with_range(0.1, 10.0)
+                    .with_description("Grain scale (smaller = finer)"))
+                .param(EffectParamDef::float("seed", 0.0)
+                    .with_range(0.0, 1000.0)
+                    .with_description("Random seed for reproducibility"))
+                .build()
+        );
     }
 
     /// Register a new effect.

@@ -47,12 +47,19 @@ export const SIDEBAR_DEFAULT_WIDTH = 256;
 /** Maximum sidebar width in pixels. */
 export const SIDEBAR_MAX_WIDTH = 400;
 
-/** Default inspector drawer height in pixels. */
+/** Default inspector drawer height in pixels (legacy, kept for migration). */
 export const INSPECTOR_DEFAULT_HEIGHT = 200;
-/** Minimum inspector drawer height in pixels. */
+/** Minimum inspector drawer height in pixels (legacy, kept for migration). */
 export const INSPECTOR_MIN_HEIGHT = 100;
-/** Maximum inspector drawer height in pixels. */
+/** Maximum inspector drawer height in pixels (legacy, kept for migration). */
 export const INSPECTOR_MAX_HEIGHT = 500;
+
+/** Default ratio of sidebar height taken by inspector section (0-1). */
+export const INSPECTOR_SECTION_DEFAULT_RATIO = 0.4;
+/** Minimum ratio of sidebar height for inspector section. */
+export const INSPECTOR_SECTION_MIN_RATIO = 0.15;
+/** Maximum ratio of sidebar height for inspector section. */
+export const INSPECTOR_SECTION_MAX_RATIO = 0.85;
 
 // ----------------------------
 // Store State
@@ -68,8 +75,11 @@ interface InterpretationTreeState {
   /** Sidebar width in pixels. */
   sidebarWidth: number;
 
-  /** Inspector drawer height in pixels. */
+  /** Inspector drawer height in pixels (legacy). */
   inspectorHeight: number;
+
+  /** Ratio of sidebar height taken by the inspector section (0-1). */
+  inspectorSectionRatio: number;
 }
 
 // ----------------------------
@@ -98,8 +108,11 @@ interface InterpretationTreeActions {
   /** Toggle between collapsed (icon-only) and expanded states. */
   toggleSidebar: () => void;
 
-  /** Set inspector drawer height in pixels. */
+  /** Set inspector drawer height in pixels (legacy). */
   setInspectorHeight: (height: number) => void;
+
+  /** Set inspector section ratio (0-1). */
+  setInspectorSectionRatio: (ratio: number) => void;
 
   /** Check if a node is expanded. */
   isExpanded: (nodeId: string) => boolean;
@@ -127,6 +140,7 @@ const initialState: InterpretationTreeState = {
   selectedNodeId: null,
   sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
   inspectorHeight: INSPECTOR_DEFAULT_HEIGHT,
+  inspectorSectionRatio: INSPECTOR_SECTION_DEFAULT_RATIO,
 };
 
 // ----------------------------
@@ -225,6 +239,14 @@ export const useInterpretationTreeStore = create<InterpretationTreeStore>()(
           set({ inspectorHeight: clampedHeight }, false, "setInspectorHeight");
         },
 
+        setInspectorSectionRatio: (ratio) => {
+          const clampedRatio = Math.max(
+            INSPECTOR_SECTION_MIN_RATIO,
+            Math.min(INSPECTOR_SECTION_MAX_RATIO, ratio)
+          );
+          set({ inspectorSectionRatio: clampedRatio }, false, "setInspectorSectionRatio");
+        },
+
         // ----------------------------
         // Reset
         // ----------------------------
@@ -247,6 +269,10 @@ export const useInterpretationTreeStore = create<InterpretationTreeStore>()(
               if (parsed.state?.expandedNodes) {
                 parsed.state.expandedNodes = new Set(parsed.state.expandedNodes);
               }
+              // Migration: add default inspectorSectionRatio if not present
+              if (parsed.state && parsed.state.inspectorSectionRatio === undefined) {
+                parsed.state.inspectorSectionRatio = INSPECTOR_SECTION_DEFAULT_RATIO;
+              }
               return parsed;
             } catch {
               return null;
@@ -260,6 +286,7 @@ export const useInterpretationTreeStore = create<InterpretationTreeStore>()(
               selectedNodeId: value.state.selectedNodeId,
               sidebarWidth: value.state.sidebarWidth,
               inspectorHeight: value.state.inspectorHeight,
+              inspectorSectionRatio: value.state.inspectorSectionRatio,
             };
             const toStore = {
               ...value,

@@ -3,7 +3,8 @@
 use rhai::{Dynamic, Engine, EvalAltResult};
 
 use crate::feedback::{
-    BlendBuilder, ColorBuilder, FeedbackBuilder, FeedbackConfig, SignalOrF32, WarpBuilder,
+    BlendBuilder, ColorBuilder, FeedbackBuilder, FeedbackConfig, FeedbackSamplingMode,
+    SignalOrF32, WarpBuilder,
 };
 use crate::signal::Signal;
 
@@ -87,6 +88,20 @@ pub fn register_feedback_builder_api(engine: &mut Engine) {
             Ok(fb)
         },
     );
+
+    // sample_before_effects() - feedback samples from scene before post-FX (default)
+    engine.register_fn("sample_before_effects", |fb: &mut FeedbackBuilder| {
+        let mut fb = fb.clone();
+        fb.set_sampling_mode(FeedbackSamplingMode::PreFx);
+        fb
+    });
+
+    // sample_after_effects() - feedback samples after all post-processing effects
+    engine.register_fn("sample_after_effects", |fb: &mut FeedbackBuilder| {
+        let mut fb = fb.clone();
+        fb.set_sampling_mode(FeedbackSamplingMode::PostFx);
+        fb
+    });
 
     engine.register_fn("build", |fb: &mut FeedbackBuilder| fb.build());
 

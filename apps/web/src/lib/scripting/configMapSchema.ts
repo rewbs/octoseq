@@ -179,6 +179,131 @@ export const CONFIG_MAP_SCHEMAS: ConfigMapSchema[] = [
       },
     ],
   },
+  {
+    functionPath: "fx.zoomWrap",
+    description: "Create a zoom effect with edge wrapping.",
+    params: [
+      {
+        key: "amount",
+        type: "float | Signal",
+        description: "Zoom scale factor (<1 = zoom in, >1 = zoom out).",
+        default: 1.0,
+        range: { min: 0.5, max: 2.0 },
+      },
+      {
+        key: "center",
+        type: "Vec2",
+        description: "Zoom center in normalized coordinates.",
+        default: { x: 0.5, y: 0.5 },
+      },
+      {
+        key: "wrap_mode",
+        type: '"repeat" | "mirror"',
+        description: "Edge wrap mode.",
+        default: "repeat",
+        enumValues: ["repeat", "mirror"],
+      },
+    ],
+  },
+  {
+    functionPath: "fx.radialBlur",
+    description: "Create a radial motion blur effect.",
+    params: [
+      {
+        key: "strength",
+        type: "float | Signal",
+        description: "Blur strength.",
+        default: 0.0,
+        range: { min: 0.0, max: 1.0 },
+      },
+      {
+        key: "center",
+        type: "Vec2",
+        description: "Blur center in normalized coordinates.",
+        default: { x: 0.5, y: 0.5 },
+      },
+      {
+        key: "samples",
+        type: "int",
+        description: "Number of blur samples (higher = smoother).",
+        default: 8,
+        range: { min: 2, max: 32 },
+      },
+    ],
+  },
+  {
+    functionPath: "fx.directionalBlur",
+    description: "Create a directional motion blur effect.",
+    params: [
+      {
+        key: "amount",
+        type: "float | Signal",
+        description: "Blur amount in pixels.",
+        default: 0.0,
+        range: { min: 0.0, max: 20.0 },
+      },
+      {
+        key: "angle",
+        type: "float | Signal",
+        description: "Blur direction in radians.",
+        default: 0.0,
+        range: { min: 0.0, max: 6.283185 },
+      },
+      {
+        key: "samples",
+        type: "int",
+        description: "Number of blur samples.",
+        default: 8,
+        range: { min: 2, max: 32 },
+      },
+    ],
+  },
+  {
+    functionPath: "fx.chromaticAberration",
+    description: "Create a chromatic aberration (RGB split) effect.",
+    params: [
+      {
+        key: "amount",
+        type: "float | Signal",
+        description: "Separation amount.",
+        default: 0.0,
+        range: { min: 0.0, max: 10.0 },
+      },
+      {
+        key: "angle",
+        type: "float | Signal",
+        description: "Separation direction in radians.",
+        default: 0.0,
+        range: { min: 0.0, max: 6.283185 },
+      },
+    ],
+  },
+  {
+    functionPath: "fx.grain",
+    description: "Create a deterministic film grain noise effect.",
+    params: [
+      {
+        key: "amount",
+        type: "float | Signal",
+        description: "Grain intensity.",
+        default: 0.0,
+        range: { min: 0.0, max: 0.5 },
+      },
+      {
+        key: "scale",
+        type: "float | Signal",
+        description: "Grain scale (smaller = finer).",
+        default: 1.0,
+        range: { min: 0.1, max: 10.0 },
+      },
+      {
+        key: "seed",
+        type: "int",
+        description: "Random seed for reproducibility.",
+        default: 0,
+      },
+    ],
+  },
 
   // ---------------------------------------------------------------------------
   // Line Primitives (line.*)

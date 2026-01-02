@@ -1,12 +1,23 @@
 // Wire material shader
-// Simple wireframe material without glow effects
+// Simple wireframe material without glow effects (unlit)
 
 struct GlobalUniforms {
     view_proj: mat4x4<f32>,
     model: mat4x4<f32>,
     time: f32,
     dt: f32,
-    _padding: vec2<f32>,
+    _time_padding: vec2<f32>,
+    // Lighting (unused in wire shader)
+    light_direction: vec4<f32>,
+    light_color: vec4<f32>,
+    light_intensity: f32,
+    ambient_intensity: f32,
+    rim_intensity: f32,
+    rim_power: f32,
+    lighting_enabled: u32,
+    entity_emissive: f32,
+    _light_padding: vec2<u32>,
+    camera_position: vec4<f32>,
 }
 
 struct MaterialUniforms {
@@ -21,7 +32,8 @@ var<uniform> material: MaterialUniforms;
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
-    @location(1) color: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) color: vec3<f32>,
 }
 
 struct VertexOutput {
@@ -40,6 +52,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Apply wire color, optionally modulated by vertex color
+    // Wireframe is always unlit
     return material.wire_color * vec4<f32>(in.color, 1.0);
 }

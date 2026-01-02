@@ -26,6 +26,9 @@ const MAX_MESH_PARTICLE_INSTANCES: usize = 500;
 /// Maximum points per line strip.
 const MAX_POINTS_PER_LINE: usize = 1024;
 
+/// Maximum points per point cloud.
+const MAX_POINTS_PER_CLOUD: usize = 10000;
+
 /// Maximum number of meshes that can be rendered per frame.
 /// Each mesh needs its own uniform slot in the dynamic uniform buffer.
 const MAX_MESHES_PER_FRAME: usize = 256;
@@ -41,6 +44,19 @@ struct Uniforms {
     instance_color: [f32; 4],
     // Padding to reach 256-byte alignment (144 bytes of data + 112 bytes padding)
     _padding: [f32; 28],
+}
+
+/// Uniforms for blob shadow rendering.
+/// Matches shader_blob_shadow.wgsl ShadowUniforms struct.
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
+struct ShadowUniforms {
+    /// Shadow center position (x, y, z, unused)
+    center: [f32; 4],
+    /// Shadow color (rgb) and opacity (a)
+    color: [f32; 4],
+    /// Radius (x, z) and softness (z), w unused
+    params: [f32; 4],
 }
 
 impl Uniforms {
@@ -170,7 +186,9 @@ fn compute_world_bounds_vertices(
     ];
 
     // Transform each corner to world space
-    let mut vertices = [Vertex { position: [0.0; 3], color }; 8];
+    // For debug wireframe, use a default normal (not used in shading)
+    let default_normal = [0.0, 1.0, 0.0];
+    let mut vertices = [Vertex::new([0.0; 3], default_normal, color); 8];
     for (i, corner) in local_corners.iter().enumerate() {
         let world_pos = world_matrix.transform_point3(*corner);
         vertices[i].position = [world_pos.x, world_pos.y, world_pos.z];
@@ -206,6 +224,18 @@ struct LineUniforms {
     count: f32,        // Number of valid points
     max_points: f32,   // Capacity
     _padding: [f32; 2],
+}
+
+/// Uniforms for point cloud rendering.
+/// Matches shader_point_cloud.wgsl PointCloudUniforms struct.
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Pod, Zeroable)]
+struct PointCloudUniforms {
+    view_proj: [[f32; 4]; 4],
+    model: [[f32; 4]; 4],
+    color: [f32; 4],
+    point_size: f32,
+    _padding: [f32; 3],
 }
 
 /// Shared geometry for a mesh type.
@@ -255,6 +285,10 @@ pub struct Renderer {
     // Loaded mesh assets (created on demand)
     loaded_mesh_buffers: HashMap<String, LoadedMeshBuffers>,
 
+    // Dynamic radial ring geometry (regenerated when parameters change)
+    radial_ring_geometry: Option<MeshGeometry>,
+    radial_ring_params: Option<(f32, f32, f32, f32, u32)>, // (radius, thickness, start, end, segments)
+
     // Staging buffer for deformed vertices (reused each frame)
     deformed_vertex_staging: wgpu::Buffer,
 
@@ -267,6 +301,14 @@ pub struct Renderer {
     line_vertex_buffer: wgpu::Buffer,
     line_uniform_buffer: wgpu::Buffer,
     line_bind_group: wgpu::BindGroup,
+
+    // Point cloud rendering
+    point_cloud_pipeline: wgpu::RenderPipeline,
+    #[allow(dead_code)]
+    point_cloud_bind_group_layout: wgpu::BindGroupLayout,
+    point_cloud_vertex_buffer: wgpu::Buffer,
+    point_cloud_uniform_buffer: wgpu::Buffer,
+    point_cloud_bind_group: wgpu::BindGroup,
 
     // Mesh particle rendering
     mesh_particle_pipeline: wgpu::RenderPipeline,
@@ -288,6 +330,13 @@ pub struct Renderer {
     material_pipeline_manager: MaterialPipelineManager,
     /// Global uniforms for material pipelines (time, dt, etc.)
     material_global_uniforms: GlobalUniforms,
+
+    // Blob shadow rendering
+    shadow_pipeline: wgpu::RenderPipeline,
+    shadow_uniform_buffer: wgpu::Buffer,
+    shadow_bind_group: wgpu::BindGroup,
+    #[allow(dead_code)]
+    shadow_bind_group_layout: wgpu::BindGroupLayout,
 
     // Post-processing and feedback
     post_processor: PostProcessor,
@@ -534,6 +583,62 @@ impl Renderer {
             label: Some("line_bind_group"),
         });
 
+        // === Point Cloud Pipeline Setup ===
+
+        let point_cloud_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("point_cloud_bind_group_layout"),
+        });
+
+        let point_cloud_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Point Cloud Pipeline Layout"),
+            bind_group_layouts: &[&point_cloud_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let point_cloud_pipeline = pipeline::create_point_cloud_pipeline(&device, &point_cloud_pipeline_layout, format);
+
+        // Point cloud vertex buffer (stores vec3 positions)
+        let point_cloud_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Point Cloud Vertex Buffer"),
+            size: (MAX_POINTS_PER_CLOUD * 3 * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        // Point cloud uniforms
+        let point_cloud_uniforms = PointCloudUniforms {
+            view_proj: [[0.0; 4]; 4],
+            model: [[0.0; 4]; 4],
+            color: [1.0, 1.0, 1.0, 1.0],
+            point_size: 2.0,
+            _padding: [0.0; 3],
+        };
+
+        let point_cloud_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Point Cloud Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[point_cloud_uniforms]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let point_cloud_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &point_cloud_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: point_cloud_uniform_buffer.as_entire_binding(),
+            }],
+            label: Some("point_cloud_bind_group"),
+        });
+
         // === Mesh Particle Pipeline Setup ===
 
         // Create a view-only uniform buffer for mesh particles (just view_proj matrix)
@@ -661,6 +766,116 @@ impl Renderer {
         let material_pipeline_manager = MaterialPipelineManager::new(&device, format, &material_registry);
         let material_global_uniforms = GlobalUniforms::default();
 
+        // === Blob Shadow Pipeline Setup ===
+        let shadow_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Blob Shadow Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader_blob_shadow.wgsl").into()),
+        });
+
+        // Create shadow bind group layout (uses global uniforms + shadow-specific uniforms)
+        let shadow_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Shadow Bind Group Layout"),
+            entries: &[
+                // Global uniforms (view_proj, etc.) - reuse material global layout pattern
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        // Create shadow-specific bind group layout
+        let shadow_params_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Shadow Params Bind Group Layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+
+        let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Shadow Pipeline Layout"),
+            bind_group_layouts: &[&shadow_bind_group_layout, &shadow_params_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Blob Shadow Pipeline"),
+            layout: Some(&shadow_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shadow_shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Vertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shadow_shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    // Multiply blend for shadow (darkens the background)
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::Zero,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent::OVER,
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None, // Render both sides
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        // Shadow uniform buffer (per-shadow)
+        let shadow_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Shadow Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[ShadowUniforms {
+                center: [0.0, 0.0, 0.0, 0.0],
+                color: [0.0, 0.0, 0.0, 0.5],
+                params: [1.0, 1.0, 0.3, 0.0],
+            }]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        // Shadow bind group (uses material global uniform buffer for globals)
+        let shadow_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Shadow Bind Group"),
+            layout: &shadow_params_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: shadow_uniform_buffer.as_entire_binding(),
+            }],
+        });
+
         // === Post-processing and Feedback ===
         let post_effect_registry = PostEffectRegistry::new();
         let post_processor = PostProcessor::new(&device, format, width, height, &post_effect_registry);
@@ -681,12 +896,19 @@ impl Renderer {
             debug_cube_geometry,
             debug_bounds_vertex_buffer,
             loaded_mesh_buffers: HashMap::new(),
+            radial_ring_geometry: None,
+            radial_ring_params: None,
             deformed_vertex_staging,
             line_pipeline,
             line_bind_group_layout,
             line_vertex_buffer,
             line_uniform_buffer,
             line_bind_group,
+            point_cloud_pipeline,
+            point_cloud_bind_group_layout,
+            point_cloud_vertex_buffer,
+            point_cloud_uniform_buffer,
+            point_cloud_bind_group,
             mesh_particle_pipeline,
             mesh_particle_instance_buffer,
             mesh_particle_view_buffer,
@@ -700,6 +922,10 @@ impl Renderer {
             material_registry,
             material_pipeline_manager,
             material_global_uniforms,
+            shadow_pipeline,
+            shadow_uniform_buffer,
+            shadow_bind_group,
+            shadow_bind_group_layout,
             post_processor,
             post_effect_registry,
             format,
@@ -762,7 +988,62 @@ impl Renderer {
             MeshType::Plane => Some(&self.plane_geometry),
             MeshType::Sphere => Some(&self.sphere_geometry),
             MeshType::Asset(_) => None, // Loaded mesh assets handled separately
+            MeshType::RadialRing { .. } => None, // Dynamic geometry handled separately
         }
+    }
+
+    /// Get or create geometry for a radial ring, regenerating if parameters changed.
+    fn get_or_create_radial_ring_geometry(
+        &mut self,
+        radius: f32,
+        thickness: f32,
+        start_angle: f32,
+        end_angle: f32,
+        segments: u32,
+    ) -> &MeshGeometry {
+        let params = (radius, thickness, start_angle, end_angle, segments);
+
+        // Regenerate if parameters changed
+        if self.radial_ring_params != Some(params) {
+            let (vertices, indices) = mesh::create_radial_ring_geometry(
+                radius,
+                thickness,
+                start_angle,
+                end_angle,
+                segments,
+            );
+
+            let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Radial Ring Vertex Buffer"),
+                contents: bytemuck::cast_slice(&vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+
+            let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Radial Ring Index Buffer"),
+                contents: bytemuck::cast_slice(&indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+
+            let edge_indices = mesh::extract_edges(&indices);
+            let wireframe_index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Radial Ring Wireframe Index Buffer"),
+                contents: bytemuck::cast_slice(&edge_indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
+
+            self.radial_ring_geometry = Some(MeshGeometry {
+                vertex_buffer,
+                index_buffer,
+                wireframe_index_buffer: Some(wireframe_index_buffer),
+                num_indices: indices.len() as u32,
+                num_edges: edge_indices.len() as u32,
+                num_vertices: vertices.len() as u32,
+            });
+            self.radial_ring_params = Some(params);
+        }
+
+        self.radial_ring_geometry.as_ref().unwrap()
     }
 
     /// Get or create GPU buffers for a loaded mesh asset.
@@ -799,9 +1080,20 @@ impl Renderer {
     pub fn render(&mut self, view: &wgpu::TextureView, state: &VisualiserState) {
         let scene_graph = state.scene_graph();
         let camera = state.camera_uniforms();
+        let lighting = state.lighting_uniforms();
 
         // Update view projection
         self.uniforms.update_view_proj(self.size, camera);
+
+        // Update global material uniforms with lighting data (once per frame)
+        self.material_global_uniforms.light_direction = lighting.direction;
+        self.material_global_uniforms.light_color = lighting.color;
+        self.material_global_uniforms.light_intensity = lighting.intensity;
+        self.material_global_uniforms.ambient_intensity = lighting.ambient;
+        self.material_global_uniforms.rim_intensity = lighting.rim_intensity;
+        self.material_global_uniforms.rim_power = lighting.rim_power;
+        self.material_global_uniforms.lighting_enabled = lighting.enabled;
+        self.material_global_uniforms.camera_position = camera.position;
 
         // Collect meshes to render (we need to clone data to avoid borrow conflicts)
         // Include entity_id for debug bounds checking
@@ -834,6 +1126,54 @@ impl Renderer {
                 is_entity_visible(*entity_id, scene_graph) && line.count > 0
             })
             .map(|(idx, (_entity_id, line))| (idx, line.clone()))
+            .collect();
+
+        // Collect point clouds to render
+        let point_clouds_to_render: Vec<_> = scene_graph.point_clouds()
+            .filter(|(entity_id, cloud)| {
+                if let Some(isolated_id) = state.debug_options.isolated_entity {
+                    if *entity_id != isolated_id {
+                        return false;
+                    }
+                }
+                is_entity_visible(*entity_id, scene_graph) && !cloud.positions.is_empty()
+            })
+            .map(|(entity_id, cloud)| {
+                let world_matrix = compute_world_matrix(entity_id, scene_graph);
+                (cloud.clone(), world_matrix)
+            })
+            .collect();
+
+        // Collect radial waves to render
+        let radial_waves_to_render: Vec<_> = scene_graph.radial_waves()
+            .filter(|(entity_id, _wave)| {
+                if let Some(isolated_id) = state.debug_options.isolated_entity {
+                    if *entity_id != isolated_id {
+                        return false;
+                    }
+                }
+                is_entity_visible(*entity_id, scene_graph)
+            })
+            .map(|(entity_id, wave)| {
+                let world_matrix = compute_world_matrix(entity_id, scene_graph);
+                (wave.clone(), world_matrix)
+            })
+            .collect();
+
+        // Collect ribbons to render
+        let ribbons_to_render: Vec<_> = scene_graph.ribbons()
+            .filter(|(entity_id, ribbon)| {
+                if let Some(isolated_id) = state.debug_options.isolated_entity {
+                    if *entity_id != isolated_id {
+                        return false;
+                    }
+                }
+                is_entity_visible(*entity_id, scene_graph) && ribbon.count > 0
+            })
+            .map(|(entity_id, ribbon)| {
+                let world_matrix = compute_world_matrix(entity_id, scene_graph);
+                (ribbon.clone(), world_matrix)
+            })
             .collect();
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -882,6 +1222,48 @@ impl Renderer {
                 occlusion_query_set: None,
             });
 
+            // === Render Blob Shadows ===
+            // Shadows are rendered before meshes so they appear under objects
+            render_pass.set_pipeline(&self.shadow_pipeline);
+            render_pass.set_vertex_buffer(0, self.plane_geometry.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.plane_geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            // Bind globals (group 0)
+            render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[]);
+
+            for (_entity_id, mesh, _world_matrix) in meshes_to_render.iter() {
+                if !mesh.shadow.enabled {
+                    continue;
+                }
+
+                // Calculate shadow position from mesh position + offsets
+                let shadow_x = mesh.transform.position.x + mesh.shadow.offset_x;
+                let shadow_z = mesh.transform.position.z + mesh.shadow.offset_z;
+
+                // Update shadow uniforms
+                let shadow_uniforms = ShadowUniforms {
+                    center: [shadow_x, mesh.shadow.plane_y, shadow_z, 0.0],
+                    color: [
+                        mesh.shadow.color[0],
+                        mesh.shadow.color[1],
+                        mesh.shadow.color[2],
+                        mesh.shadow.opacity,
+                    ],
+                    params: [mesh.shadow.radius_x, mesh.shadow.radius_z, mesh.shadow.softness, 0.0],
+                };
+                self.queue.write_buffer(
+                    &self.shadow_uniform_buffer,
+                    0,
+                    bytemuck::cast_slice(&[shadow_uniforms]),
+                );
+
+                // Bind shadow params (group 1)
+                render_pass.set_bind_group(1, &self.shadow_bind_group, &[]);
+
+                // Draw shadow quad
+                render_pass.draw_indexed(0..self.plane_geometry.num_indices, 0, 0..1);
+            }
+
+            // === Render Meshes ===
             // Render meshes using pre-written uniform data with dynamic offsets
             for (mesh_idx, (_entity_id, mesh, world_matrix)) in meshes_to_render.iter().enumerate() {
                 if mesh_idx >= MAX_MESHES_PER_FRAME {
@@ -930,11 +1312,19 @@ impl Renderer {
 
                                         // Use material pipeline
                                         if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
-                                            // Update global uniforms
+                                            // Update global uniforms with per-entity values
                                             self.material_global_uniforms.view_proj = self.uniforms.view_proj;
                                             self.material_global_uniforms.model = world_matrix.to_cols_array_2d();
                                             self.material_global_uniforms.time = state.time;
                                             self.material_global_uniforms.dt = 0.016; // ~60fps default
+                                            // Per-entity lighting control: if mesh.lit is false, disable lighting for this entity
+                                            // (preserving global lighting_enabled if mesh.lit is true)
+                                            self.material_global_uniforms.lighting_enabled = if mesh.lit {
+                                                lighting.enabled
+                                            } else {
+                                                0
+                                            };
+                                            self.material_global_uniforms.entity_emissive = mesh.emissive;
                                             self.material_pipeline_manager.update_global_uniforms(
                                                 &self.queue,
                                                 &self.material_global_uniforms,
@@ -1024,6 +1414,105 @@ impl Renderer {
                             }
                         }
                     }
+                    MeshType::RadialRing { radius, thickness, start_angle, end_angle, segments } => {
+                        // Generate or get cached radial ring geometry
+                        let _geom = self.get_or_create_radial_ring_geometry(
+                            *radius, *thickness, *start_angle, *end_angle, *segments
+                        );
+                        let geometry = self.radial_ring_geometry.as_ref().unwrap();
+                        let num_indices = geometry.num_indices;
+                        let num_edges = geometry.num_edges;
+                        let num_vertices = geometry.num_vertices;
+
+                        // Render based on mode (similar to primitives)
+                        match mesh.render_mode {
+                            RenderMode::Solid => {
+                                let geometry = self.radial_ring_geometry.as_ref().unwrap();
+                                let material_id = mesh.material_id.as_ref()
+                                    .filter(|id| self.material_registry.exists(id));
+
+                                if let Some(mat_id) = material_id {
+                                    let material_topology = self.material_registry.get(mat_id)
+                                        .map(|m| m.topology)
+                                        .unwrap_or_default();
+
+                                    if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
+                                        self.material_global_uniforms.view_proj = self.uniforms.view_proj;
+                                        self.material_global_uniforms.model = world_matrix.to_cols_array_2d();
+                                        self.material_global_uniforms.time = state.time;
+                                        self.material_global_uniforms.dt = 0.016;
+                                        self.material_global_uniforms.lighting_enabled = if mesh.lit {
+                                            lighting.enabled
+                                        } else {
+                                            0
+                                        };
+                                        self.material_global_uniforms.entity_emissive = mesh.emissive;
+                                        self.material_pipeline_manager.update_global_uniforms(
+                                            &self.queue,
+                                            &self.material_global_uniforms,
+                                        );
+
+                                        // Evaluate and update material params
+                                        let params = self.evaluate_material_params(mat_id, &mesh.material_params);
+                                        self.material_pipeline_manager.update_material_uniforms(
+                                            &self.queue,
+                                            mat_id,
+                                            &params,
+                                        );
+
+                                        render_pass.set_pipeline(&resources.pipeline);
+                                        render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[]);
+                                        render_pass.set_bind_group(1, &resources.bind_group, &[]);
+                                        render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+
+                                        if material_topology.uses_edge_indices() {
+                                            if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
+                                                render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                                render_pass.draw_indexed(0..num_edges, 0, 0..1);
+                                            }
+                                        } else if material_topology.uses_indices() {
+                                            render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                            render_pass.draw_indexed(0..num_indices, 0, 0..1);
+                                        } else {
+                                            render_pass.draw(0..num_vertices, 0..1);
+                                        }
+                                    }
+                                } else {
+                                    render_pass.set_pipeline(&self.mesh_pipeline);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
+                                    render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                    render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.draw_indexed(0..num_indices, 0, 0..1);
+                                }
+                            }
+                            RenderMode::Wireframe => {
+                                let geometry = self.radial_ring_geometry.as_ref().unwrap();
+                                if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
+                                    render_pass.set_pipeline(&self.wireframe_pipeline);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
+                                    render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                    render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.draw_indexed(0..num_edges, 0, 0..1);
+                                }
+                            }
+                            RenderMode::SolidWithWireframe => {
+                                let geometry = self.radial_ring_geometry.as_ref().unwrap();
+                                render_pass.set_pipeline(&self.mesh_pipeline);
+                                render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
+                                render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                render_pass.draw_indexed(0..num_indices, 0, 0..1);
+
+                                if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
+                                    render_pass.set_pipeline(&self.wireframe_pipeline);
+                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
+                                    render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                    render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.draw_indexed(0..num_edges, 0, 0..1);
+                                }
+                            }
+                        }
+                    }
                     _ => {
                         // Primitive mesh types (Cube, Plane, Sphere)
                         // Get geometry reference based on type, avoiding borrow conflicts
@@ -1031,7 +1520,7 @@ impl Renderer {
                             MeshType::Cube => &self.cube_geometry,
                             MeshType::Plane => &self.plane_geometry,
                             MeshType::Sphere => &self.sphere_geometry,
-                            MeshType::Asset(_) => continue, // Already handled above
+                            MeshType::Asset(_) | MeshType::RadialRing { .. } => continue, // Already handled above
                         };
 
                         let num_indices = geometry.num_indices;
@@ -1059,11 +1548,18 @@ impl Renderer {
 
                                     // Use material pipeline
                                     if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
-                                        // Update global uniforms
+                                        // Update global uniforms with per-entity values
                                         self.material_global_uniforms.view_proj = self.uniforms.view_proj;
                                         self.material_global_uniforms.model = world_matrix.to_cols_array_2d();
                                         self.material_global_uniforms.time = state.time;
                                         self.material_global_uniforms.dt = 0.016; // ~60fps default
+                                        // Per-entity lighting control: if mesh.lit is false, disable lighting for this entity
+                                        self.material_global_uniforms.lighting_enabled = if mesh.lit {
+                                            lighting.enabled
+                                        } else {
+                                            0
+                                        };
+                                        self.material_global_uniforms.entity_emissive = mesh.emissive;
                                         self.material_pipeline_manager.update_global_uniforms(
                                             &self.queue,
                                             &self.material_global_uniforms,
@@ -1190,6 +1686,14 @@ impl Renderer {
                                 .map(|a| a.bounds)
                                 .unwrap_or_default()
                         }
+                        MeshType::RadialRing { radius, thickness, .. } => {
+                            // Approximate bounds for radial ring
+                            let outer = radius + thickness / 2.0;
+                            BoundingBox {
+                                min: [-outer, -outer, -0.01],
+                                max: [outer, outer, 0.01],
+                            }
+                        }
                     };
 
                     // Compute world-space bounding box vertices
@@ -1252,31 +1756,142 @@ impl Renderer {
                 render_pass.set_vertex_buffer(0, self.line_vertex_buffer.slice(..));
                 render_pass.draw(0..line.count as u32, 0..1);
             }
+
+            // Render point clouds
+            render_pass.set_pipeline(&self.point_cloud_pipeline);
+
+            for (cloud, world_matrix) in &point_clouds_to_render {
+                // Upload point positions (as flat f32 array: x, y, z, x, y, z, ...)
+                let point_count = cloud.positions.len().min(MAX_POINTS_PER_CLOUD);
+                let positions_data: Vec<f32> = cloud.positions.iter()
+                    .take(point_count)
+                    .flat_map(|p| [p.x, p.y, p.z])
+                    .collect();
+                self.queue.write_buffer(
+                    &self.point_cloud_vertex_buffer,
+                    0,
+                    bytemuck::cast_slice(&positions_data),
+                );
+
+                // Update point cloud uniforms
+                let view_proj = self.uniforms.view_proj;
+                let point_cloud_uniforms = PointCloudUniforms {
+                    view_proj,
+                    model: world_matrix.to_cols_array_2d(),
+                    color: cloud.color,
+                    point_size: cloud.point_size,
+                    _padding: [0.0; 3],
+                };
+                self.queue.write_buffer(
+                    &self.point_cloud_uniform_buffer,
+                    0,
+                    bytemuck::cast_slice(&[point_cloud_uniforms]),
+                );
+
+                render_pass.set_bind_group(0, &self.point_cloud_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.point_cloud_vertex_buffer.slice(..));
+                render_pass.draw(0..point_count as u32, 0..1);
+            }
+
+            // Render radial waves (using point cloud pipeline with generated line points)
+            for (wave, world_matrix) in &radial_waves_to_render {
+                // Generate points for the wave
+                let points = wave.generate_points();
+                let point_count = points.len().min(MAX_POINTS_PER_CLOUD);
+                if point_count == 0 {
+                    continue;
+                }
+
+                // Upload wave points
+                let positions_data: Vec<f32> = points.iter()
+                    .take(point_count)
+                    .flat_map(|p| [p.x, p.y, p.z])
+                    .collect();
+                self.queue.write_buffer(
+                    &self.point_cloud_vertex_buffer,
+                    0,
+                    bytemuck::cast_slice(&positions_data),
+                );
+
+                // Update point cloud uniforms (use larger point size for better line appearance)
+                let view_proj = self.uniforms.view_proj;
+                let point_cloud_uniforms = PointCloudUniforms {
+                    view_proj,
+                    model: world_matrix.to_cols_array_2d(),
+                    color: wave.color,
+                    point_size: 2.0, // Fixed size for wave visualization
+                    _padding: [0.0; 3],
+                };
+                self.queue.write_buffer(
+                    &self.point_cloud_uniform_buffer,
+                    0,
+                    bytemuck::cast_slice(&[point_cloud_uniforms]),
+                );
+
+                render_pass.set_bind_group(0, &self.point_cloud_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.point_cloud_vertex_buffer.slice(..));
+                render_pass.draw(0..point_count as u32, 0..1);
+            }
+
+            // Render ribbons (using point cloud pipeline with generated center line points)
+            for (ribbon, world_matrix) in &ribbons_to_render {
+                // Generate center line points for the ribbon
+                let points = ribbon.generate_center_points();
+                let point_count = points.len().min(MAX_POINTS_PER_CLOUD);
+                if point_count == 0 {
+                    continue;
+                }
+
+                // Upload ribbon points
+                let positions_data: Vec<f32> = points.iter()
+                    .take(point_count)
+                    .flat_map(|p| [p.x, p.y, p.z])
+                    .collect();
+                self.queue.write_buffer(
+                    &self.point_cloud_vertex_buffer,
+                    0,
+                    bytemuck::cast_slice(&positions_data),
+                );
+
+                // Update point cloud uniforms
+                let view_proj = self.uniforms.view_proj;
+                let point_cloud_uniforms = PointCloudUniforms {
+                    view_proj,
+                    model: world_matrix.to_cols_array_2d(),
+                    color: ribbon.color,
+                    point_size: 2.0, // Fixed size for ribbon visualization
+                    _padding: [0.0; 3],
+                };
+                self.queue.write_buffer(
+                    &self.point_cloud_uniform_buffer,
+                    0,
+                    bytemuck::cast_slice(&[point_cloud_uniforms]),
+                );
+
+                render_pass.set_bind_group(0, &self.point_cloud_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, self.point_cloud_vertex_buffer.slice(..));
+                render_pass.draw(0..point_count as u32, 0..1);
+            }
         }
 
         // Render particle systems
         self.render_particles_to_scene(&mut encoder, state);
 
-        // Apply frame feedback (V7)
-        // Uniforms are pre-evaluated (signals resolved to f32) during scene sync.
+        // Apply frame feedback and post-processing chain (V7+)
+        // Uses process_all which handles ordering based on feedback sampling mode:
+        // - PreFx (default): feedback → post-FX
+        // - PostFx: post-FX → feedback
         let feedback_config = state.feedback_config();
         let feedback_uniforms = state.feedback_uniforms();
-        self.post_processor.process_feedback(
-            &self.device,
-            &mut encoder,
-            &self.queue,
-            feedback_config,
-            feedback_uniforms,
-        );
-
-        // Apply post-processing chain
         let post_chain = state.post_chain();
         let evaluated_params = post_chain.build_params_map(&self.post_effect_registry);
-        self.post_processor.process(
+        self.post_processor.process_all(
             &self.device,
             &mut encoder,
             &self.queue,
             view,
+            feedback_config,
+            feedback_uniforms,
             post_chain,
             &evaluated_params,
         );

@@ -65,6 +65,117 @@ export const ENTITY_ENTRIES: RegistryEntry[] = [
         type: "array<DeformDescriptor>",
         description: "Array of deformation descriptors to apply.",
       },
+      {
+        name: "lit",
+        path: "MeshEntity.lit",
+        type: "bool",
+        description: "Whether this mesh is affected by global lighting. Default: true.",
+      },
+      {
+        name: "emissive",
+        path: "MeshEntity.emissive",
+        type: "Signal | f32",
+        description: "Emissive intensity multiplier. Adds glow unaffected by lighting. Default: 0.0.",
+      },
+      {
+        name: "shadow",
+        path: "MeshEntity.shadow",
+        type: "BlobShadowConfig",
+        description: "Blob shadow configuration. Set shadow.enabled = true to enable.",
+      },
+    ],
+    methods: [
+      {
+        name: "instance",
+        path: "MeshEntity.instance",
+        description:
+          "Create a new entity that shares geometry with this one but has independent properties.",
+        params: [],
+        returns: "MeshEntity",
+        chainsTo: "MeshEntity",
+        example: `let base = mesh.cube();
+base.position.x = 1.0;
+let copy = base.instance();  // Copies current property values
+copy.position.x = -1.0;      // Independent transform
+scene.add(base);
+scene.add(copy);`,
+        notes:
+          "Geometry is shared (no duplication). Properties are copied as-is: if a Signal is assigned, " +
+          "the Signal reference is copied and evaluated independently per instance. Deformations array is copied empty.",
+      },
+    ],
+  },
+
+  // ============================================================================
+  // BlobShadowConfig - Blob shadow configuration
+  // ============================================================================
+  {
+    kind: "type",
+    name: "BlobShadowConfig",
+    path: "BlobShadowConfig",
+    description:
+      "Configuration for blob/contact shadows. Renders a soft ellipse on a ground plane beneath the entity.",
+    properties: [
+      {
+        name: "enabled",
+        path: "BlobShadowConfig.enabled",
+        type: "bool",
+        description: "Enable/disable the shadow. Default: false.",
+      },
+      {
+        name: "plane_y",
+        path: "BlobShadowConfig.plane_y",
+        type: "Signal | f32",
+        description: "Y position of the shadow plane. Default: 0.0.",
+      },
+      {
+        name: "opacity",
+        path: "BlobShadowConfig.opacity",
+        type: "Signal | f32",
+        description: "Shadow opacity (0.0-1.0). Default: 0.5.",
+      },
+      {
+        name: "radius",
+        path: "BlobShadowConfig.radius",
+        type: "Signal | f32",
+        description: "Uniform shadow radius. Sets both radius_x and radius_z. Default: 1.0.",
+      },
+      {
+        name: "radius_x",
+        path: "BlobShadowConfig.radius_x",
+        type: "Signal | f32",
+        description: "Shadow radius in X direction. Default: 1.0.",
+      },
+      {
+        name: "radius_z",
+        path: "BlobShadowConfig.radius_z",
+        type: "Signal | f32",
+        description: "Shadow radius in Z direction. Default: 1.0.",
+      },
+      {
+        name: "softness",
+        path: "BlobShadowConfig.softness",
+        type: "Signal | f32",
+        description: "Shadow edge softness (0.0 = hard, 1.0 = very soft). Default: 0.3.",
+      },
+      {
+        name: "offset_x",
+        path: "BlobShadowConfig.offset_x",
+        type: "Signal | f32",
+        description: "Shadow X offset from entity position. Default: 0.0.",
+      },
+      {
+        name: "offset_z",
+        path: "BlobShadowConfig.offset_z",
+        type: "Signal | f32",
+        description: "Shadow Z offset from entity position. Default: 0.0.",
+      },
+      {
+        name: "color",
+        path: "BlobShadowConfig.color",
+        type: "Map { r, g, b }",
+        description: "Shadow color (RGB, 0-1 range). Default: black (0, 0, 0).",
+      },
     ],
     methods: [],
   },
@@ -183,6 +294,163 @@ export const ENTITY_ENTRIES: RegistryEntry[] = [
         example: "trace.clear();",
       },
     ],
+  },
+
+  // ============================================================================
+  // RibbonEntity - Thick extruded line (ribbon)
+  // ============================================================================
+  {
+    kind: "type",
+    name: "RibbonEntity",
+    path: "RibbonEntity",
+    description:
+      "A ribbon (thick extruded line) created by line.ribbon(signal, options). Supports strip (flat) and tube (cylindrical) modes.",
+    properties: [
+      {
+        name: "position",
+        path: "RibbonEntity.position",
+        type: "Vec3",
+        description: "Position in 3D space.",
+      },
+      {
+        name: "rotation",
+        path: "RibbonEntity.rotation",
+        type: "Vec3",
+        description: "Euler rotation in radians.",
+      },
+      {
+        name: "scale",
+        path: "RibbonEntity.scale",
+        type: "float | Signal",
+        description: "Uniform scale factor.",
+      },
+      {
+        name: "visible",
+        path: "RibbonEntity.visible",
+        type: "bool",
+        description: "Visibility flag.",
+      },
+      {
+        name: "color",
+        path: "RibbonEntity.color",
+        type: "Color",
+        description: "Ribbon color (RGBA 0.0-1.0). Channels can be Signals.",
+      },
+      {
+        name: "width",
+        path: "RibbonEntity.width",
+        type: "float | Signal",
+        description: "Width of the ribbon (or diameter for tube mode).",
+      },
+      {
+        name: "twist",
+        path: "RibbonEntity.twist",
+        type: "float | Signal",
+        description: "Twist rate along the ribbon length (radians per unit distance).",
+      },
+    ],
+    methods: [
+      {
+        name: "clear",
+        path: "RibbonEntity.clear",
+        description: "Clear all points from the ribbon.",
+        params: [],
+        returns: "void",
+        example: "ribbon.clear();",
+      },
+    ],
+  },
+
+  // ============================================================================
+  // RadialWaveEntity - Radial wave entity
+  // ============================================================================
+  {
+    kind: "type",
+    name: "RadialWaveEntity",
+    path: "RadialWaveEntity",
+    description: "A signal-modulated radial wave entity created by radial.wave().",
+    properties: [
+      {
+        name: "position",
+        path: "RadialWaveEntity.position",
+        type: "Vec3",
+        description: "Position in 3D space.",
+      },
+      {
+        name: "rotation",
+        path: "RadialWaveEntity.rotation",
+        type: "Vec3",
+        description: "Euler rotation in radians.",
+      },
+      {
+        name: "scale",
+        path: "RadialWaveEntity.scale",
+        type: "float | Signal",
+        description: "Uniform scale factor.",
+      },
+      {
+        name: "visible",
+        path: "RadialWaveEntity.visible",
+        type: "bool",
+        description: "Visibility flag.",
+      },
+      {
+        name: "color",
+        path: "RadialWaveEntity.color",
+        type: "Color",
+        description: "Wave color (RGBA 0.0-1.0). Channels can be Signals.",
+      },
+    ],
+    methods: [],
+  },
+
+  // ============================================================================
+  // PointCloudEntity - Point cloud entity
+  // ============================================================================
+  {
+    kind: "type",
+    name: "PointCloudEntity",
+    path: "PointCloudEntity",
+    description: "A point cloud entity created by points.cloud().",
+    properties: [
+      {
+        name: "position",
+        path: "PointCloudEntity.position",
+        type: "Vec3",
+        description: "Position in 3D space.",
+      },
+      {
+        name: "rotation",
+        path: "PointCloudEntity.rotation",
+        type: "Vec3",
+        description: "Euler rotation in radians.",
+      },
+      {
+        name: "scale",
+        path: "PointCloudEntity.scale",
+        type: "float | Signal",
+        description: "Uniform scale factor.",
+      },
+      {
+        name: "visible",
+        path: "PointCloudEntity.visible",
+        type: "bool",
+        description: "Visibility flag.",
+      },
+      {
+        name: "color",
+        path: "PointCloudEntity.color",
+        type: "Color",
+        description: "Point color (RGBA 0.0-1.0). Channels can be Signals.",
+      },
+      {
+        name: "point_size",
+        path: "PointCloudEntity.point_size",
+        type: "float | Signal",
+        description: "Size of each point in pixels.",
+      },
+    ],
+    methods: [],
   },
 
   // ============================================================================

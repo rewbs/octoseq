@@ -139,7 +139,12 @@ pub fn node_transform_type(node: &SignalNode) -> TransformType {
         | SignalNode::Constant(_)
         | SignalNode::Generator(_)
         | SignalNode::EventStreamSource { .. }
-        | SignalNode::EventStreamEnvelope { .. } => TransformType::Source,
+        | SignalNode::EventStreamEnvelope { .. }
+        | SignalNode::EventDistanceFromPrev { .. }
+        | SignalNode::EventDistanceToNext { .. }
+        | SignalNode::EventCountInWindow { .. }
+        | SignalNode::EventDensityInWindow { .. }
+        | SignalNode::EventPhaseBetween { .. } => TransformType::Source,
 
         // Transformations
         SignalNode::Smooth { .. } => TransformType::Smooth,
@@ -225,7 +230,12 @@ fn get_primary_source(node: &SignalNode) -> Option<&Signal> {
         | SignalNode::Constant(_)
         | SignalNode::Generator(_)
         | SignalNode::EventStreamSource { .. }
-        | SignalNode::EventStreamEnvelope { .. } => None,
+        | SignalNode::EventStreamEnvelope { .. }
+        | SignalNode::EventDistanceFromPrev { .. }
+        | SignalNode::EventDistanceToNext { .. }
+        | SignalNode::EventCountInWindow { .. }
+        | SignalNode::EventDensityInWindow { .. }
+        | SignalNode::EventPhaseBetween { .. } => None,
 
         // Unary transforms - single source
         SignalNode::Smooth { source, .. }
@@ -366,6 +376,7 @@ pub fn sample_signal(
             &empty_custom_signals,
             statistics,
             state,
+            None, // track_duration - TODO: pass actual duration
         );
 
         let value = signal.evaluate(&mut ctx);

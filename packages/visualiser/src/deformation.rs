@@ -343,11 +343,12 @@ mod tests {
     use super::*;
 
     fn make_test_vertices() -> Vec<Vertex> {
+        let up = [0.0, 1.0, 0.0];
         vec![
-            Vertex { position: [0.0, 0.0, 0.0], color: [1.0; 3] },
-            Vertex { position: [1.0, 0.0, 0.0], color: [1.0; 3] },
-            Vertex { position: [0.0, 1.0, 0.0], color: [1.0; 3] },
-            Vertex { position: [0.0, 0.0, 1.0], color: [1.0; 3] },
+            Vertex::new([0.0, 0.0, 0.0], up, [1.0; 3]),
+            Vertex::new([1.0, 0.0, 0.0], up, [1.0; 3]),
+            Vertex::new([0.0, 1.0, 0.0], up, [1.0; 3]),
+            Vertex::new([0.0, 0.0, 1.0], up, [1.0; 3]),
         ]
     }
 
@@ -372,7 +373,7 @@ mod tests {
     #[test]
     fn test_twist_deformation() {
         let vertices = vec![
-            Vertex { position: [1.0, 1.0, 0.0], color: [1.0; 3] },
+            Vertex::new([1.0, 1.0, 0.0], [0.0, 1.0, 0.0], [1.0; 3]),
         ];
         let deformations = vec![
             Deformation::Twist {
@@ -394,8 +395,8 @@ mod tests {
     #[test]
     fn test_wave_deformation() {
         let vertices = vec![
-            Vertex { position: [0.0, 0.0, 0.0], color: [1.0; 3] },
-            Vertex { position: [0.5, 0.0, 0.0], color: [1.0; 3] },
+            Vertex::new([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0; 3]),
+            Vertex::new([0.5, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0; 3]),
         ];
         let deformations = vec![
             Deformation::Wave {

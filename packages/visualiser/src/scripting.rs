@@ -58,7 +58,7 @@ use crate::event_rhai::{get_named_event_stream_names, get_authored_event_stream_
 use crate::event_stream::EventStream;
 use crate::input::InputSignal;
 use crate::musical_time::MusicalTimeStructure;
-use crate::scene_graph::{SceneGraph, EntityId, MeshType, RenderMode, LineMode, SceneEntity, LineStrip as SceneLineStrip};
+use crate::scene_graph::{SceneGraph, EntityId, MeshType, RenderMode, LineMode, SceneEntity, LineStrip as SceneLineStrip, PointCloudMode, RadialWave, Ribbon, RibbonMode};
 use crate::deformation::{Deformation, DeformAxis};
 use crate::script_log::{ScriptLogger, reset_frame_log_count};
 use crate::script_diagnostics::{from_eval_error, from_parse_error, lint_script, ScriptDiagnostic, ScriptPhase};
@@ -77,6 +77,8 @@ use crate::particle_rhai::{register_particle_api, generate_particles_namespace, 
 use crate::post_processing::{PostProcessingChain, PostEffectInstance, EffectParamValue};
 use crate::camera::{CameraConfig, CameraUniforms};
 use crate::camera_rhai::{generate_camera_namespace, sync_camera_from_scope};
+use crate::lighting::{LightingConfig, LightingUniforms};
+use crate::lighting_rhai::{generate_lighting_namespace, sync_lighting_from_scope};
 use crate::signal_explorer::{sample_signal_chain, ScriptSignalInfo, SignalChainAnalysis};
 use std::sync::Arc;
 
@@ -176,6 +178,10 @@ pub struct ScriptEngine {
     pub camera_config: CameraConfig,
     /// Evaluated camera uniforms (signals resolved to f32 values for renderer).
     pub camera_uniforms: CameraUniforms,
+    /// Lighting configuration with signal support.
+    pub lighting_config: LightingConfig,
+    /// Evaluated lighting uniforms (signals resolved to f32 values for renderer).
+    pub lighting_uniforms: LightingUniforms,
     /// Particle systems extracted from script scope.
     /// Keyed by entity ID assigned when added to scene.
     pub particle_systems: HashMap<u64, crate::particle::ParticleSystem>,
@@ -432,6 +438,97 @@ impl ScriptEngine {
             effect
         });
 
+        engine.register_fn("__fx_create_zoom_wrap", |options: rhai::Map| -> rhai::Map {
+            let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let mut effect = rhai::Map::new();
+            effect.insert("__id".into(), Dynamic::from(id));
+            effect.insert("__type".into(), Dynamic::from("post_effect"));
+            effect.insert("__effect_id".into(), Dynamic::from("zoom_wrap"));
+            effect.insert("enabled".into(), Dynamic::from(true));
+            effect.insert("amount".into(), options.get("amount").cloned().unwrap_or_else(|| Dynamic::from(1.0_f64)));
+            effect.insert("wrap_mode".into(), options.get("wrap_mode").cloned().unwrap_or_else(|| Dynamic::from("repeat")));
+            let default_center = {
+                let mut c = rhai::Map::new();
+                c.insert("x".into(), Dynamic::from(0.5_f64));
+                c.insert("y".into(), Dynamic::from(0.5_f64));
+                Dynamic::from(c)
+            };
+            effect.insert("center".into(), options.get("center").cloned().unwrap_or(default_center));
+            PENDING_POST_EFFECTS.with(|cell| {
+                cell.borrow_mut().insert(id, effect.clone());
+            });
+            effect
+        });
+
+        engine.register_fn("__fx_create_radial_blur", |options: rhai::Map| -> rhai::Map {
+            let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let mut effect = rhai::Map::new();
+            effect.insert("__id".into(), Dynamic::from(id));
+            effect.insert("__type".into(), Dynamic::from("post_effect"));
+            effect.insert("__effect_id".into(), Dynamic::from("radial_blur"));
+            effect.insert("enabled".into(), Dynamic::from(true));
+            effect.insert("strength".into(), options.get("strength").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
+            effect.insert("samples".into(), options.get("samples").cloned().unwrap_or_else(|| Dynamic::from(8_i64)));
+            let default_center = {
+                let mut c = rhai::Map::new();
+                c.insert("x".into(), Dynamic::from(0.5_f64));
+                c.insert("y".into(), Dynamic::from(0.5_f64));
+                Dynamic::from(c)
+            };
+            effect.insert("center".into(), options.get("center").cloned().unwrap_or(default_center));
+            PENDING_POST_EFFECTS.with(|cell| {
+                cell.borrow_mut().insert(id, effect.clone());
+            });
+            effect
+        });
+
+        engine.register_fn("__fx_create_directional_blur", |options: rhai::Map| -> rhai::Map {
+            let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let mut effect = rhai::Map::new();
+            effect.insert("__id".into(), Dynamic::from(id));
+            effect.insert("__type".into(), Dynamic::from("post_effect"));
+            effect.insert("__effect_id".into(), Dynamic::from("directional_blur"));
+            effect.insert("enabled".into(), Dynamic::from(true));
+            effect.insert("amount".into(), options.get("amount").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
+            effect.insert("angle".into(), options.get("angle").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
+            effect.insert("samples".into(), options.get("samples").cloned().unwrap_or_else(|| Dynamic::from(8_i64)));
+            PENDING_POST_EFFECTS.with(|cell| {
+                cell.borrow_mut().insert(id, effect.clone());
+            });
+            effect
+        });
+
+        engine.register_fn("__fx_create_chromatic_aberration", |options: rhai::Map| -> rhai::Map {
+            let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let mut effect = rhai::Map::new();
+            effect.insert("__id".into(), Dynamic::from(id));
+            effect.insert("__type".into(), Dynamic::from("post_effect"));
+            effect.insert("__effect_id".into(), Dynamic::from("chromatic_aberration"));
+            effect.insert("enabled".into(), Dynamic::from(true));
+            effect.insert("amount".into(), options.get("amount").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
+            effect.insert("angle".into(), options.get("angle").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
+            PENDING_POST_EFFECTS.with(|cell| {
+                cell.borrow_mut().insert(id, effect.clone());
+            });
+            effect
+        });
+
+        engine.register_fn("__fx_create_grain", |options: rhai::Map| -> rhai::Map {
+            let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let mut effect = rhai::Map::new();
+            effect.insert("__id".into(), Dynamic::from(id));
+            effect.insert("__type".into(), Dynamic::from("post_effect"));
+            effect.insert("__effect_id".into(), Dynamic::from("grain"));
+            effect.insert("enabled".into(), Dynamic::from(true));
+            effect.insert("amount".into(), options.get("amount").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
+            effect.insert("scale".into(), options.get("scale").cloned().unwrap_or_else(|| Dynamic::from(1.0_f64)));
+            effect.insert("seed".into(), options.get("seed").cloned().unwrap_or_else(|| Dynamic::from(0_i64)));
+            PENDING_POST_EFFECTS.with(|cell| {
+                cell.borrow_mut().insert(id, effect.clone());
+            });
+            effect
+        });
+
         engine.register_fn("__fx_clear_effects", || {
             PENDING_POST_EFFECTS.with(|cell| {
                 cell.borrow_mut().clear();
@@ -521,6 +618,8 @@ impl ScriptEngine {
             feedback_config: crate::feedback::FeedbackConfig::default(),
             feedback_uniforms: crate::feedback::FeedbackUniforms::default(),
             camera_config: CameraConfig::default(),
+            lighting_config: LightingConfig::default(),
+            lighting_uniforms: LightingUniforms::default(),
             camera_uniforms: CameraUniforms::new(),
             particle_systems: HashMap::new(),
             script_source: String::new(),
@@ -664,6 +763,9 @@ impl ScriptEngine {
         // Generate camera namespace
         let camera_namespace = generate_camera_namespace();
 
+        // Generate lighting namespace
+        let lighting_namespace = generate_lighting_namespace();
+
         // Wrap user script with API definitions.
         // Note: Rhai Maps require string keys, so we convert IDs to strings using `"" + id`.
         //
@@ -693,6 +795,37 @@ mesh.cube = || {{
     entity.deformations = [];
     entity.material = ();
     entity.materialParams = #{{}};
+    entity.lit = true;
+    entity.emissive = 0.0;
+    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, radius_x: 1.0, radius_z: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
+
+    // Instance method - creates a new entity sharing geometry with copied properties
+    entity.instance = || {{
+        let id = __next_id;
+        __next_id += 1;
+
+        let clone = #{{}};
+        clone.__id = id;
+        clone.__type = this.__type;
+
+        clone.position = #{{ x: this.position.x, y: this.position.y, z: this.position.z }};
+        clone.rotation = #{{ x: this.rotation.x, y: this.rotation.y, z: this.rotation.z }};
+        clone.scale = this.scale;
+        clone.visible = this.visible;
+        clone.color = #{{ r: this.color.r, g: this.color.g, b: this.color.b, a: this.color.a }};
+        clone.renderMode = this.renderMode;
+        clone.wireframeColor = #{{ r: this.wireframeColor.r, g: this.wireframeColor.g, b: this.wireframeColor.b, a: this.wireframeColor.a }};
+        clone.deformations = [];
+        clone.material = this.material;
+        clone.materialParams = #{{}};
+        clone.lit = this.lit;
+        clone.emissive = this.emissive;
+        clone.shadow = this.shadow;
+        clone.instance = this.instance;
+
+        __entities["" + id] = clone;
+        clone
+    }};
 
     __entities["" + id] = entity;
     entity
@@ -716,6 +849,37 @@ mesh.plane = || {{
     entity.deformations = [];
     entity.material = ();
     entity.materialParams = #{{}};
+    entity.lit = true;
+    entity.emissive = 0.0;
+    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, radius_x: 1.0, radius_z: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
+
+    // Instance method - creates a new entity sharing geometry with copied properties
+    entity.instance = || {{
+        let id = __next_id;
+        __next_id += 1;
+
+        let clone = #{{}};
+        clone.__id = id;
+        clone.__type = this.__type;
+
+        clone.position = #{{ x: this.position.x, y: this.position.y, z: this.position.z }};
+        clone.rotation = #{{ x: this.rotation.x, y: this.rotation.y, z: this.rotation.z }};
+        clone.scale = this.scale;
+        clone.visible = this.visible;
+        clone.color = #{{ r: this.color.r, g: this.color.g, b: this.color.b, a: this.color.a }};
+        clone.renderMode = this.renderMode;
+        clone.wireframeColor = #{{ r: this.wireframeColor.r, g: this.wireframeColor.g, b: this.wireframeColor.b, a: this.wireframeColor.a }};
+        clone.deformations = [];
+        clone.material = this.material;
+        clone.materialParams = #{{}};
+        clone.lit = this.lit;
+        clone.emissive = this.emissive;
+        clone.shadow = this.shadow;
+        clone.instance = this.instance;
+
+        __entities["" + id] = clone;
+        clone
+    }};
 
     __entities["" + id] = entity;
     entity
@@ -739,6 +903,37 @@ mesh.sphere = || {{
     entity.deformations = [];
     entity.material = ();
     entity.materialParams = #{{}};
+    entity.lit = true;
+    entity.emissive = 0.0;
+    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, radius_x: 1.0, radius_z: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
+
+    // Instance method - creates a new entity sharing geometry with copied properties
+    entity.instance = || {{
+        let id = __next_id;
+        __next_id += 1;
+
+        let clone = #{{}};
+        clone.__id = id;
+        clone.__type = this.__type;
+
+        clone.position = #{{ x: this.position.x, y: this.position.y, z: this.position.z }};
+        clone.rotation = #{{ x: this.rotation.x, y: this.rotation.y, z: this.rotation.z }};
+        clone.scale = this.scale;
+        clone.visible = this.visible;
+        clone.color = #{{ r: this.color.r, g: this.color.g, b: this.color.b, a: this.color.a }};
+        clone.renderMode = this.renderMode;
+        clone.wireframeColor = #{{ r: this.wireframeColor.r, g: this.wireframeColor.g, b: this.wireframeColor.b, a: this.wireframeColor.a }};
+        clone.deformations = [];
+        clone.material = this.material;
+        clone.materialParams = #{{}};
+        clone.lit = this.lit;
+        clone.emissive = this.emissive;
+        clone.shadow = this.shadow;
+        clone.instance = this.instance;
+
+        __entities["" + id] = clone;
+        clone
+    }};
 
     __entities["" + id] = entity;
     entity
@@ -763,6 +958,165 @@ mesh.load = |asset_id| {{
     entity.deformations = [];
     entity.material = ();
     entity.materialParams = #{{}};
+    entity.lit = true;
+    entity.emissive = 0.0;
+    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, radius_x: 1.0, radius_z: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
+
+    // Instance method - creates a new entity sharing geometry with copied properties
+    entity.instance = || {{
+        let id = __next_id;
+        __next_id += 1;
+
+        let clone = #{{}};
+        clone.__id = id;
+        clone.__type = this.__type;
+        if this.contains("__asset_id") {{ clone.__asset_id = this.__asset_id; }}
+
+        clone.position = #{{ x: this.position.x, y: this.position.y, z: this.position.z }};
+        clone.rotation = #{{ x: this.rotation.x, y: this.rotation.y, z: this.rotation.z }};
+        clone.scale = this.scale;
+        clone.visible = this.visible;
+        clone.color = #{{ r: this.color.r, g: this.color.g, b: this.color.b, a: this.color.a }};
+        clone.renderMode = this.renderMode;
+        clone.wireframeColor = #{{ r: this.wireframeColor.r, g: this.wireframeColor.g, b: this.wireframeColor.b, a: this.wireframeColor.a }};
+        clone.deformations = [];
+        clone.material = this.material;
+        clone.materialParams = #{{}};
+        clone.lit = this.lit;
+        clone.emissive = this.emissive;
+        clone.shadow = this.shadow;
+        clone.instance = this.instance;
+
+        __entities["" + id] = clone;
+        clone
+    }};
+
+    __entities["" + id] = entity;
+    entity
+}};
+
+// Radial module - radial primitives (rings, arcs, waves)
+let radial = #{{}};
+radial.__type = "radial_namespace";
+
+radial.ring = |options| {{
+    let id = __next_id;
+    __next_id += 1;
+
+    let entity = #{{}};
+    entity.__id = id;
+    entity.__type = "radial_ring";
+
+    // Ring-specific parameters (all support Signal | f32)
+    entity.__radius = if options.contains("radius") {{ options.radius }} else {{ 1.0 }};
+    entity.__thickness = if options.contains("thickness") {{ options.thickness }} else {{ 0.1 }};
+    entity.__start_angle = if options.contains("start_angle") {{ options.start_angle }} else {{ 0.0 }};
+    entity.__end_angle = if options.contains("end_angle") {{ options.end_angle }} else {{ 6.283185307 }}; // 2*PI
+    entity.__segments = if options.contains("segments") {{ options.segments }} else {{ 64 }};
+
+    // Standard entity properties
+    entity.position = #{{ x: 0.0, y: 0.0, z: 0.0 }};
+    entity.rotation = #{{ x: 0.0, y: 0.0, z: 0.0 }};
+    entity.scale = 1.0;
+    entity.visible = true;
+    entity.color = #{{ r: 1.0, g: 1.0, b: 1.0, a: 1.0 }};
+    entity.renderMode = "solid";
+    entity.wireframeColor = #{{ r: 1.0, g: 1.0, b: 1.0, a: 1.0 }};
+    entity.deformations = [];
+    entity.material = ();
+    entity.materialParams = #{{}};
+    entity.lit = true;
+    entity.emissive = 0.0;
+    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, radius_x: 1.0, radius_z: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
+
+    // Instance method
+    entity.instance = || {{
+        let id = __next_id;
+        __next_id += 1;
+
+        let clone = #{{}};
+        clone.__id = id;
+        clone.__type = this.__type;
+        clone.__radius = this.__radius;
+        clone.__thickness = this.__thickness;
+        clone.__start_angle = this.__start_angle;
+        clone.__end_angle = this.__end_angle;
+        clone.__segments = this.__segments;
+
+        clone.position = #{{ x: this.position.x, y: this.position.y, z: this.position.z }};
+        clone.rotation = #{{ x: this.rotation.x, y: this.rotation.y, z: this.rotation.z }};
+        clone.scale = this.scale;
+        clone.visible = this.visible;
+        clone.color = #{{ r: this.color.r, g: this.color.g, b: this.color.b, a: this.color.a }};
+        clone.renderMode = this.renderMode;
+        clone.wireframeColor = #{{ r: this.wireframeColor.r, g: this.wireframeColor.g, b: this.wireframeColor.b, a: this.wireframeColor.a }};
+        clone.deformations = [];
+        clone.material = this.material;
+        clone.materialParams = #{{}};
+        clone.lit = this.lit;
+        clone.emissive = this.emissive;
+        clone.shadow = this.shadow;
+        clone.instance = this.instance;
+
+        __entities["" + id] = clone;
+        clone
+    }};
+
+    __entities["" + id] = entity;
+    entity
+}};
+
+radial.wave = |signal, options| {{
+    let id = __next_id;
+    __next_id += 1;
+
+    let entity = #{{}};
+    entity.__id = id;
+    entity.__type = "radial_wave";
+    entity.__signal = signal;
+
+    // Wave-specific parameters
+    entity.__base_radius = if options.contains("base_radius") {{ options.base_radius }} else {{ 1.0 }};
+    entity.__amplitude = if options.contains("amplitude") {{ options.amplitude }} else {{ 0.5 }};
+    entity.__wave_frequency = if options.contains("wave_frequency") {{ options.wave_frequency }} else {{ 4 }};
+    entity.__resolution = if options.contains("resolution") {{ options.resolution }} else {{ 128 }};
+
+    // Standard entity properties
+    entity.position = #{{ x: 0.0, y: 0.0, z: 0.0 }};
+    entity.rotation = #{{ x: 0.0, y: 0.0, z: 0.0 }};
+    entity.scale = 1.0;
+    entity.visible = true;
+    entity.color = #{{ r: 1.0, g: 1.0, b: 1.0, a: 1.0 }};
+
+    __entities["" + id] = entity;
+    entity
+}};
+
+// Points module - point cloud primitives
+let points = #{{}};
+points.__type = "points_namespace";
+
+points.cloud = |options| {{
+    let id = __next_id;
+    __next_id += 1;
+
+    let entity = #{{}};
+    entity.__id = id;
+    entity.__type = "point_cloud";
+
+    // Point cloud parameters
+    entity.__count = if options.contains("count") {{ options.count }} else {{ 100 }};
+    entity.__spread = if options.contains("spread") {{ options.spread }} else {{ 1.0 }};
+    entity.__mode = if options.contains("mode") {{ options.mode }} else {{ "uniform" }};
+    entity.__seed = if options.contains("seed") {{ options.seed }} else {{ 0 }};
+    entity.__point_size = if options.contains("point_size") {{ options.point_size }} else {{ 2.0 }};
+
+    // Standard entity properties
+    entity.position = #{{ x: 0.0, y: 0.0, z: 0.0 }};
+    entity.rotation = #{{ x: 0.0, y: 0.0, z: 0.0 }};
+    entity.scale = 1.0;
+    entity.visible = true;
+    entity.color = #{{ r: 1.0, g: 1.0, b: 1.0, a: 1.0 }};
 
     __entities["" + id] = entity;
     entity
@@ -886,6 +1240,39 @@ line.trace = |signal, options| {{
     entity
 }};
 
+line.ribbon = |signal, options| {{
+    let id = __next_id;
+    __next_id += 1;
+
+    let max_points = if options.contains("max_points") {{ options.max_points }} else {{ 256 }};
+    let mode = if options.contains("mode") {{ options.mode }} else {{ "strip" }};
+    let width = if options.contains("width") {{ options.width }} else {{ 0.1 }};
+    let twist = if options.contains("twist") {{ options.twist }} else {{ 0.0 }};
+
+    let entity = #{{}};
+    entity.__id = id;
+    entity.__type = "line_ribbon";
+    entity.__max_points = max_points;
+    entity.__mode = mode;
+    entity.__width = width;
+    entity.__twist = twist;
+    entity.__signal = signal;
+
+    entity.position = #{{ x: 0.0, y: 0.0, z: 0.0 }};
+    entity.rotation = #{{ x: 0.0, y: 0.0, z: 0.0 }};
+    entity.scale = 1.0;
+    entity.visible = true;
+    entity.color = #{{ r: 1.0, g: 1.0, b: 1.0, a: 1.0 }};
+
+    entity.clear = || {{
+        // Clear will be handled in sync
+        this.__clear = true;
+    }};
+
+    __entities["" + id] = entity;
+    entity
+}};
+
 // Scene module
 let scene = #{{}};
 scene.__type = "scene_namespace";
@@ -1002,6 +1389,31 @@ fx.distortion = |options| {{
     __post_effects["" + effect.__id] = effect;
     effect
 }};
+fx.zoomWrap = |options| {{
+    let effect = __fx_create_zoom_wrap(options);
+    __post_effects["" + effect.__id] = effect;
+    effect
+}};
+fx.radialBlur = |options| {{
+    let effect = __fx_create_radial_blur(options);
+    __post_effects["" + effect.__id] = effect;
+    effect
+}};
+fx.directionalBlur = |options| {{
+    let effect = __fx_create_directional_blur(options);
+    __post_effects["" + effect.__id] = effect;
+    effect
+}};
+fx.chromaticAberration = |options| {{
+    let effect = __fx_create_chromatic_aberration(options);
+    __post_effects["" + effect.__id] = effect;
+    effect
+}};
+fx.grain = |options| {{
+    let effect = __fx_create_grain(options);
+    __post_effects["" + effect.__id] = effect;
+    effect
+}};
 
 // Post-processing chain management (post namespace)
 let post = #{{}};
@@ -1103,6 +1515,9 @@ feedback.is_enabled = || {{
 
 // === Camera Namespace ===
 {camera_namespace}
+
+// === Lighting Namespace ===
+{lighting_namespace}
 
 // === User Script ===
 "#);
@@ -1325,6 +1740,7 @@ feedback.is_enabled = || {{
             custom_signals,
             &signal_statistics,
             &mut signal_state,
+            None, // track_duration - TODO: pass actual track duration when available
         );
         let mut frame_cache: HashMap<crate::signal::SignalId, f32> = HashMap::new();
 
@@ -1435,6 +1851,31 @@ feedback.is_enabled = || {{
                             .unwrap_or_else(|| "unknown".into());
                         self.create_entity_with_id(entity_id, MeshType::Asset(asset_id.to_string()));
                     }
+                    "radial_ring" => {
+                        // Read ring parameters (these can be Signals, so evaluate them)
+                        let radius = entity_map.get("__radius")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        let thickness = entity_map.get("__thickness")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(0.1);
+                        let start_angle = entity_map.get("__start_angle")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(0.0);
+                        let end_angle = entity_map.get("__end_angle")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(std::f32::consts::TAU);
+                        let segments = entity_map.get("__segments")
+                            .and_then(|d| d.as_int().ok())
+                            .unwrap_or(64) as u32;
+                        self.create_entity_with_id(entity_id, MeshType::RadialRing {
+                            radius,
+                            thickness,
+                            start_angle,
+                            end_angle,
+                            segments,
+                        });
+                    }
                     "line_strip" | "line_trace" => {
                         let max_points = entity_map.get("__max_points")
                             .and_then(|d| d.as_int().ok())
@@ -1447,6 +1888,62 @@ feedback.is_enabled = || {{
                     }
                     "group" => {
                         self.create_group_with_id(entity_id);
+                    }
+                    "point_cloud" => {
+                        let count = entity_map.get("__count")
+                            .and_then(|d| d.as_int().ok())
+                            .unwrap_or(100) as usize;
+                        let spread = entity_map.get("__spread")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        let mode_str = entity_map.get("__mode")
+                            .and_then(|d| d.clone().into_string().ok())
+                            .unwrap_or_else(|| "uniform".into());
+                        let mode = match mode_str.as_str() {
+                            "sphere" => PointCloudMode::Sphere,
+                            _ => PointCloudMode::Uniform,
+                        };
+                        let seed = entity_map.get("__seed")
+                            .and_then(|d| d.as_int().ok())
+                            .unwrap_or(0) as u64;
+                        let point_size = entity_map.get("__point_size")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(2.0);
+                        self.create_point_cloud_with_id(entity_id, count, spread, mode, seed, point_size);
+                    }
+                    "radial_wave" => {
+                        let base_radius = entity_map.get("__base_radius")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        let amplitude = entity_map.get("__amplitude")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(0.5);
+                        let wave_frequency = entity_map.get("__wave_frequency")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(4.0);
+                        let resolution = entity_map.get("__resolution")
+                            .and_then(|d| d.as_int().ok())
+                            .unwrap_or(128) as usize;
+                        self.create_radial_wave_with_id(entity_id, base_radius, amplitude, wave_frequency, resolution);
+                    }
+                    "line_ribbon" => {
+                        let max_points = entity_map.get("__max_points")
+                            .and_then(|d| d.as_int().ok())
+                            .unwrap_or(256) as usize;
+                        let mode_str = entity_map.get("__mode")
+                            .and_then(|d| d.clone().into_string().ok())
+                            .unwrap_or_else(|| "strip".into());
+                        let mode = match mode_str.as_str() {
+                            "tube" => RibbonMode::Tube,
+                            _ => RibbonMode::Strip,
+                        };
+                        let width = entity_map.get("__width")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(0.1);
+                        let twist = entity_map.get("__twist")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(0.0);
+                        self.create_ribbon_with_id(entity_id, max_points, mode, width, twist);
                     }
                     _ => continue,
                 }
@@ -1580,6 +2077,85 @@ feedback.is_enabled = || {{
                             }
                         }
                     }
+
+                    // Sync lighting properties
+                    if let Some(lit) = entity_map.get("lit").and_then(|d| d.as_bool().ok()) {
+                        mesh.lit = lit;
+                    }
+                    if let Some(emissive) = entity_map.get("emissive").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                        mesh.emissive = emissive;
+                    }
+
+                    // Sync blob shadow properties
+                    if let Some(shadow_map) = entity_map.get("shadow").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                        if let Some(enabled) = shadow_map.get("enabled").and_then(|d| d.as_bool().ok()) {
+                            mesh.shadow.enabled = enabled;
+                        }
+                        if let Some(plane_y) = shadow_map.get("plane_y").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                            mesh.shadow.plane_y = plane_y;
+                        }
+                        if let Some(opacity) = shadow_map.get("opacity").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                            mesh.shadow.opacity = opacity;
+                        }
+                        if let Some(radius_x) = shadow_map.get("radius_x").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                            mesh.shadow.radius_x = radius_x;
+                        }
+                        if let Some(radius_z) = shadow_map.get("radius_z").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                            mesh.shadow.radius_z = radius_z;
+                        }
+                        // Also support single "radius" for uniform shadows
+                        if let Some(radius) = shadow_map.get("radius").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                            mesh.shadow.radius_x = radius;
+                            mesh.shadow.radius_z = radius;
+                        }
+                        if let Some(softness) = shadow_map.get("softness").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                            mesh.shadow.softness = softness;
+                        }
+                        if let Some(offset_x) = shadow_map.get("offset_x").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                            mesh.shadow.offset_x = offset_x;
+                        }
+                        if let Some(offset_z) = shadow_map.get("offset_z").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                            mesh.shadow.offset_z = offset_z;
+                        }
+                        // Shadow color
+                        if let Some(color_map) = shadow_map.get("color").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                            if let Some(r) = color_map.get("r").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                                mesh.shadow.color[0] = r;
+                            }
+                            if let Some(g) = color_map.get("g").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                                mesh.shadow.color[1] = g;
+                            }
+                            if let Some(b) = color_map.get("b").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                                mesh.shadow.color[2] = b;
+                            }
+                        }
+                    }
+
+                    // Update radial ring parameters (can be Signals that change per frame)
+                    if matches!(mesh.mesh_type, MeshType::RadialRing { .. }) {
+                        let radius = entity_map.get("__radius")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        let thickness = entity_map.get("__thickness")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(0.1);
+                        let start_angle = entity_map.get("__start_angle")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(0.0);
+                        let end_angle = entity_map.get("__end_angle")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(std::f32::consts::TAU);
+                        let segments = entity_map.get("__segments")
+                            .and_then(|d| d.as_int().ok())
+                            .unwrap_or(64) as u32;
+                        mesh.mesh_type = MeshType::RadialRing {
+                            radius,
+                            thickness,
+                            start_angle,
+                            end_angle,
+                            segments,
+                        };
+                    }
                 }
 
                 // Line-specific: sync points
@@ -1663,6 +2239,131 @@ feedback.is_enabled = || {{
                         }
                     }
                 }
+
+                // PointCloud-specific: sync color and point_size
+                if let SceneEntity::PointCloud(cloud) = entity {
+                    if let Some(color) = entity_map.get("color").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                        cloud.color[0] = color
+                            .get("r")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        cloud.color[1] = color
+                            .get("g")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        cloud.color[2] = color
+                            .get("b")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        cloud.color[3] = color
+                            .get("a")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                    }
+                    if let Some(point_size) = entity_map.get("__point_size")
+                        .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                    {
+                        cloud.point_size = point_size;
+                    }
+                }
+
+                // RadialWave-specific: sync color, parameters, and signal value
+                if let SceneEntity::RadialWave(wave) = entity {
+                    if let Some(color) = entity_map.get("color").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                        wave.color[0] = color
+                            .get("r")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        wave.color[1] = color
+                            .get("g")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        wave.color[2] = color
+                            .get("b")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        wave.color[3] = color
+                            .get("a")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                    }
+                    // Update wave parameters (support Signal | f32)
+                    if let Some(base_radius) = entity_map.get("__base_radius")
+                        .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                    {
+                        wave.base_radius = base_radius;
+                    }
+                    if let Some(amplitude) = entity_map.get("__amplitude")
+                        .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                    {
+                        wave.amplitude = amplitude;
+                    }
+                    if let Some(wave_frequency) = entity_map.get("__wave_frequency")
+                        .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                    {
+                        wave.wave_frequency = wave_frequency;
+                    }
+                    // Evaluate the signal and update signal_value
+                    if let Some(signal) = entity_map.get("__signal").and_then(|d| d.clone().try_cast::<Signal>()) {
+                        let value = if let Some(cached) = frame_cache.get(&signal.id) {
+                            *cached
+                        } else {
+                            let v = signal.evaluate(&mut eval_ctx);
+                            frame_cache.insert(signal.id, v);
+                            v
+                        };
+                        wave.signal_value = value;
+                    }
+                }
+
+                // Ribbon-specific: sync color, update parameters, evaluate signal and push point
+                if let SceneEntity::Ribbon(ribbon) = entity {
+                    if let Some(color) = entity_map.get("color").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                        ribbon.color[0] = color
+                            .get("r")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        ribbon.color[1] = color
+                            .get("g")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        ribbon.color[2] = color
+                            .get("b")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                        ribbon.color[3] = color
+                            .get("a")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(1.0);
+                    }
+                    // Update ribbon parameters
+                    if let Some(width) = entity_map.get("__width")
+                        .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                    {
+                        ribbon.width = width;
+                    }
+                    if let Some(twist) = entity_map.get("__twist")
+                        .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                    {
+                        ribbon.twist = twist;
+                    }
+                    // Check for clear flag
+                    if entity_map.get("__clear").and_then(|d| d.as_bool().ok()).unwrap_or(false) {
+                        ribbon.clear();
+                    }
+                    // Evaluate signal and push point (x = time, y = signal value)
+                    if let Some(signal) = entity_map.get("__signal").and_then(|d| d.clone().try_cast::<Signal>()) {
+                        let value = if let Some(cached) = frame_cache.get(&signal.id) {
+                            *cached
+                        } else {
+                            let v = signal.evaluate(&mut eval_ctx);
+                            frame_cache.insert(signal.id, v);
+                            v
+                        };
+                        // Push point with time on X and signal value on Y
+                        ribbon.push(eval_ctx.time, value);
+                    }
+                }
             }
 
             // Sync parent-child relationships
@@ -1708,6 +2409,11 @@ feedback.is_enabled = || {{
         let (camera_config, camera_uniforms) = sync_camera_from_scope(&self.scope, &mut eval_ctx);
         self.camera_config = camera_config;
         self.camera_uniforms = camera_uniforms;
+
+        // Sync lighting configuration from scope
+        let (lighting_config, lighting_uniforms) = sync_lighting_from_scope(&self.scope, &mut eval_ctx);
+        self.lighting_config = lighting_config;
+        self.lighting_uniforms = lighting_uniforms;
 
         // Sync particle systems from scope
         self.sync_particle_systems_from_scope(&mut eval_ctx, &scene_id_set);
@@ -1849,6 +2555,75 @@ feedback.is_enabled = || {{
                         let x = Self::eval_color_channel(center.get("x"), 0.5, eval_ctx, frame_cache);
                         let y = Self::eval_color_channel(center.get("y"), 0.5, eval_ctx, frame_cache);
                         instance.set_param("center", EffectParamValue::Vec2([x, y]));
+                    }
+                }
+                "zoom_wrap" => {
+                    if let Some(v) = effect_map.get("amount").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                        instance.set_param("amount", v);
+                    }
+                    // wrap_mode: 0 = repeat, 1 = mirror
+                    if let Some(mode) = effect_map.get("wrap_mode") {
+                        let mode_val = if let Ok(s) = mode.clone().into_string() {
+                            match s.as_str() {
+                                "mirror" => 1.0,
+                                _ => 0.0, // default to repeat
+                            }
+                        } else if let Ok(f) = mode.as_float() {
+                            f as f32
+                        } else if let Ok(i) = mode.as_int() {
+                            i as f32
+                        } else {
+                            0.0
+                        };
+                        instance.set_param("wrap_mode", EffectParamValue::Float(mode_val));
+                    }
+                    if let Some(center) = effect_map.get("center").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                        let x = Self::eval_color_channel(center.get("x"), 0.5, eval_ctx, frame_cache);
+                        let y = Self::eval_color_channel(center.get("y"), 0.5, eval_ctx, frame_cache);
+                        instance.set_param("center", EffectParamValue::Vec2([x, y]));
+                    }
+                }
+                "radial_blur" => {
+                    if let Some(v) = effect_map.get("strength").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                        instance.set_param("strength", v);
+                    }
+                    if let Some(v) = effect_map.get("samples").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                        instance.set_param("samples", v);
+                    }
+                    if let Some(center) = effect_map.get("center").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                        let x = Self::eval_color_channel(center.get("x"), 0.5, eval_ctx, frame_cache);
+                        let y = Self::eval_color_channel(center.get("y"), 0.5, eval_ctx, frame_cache);
+                        instance.set_param("center", EffectParamValue::Vec2([x, y]));
+                    }
+                }
+                "directional_blur" => {
+                    if let Some(v) = effect_map.get("amount").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                        instance.set_param("amount", v);
+                    }
+                    if let Some(v) = effect_map.get("angle").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                        instance.set_param("angle", v);
+                    }
+                    if let Some(v) = effect_map.get("samples").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                        instance.set_param("samples", v);
+                    }
+                }
+                "chromatic_aberration" => {
+                    if let Some(v) = effect_map.get("amount").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                        instance.set_param("amount", v);
+                    }
+                    if let Some(v) = effect_map.get("angle").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                        instance.set_param("angle", v);
+                    }
+                }
+                "grain" => {
+                    if let Some(v) = effect_map.get("amount").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                        instance.set_param("amount", v);
+                    }
+                    if let Some(v) = effect_map.get("scale").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                        instance.set_param("scale", v);
+                    }
+                    if let Some(v) = effect_map.get("seed").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                        instance.set_param("seed", v);
                     }
                 }
                 _ => {}
@@ -2042,6 +2817,50 @@ feedback.is_enabled = || {{
         self.scene_graph.entities.insert(id, SceneEntity::Group(group));
     }
 
+    /// Create a point cloud with a specific ID (for syncing from script).
+    fn create_point_cloud_with_id(
+        &mut self,
+        id: EntityId,
+        count: usize,
+        spread: f32,
+        mode: PointCloudMode,
+        seed: u64,
+        point_size: f32,
+    ) {
+        use crate::scene_graph::SceneEntity;
+
+        let cloud = crate::scene_graph::PointCloud::new(count, spread, mode, seed, point_size);
+        self.scene_graph.entities.insert(id, SceneEntity::PointCloud(cloud));
+    }
+
+    fn create_radial_wave_with_id(
+        &mut self,
+        id: EntityId,
+        base_radius: f32,
+        amplitude: f32,
+        wave_frequency: f32,
+        resolution: usize,
+    ) {
+        use crate::scene_graph::SceneEntity;
+
+        let wave = RadialWave::new(base_radius, amplitude, wave_frequency, resolution);
+        self.scene_graph.entities.insert(id, SceneEntity::RadialWave(wave));
+    }
+
+    fn create_ribbon_with_id(
+        &mut self,
+        id: EntityId,
+        max_points: usize,
+        mode: RibbonMode,
+        width: f32,
+        twist: f32,
+    ) {
+        use crate::scene_graph::SceneEntity;
+
+        let ribbon = Ribbon::new(max_points, mode, width, twist);
+        self.scene_graph.entities.insert(id, SceneEntity::Ribbon(ribbon));
+    }
+
     /// Check if a script is loaded.
     pub fn has_script(&self) -> bool {
         self.ast.is_some()
@@ -2165,6 +2984,7 @@ feedback.is_enabled = || {{
                     &empty_custom_signals,
                     &empty_stats,
                     &mut temp_state,
+                    Some(duration), // track_duration
                 );
 
                 // Evaluate the source signal (before normalization)

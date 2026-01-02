@@ -254,6 +254,11 @@ impl VisualiserState {
         &self.script_engine.camera_uniforms
     }
 
+    /// Get the evaluated lighting uniforms (signals resolved to f32 for renderer).
+    pub fn lighting_uniforms(&self) -> &crate::lighting::LightingUniforms {
+        &self.script_engine.lighting_uniforms
+    }
+
     /// Get the current post-processing chain.
     pub fn post_chain(&self) -> &crate::post_processing::PostProcessingChain {
         &self.script_engine.post_chain

@@ -18,7 +18,7 @@ use crate::musical_time::{MusicalTimeSegment, MusicalTimeStructure, DEFAULT_BPM}
 use crate::signal::{
     EasingFunction, EnvelopeShape, GateParams, GeneratorNode, NormaliseParams, NoiseType,
     OverlapMode, SamplingConfig, SamplingStrategy, SamplingWindow, Signal, SignalNode,
-    SmoothParams, ToSignalOptions,
+    SmoothParams, TimeUnit, ToSignalOptions, WindowDirection,
 };
 use crate::signal_state::SignalState;
 use crate::signal_stats::StatisticsCache;
@@ -57,6 +57,10 @@ pub struct EvalContext<'a> {
     /// Runtime state for stateful operations.
     pub state: &'a mut SignalState,
 
+    /// Track duration in seconds (for event distance calculations).
+    /// When unavailable, event-based signals use fallback behavior.
+    pub track_duration: Option<f32>,
+
     /// Per-frame evaluation cache for signal memoization.
     /// Prevents re-evaluation of the same signal node multiple times per frame.
     frame_cache: RefCell<HashMap<SignalId, f32>>,
@@ -75,6 +79,7 @@ impl<'a> EvalContext<'a> {
         custom_signals: &'a HashMap<String, InputSignal>,
         statistics: &'a StatisticsCache,
         state: &'a mut SignalState,
+        track_duration: Option<f32>,
     ) -> Self {
         Self {
             time,
@@ -87,6 +92,7 @@ impl<'a> EvalContext<'a> {
             custom_signals,
             statistics,
             state,
+            track_duration,
             frame_cache: RefCell::new(HashMap::new()),
         }
     }
@@ -137,6 +143,25 @@ impl<'a> EvalContext<'a> {
         } else {
             // Default: assume 120 BPM starting at time 0
             self.time * DEFAULT_BPM / 60.0
+        }
+    }
+
+    /// Get track duration, with fallback to a large value if not available.
+    pub fn get_track_duration(&self) -> f32 {
+        self.track_duration.unwrap_or(f32::MAX)
+    }
+
+    /// Convert seconds to beats using current BPM.
+    pub fn seconds_to_beats(&self, seconds: f32) -> f32 {
+        seconds * self.current_bpm() / 60.0
+    }
+
+    /// Convert seconds to frames using current dt.
+    pub fn seconds_to_frames(&self, seconds: f32) -> f32 {
+        if self.dt > 0.0 {
+            seconds / self.dt
+        } else {
+            0.0
         }
     }
 }
@@ -272,6 +297,28 @@ impl Signal {
 
             SignalNode::EventStreamEnvelope { events, options } => {
                 self.evaluate_event_stream_envelope(events, options, ctx)
+            }
+
+            SignalNode::EventDistanceFromPrev { events, unit } => {
+                self.evaluate_event_distance_from_prev(events, *unit, ctx)
+            }
+
+            SignalNode::EventDistanceToNext { events, unit } => {
+                self.evaluate_event_distance_to_next(events, *unit, ctx)
+            }
+
+            SignalNode::EventCountInWindow { events, window_size, unit, direction } => {
+                let window = window_size.evaluate(ctx);
+                self.evaluate_event_count_in_window(events, window, *unit, *direction, ctx)
+            }
+
+            SignalNode::EventDensityInWindow { events, window_size, unit, direction } => {
+                let window = window_size.evaluate(ctx);
+                self.evaluate_event_density_in_window(events, window, *unit, *direction, ctx)
+            }
+
+            SignalNode::EventPhaseBetween { events } => {
+                self.evaluate_event_phase_between(events, ctx)
             }
 
             // === Math Primitives ===
@@ -995,6 +1042,206 @@ impl Signal {
     }
 
     // =========================================================================
+    // Event Distance, Count, Density, and Phase Operations
+    // =========================================================================
+
+    /// Binary search to find the index of the event just before or at the given time.
+    /// Returns None if time is before all events.
+    fn find_prev_event_index(events: &[crate::event_stream::Event], time: f32) -> Option<usize> {
+        if events.is_empty() || time < events[0].time {
+            return None;
+        }
+        // Binary search for the last event with time <= current time
+        let mut lo = 0;
+        let mut hi = events.len();
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if events[mid].time <= time {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        if lo > 0 { Some(lo - 1) } else { None }
+    }
+
+    /// Binary search to find the index of the event just after the given time.
+    /// Returns None if time is after all events.
+    fn find_next_event_index(events: &[crate::event_stream::Event], time: f32) -> Option<usize> {
+        if events.is_empty() {
+            return None;
+        }
+        // Binary search for the first event with time > current time
+        let mut lo = 0;
+        let mut hi = events.len();
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if events[mid].time <= time {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        if lo < events.len() { Some(lo) } else { None }
+    }
+
+    /// Convert time difference (in seconds) to the specified unit.
+    fn time_to_unit(dt_seconds: f32, unit: TimeUnit, ctx: &EvalContext) -> f32 {
+        match unit {
+            TimeUnit::Seconds => dt_seconds,
+            TimeUnit::Beats => ctx.seconds_to_beats(dt_seconds),
+            TimeUnit::Frames => ctx.seconds_to_frames(dt_seconds),
+        }
+    }
+
+    /// Convert window size from the specified unit to seconds.
+    fn window_to_seconds(window: f32, unit: TimeUnit, ctx: &EvalContext) -> f32 {
+        match unit {
+            TimeUnit::Seconds => window,
+            TimeUnit::Beats => ctx.beats_to_seconds(window),
+            TimeUnit::Frames => window * ctx.dt,
+        }
+    }
+
+    /// Evaluate distance from previous event.
+    fn evaluate_event_distance_from_prev(
+        &self,
+        events: &[crate::event_stream::Event],
+        unit: TimeUnit,
+        ctx: &EvalContext,
+    ) -> f32 {
+        if events.is_empty() {
+            return 0.0;
+        }
+
+        let time = ctx.time;
+
+        match Self::find_prev_event_index(events, time) {
+            Some(idx) => {
+                // Distance from previous event
+                let prev_time = events[idx].time;
+                let dt_seconds = time - prev_time;
+                Self::time_to_unit(dt_seconds, unit, ctx)
+            }
+            None => {
+                // Before first event: return distance to first event
+                let first_time = events[0].time;
+                let dt_seconds = first_time - time;
+                Self::time_to_unit(dt_seconds, unit, ctx)
+            }
+        }
+    }
+
+    /// Evaluate distance to next event.
+    fn evaluate_event_distance_to_next(
+        &self,
+        events: &[crate::event_stream::Event],
+        unit: TimeUnit,
+        ctx: &EvalContext,
+    ) -> f32 {
+        if events.is_empty() {
+            // No events: return distance to track end
+            let track_end = ctx.get_track_duration();
+            let dt_seconds = (track_end - ctx.time).max(0.0);
+            return Self::time_to_unit(dt_seconds, unit, ctx);
+        }
+
+        let time = ctx.time;
+
+        match Self::find_next_event_index(events, time) {
+            Some(idx) => {
+                // Distance to next event
+                let next_time = events[idx].time;
+                let dt_seconds = next_time - time;
+                Self::time_to_unit(dt_seconds, unit, ctx)
+            }
+            None => {
+                // After last event: return distance to track end
+                let track_end = ctx.get_track_duration();
+                let dt_seconds = (track_end - time).max(0.0);
+                Self::time_to_unit(dt_seconds, unit, ctx)
+            }
+        }
+    }
+
+    /// Evaluate event count in a window.
+    fn evaluate_event_count_in_window(
+        &self,
+        events: &[crate::event_stream::Event],
+        window: f32,
+        unit: TimeUnit,
+        direction: WindowDirection,
+        ctx: &EvalContext,
+    ) -> f32 {
+        if window <= 0.0 || events.is_empty() {
+            return 0.0;
+        }
+
+        let time = ctx.time;
+        let window_seconds = Self::window_to_seconds(window, unit, ctx);
+
+        let (start, end) = match direction {
+            WindowDirection::Prev => (time - window_seconds, time),
+            WindowDirection::Next => (time, time + window_seconds),
+        };
+
+        // Count events in range [start, end)
+        events.iter()
+            .filter(|e| e.time >= start && e.time < end)
+            .count() as f32
+    }
+
+    /// Evaluate event density in a window.
+    fn evaluate_event_density_in_window(
+        &self,
+        events: &[crate::event_stream::Event],
+        window: f32,
+        unit: TimeUnit,
+        direction: WindowDirection,
+        ctx: &EvalContext,
+    ) -> f32 {
+        if window <= 0.0 || events.is_empty() {
+            return 0.0;
+        }
+
+        let count = self.evaluate_event_count_in_window(events, window, unit, direction, ctx);
+
+        // Density = count / window_size (in original units)
+        count / window
+    }
+
+    /// Evaluate phase between previous and next event.
+    fn evaluate_event_phase_between(
+        &self,
+        events: &[crate::event_stream::Event],
+        ctx: &EvalContext,
+    ) -> f32 {
+        if events.is_empty() {
+            return 0.0;
+        }
+
+        let time = ctx.time;
+        let prev_idx = Self::find_prev_event_index(events, time);
+        let next_idx = Self::find_next_event_index(events, time);
+
+        match (prev_idx, next_idx) {
+            (Some(pi), Some(ni)) => {
+                let prev_time = events[pi].time;
+                let next_time = events[ni].time;
+                let interval = next_time - prev_time;
+                if interval <= 0.0 {
+                    0.5 // Events at same time
+                } else {
+                    (time - prev_time) / interval
+                }
+            }
+            (None, Some(_)) => 0.0,  // Before first event
+            (Some(_), None) => 1.0,  // After last event
+            (None, None) => 0.0,     // Should not happen if events is non-empty
+        }
+    }
+
+    // =========================================================================
     // Rate and Accumulation Operations
     // =========================================================================
 
@@ -1166,10 +1413,11 @@ mod tests {
         input_signals: &'a HashMap<String, InputSignal>,
         band_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
         stem_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
+        custom_signals: &'a HashMap<String, InputSignal>,
         statistics: &'a StatisticsCache,
         state: &'a mut SignalState,
     ) -> EvalContext<'a> {
-        EvalContext::new(time, dt, 0, None, input_signals, band_signals, stem_signals, statistics, state)
+        EvalContext::new(time, dt, 0, None, input_signals, band_signals, stem_signals, custom_signals, statistics, state, None)
     }
 
     #[test]
@@ -1177,9 +1425,10 @@ mod tests {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
         let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
 
         let signal = Signal::constant(42.0);
         assert!((signal.evaluate(&mut ctx) - 42.0).abs() < 0.001);
@@ -1195,9 +1444,10 @@ mod tests {
 
         let band_signals = HashMap::new();
         let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
 
         let signal = Signal::input("energy");
         assert!((signal.evaluate(&mut ctx) - 0.5).abs() < 0.001);
@@ -1221,9 +1471,10 @@ mod tests {
         band_signals.insert("Bass".to_string(), bass_features);
 
         let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
 
         // Access by label
         let bass_energy = Signal::band_input("Bass", "energy");
@@ -1243,9 +1494,10 @@ mod tests {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
         let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
 
         let a = Signal::constant(3.0);
         let b = Signal::constant(4.0);
@@ -1272,9 +1524,10 @@ mod tests {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
         let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
 
         let high = Signal::constant(0.8);
         let low = Signal::constant(0.2);
@@ -1291,9 +1544,10 @@ mod tests {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
         let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
 
         let mid = Signal::constant(0.5).sigmoid(10.0);
         assert!((mid.evaluate(&mut ctx) - 0.5).abs() < 0.01);
@@ -1310,11 +1564,12 @@ mod tests {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
         let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
 
         // At time 0, beat position 0, sin(0) = 0
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
         let sin = Signal::generator(GeneratorNode::Sin {
             freq_beats: 1.0,
             phase: 0.0,
@@ -1323,7 +1578,7 @@ mod tests {
 
         // At beat position 0.25, sin(0.25 * 2pi) = 1
         // With default 120 BPM, beat 0.25 is at 0.125 seconds
-        let mut ctx = make_test_context(0.125, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.125, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
         let value = sin.evaluate(&mut ctx);
         assert!((value - 1.0).abs() < 0.1);
     }
@@ -1333,9 +1588,10 @@ mod tests {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
         let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let ctx = make_test_context(1.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
+        let ctx = make_test_context(1.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
 
         // At 120 BPM, 1 second = 2 beats
         assert!((ctx.beat_position() - 2.0).abs() < 0.001);
@@ -1346,9 +1602,10 @@ mod tests {
         let inputs = HashMap::new();
         let band_signals = HashMap::new();
         let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
+        let ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
 
         // At default 120 BPM, 1 beat = 0.5 seconds
         assert!((ctx.beats_to_seconds(1.0) - 0.5).abs() < 0.001);
@@ -1370,7 +1627,7 @@ mod tests {
 
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &stats, &mut state);
+        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
 
         // Access by ID
         let drums_energy = Signal::stem_input("drums", "energy");

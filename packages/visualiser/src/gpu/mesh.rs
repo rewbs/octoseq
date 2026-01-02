@@ -4,12 +4,17 @@ use bytemuck::{Pod, Zeroable};
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct Vertex {
     pub position: [f32; 3],
+    pub normal: [f32; 3],
     pub color: [f32; 3],
 }
 
 impl Vertex {
-    const fn new(pos: [f32; 3], col: [f32; 3]) -> Self {
-        Self { position: pos, color: col }
+    pub const fn new(pos: [f32; 3], norm: [f32; 3], col: [f32; 3]) -> Self {
+        Self {
+            position: pos,
+            normal: norm,
+            color: col,
+        }
     }
 
     pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
@@ -20,12 +25,17 @@ impl Vertex {
                 wgpu::VertexAttribute {
                     offset: 0,
                     shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: wgpu::VertexFormat::Float32x3, // position
                 },
                 wgpu::VertexAttribute {
                     offset: 12, // [f32; 3] is 12 bytes
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: wgpu::VertexFormat::Float32x3, // normal
+                },
+                wgpu::VertexAttribute {
+                    offset: 24, // position (12) + normal (12)
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x3, // color
                 },
             ],
         }
@@ -33,37 +43,45 @@ impl Vertex {
 }
 
 pub fn create_cube_geometry() -> (Vec<Vertex>, Vec<u16>) {
+    // Per-face normals for flat shading
+    let front: [f32; 3] = [0.0, 0.0, 1.0];
+    let back: [f32; 3] = [0.0, 0.0, -1.0];
+    let top: [f32; 3] = [0.0, 1.0, 0.0];
+    let bottom: [f32; 3] = [0.0, -1.0, 0.0];
+    let right: [f32; 3] = [1.0, 0.0, 0.0];
+    let left: [f32; 3] = [-1.0, 0.0, 0.0];
+
     let vertices = vec![
         // Front face (Z+) - Red
-        Vertex::new([-0.5, -0.5, 0.5], [1.0, 0.2, 0.2]),
-        Vertex::new([0.5, -0.5, 0.5], [1.0, 0.2, 0.2]),
-        Vertex::new([0.5, 0.5, 0.5], [1.0, 0.2, 0.2]),
-        Vertex::new([-0.5, 0.5, 0.5], [1.0, 0.2, 0.2]),
+        Vertex::new([-0.5, -0.5, 0.5], front, [1.0, 0.2, 0.2]),
+        Vertex::new([0.5, -0.5, 0.5], front, [1.0, 0.2, 0.2]),
+        Vertex::new([0.5, 0.5, 0.5], front, [1.0, 0.2, 0.2]),
+        Vertex::new([-0.5, 0.5, 0.5], front, [1.0, 0.2, 0.2]),
         // Back face (Z-) - Blue
-        Vertex::new([-0.5, -0.5, -0.5], [0.2, 0.2, 1.0]),
-        Vertex::new([-0.5, 0.5, -0.5], [0.2, 0.2, 1.0]),
-        Vertex::new([0.5, 0.5, -0.5], [0.2, 0.2, 1.0]),
-        Vertex::new([0.5, -0.5, -0.5], [0.2, 0.2, 1.0]),
+        Vertex::new([-0.5, -0.5, -0.5], back, [0.2, 0.2, 1.0]),
+        Vertex::new([-0.5, 0.5, -0.5], back, [0.2, 0.2, 1.0]),
+        Vertex::new([0.5, 0.5, -0.5], back, [0.2, 0.2, 1.0]),
+        Vertex::new([0.5, -0.5, -0.5], back, [0.2, 0.2, 1.0]),
         // Top face (Y+) - Green
-        Vertex::new([-0.5, 0.5, -0.5], [0.2, 1.0, 0.2]),
-        Vertex::new([-0.5, 0.5, 0.5], [0.2, 1.0, 0.2]),
-        Vertex::new([0.5, 0.5, 0.5], [0.2, 1.0, 0.2]),
-        Vertex::new([0.5, 0.5, -0.5], [0.2, 1.0, 0.2]),
+        Vertex::new([-0.5, 0.5, -0.5], top, [0.2, 1.0, 0.2]),
+        Vertex::new([-0.5, 0.5, 0.5], top, [0.2, 1.0, 0.2]),
+        Vertex::new([0.5, 0.5, 0.5], top, [0.2, 1.0, 0.2]),
+        Vertex::new([0.5, 0.5, -0.5], top, [0.2, 1.0, 0.2]),
         // Bottom face (Y-) - Yellow
-        Vertex::new([-0.5, -0.5, -0.5], [1.0, 1.0, 0.2]),
-        Vertex::new([0.5, -0.5, -0.5], [1.0, 1.0, 0.2]),
-        Vertex::new([0.5, -0.5, 0.5], [1.0, 1.0, 0.2]),
-        Vertex::new([-0.5, -0.5, 0.5], [1.0, 1.0, 0.2]),
+        Vertex::new([-0.5, -0.5, -0.5], bottom, [1.0, 1.0, 0.2]),
+        Vertex::new([0.5, -0.5, -0.5], bottom, [1.0, 1.0, 0.2]),
+        Vertex::new([0.5, -0.5, 0.5], bottom, [1.0, 1.0, 0.2]),
+        Vertex::new([-0.5, -0.5, 0.5], bottom, [1.0, 1.0, 0.2]),
         // Right face (X+) - Magenta
-        Vertex::new([0.5, -0.5, -0.5], [1.0, 0.2, 1.0]),
-        Vertex::new([0.5, 0.5, -0.5], [1.0, 0.2, 1.0]),
-        Vertex::new([0.5, 0.5, 0.5], [1.0, 0.2, 1.0]),
-        Vertex::new([0.5, -0.5, 0.5], [1.0, 0.2, 1.0]),
+        Vertex::new([0.5, -0.5, -0.5], right, [1.0, 0.2, 1.0]),
+        Vertex::new([0.5, 0.5, -0.5], right, [1.0, 0.2, 1.0]),
+        Vertex::new([0.5, 0.5, 0.5], right, [1.0, 0.2, 1.0]),
+        Vertex::new([0.5, -0.5, 0.5], right, [1.0, 0.2, 1.0]),
         // Left face (X-) - Cyan
-        Vertex::new([-0.5, -0.5, -0.5], [0.2, 1.0, 1.0]),
-        Vertex::new([-0.5, -0.5, 0.5], [0.2, 1.0, 1.0]),
-        Vertex::new([-0.5, 0.5, 0.5], [0.2, 1.0, 1.0]),
-        Vertex::new([-0.5, 0.5, -0.5], [0.2, 1.0, 1.0]),
+        Vertex::new([-0.5, -0.5, -0.5], left, [0.2, 1.0, 1.0]),
+        Vertex::new([-0.5, -0.5, 0.5], left, [0.2, 1.0, 1.0]),
+        Vertex::new([-0.5, 0.5, 0.5], left, [0.2, 1.0, 1.0]),
+        Vertex::new([-0.5, 0.5, -0.5], left, [0.2, 1.0, 1.0]),
     ];
 
     let indices = vec![
@@ -80,12 +98,15 @@ pub fn create_cube_geometry() -> (Vec<Vertex>, Vec<u16>) {
 
 /// Create a unit plane in the XZ plane (Y up), centered at origin.
 pub fn create_plane_geometry() -> (Vec<Vertex>, Vec<u16>) {
+    // Constant Y-up normal for all vertices
+    let up: [f32; 3] = [0.0, 1.0, 0.0];
+
     let vertices = vec![
         // Four corners of the plane (white/gray gradient)
-        Vertex::new([-0.5, 0.0, -0.5], [0.8, 0.8, 0.8]),
-        Vertex::new([0.5, 0.0, -0.5], [0.9, 0.9, 0.9]),
-        Vertex::new([0.5, 0.0, 0.5], [1.0, 1.0, 1.0]),
-        Vertex::new([-0.5, 0.0, 0.5], [0.9, 0.9, 0.9]),
+        Vertex::new([-0.5, 0.0, -0.5], up, [0.8, 0.8, 0.8]),
+        Vertex::new([0.5, 0.0, -0.5], up, [0.9, 0.9, 0.9]),
+        Vertex::new([0.5, 0.0, 0.5], up, [1.0, 1.0, 1.0]),
+        Vertex::new([-0.5, 0.0, 0.5], up, [0.9, 0.9, 0.9]),
     ];
 
     let indices = vec![
@@ -116,11 +137,14 @@ pub fn create_sphere_geometry() -> (Vec<Vertex>, Vec<u16>) {
             let sin_phi = phi.sin();
             let cos_phi = phi.cos();
 
+            // Unit sphere position (also the normal for smooth shading)
             let x = cos_phi * sin_theta;
             let y = cos_theta;
             let z = sin_phi * sin_theta;
 
             let position = [x * radius, y * radius, z * radius];
+            // Normal is the unit sphere position (already normalized)
+            let normal = [x, y, z];
 
             // Color gradient: poles are cool (blue), equator is warm (orange/red)
             let t = (y + 1.0) / 2.0; // 0 at bottom, 1 at top
@@ -133,7 +157,7 @@ pub fn create_sphere_geometry() -> (Vec<Vertex>, Vec<u16>) {
                 0.2 + equator_dist * 0.8,  // B: low at equator, high at poles
             ];
 
-            vertices.push(Vertex::new(position, color));
+            vertices.push(Vertex::new(position, normal, color));
         }
     }
 
@@ -185,9 +209,11 @@ pub const DEBUG_CUBE_EDGES: [u16; 24] = [
 /// Returns vertices (with yellow color for visibility) and edge indices.
 pub fn create_debug_cube_geometry() -> (Vec<Vertex>, Vec<u16>) {
     let color = [1.0, 0.9, 0.0]; // Yellow for debug bounds
+    // Debug cube is for wireframe only; use a default normal
+    let default_normal = [0.0, 1.0, 0.0];
     let vertices: Vec<Vertex> = DEBUG_CUBE_VERTICES
         .iter()
-        .map(|&pos| Vertex::new(pos, color))
+        .map(|&pos| Vertex::new(pos, default_normal, color))
         .collect();
     let indices = DEBUG_CUBE_EDGES.to_vec();
     (vertices, indices)
@@ -216,4 +242,75 @@ pub fn extract_edges(indices: &[u16]) -> Vec<u16> {
 
     // Flatten to index array
     edges.into_iter().flat_map(|(a, b)| [a, b]).collect()
+}
+
+/// Create a radial ring/arc in the XY plane (facing +Z).
+///
+/// The ring extends from `radius - thickness/2` to `radius + thickness/2`.
+/// Angles are in radians, with 0 pointing along +X and increasing counter-clockwise.
+///
+/// # Arguments
+/// * `radius` - Distance from center to middle of ring
+/// * `thickness` - Width of ring (inner to outer edge)
+/// * `start_angle` - Starting angle in radians
+/// * `end_angle` - Ending angle in radians
+/// * `segments` - Number of segments around the arc
+pub fn create_radial_ring_geometry(
+    radius: f32,
+    thickness: f32,
+    start_angle: f32,
+    end_angle: f32,
+    segments: u32,
+) -> (Vec<Vertex>, Vec<u16>) {
+    let inner_radius = (radius - thickness / 2.0).max(0.0);
+    let outer_radius = radius + thickness / 2.0;
+    let seg_count = segments.max(3);
+
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    // Normal faces +Z for XY plane ring
+    let normal = [0.0, 0.0, 1.0];
+
+    for i in 0..=seg_count {
+        let t = i as f32 / seg_count as f32;
+        let angle = start_angle + t * (end_angle - start_angle);
+        let cos_a = angle.cos();
+        let sin_a = angle.sin();
+
+        // Color gradient: inner is darker, outer is lighter
+        let inner_color = [0.7, 0.7, 0.7];
+        let outer_color = [1.0, 1.0, 1.0];
+
+        // Inner vertex
+        vertices.push(Vertex::new(
+            [inner_radius * cos_a, inner_radius * sin_a, 0.0],
+            normal,
+            inner_color,
+        ));
+
+        // Outer vertex
+        vertices.push(Vertex::new(
+            [outer_radius * cos_a, outer_radius * sin_a, 0.0],
+            normal,
+            outer_color,
+        ));
+    }
+
+    // Generate quad strip indices
+    for i in 0..seg_count {
+        let base = (i * 2) as u16;
+        // Two triangles per quad
+        // Triangle 1: inner_i, inner_i+1, outer_i
+        indices.push(base);
+        indices.push(base + 2);
+        indices.push(base + 1);
+
+        // Triangle 2: outer_i, inner_i+1, outer_i+1
+        indices.push(base + 1);
+        indices.push(base + 2);
+        indices.push(base + 3);
+    }
+
+    (vertices, indices)
 }

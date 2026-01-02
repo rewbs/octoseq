@@ -48,22 +48,19 @@ export function MeshAssetsInspector() {
   };
 
   return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">3D Objects</h3>
-        <Button size="sm" variant="outline" onClick={handleAddClick}>
-          <Plus className="h-4 w-4 mr-1" />
-          Add .obj
-        </Button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".obj"
-          multiple
-          onChange={handleFileChange}
-          className="hidden"
-        />
-      </div>
+    <div className="p-2 space-y-3">
+      <Button size="sm" variant="outline" className="w-full" onClick={handleAddClick}>
+        <Plus className="h-4 w-4 mr-2" />
+        Add .obj File
+      </Button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".obj"
+        multiple
+        onChange={handleFileChange}
+        className="hidden"
+      />
 
       {assets.length === 0 ? (
         <div className="text-center py-6">

@@ -189,6 +189,40 @@ pub enum FeedbackBlend {
     Max,
 }
 
+/// When in the pipeline feedback samples from.
+///
+/// This is a creative choice that affects how feedback interacts with post-processing:
+/// - `PreFx`: Feedback samples the raw scene render before any effects (trails remain crisp)
+/// - `PostFx`: Feedback samples after all effects (bloom, blur, etc. accumulate over time)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FeedbackSamplingMode {
+    /// Sample scene render before post-FX (default, current behavior).
+    #[default]
+    PreFx,
+    /// Sample after all post-processing effects.
+    PostFx,
+}
+
+impl FeedbackSamplingMode {
+    /// Convert to GPU-compatible u32.
+    pub fn to_u32(self) -> u32 {
+        match self {
+            FeedbackSamplingMode::PreFx => 0,
+            FeedbackSamplingMode::PostFx => 1,
+        }
+    }
+
+    /// Parse from string (for script API).
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "post_fx" | "postfx" | "post" | "after" | "after_effects" => {
+                FeedbackSamplingMode::PostFx
+            }
+            _ => FeedbackSamplingMode::PreFx,
+        }
+    }
+}
+
 impl FeedbackBlend {
     /// Convert to GPU-compatible u32.
     pub fn to_u32(self) -> u32 {
@@ -379,6 +413,9 @@ pub struct FeedbackConfig {
     pub blend: FeedbackBlend,
     /// Blend opacity (0 = no feedback visible, 1 = full feedback).
     pub opacity: SignalOrF32,
+
+    /// Where in the pipeline feedback samples from.
+    pub sampling_mode: FeedbackSamplingMode,
 }
 
 impl FeedbackConfig {
@@ -595,6 +632,7 @@ impl FeedbackConfig {
 ///     .color.decay(0.95)
 ///     .blend.add()
 ///     .opacity(0.9)
+///     .sample_after_effects()
 ///     .build();
 /// ```
 #[derive(Clone, Debug, Default)]
@@ -603,6 +641,7 @@ pub struct FeedbackBuilder {
     color_chain: Vec<ColorStep>,
     blend: FeedbackBlend,
     opacity: SignalOrF32,
+    sampling_mode: FeedbackSamplingMode,
 }
 
 impl FeedbackBuilder {
@@ -643,6 +682,27 @@ impl FeedbackBuilder {
         self.opacity = opacity;
     }
 
+    /// Set the sampling mode.
+    pub fn set_sampling_mode(&mut self, mode: FeedbackSamplingMode) {
+        self.sampling_mode = mode;
+    }
+
+    /// Set feedback to sample before post-processing effects (default).
+    ///
+    /// Trails remain crisp; post-FX are applied fresh each frame.
+    pub fn sample_before_effects(mut self) -> Self {
+        self.sampling_mode = FeedbackSamplingMode::PreFx;
+        self
+    }
+
+    /// Set feedback to sample after all post-processing effects.
+    ///
+    /// Bloom, blur, and other effects accumulate over time in trails.
+    pub fn sample_after_effects(mut self) -> Self {
+        self.sampling_mode = FeedbackSamplingMode::PostFx;
+        self
+    }
+
     /// Build the final FeedbackConfig.
     pub fn build(&self) -> FeedbackConfig {
         FeedbackConfig {
@@ -651,6 +711,7 @@ impl FeedbackBuilder {
             color_chain: self.color_chain.clone(),
             blend: self.blend,
             opacity: self.opacity.clone(),
+            sampling_mode: self.sampling_mode,
         }
     }
 }
@@ -1037,7 +1098,8 @@ mod tests {
         let inputs = HashMap::new();
         let bands = HashMap::new();
         let stems = HashMap::new();
-        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &stats, &mut state);
+        let custom_signals = HashMap::new();
+        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom_signals, &stats, &mut state, None);
 
         let config = FeedbackConfig::new()
             .with_warp(WarpOperator::Spiral)
@@ -1073,7 +1135,8 @@ mod tests {
         let inputs = HashMap::new();
         let bands = HashMap::new();
         let stems = HashMap::new();
-        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &stats, &mut state);
+        let custom_signals = HashMap::new();
+        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom_signals, &stats, &mut state, None);
 
         let config = FeedbackConfig::new()
             .add_warp(WarpOperator::Spiral, WarpParams {

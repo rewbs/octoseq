@@ -17,8 +17,11 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { AutosaveIndicator } from "@/components/project";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useProjectActions } from "@/lib/stores/hooks/useProjectActions";
+import { useConfirmDiscard } from "@/lib/hooks/useConfirmDiscard";
 
 /**
  * Content panel displayed when the Project node is selected.
@@ -66,6 +69,14 @@ export function ProjectContent() {
     renameProject,
   } = useProjectActions();
 
+  const {
+    showConfirm,
+    requireConfirm,
+    handleConfirm,
+    handleCancel,
+    setShowConfirm,
+  } = useConfirmDiscard();
+
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -90,25 +101,41 @@ export function ProjectContent() {
     setEditName("");
   }, []);
 
-  // Handle file selection for load
+  // Handle file selection for load - with confirmation if dirty
   const handleFileSelect = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
+    (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
-      if (file) {
+      if (!file) return;
+
+      // Check if we need confirmation (file is captured in closure)
+      requireConfirm("open", async () => {
         await loadProjectFromFile(file);
-      }
-      // Reset input
+      });
+
+      // Reset input so same file can be selected again
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
     },
-    [loadProjectFromFile]
+    [loadProjectFromFile, requireConfirm]
   );
 
   // Trigger file input
   const handleLoadClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
+
+  // Handle New Project with confirmation
+  const handleNewProject = useCallback(() => {
+    requireConfirm("new", () => {
+      createProject();
+    });
+  }, [requireConfirm, createProject]);
+
+  // Handle Reset with confirmation
+  const handleResetProject = useCallback(() => {
+    requireConfirm("reset", resetProject);
+  }, [requireConfirm, resetProject]);
 
   // Format date for display
   const formatDate = (isoString: string | undefined) => {
@@ -131,7 +158,7 @@ export function ProjectContent() {
             variant="outline"
             size="sm"
             className="justify-start"
-            onClick={() => createProject()}
+            onClick={handleNewProject}
           >
             <Plus className="h-4 w-4 mr-2" />
             New Project
@@ -152,6 +179,17 @@ export function ProjectContent() {
           accept=".json,.octoseq.json"
           className="hidden"
           onChange={handleFileSelect}
+        />
+        <ConfirmDialog
+          open={showConfirm}
+          onOpenChange={setShowConfirm}
+          title="Unsaved Changes"
+          message="You have unsaved changes. Are you sure you want to continue? Your changes will be lost."
+          confirmLabel="Discard Changes"
+          cancelLabel="Cancel"
+          variant="destructive"
+          onConfirm={handleConfirm}
+          onCancel={handleCancel}
         />
       </div>
     );
@@ -189,6 +227,7 @@ export function ProjectContent() {
               {activeProject.name}
               {isDirty && <span className="text-amber-500 ml-1">*</span>}
             </span>
+            <AutosaveIndicator />
             <Button
               variant="ghost"
               size="icon"
@@ -248,7 +287,7 @@ export function ProjectContent() {
             variant="outline"
             size="sm"
             className="flex-1"
-            onClick={() => createProject()}
+            onClick={handleNewProject}
           >
             <Plus className="h-4 w-4 mr-2" />
             New
@@ -257,7 +296,7 @@ export function ProjectContent() {
             variant="outline"
             size="sm"
             className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-950"
-            onClick={resetProject}
+            onClick={handleResetProject}
           >
             <Trash2 className="h-4 w-4 mr-2" />
             Reset
@@ -272,6 +311,19 @@ export function ProjectContent() {
         accept=".json,.octoseq.json"
         className="hidden"
         onChange={handleFileSelect}
+      />
+
+      {/* Confirmation dialog for unsaved changes */}
+      <ConfirmDialog
+        open={showConfirm}
+        onOpenChange={setShowConfirm}
+        title="Unsaved Changes"
+        message="You have unsaved changes. Are you sure you want to continue? Your changes will be lost."
+        confirmLabel="Discard Changes"
+        cancelLabel="Cancel"
+        variant="destructive"
+        onConfirm={handleConfirm}
+        onCancel={handleCancel}
       />
     </div>
   );

@@ -44,6 +44,10 @@ pub mod feedback_rhai;
 pub mod camera;
 pub mod camera_rhai;
 
+// Lighting control
+pub mod lighting;
+pub mod lighting_rhai;
+
 // Debug visualization
 pub mod debug_markers;
 

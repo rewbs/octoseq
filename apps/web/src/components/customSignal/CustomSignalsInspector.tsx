@@ -43,14 +43,11 @@ export function CustomSignalsInspector({ nodeId }: CustomSignalsInspectorProps) 
   if (isSection) {
     // Section view - show all signals with add button
     return (
-      <div className="p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">Custom Signals</h3>
-          <Button size="sm" variant="outline" onClick={handleAddSignal}>
-            <Plus className="h-4 w-4 mr-1" />
-            Add Signal
-          </Button>
-        </div>
+      <div className="p-2 space-y-3">
+        <Button size="sm" variant="outline" className="w-full" onClick={handleAddSignal}>
+          <Plus className="h-4 w-4 mr-2" />
+          Add Signal
+        </Button>
 
         {signals.length === 0 ? (
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -98,7 +95,7 @@ export function CustomSignalsInspector({ nodeId }: CustomSignalsInspectorProps) 
   }
 
   return (
-    <div className="p-4">
+    <div className="p-2">
       <CustomSignalEditor signal={signal} />
     </div>
   );

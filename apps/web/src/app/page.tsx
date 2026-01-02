@@ -11,8 +11,9 @@ import { Modal } from "@/components/ui/modal";
 
 import { HeatmapWithBandOverlay } from "@/components/frequencyBand";
 import { InterpretationTreePanel } from "@/components/interpretationTree";
-import { InspectorDrawer } from "@/components/inspector/InspectorDrawer";
 import { BandMirSignalViewer, BandEventViewer, useBandAmplitudeData } from "@/components/bandMir";
+import { MissingAudioBanner } from "@/components/audio/MissingAudioBanner";
+import { AudioReattachModal } from "@/components/audio/AudioReattachModal";
 import { MirConfigModal } from "@/components/mir/MirConfigModal";
 import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
 import { SparseEventsViewer } from "@/components/wavesurfer/SparseEventsViewer";
@@ -38,6 +39,14 @@ import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 import { mirTabDefinitions } from "@/lib/stores/mirStore";
 import { computePhaseHypotheses, type BeatCandidate } from "@octoseq/mir";
 
+import {
+  SignInButton,
+  SignUpButton,
+  SignedIn,
+  SignedOut,
+  UserButton,
+} from '@clerk/nextjs';
+
 // Stores and hooks
 import {
   useAudioStore,
@@ -53,7 +62,6 @@ import {
   useBandMirStore,
   setupBandMirInvalidation,
   useMirActions,
-  useSearchActions,
   useNavigationActions,
   useAudioActions,
   useBandMirActions,
@@ -92,6 +100,7 @@ export default function Home() {
   const activeDisplayUrl = useAudioInputStore((s) => s.getActiveDisplayUrl());
   const hasStems = useAudioInputStore((s) => s.hasStems());
   const clearStems = useAudioInputStore((s) => s.clearStems);
+  const setTriggerFileInput = useAudioInputStore((s) => s.setTriggerFileInput);
 
   // Playback store
   const playheadTimeSec = usePlaybackStore((s) => s.playheadTimeSec);
@@ -132,8 +141,6 @@ export default function Home() {
   // Search store
   const searchControls = useSearchStore((s) => s.searchControls);
   const searchResult = useSearchStore((s) => s.searchResult);
-  const searchDirty = useSearchStore((s) => s.searchDirty);
-  const isSearchRunning = useSearchStore((s) => s.isSearchRunning);
   const refinement = useSearchStore((s) => s.refinement);
   const addMissingMode = useSearchStore((s) => s.addMissingMode);
   const {
@@ -292,7 +299,6 @@ export default function Home() {
   // ===== ACTION HOOKS =====
   const { runAllAnalyses } = useMirActions();
   const { runBandAnalysis } = useBandMirActions();
-  const { runSearch } = useSearchActions();
   const { handleAudioDecoded, triggerFileInput } = useAudioActions({
     fileInputRef,
     onAudioLoaded: runAllAnalyses,
@@ -335,6 +341,16 @@ export default function Home() {
 
   // ===== UNSAVED CHANGES WARNING =====
   useUnsavedChangesWarning();
+
+  // ===== REGISTER FILE INPUT TRIGGER =====
+  // Make triggerFileInput available to other components (e.g., tree panel)
+  useEffect(() => {
+    setTriggerFileInput(triggerFileInput);
+    return () => setTriggerFileInput(null);
+  }, [triggerFileInput, setTriggerFileInput]);
+
+  // ===== AUDIO RE-ATTACHMENT MODAL =====
+  const [showAudioReattachModal, setShowAudioReattachModal] = useState(false);
 
   // ===== BAND AMPLITUDE VIEW =====
   const [selectedBandAmplitudeId] = useState<string | null>(null);
@@ -753,12 +769,15 @@ export default function Home() {
 
   // ===== RENDER =====
   return (
-    <div className="page-bg flex flex-col min-h-screen bg-zinc-50 font-sans dark:bg-zinc-950">
-      <div className="w-full flex-1 flex">
+    <div className="page-bg flex flex-col h-screen bg-zinc-50 font-sans dark:bg-zinc-950 overflow-hidden">
+      <div className="w-full flex-1 flex min-h-0">
         {/* Interpretation Tree Panel (replaces FrequencyBandSidebar) */}
         <InterpretationTreePanel />
 
-        <main className="main-bg flex-1 min-w-0 overflow-hidden bg-white p-2 pr-4 shadow dark:bg-zinc-950">
+        <main className="main-bg flex-1 min-w-0 overflow-y-auto bg-white p-2 pr-4 shadow dark:bg-zinc-950">
+          {/* Missing audio warning banner */}
+          <MissingAudioBanner onReattach={() => setShowAudioReattachModal(true)} />
+
           <section>
             <div className="space-y-1.5">
               <WaveSurferPlayer
@@ -849,15 +868,7 @@ export default function Home() {
                           octoseq
                         </p>
                       </div>
-
                     </div>
-                    <Button
-                      className={`${!audio ? "animate-pulse-glow-red" : ""}`}
-                      size="sm"
-                      onClick={triggerFileInput}
-                    >
-                      {!audio ? "Load audio" : "Change audio"}
-                    </Button>
                     <DemoAudioModal
                       onSelectDemo={async (demo) => {
                         await playerRef.current?.loadUrl(demo.path, demo.name);
@@ -866,33 +877,7 @@ export default function Home() {
                   </div>
                 }
                 toolbarRight={
-                  <div className="flex flex-wrap items-center gap-2 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1">
-                    {visualTab === 'search' && <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          if (refinement.queryRegion)
-                            void runSearch(refinement.queryRegion, searchControls).catch((e) => {
-                              if ((e as Error)?.message === "cancelled") return;
-                              console.error("[SEARCH] failed", e);
-                            });
-                        }}
-                        disabled={!audio || !refinement.queryRegion || isSearchRunning}
-                      >
-                        Search
-                      </Button>
-                      {searchDirty && searchResult ? (
-                        <span className="text-xs text-amber-600 dark:text-amber-400">
-                          Parameters changed — rerun search
-                        </span>
-                      ) : null}
-                      {isSearchRunning ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-300">
-                          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                          Running search…
-                        </span>
-                      ) : null}
-                    </div>}
+                  <div className="flex flex-nowrap items-center gap-2 border-l border-zinc-300 dark:border-zinc-700 pl-2 ml-1 min-w-0 overflow-hidden">
                     <div className="flex gap-2">
                       <Button
                         variant="outline"
@@ -908,6 +893,7 @@ export default function Home() {
                       >
                         Debug
                       </Button>
+
                     </div>
                   </div>
                 }
@@ -1248,6 +1234,10 @@ export default function Home() {
           </section>
           <MirConfigModal />
           <DebugPanel />
+          <AudioReattachModal
+            open={showAudioReattachModal}
+            onOpenChange={setShowAudioReattachModal}
+          />
 
           {/* Stem Confirmation Dialog */}
           <Modal
@@ -1296,25 +1286,20 @@ export default function Home() {
         </main>
       </div>
 
-      {/* Inspector drawer for selected tree nodes */}
-      <InspectorDrawer />
-
-      <footer className="mt-6 flex items-center justify-center pb-4 text-xs text-zinc-500 dark:text-zinc-400 divide-x-2 divide-zinc-300 dark:divide-zinc-700">
-        <p>&nbsp;</p>
-        <p className="px-5">vibe-assisted with a range of models; use at your own risk.</p>
+      <footer className="shrink-0 flex items-center justify-center py-1 text-xs text-zinc-500 dark:text-zinc-400 divide-x-2 divide-zinc-300 dark:divide-zinc-700 border-t border-zinc-200 dark:border-zinc-800">
+        <p className="px-3">vibe-assisted; use at your own risk</p>
         <a
           href="https://github.com/rewbs/octoseq"
           target="_blank"
           rel="noopener noreferrer"
-          className="px-5 flex items-center gap-1 transition-colors hover:text-zinc-900 dark:hover:text-zinc-200"
+          className="px-3 flex items-center gap-1 transition-colors hover:text-zinc-900 dark:hover:text-zinc-200"
         >
-          <Github className="h-4 w-4" />
+          <Github className="h-3 w-3" />
           code
         </a>
-        <div className="px-5">
+        <div className="px-3">
           <ThemeToggle />
         </div>
-        <p>&nbsp;</p>
       </footer>
     </div>
   );

@@ -12,6 +12,7 @@ import { CandidateEventsInspector } from "./CandidateEventsInspector";
 import { CustomSignalsInspector } from "@/components/customSignal/CustomSignalsInspector";
 import { MeshAssetsInspector } from "@/components/meshAssets";
 import { ScriptInspector } from "./ScriptInspector";
+import { ScriptsInspector } from "./ScriptsInspector";
 
 interface InspectorContentProps {
   nodeId: string;
@@ -108,11 +109,7 @@ export function InspectorContent({ nodeId }: InspectorContentProps) {
       return <MeshAssetsInspector />;
 
     case "scripts-section":
-      return (
-        <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
-          Select a script to view its details and actions.
-        </div>
-      );
+      return <ScriptsInspector />;
 
     case "script":
       return <ScriptInspector nodeId={nodeId} />;

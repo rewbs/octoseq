@@ -12,6 +12,7 @@ import { devtools } from "zustand/middleware";
 import type { FrequencyBandStructure, MusicalTimeStructure } from "@octoseq/mir";
 import type { AuthoredEventStream } from "./types/authoredEvent";
 import type { CustomSignalStructure } from "./types/customSignal";
+import type { MeshAssetStructure } from "./types/meshAsset";
 import type {
   Project,
   ProjectAudioCollection,
@@ -22,6 +23,7 @@ import type {
   ProjectUIState,
   AudioLoadStatus,
 } from "./types/project";
+import { validateProject, validateProjectIds } from "@/lib/projectValidation";
 
 // ----------------------------
 // Store State
@@ -42,6 +44,12 @@ interface ProjectState {
 
   /** Whether a project operation is in progress. */
   isLoading: boolean;
+
+  /** File handle from File System Access API (for "Save" behavior). */
+  fileHandle: FileSystemFileHandle | null;
+
+  /** Last saved file name (for display and fallback). */
+  lastSavedFileName: string | null;
 }
 
 // ----------------------------
@@ -106,6 +114,9 @@ interface ProjectActions {
   /** Sync custom signals from customSignalStore. */
   syncCustomSignals: (structure: CustomSignalStructure | null) => void;
 
+  /** Sync mesh assets from meshAssetStore. */
+  syncMeshAssets: (structure: MeshAssetStructure | null) => void;
+
   /** Sync scripts. */
   syncScripts: (scripts: ProjectScript[], activeScriptId: string | null) => void;
 
@@ -149,6 +160,16 @@ interface ProjectActions {
 
   /** Set the active project (for use after loading). */
   setActiveProject: (project: Project) => void;
+
+  // ----------------------------
+  // File Handle (File System Access API)
+  // ----------------------------
+
+  /** Set the file handle for File System Access API saves. */
+  setFileHandle: (handle: FileSystemFileHandle | null) => void;
+
+  /** Set the last saved file name. */
+  setLastSavedFileName: (name: string | null) => void;
 
   // ----------------------------
   // Audio Load State
@@ -199,6 +220,8 @@ const initialState: ProjectState = {
   audioLoadStatus: new Map(),
   audioLoadErrors: new Map(),
   isLoading: false,
+  fileHandle: null,
+  lastSavedFileName: null,
 };
 
 // ----------------------------
@@ -253,10 +276,13 @@ let t = inputs.time;
             scripts: [defaultScript],
             activeScriptId: defaultScriptId,
           },
+          meshAssets: null,
           uiState: {
             treeExpandedNodes: ["project", "audio", "mixdown", "scripts"],
             treeSelectedNodeId: null,
             sidebarWidth: 280,
+            inspectorHeight: 200,
+            lastPlayheadPosition: 0,
           },
         };
 
@@ -266,6 +292,8 @@ let t = inputs.time;
             isDirty: false,
             audioLoadStatus: new Map(),
             audioLoadErrors: new Map(),
+            fileHandle: null,
+            lastSavedFileName: null,
           },
           false,
           "createProject"
@@ -281,6 +309,8 @@ let t = inputs.time;
             isDirty: false,
             audioLoadStatus: new Map(),
             audioLoadErrors: new Map(),
+            fileHandle: null,
+            lastSavedFileName: null,
           },
           false,
           "resetProject"
@@ -294,6 +324,8 @@ let t = inputs.time;
             isDirty: false,
             audioLoadStatus: new Map(),
             audioLoadErrors: new Map(),
+            fileHandle: null,
+            lastSavedFileName: null,
           },
           false,
           "closeProject"
@@ -469,6 +501,26 @@ let t = inputs.time;
           }),
           false,
           "syncCustomSignals"
+        );
+      },
+
+      syncMeshAssets: (structure) => {
+        const project = get().activeProject;
+        if (!project) return;
+
+        set(
+          (state) => ({
+            activeProject: state.activeProject
+              ? {
+                  ...state.activeProject,
+                  meshAssets: structure,
+                  modifiedAt: new Date().toISOString(),
+                }
+              : null,
+            isDirty: true,
+          }),
+          false,
+          "syncMeshAssets"
         );
       },
 
@@ -701,19 +753,26 @@ let t = inputs.time;
 
       importFromJson: (json) => {
         try {
-          const parsed = JSON.parse(json) as ProjectSerialized;
+          const parsed = JSON.parse(json);
 
-          // Version check
-          if (parsed.version !== 1) {
-            console.warn(`Unknown project version: ${parsed.version}`);
-            // Future: add migration logic
+          // Validate and migrate project
+          const validation = validateProject(parsed);
+
+          if (!validation.valid) {
+            console.error("Project validation failed:", validation.errors);
+            return null;
           }
 
-          // Validate basic structure
-          const project = parsed.project;
-          if (!project.id || !project.name) {
-            console.error("Invalid project: missing id or name");
-            return null;
+          if (validation.warnings.length > 0) {
+            console.warn("Project loaded with warnings:", validation.warnings);
+          }
+
+          const project = validation.project!;
+
+          // Check for duplicate IDs
+          const idWarnings = validateProjectIds(project);
+          if (idWarnings.length > 0) {
+            console.warn("Project has duplicate IDs:", idWarnings);
           }
 
           return project;
@@ -734,6 +793,18 @@ let t = inputs.time;
           false,
           "setActiveProject"
         );
+      },
+
+      // ----------------------------
+      // File Handle (File System Access API)
+      // ----------------------------
+
+      setFileHandle: (handle) => {
+        set({ fileHandle: handle }, false, "setFileHandle");
+      },
+
+      setLastSavedFileName: (name) => {
+        set({ lastSavedFileName: name }, false, "setLastSavedFileName");
       },
 
       // ----------------------------

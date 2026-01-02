@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -17,6 +17,7 @@ import {
   Circle,
   CircleDashed,
   GripVertical,
+  GripHorizontal,
   Sparkles,
   CheckCircle,
   Activity,
@@ -30,6 +31,7 @@ import {
   SlidersHorizontal,
   Package,
   Box,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -39,8 +41,12 @@ import {
   SIDEBAR_ICON_ONLY_THRESHOLD,
   SIDEBAR_MIN_WIDTH,
   SIDEBAR_MAX_WIDTH,
+  INSPECTOR_SECTION_MIN_RATIO,
+  INSPECTOR_SECTION_MAX_RATIO,
 } from "@/lib/stores/interpretationTreeStore";
+import { InspectorContent } from "@/components/inspector/InspectorContent";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useAudioStore } from "@/lib/stores/audioStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useMirStore } from "@/lib/stores/mirStore";
 import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
@@ -187,6 +193,10 @@ interface TreeNodeRendererProps {
   onToggleExpand: (nodeId: string) => void;
   onSelectNode: (nodeId: string) => void;
   onToggleSolo: (bandId: string) => void;
+  /** Callback to trigger file input dialog (for Audio node action) */
+  triggerFileInput: (() => void) | null;
+  /** Whether audio is currently loaded (affects Audio node action visibility) */
+  hasAudio: boolean;
 }
 
 function TreeNodeRenderer({
@@ -198,6 +208,8 @@ function TreeNodeRenderer({
   onToggleExpand,
   onSelectNode,
   onToggleSolo,
+  triggerFileInput,
+  hasAudio,
 }: TreeNodeRendererProps) {
   const isExpanded = expandedNodes.has(node.id);
   const isSelected = selectedNodeId === node.id;
@@ -208,25 +220,57 @@ function TreeNodeRenderer({
   const isBandNode = bandId !== null;
   const isSoloed = isBandNode && soloedBandId === bandId;
 
-  // Build actions for band nodes
-  const actions = isBandNode ? (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggleSolo(bandId);
-      }}
-      className={cn(
-        "p-0.5 rounded transition-colors",
-        isSoloed
-          ? "text-yellow-600 dark:text-yellow-400 bg-yellow-500/20"
-          : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-      )}
-      title={isSoloed ? "Stop soloing" : "Solo (preview this band)"}
-    >
-      <Headphones className="h-3 w-3" />
-    </button>
-  ) : undefined;
+  // Check if this is the Audio section node
+  const isAudioNode = node.id === TREE_NODE_IDS.AUDIO;
+
+  // Build actions based on node type
+  let actions: React.ReactNode = undefined;
+  let hasActiveAction = false;
+
+  if (isBandNode) {
+    // Band nodes get solo button
+    hasActiveAction = isSoloed;
+    actions = (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleSolo(bandId);
+        }}
+        className={cn(
+          "p-0.5 rounded transition-colors",
+          isSoloed
+            ? "text-yellow-600 dark:text-yellow-400 bg-yellow-500/20"
+            : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+        )}
+        title={isSoloed ? "Stop soloing" : "Solo (preview this band)"}
+      >
+        <Headphones className="h-3 w-3" />
+      </button>
+    );
+  } else if (isAudioNode && triggerFileInput) {
+    // Audio section node gets Load Audio button
+    hasActiveAction = !hasAudio; // Show persistently when no audio loaded
+    actions = (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          triggerFileInput();
+        }}
+        className={cn(
+          "px-1 py-0.5 rounded transition-colors flex items-center gap-1",
+          !hasAudio
+            ? "text-red-600 dark:text-red-400 bg-red-500/20 animate-pulse"
+            : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+        )}
+        title={hasAudio ? "Change audio" : "Load audio"}
+      >
+        <Upload className="h-3 w-3" />
+        {!hasAudio && <span className="text-xs font-medium">Load audio</span>}
+      </button>
+    );
+  }
 
   return (
     <TreeNode
@@ -242,7 +286,7 @@ function TreeNodeRenderer({
       onSelect={() => onSelectNode(node.id)}
       badge={node.badge}
       actions={actions}
-      hasActiveAction={isSoloed}
+      hasActiveAction={hasActiveAction}
     >
       {/* Render children when expanded */}
       {node.hasChildren && isExpanded && (
@@ -257,6 +301,8 @@ function TreeNodeRenderer({
             onToggleExpand={onToggleExpand}
             onSelectNode={onSelectNode}
             onToggleSolo={onToggleSolo}
+            triggerFileInput={triggerFileInput}
+            hasAudio={hasAudio}
           />
         ))
       )}
@@ -328,6 +374,63 @@ function ResizeHandle({ onResize, onResizeEnd }: ResizeHandleProps) {
 }
 
 // ----------------------------
+// Horizontal Resize Handle (for vertical divider)
+// ----------------------------
+
+interface HorizontalResizeHandleProps {
+  onResize: (deltaY: number) => void;
+}
+
+function HorizontalResizeHandle({ onResize }: HorizontalResizeHandleProps) {
+  const [isDragging, setIsDragging] = useState(false);
+  const startYRef = useRef(0);
+  const onResizeRef = useRef(onResize);
+  onResizeRef.current = onResize;
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    startYRef.current = e.clientY;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = moveEvent.clientY - startYRef.current;
+      startYRef.current = moveEvent.clientY;
+      onResizeRef.current(deltaY);
+    };
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, []);
+
+  return (
+    <div
+      className={cn(
+        "h-1.5 cursor-ns-resize flex items-center justify-center shrink-0",
+        "hover:bg-blue-500/30 transition-colors",
+        "border-y border-zinc-200 dark:border-zinc-700",
+        isDragging && "bg-blue-500/50"
+      )}
+      onMouseDown={handleMouseDown}
+    >
+      <div
+        className={cn(
+          "opacity-50 hover:opacity-100 transition-opacity",
+          isDragging && "opacity-100"
+        )}
+      >
+        <GripHorizontal className="h-3 w-3 text-zinc-400" />
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------
 // InterpretationTreePanel Component
 // ----------------------------
 
@@ -339,8 +442,12 @@ export function InterpretationTreePanel() {
   const selectedNodeId = useInterpretationTreeStore((s) => s.selectedNodeId);
   const toggleExpanded = useInterpretationTreeStore((s) => s.toggleExpanded);
   const selectNode = useInterpretationTreeStore((s) => s.selectNode);
+  const inspectorSectionRatio = useInterpretationTreeStore((s) => s.inspectorSectionRatio);
+  const setInspectorSectionRatio = useInterpretationTreeStore((s) => s.setInspectorSectionRatio);
   const selectAudioInput = useAudioInputStore((s) => s.selectInput);
   const setActiveDisplay = useAudioInputStore((s) => s.setActiveDisplay);
+  const triggerFileInput = useAudioInputStore((s) => s.triggerFileInput);
+  const hasAudio = useAudioStore((s) => s.audio !== null);
   const setActiveScript = useProjectStore((s) => s.setActiveScript);
   const activeProject = useProjectStore((s) => s.activeProject);
   const isDirty = useProjectStore((s) => s.isDirty);
@@ -348,6 +455,29 @@ export function InterpretationTreePanel() {
   const setDisplayContextInputId = useMirStore((s) => s.setDisplayContextInputId);
   const soloedBandId = useFrequencyBandStore((s) => s.soloedBandId);
   const setSoloedBandId = useFrequencyBandStore((s) => s.setSoloedBandId);
+
+  // Ref for tracking container height for ratio calculations
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerHeight, setContainerHeight] = useState(0);
+
+  // Track container height
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const updateHeight = () => {
+      // Subtract header height (approximately 41px)
+      const headerHeight = 41;
+      setContainerHeight(container.clientHeight - headerHeight);
+    };
+
+    updateHeight();
+
+    const resizeObserver = new ResizeObserver(updateHeight);
+    resizeObserver.observe(container);
+
+    return () => resizeObserver.disconnect();
+  }, []);
 
   // Project name for header
   const projectName = activeProject?.name ?? "Untitled Project";
@@ -416,6 +546,22 @@ export function InterpretationTreePanel() {
     }
   }, [sidebarWidth, setSidebarWidth]);
 
+  // Handle vertical divider resize
+  const handleVerticalResize = useCallback(
+    (deltaY: number) => {
+      if (containerHeight <= 0) return;
+      // Delta Y positive = dragging down = less inspector, more tree
+      // So we subtract from the ratio
+      const deltaRatio = deltaY / containerHeight;
+      const newRatio = Math.max(
+        INSPECTOR_SECTION_MIN_RATIO,
+        Math.min(INSPECTOR_SECTION_MAX_RATIO, inspectorSectionRatio - deltaRatio)
+      );
+      setInspectorSectionRatio(newRatio);
+    },
+    [containerHeight, inspectorSectionRatio, setInspectorSectionRatio]
+  );
+
   // Handle band solo toggle
   const handleToggleSolo = useCallback(
     (bandId: string) => {
@@ -441,13 +587,20 @@ export function InterpretationTreePanel() {
       child.id === TREE_NODE_IDS.SCRIPTS
   );
 
+  // Calculate heights for tree and inspector sections
+  const dividerHeight = 6; // Height of the divider in pixels
+  const availableHeight = containerHeight - dividerHeight;
+  const inspectorHeight = selectedNodeId && !isIconOnly ? Math.floor(availableHeight * inspectorSectionRatio) : 0;
+  const treeHeight = availableHeight - inspectorHeight;
+
   return (
     <div
+      ref={containerRef}
       className="relative flex flex-col h-full bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800"
       style={{ width: sidebarWidth, minWidth: SIDEBAR_MIN_WIDTH, maxWidth: SIDEBAR_MAX_WIDTH }}
     >
       {/* Header - Project name (clickable to select project) */}
-      <div className="flex items-center justify-between p-2 border-b border-zinc-200 dark:border-zinc-800">
+      <div className="flex items-center justify-between p-2 border-b border-zinc-200 dark:border-zinc-800 shrink-0">
         {!isIconOnly && (
           <button
             type="button"
@@ -479,8 +632,11 @@ export function InterpretationTreePanel() {
         </Button>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-1">
+      {/* Tree Content */}
+      <div
+        className="overflow-y-auto p-1"
+        style={{ height: treeHeight > 0 ? treeHeight : undefined, flex: treeHeight > 0 ? undefined : 1 }}
+      >
         {isIconOnly ? (
           // Icon-only mode: show project and section icons
           <div className="flex flex-col gap-1">
@@ -510,12 +666,30 @@ export function InterpretationTreePanel() {
               onToggleExpand={toggleExpanded}
               onSelectNode={handleSelectNode}
               onToggleSolo={handleToggleSolo}
+              triggerFileInput={triggerFileInput}
+              hasAudio={hasAudio}
             />
           ))
         )}
       </div>
 
-      {/* Resize Handle */}
+      {/* Inspector Section - only show when a node is selected and not in icon-only mode */}
+      {selectedNodeId && !isIconOnly && (
+        <>
+          {/* Horizontal Divider */}
+          <HorizontalResizeHandle onResize={handleVerticalResize} />
+
+          {/* Inspector Content */}
+          <div
+            className="overflow-y-auto bg-zinc-50 dark:bg-zinc-950"
+            style={{ height: inspectorHeight }}
+          >
+            <InspectorContent nodeId={selectedNodeId} />
+          </div>
+        </>
+      )}
+
+      {/* Width Resize Handle */}
       <ResizeHandle onResize={handleResize} onResizeEnd={handleResizeEnd} />
     </div>
   );

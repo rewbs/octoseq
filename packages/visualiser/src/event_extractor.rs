@@ -188,6 +188,7 @@ impl EventExtractor {
                 &empty_custom_signals,
                 &stats,
                 &mut state,
+                Some(self.duration), // track_duration
             );
 
             let value = self.source.evaluate(&mut ctx);

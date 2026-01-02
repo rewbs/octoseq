@@ -197,6 +197,188 @@ impl EventStream {
         crate::signal::Signal::from_events_with_options(self.events.clone(), options)
     }
 
+    /// Alias for to_signal() that explicitly indicates impulse generation.
+    ///
+    /// Returns 1.0 at each event time, 0.0 elsewhere.
+    /// Multiple coincident events sum additively.
+    pub fn impulse(&self) -> crate::signal::Signal {
+        self.to_signal()
+    }
+
+    // =========================================================================
+    // Temporal Distance Methods
+    // =========================================================================
+
+    /// Signal representing beats elapsed since previous event.
+    /// Returns 0 at event time, grows linearly until next event.
+    /// Before first event: returns distance to first event.
+    pub fn beats_from_prev(&self) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_distance_from_prev(
+            self.events.clone(),
+            crate::signal::TimeUnit::Beats,
+        )
+    }
+
+    /// Signal representing beats remaining until next event.
+    /// Decreases linearly to 0 at next event time.
+    /// After last event: returns distance to track end.
+    pub fn beats_to_next(&self) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_distance_to_next(
+            self.events.clone(),
+            crate::signal::TimeUnit::Beats,
+        )
+    }
+
+    /// Signal representing seconds elapsed since previous event.
+    pub fn seconds_from_prev(&self) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_distance_from_prev(
+            self.events.clone(),
+            crate::signal::TimeUnit::Seconds,
+        )
+    }
+
+    /// Signal representing seconds remaining until next event.
+    pub fn seconds_to_next(&self) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_distance_to_next(
+            self.events.clone(),
+            crate::signal::TimeUnit::Seconds,
+        )
+    }
+
+    /// Signal representing frames elapsed since previous event.
+    pub fn frames_from_prev(&self) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_distance_from_prev(
+            self.events.clone(),
+            crate::signal::TimeUnit::Frames,
+        )
+    }
+
+    /// Signal representing frames remaining until next event.
+    pub fn frames_to_next(&self) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_distance_to_next(
+            self.events.clone(),
+            crate::signal::TimeUnit::Frames,
+        )
+    }
+
+    // =========================================================================
+    // Event Count Methods
+    // =========================================================================
+
+    /// Count events in the previous N beats.
+    pub fn count_prev_beats(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_count_in_window(
+            self.events.clone(),
+            window,
+            crate::signal::TimeUnit::Beats,
+            crate::signal::WindowDirection::Prev,
+        )
+    }
+
+    /// Count events in the next N beats.
+    pub fn count_next_beats(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_count_in_window(
+            self.events.clone(),
+            window,
+            crate::signal::TimeUnit::Beats,
+            crate::signal::WindowDirection::Next,
+        )
+    }
+
+    /// Count events in the previous N seconds.
+    pub fn count_prev_seconds(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_count_in_window(
+            self.events.clone(),
+            window,
+            crate::signal::TimeUnit::Seconds,
+            crate::signal::WindowDirection::Prev,
+        )
+    }
+
+    /// Count events in the next N seconds.
+    pub fn count_next_seconds(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_count_in_window(
+            self.events.clone(),
+            window,
+            crate::signal::TimeUnit::Seconds,
+            crate::signal::WindowDirection::Next,
+        )
+    }
+
+    /// Count events in the previous N frames.
+    pub fn count_prev_frames(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_count_in_window(
+            self.events.clone(),
+            window,
+            crate::signal::TimeUnit::Frames,
+            crate::signal::WindowDirection::Prev,
+        )
+    }
+
+    /// Count events in the next N frames.
+    pub fn count_next_frames(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_count_in_window(
+            self.events.clone(),
+            window,
+            crate::signal::TimeUnit::Frames,
+            crate::signal::WindowDirection::Next,
+        )
+    }
+
+    // =========================================================================
+    // Event Density Methods
+    // =========================================================================
+
+    /// Event density (events per beat) in the previous N beats.
+    pub fn density_prev_beats(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_density_in_window(
+            self.events.clone(),
+            window,
+            crate::signal::TimeUnit::Beats,
+            crate::signal::WindowDirection::Prev,
+        )
+    }
+
+    /// Event density (events per beat) in the next N beats.
+    pub fn density_next_beats(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_density_in_window(
+            self.events.clone(),
+            window,
+            crate::signal::TimeUnit::Beats,
+            crate::signal::WindowDirection::Next,
+        )
+    }
+
+    /// Event density (events per second) in the previous N seconds.
+    pub fn density_prev_seconds(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_density_in_window(
+            self.events.clone(),
+            window,
+            crate::signal::TimeUnit::Seconds,
+            crate::signal::WindowDirection::Prev,
+        )
+    }
+
+    /// Event density (events per second) in the next N seconds.
+    pub fn density_next_seconds(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_density_in_window(
+            self.events.clone(),
+            window,
+            crate::signal::TimeUnit::Seconds,
+            crate::signal::WindowDirection::Next,
+        )
+    }
+
+    // =========================================================================
+    // Phase Method
+    // =========================================================================
+
+    /// Phase between adjacent events: 0 at previous event, 1 at next event.
+    /// Useful for smooth animations that reset at each event.
+    pub fn beat_phase_between(&self) -> crate::signal::Signal {
+        crate::signal::Signal::from_events_phase_between(self.events.clone())
+    }
+
     // =========================================================================
     // Filtering Methods
     // =========================================================================

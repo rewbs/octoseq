@@ -149,7 +149,7 @@ const initialState: ConfigState = {
 
   // FFT/Spectrogram
   fftSize: 512,
-  hopSize: 128,
+  hopSize: 64,
 
   // Mel
   melBands: 64,
@@ -157,7 +157,7 @@ const initialState: ConfigState = {
   melFMax: "",
 
   // Onset
-  onsetSmoothMs: 30,
+  onsetSmoothMs: 20,
   onsetDiffMethod: "rectified",
   onsetUseLog: false,
 
@@ -167,12 +167,12 @@ const initialState: ConfigState = {
   peakAdaptiveFactor: "",
 
   // Transient FFT (used by HPSS)
-  transientFftSize: 2048,
-  transientHopSize: 512,
+  transientFftSize: 512,
+  transientHopSize: 128,
 
   // Timbre FFT (used by MFCC)
-  timbreFftSize: 512,
-  timbreHopSize: 128,
+  timbreFftSize: 4096,
+  timbreHopSize: 512,
 
   // HPSS
   hpssTimeMedian: 17,
@@ -183,15 +183,15 @@ const initialState: ConfigState = {
 
   // Tempo Hypotheses
   tempoMinBpm: 24,
-  tempoMaxBpm: 300,
+  tempoMaxBpm: 200,
   tempoBinSize: 1.0,
-  tempoMaxHypotheses: 10,
+  tempoMaxHypotheses: 5,
   tempoWeightByStrength: true,
 
   // Display options
   showDcBin: false,
   showMfccC0: false,
-  heatmapScheme: "grayscale",
+  heatmapScheme: "plasma",
   isConfigOpen: false,
   isDebugOpen: false,
 

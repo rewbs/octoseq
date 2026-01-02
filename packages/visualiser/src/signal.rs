@@ -704,7 +704,12 @@ impl Signal {
             | SignalNode::Constant(_)
             | SignalNode::Generator(_)
             | SignalNode::EventStreamSource { .. }
-            | SignalNode::EventStreamEnvelope { .. } => {}
+            | SignalNode::EventStreamEnvelope { .. }
+            | SignalNode::EventDistanceFromPrev { .. }
+            | SignalNode::EventDistanceToNext { .. }
+            | SignalNode::EventCountInWindow { .. }
+            | SignalNode::EventDensityInWindow { .. }
+            | SignalNode::EventPhaseBetween { .. } => {}
         }
     }
 
@@ -727,6 +732,54 @@ impl Signal {
     /// Produces shaped envelopes at event times.
     pub fn from_events_with_options(events: Arc<Vec<Event>>, options: ToSignalOptions) -> Signal {
         Signal::new(SignalNode::EventStreamEnvelope { events, options })
+    }
+
+    /// Create a signal representing distance from previous event.
+    /// Returns 0 at event time, grows linearly until next event.
+    pub fn from_events_distance_from_prev(events: Arc<Vec<Event>>, unit: TimeUnit) -> Signal {
+        Signal::new(SignalNode::EventDistanceFromPrev { events, unit })
+    }
+
+    /// Create a signal representing distance to next event.
+    /// Decreases to 0 at next event time, returns distance to track end after last event.
+    pub fn from_events_distance_to_next(events: Arc<Vec<Event>>, unit: TimeUnit) -> Signal {
+        Signal::new(SignalNode::EventDistanceToNext { events, unit })
+    }
+
+    /// Create a signal counting events in a window.
+    pub fn from_events_count_in_window(
+        events: Arc<Vec<Event>>,
+        window_size: impl Into<SignalParam>,
+        unit: TimeUnit,
+        direction: WindowDirection,
+    ) -> Signal {
+        Signal::new(SignalNode::EventCountInWindow {
+            events,
+            window_size: window_size.into(),
+            unit,
+            direction,
+        })
+    }
+
+    /// Create a signal measuring event density in a window.
+    pub fn from_events_density_in_window(
+        events: Arc<Vec<Event>>,
+        window_size: impl Into<SignalParam>,
+        unit: TimeUnit,
+        direction: WindowDirection,
+    ) -> Signal {
+        Signal::new(SignalNode::EventDensityInWindow {
+            events,
+            window_size: window_size.into(),
+            unit,
+            direction,
+        })
+    }
+
+    /// Create a signal representing phase between adjacent events.
+    /// Returns 0 at previous event, 1 at next event, linear interpolation between.
+    pub fn from_events_phase_between(events: Arc<Vec<Event>>) -> Signal {
+        Signal::new(SignalNode::EventPhaseBetween { events })
     }
 
     /// Returns a human-readable description of the signal's computation graph.
@@ -905,6 +958,21 @@ impl Signal {
             SignalNode::EventStreamEnvelope { events, .. } => {
                 format!("EventsEnvelope(count={})", events.len())
             }
+            SignalNode::EventDistanceFromPrev { events, unit } => {
+                format!("EventDistanceFromPrev(count={}, {:?})", events.len(), unit)
+            }
+            SignalNode::EventDistanceToNext { events, unit } => {
+                format!("EventDistanceToNext(count={}, {:?})", events.len(), unit)
+            }
+            SignalNode::EventCountInWindow { events, unit, direction, .. } => {
+                format!("EventCountInWindow(count={}, {:?}, {:?})", events.len(), unit, direction)
+            }
+            SignalNode::EventDensityInWindow { events, unit, direction, .. } => {
+                format!("EventDensityInWindow(count={}, {:?}, {:?})", events.len(), unit, direction)
+            }
+            SignalNode::EventPhaseBetween { events } => {
+                format!("EventPhaseBetween(count={})", events.len())
+            }
         }
     }
 
@@ -1060,6 +1128,47 @@ pub enum SignalNode {
         options: ToSignalOptions,
     },
 
+    /// Distance from current time to previous event.
+    /// Returns 0 at event time, grows linearly until next event.
+    /// Before first event: returns distance to first event.
+    EventDistanceFromPrev {
+        events: Arc<Vec<Event>>,
+        unit: TimeUnit,
+    },
+
+    /// Distance from current time to next event.
+    /// Decreases linearly to 0 at next event time.
+    /// After last event: returns distance to track end.
+    EventDistanceToNext {
+        events: Arc<Vec<Event>>,
+        unit: TimeUnit,
+    },
+
+    /// Count of events within a window.
+    /// Window extends in the specified direction from current time.
+    EventCountInWindow {
+        events: Arc<Vec<Event>>,
+        window_size: SignalParam,
+        unit: TimeUnit,
+        direction: WindowDirection,
+    },
+
+    /// Density of events within a window (count / window_size).
+    /// Returns events per unit time within the window.
+    EventDensityInWindow {
+        events: Arc<Vec<Event>>,
+        window_size: SignalParam,
+        unit: TimeUnit,
+        direction: WindowDirection,
+    },
+
+    /// Phase between previous and next event.
+    /// Returns 0 at previous event, 1 at next event, linear interpolation between.
+    /// Before first event: returns 0. After last event: returns 1.
+    EventPhaseBetween {
+        events: Arc<Vec<Event>>,
+    },
+
     // === Math Primitives ===
     /// Sigmoid curve centered at 0.5.
     Sigmoid { source: Signal, k: SignalParam },
@@ -1194,6 +1303,32 @@ pub enum NoiseType {
 // ============================================================================
 // EventStream → Signal Conversion Types
 // ============================================================================
+
+/// Time unit for event distance/count calculations.
+///
+/// Specifies whether time values should be measured in beats, seconds, or frames.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TimeUnit {
+    /// Time measured in beats (BPM-aware).
+    #[default]
+    Beats,
+    /// Time measured in seconds.
+    Seconds,
+    /// Time measured in frames.
+    Frames,
+}
+
+/// Direction for windowed count/density operations.
+///
+/// Specifies whether to look backward or forward from the current time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WindowDirection {
+    /// Look backward from current time.
+    #[default]
+    Prev,
+    /// Look forward from current time.
+    Next,
+}
 
 /// Envelope shape for EventStream → Signal conversion.
 ///
