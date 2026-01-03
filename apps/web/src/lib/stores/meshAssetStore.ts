@@ -24,7 +24,22 @@ interface MeshAssetState {
 interface MeshAssetActions {
   // CRUD operations
   /** Add a new mesh asset from file content. Returns the new asset ID. */
-  addAsset: (fileName: string, objContent: string, name?: string) => string;
+  addAsset: (
+    fileName: string,
+    objContent: string,
+    options?: {
+      name?: string;
+      rawBytes?: ArrayBuffer;
+      mimeType?: string;
+      contentHash?: string;
+    }
+  ) => string;
+
+  /** Update the cloud asset ID for an asset after upload completes. */
+  setCloudAssetId: (id: string, cloudAssetId: string) => void;
+
+  /** Clear the rawBytes after upload completes to free memory. */
+  clearRawBytes: (id: string) => void;
 
   /** Update an existing asset's name. */
   renameAsset: (id: string, name: string) => void;
@@ -84,13 +99,13 @@ export const useMeshAssetStore = create<MeshAssetState & MeshAssetActions>()(
       // CRUD Operations
       // ----------------------------
 
-      addAsset: (fileName, objContent, name) => {
+      addAsset: (fileName, objContent, options) => {
         const now = new Date().toISOString();
         const id = nanoid();
         const metadata = parseObjMetadata(objContent);
 
         // Generate display name from file name if not provided
-        const displayName = name ?? fileName.replace(/\.obj$/i, "");
+        const displayName = options?.name ?? fileName.replace(/\.obj$/i, "");
 
         const asset: MeshAsset = {
           id,
@@ -100,6 +115,9 @@ export const useMeshAssetStore = create<MeshAssetState & MeshAssetActions>()(
           vertexCount: metadata.vertexCount,
           faceCount: metadata.faceCount,
           createdAt: now,
+          rawBytes: options?.rawBytes,
+          mimeType: options?.mimeType,
+          contentHash: options?.contentHash,
         };
 
         set((state) => {
@@ -117,6 +135,40 @@ export const useMeshAssetStore = create<MeshAssetState & MeshAssetActions>()(
         });
 
         return id;
+      },
+
+      setCloudAssetId: (id, cloudAssetId) => {
+        set((state) => {
+          if (!state.structure) return state;
+
+          const assets = state.structure.assets.map((a) =>
+            a.id === id ? { ...a, cloudAssetId } : a
+          );
+
+          return {
+            structure: {
+              ...state.structure,
+              assets,
+            },
+          };
+        });
+      },
+
+      clearRawBytes: (id) => {
+        set((state) => {
+          if (!state.structure) return state;
+
+          const assets = state.structure.assets.map((a) =>
+            a.id === id ? { ...a, rawBytes: undefined } : a
+          );
+
+          return {
+            structure: {
+              ...state.structure,
+              assets,
+            },
+          };
+        });
       },
 
       renameAsset: (id, name) => {

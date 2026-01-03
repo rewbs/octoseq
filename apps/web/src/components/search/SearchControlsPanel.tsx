@@ -2,7 +2,8 @@
 
 import { useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { useAudioStore, useSearchStore, useRefinementLabelsAvailable } from "@/lib/stores";
+import { useSearchStore, useRefinementLabelsAvailable } from "@/lib/stores";
+import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 
 export type SearchPrecision = "coarse" | "medium" | "fine";
 
@@ -31,7 +32,7 @@ export function SearchControlsPanel() {
   const userSetUseRefinementRef = useRef(false);
 
   // Audio store
-  const audio = useAudioStore((s) => s.audio);
+  const audio = useAudioInputStore((s) => s.getAudio());
 
   // Search store state
   const { searchControls, useRefinementSearch, refinement } = useSearchStore(

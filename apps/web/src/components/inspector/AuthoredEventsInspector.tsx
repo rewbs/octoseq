@@ -1,7 +1,7 @@
 "use client";
 
 import { AuthoredEventsContent } from "@/components/authored/AuthoredEventsContent";
-import { useAudioStore } from "@/lib/stores/audioStore";
+import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 
 /**
  * Inspector view for Authored Events.
@@ -9,7 +9,7 @@ import { useAudioStore } from "@/lib/stores/audioStore";
  * Import functionality is in the main AuthoredEventsPanel.
  */
 export function AuthoredEventsInspector() {
-  const audioDuration = useAudioStore((s) => s.audioDuration);
+  const audioDuration = useAudioInputStore((s) => s.getAudioDuration());
 
   return (
     <div className="flex flex-col">

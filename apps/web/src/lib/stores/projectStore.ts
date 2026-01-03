@@ -24,6 +24,7 @@ import type {
   AudioLoadStatus,
 } from "./types/project";
 import { validateProject, validateProjectIds } from "@/lib/projectValidation";
+import { DEFAULT_SCRIPT } from "../scripting/defaultScripts";
 
 // ----------------------------
 // Store State
@@ -35,6 +36,9 @@ interface ProjectState {
 
   /** Whether there are unsaved changes. */
   isDirty: boolean;
+
+  /** Whether to suppress dirty marking (during hydration/initialization). */
+  suppressDirty: boolean;
 
   /** Audio load state when importing a project. */
   audioLoadStatus: Map<string, AudioLoadStatus>;
@@ -90,6 +94,9 @@ interface ProjectActions {
 
   /** Mark project as saved (no unsaved changes). */
   markClean: () => void;
+
+  /** Suppress dirty marking (for hydration/initialization). */
+  setSuppressDirty: (suppress: boolean) => void;
 
   // ----------------------------
   // State Synchronization
@@ -217,6 +224,7 @@ export type ProjectStore = ProjectState & ProjectActions;
 const initialState: ProjectState = {
   activeProject: null,
   isDirty: false,
+  suppressDirty: false,
   audioLoadStatus: new Map(),
   audioLoadErrors: new Map(),
   isLoading: false,
@@ -246,12 +254,7 @@ export const useProjectStore = create<ProjectStore>()(
         const defaultScript: ProjectScript = {
           id: defaultScriptId,
           name: "Main",
-          content: `// Main visualization script
-// Use 'inputs' to access audio signals and bands
-// Use 'scene' to add entities for rendering
-
-let t = inputs.time;
-`,
+          content: DEFAULT_SCRIPT,
           createdAt: now,
           modifiedAt: now,
         };
@@ -344,10 +347,10 @@ let t = inputs.time;
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  name,
-                  modifiedAt: new Date().toISOString(),
-                }
+                ...state.activeProject,
+                name,
+                modifiedAt: new Date().toISOString(),
+              }
               : null,
             isDirty: true,
           }),
@@ -365,24 +368,28 @@ let t = inputs.time;
         set({ isDirty: false }, false, "markClean");
       },
 
+      setSuppressDirty: (suppress) => {
+        set({ suppressDirty: suppress }, false, "setSuppressDirty");
+      },
+
       // ----------------------------
       // State Synchronization
       // ----------------------------
 
       syncAudioReferences: (collection) => {
-        const project = get().activeProject;
-        if (!project) return;
+        const { activeProject, suppressDirty } = get();
+        if (!activeProject) return;
 
         set(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  audio: collection,
-                  modifiedAt: new Date().toISOString(),
-                }
+                ...state.activeProject,
+                audio: collection,
+                modifiedAt: new Date().toISOString(),
+              }
               : null,
-            isDirty: true,
+            isDirty: suppressDirty ? state.isDirty : true,
           }),
           false,
           "syncAudioReferences"
@@ -390,22 +397,22 @@ let t = inputs.time;
       },
 
       syncFrequencyBands: (structure) => {
-        const project = get().activeProject;
-        if (!project) return;
+        const { activeProject, suppressDirty } = get();
+        if (!activeProject) return;
 
         set(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  interpretation: {
-                    ...state.activeProject.interpretation,
-                    frequencyBands: structure,
-                  },
-                  modifiedAt: new Date().toISOString(),
-                }
+                ...state.activeProject,
+                interpretation: {
+                  ...state.activeProject.interpretation,
+                  frequencyBands: structure,
+                },
+                modifiedAt: new Date().toISOString(),
+              }
               : null,
-            isDirty: true,
+            isDirty: suppressDirty ? state.isDirty : true,
           }),
           false,
           "syncFrequencyBands"
@@ -413,22 +420,22 @@ let t = inputs.time;
       },
 
       syncMusicalTime: (structure) => {
-        const project = get().activeProject;
-        if (!project) return;
+        const { activeProject, suppressDirty } = get();
+        if (!activeProject) return;
 
         set(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  interpretation: {
-                    ...state.activeProject.interpretation,
-                    musicalTime: structure,
-                  },
-                  modifiedAt: new Date().toISOString(),
-                }
+                ...state.activeProject,
+                interpretation: {
+                  ...state.activeProject.interpretation,
+                  musicalTime: structure,
+                },
+                modifiedAt: new Date().toISOString(),
+              }
               : null,
-            isDirty: true,
+            isDirty: suppressDirty ? state.isDirty : true,
           }),
           false,
           "syncMusicalTime"
@@ -436,22 +443,22 @@ let t = inputs.time;
       },
 
       syncAuthoredEvents: (streams) => {
-        const project = get().activeProject;
-        if (!project) return;
+        const { activeProject, suppressDirty } = get();
+        if (!activeProject) return;
 
         set(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  interpretation: {
-                    ...state.activeProject.interpretation,
-                    authoredEvents: streams,
-                  },
-                  modifiedAt: new Date().toISOString(),
-                }
+                ...state.activeProject,
+                interpretation: {
+                  ...state.activeProject.interpretation,
+                  authoredEvents: streams,
+                },
+                modifiedAt: new Date().toISOString(),
+              }
               : null,
-            isDirty: true,
+            isDirty: suppressDirty ? state.isDirty : true,
           }),
           false,
           "syncAuthoredEvents"
@@ -459,22 +466,22 @@ let t = inputs.time;
       },
 
       syncBeatGrid: (beatGridState) => {
-        const project = get().activeProject;
-        if (!project) return;
+        const { activeProject, suppressDirty } = get();
+        if (!activeProject) return;
 
         set(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  interpretation: {
-                    ...state.activeProject.interpretation,
-                    beatGrid: beatGridState,
-                  },
-                  modifiedAt: new Date().toISOString(),
-                }
+                ...state.activeProject,
+                interpretation: {
+                  ...state.activeProject.interpretation,
+                  beatGrid: beatGridState,
+                },
+                modifiedAt: new Date().toISOString(),
+              }
               : null,
-            isDirty: true,
+            isDirty: suppressDirty ? state.isDirty : true,
           }),
           false,
           "syncBeatGrid"
@@ -482,22 +489,22 @@ let t = inputs.time;
       },
 
       syncCustomSignals: (structure) => {
-        const project = get().activeProject;
-        if (!project) return;
+        const { activeProject, suppressDirty } = get();
+        if (!activeProject) return;
 
         set(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  interpretation: {
-                    ...state.activeProject.interpretation,
-                    customSignals: structure,
-                  },
-                  modifiedAt: new Date().toISOString(),
-                }
+                ...state.activeProject,
+                interpretation: {
+                  ...state.activeProject.interpretation,
+                  customSignals: structure,
+                },
+                modifiedAt: new Date().toISOString(),
+              }
               : null,
-            isDirty: true,
+            isDirty: suppressDirty ? state.isDirty : true,
           }),
           false,
           "syncCustomSignals"
@@ -505,19 +512,19 @@ let t = inputs.time;
       },
 
       syncMeshAssets: (structure) => {
-        const project = get().activeProject;
-        if (!project) return;
+        const { activeProject, suppressDirty } = get();
+        if (!activeProject) return;
 
         set(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  meshAssets: structure,
-                  modifiedAt: new Date().toISOString(),
-                }
+                ...state.activeProject,
+                meshAssets: structure,
+                modifiedAt: new Date().toISOString(),
+              }
               : null,
-            isDirty: true,
+            isDirty: suppressDirty ? state.isDirty : true,
           }),
           false,
           "syncMeshAssets"
@@ -525,22 +532,22 @@ let t = inputs.time;
       },
 
       syncScripts: (scripts, activeScriptId) => {
-        const project = get().activeProject;
-        if (!project) return;
+        const { activeProject, suppressDirty } = get();
+        if (!activeProject) return;
 
         set(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  scripts: {
-                    scripts,
-                    activeScriptId,
-                  },
-                  modifiedAt: new Date().toISOString(),
-                }
+                ...state.activeProject,
+                scripts: {
+                  scripts,
+                  activeScriptId,
+                },
+                modifiedAt: new Date().toISOString(),
+              }
               : null,
-            isDirty: true,
+            isDirty: suppressDirty ? state.isDirty : true,
           }),
           false,
           "syncScripts"
@@ -548,11 +555,11 @@ let t = inputs.time;
       },
 
       syncScriptContent: (scriptId, content) => {
-        const project = get().activeProject;
-        if (!project) return;
+        const { activeProject, suppressDirty } = get();
+        if (!activeProject) return;
 
         const now = new Date().toISOString();
-        const updatedScripts = project.scripts.scripts.map((s) =>
+        const updatedScripts = activeProject.scripts.scripts.map((s) =>
           s.id === scriptId ? { ...s, content, modifiedAt: now } : s
         );
 
@@ -560,15 +567,15 @@ let t = inputs.time;
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  scripts: {
-                    ...state.activeProject.scripts,
-                    scripts: updatedScripts,
-                  },
-                  modifiedAt: now,
-                }
+                ...state.activeProject,
+                scripts: {
+                  ...state.activeProject.scripts,
+                  scripts: updatedScripts,
+                },
+                modifiedAt: now,
+              }
               : null,
-            isDirty: true,
+            isDirty: suppressDirty ? state.isDirty : true,
           }),
           false,
           "syncScriptContent"
@@ -576,22 +583,22 @@ let t = inputs.time;
       },
 
       syncUIState: (uiState) => {
-        const project = get().activeProject;
-        if (!project) return;
+        const { activeProject, suppressDirty } = get();
+        if (!activeProject) return;
 
         set(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  uiState: {
-                    ...state.activeProject.uiState,
-                    ...uiState,
-                  },
-                  modifiedAt: new Date().toISOString(),
-                }
+                ...state.activeProject,
+                uiState: {
+                  ...state.activeProject.uiState,
+                  ...uiState,
+                },
+                modifiedAt: new Date().toISOString(),
+              }
               : null,
-            isDirty: true,
+            isDirty: suppressDirty ? state.isDirty : true,
           }),
           false,
           "syncUIState"
@@ -621,13 +628,13 @@ let t = inputs.time;
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  scripts: {
-                    scripts: [...state.activeProject.scripts.scripts, newScript],
-                    activeScriptId: scriptId, // Auto-activate new script
-                  },
-                  modifiedAt: now,
-                }
+                ...state.activeProject,
+                scripts: {
+                  scripts: [...state.activeProject.scripts.scripts, newScript],
+                  activeScriptId: scriptId, // Auto-activate new script
+                },
+                modifiedAt: now,
+              }
               : null,
             isDirty: true,
           }),
@@ -654,13 +661,13 @@ let t = inputs.time;
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  scripts: {
-                    scripts,
-                    activeScriptId,
-                  },
-                  modifiedAt: new Date().toISOString(),
-                }
+                ...state.activeProject,
+                scripts: {
+                  scripts,
+                  activeScriptId,
+                },
+                modifiedAt: new Date().toISOString(),
+              }
               : null,
             isDirty: true,
           }),
@@ -682,13 +689,13 @@ let t = inputs.time;
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  scripts: {
-                    ...state.activeProject.scripts,
-                    scripts: updatedScripts,
-                  },
-                  modifiedAt: now,
-                }
+                ...state.activeProject,
+                scripts: {
+                  ...state.activeProject.scripts,
+                  scripts: updatedScripts,
+                },
+                modifiedAt: now,
+              }
               : null,
             isDirty: true,
           }),
@@ -705,13 +712,13 @@ let t = inputs.time;
           (state) => ({
             activeProject: state.activeProject
               ? {
-                  ...state.activeProject,
-                  scripts: {
-                    ...state.activeProject.scripts,
-                    activeScriptId: scriptId,
-                  },
-                  modifiedAt: new Date().toISOString(),
-                }
+                ...state.activeProject,
+                scripts: {
+                  ...state.activeProject.scripts,
+                  activeScriptId: scriptId,
+                },
+                modifiedAt: new Date().toISOString(),
+              }
               : null,
             isDirty: true,
           }),

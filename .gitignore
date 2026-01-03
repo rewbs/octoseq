@@ -32,3 +32,6 @@ packages/visualiser/target
 .cargo-home
 
 **/src/generated/**
+
+.vscode/.chrome
+

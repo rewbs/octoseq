@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { AutosaveRecoveryDialog } from "./AutosaveRecoveryDialog";
 import { RecoveryBanner } from "./RecoveryBanner";
 import { useProjectActions } from "@/lib/stores/hooks/useProjectActions";
@@ -17,6 +18,7 @@ interface AutosaveProviderProps {
  * - Recovery banner after successful recovery
  */
 export function AutosaveProvider({ children }: AutosaveProviderProps) {
+  const pathname = usePathname();
   const {
     pendingRecovery,
     wasRecovered,
@@ -28,12 +30,22 @@ export function AutosaveProvider({ children }: AutosaveProviderProps) {
   // Local state to track dialog visibility (separate from pendingRecovery)
   const [showDialog, setShowDialog] = useState(false);
 
-  // Show dialog when recovery becomes available
+  // Only show the recovery dialog on the main page
+  const isMainPage = pathname === "/";
+
+  // Show dialog when recovery becomes available (only on main page)
   useEffect(() => {
-    if (pendingRecovery) {
+    if (pendingRecovery && isMainPage) {
       setShowDialog(true);
     }
-  }, [pendingRecovery]);
+  }, [pendingRecovery, isMainPage]);
+
+  // Close dialog if user navigates away from main page
+  useEffect(() => {
+    if (!isMainPage && showDialog) {
+      setShowDialog(false);
+    }
+  }, [isMainPage, showDialog]);
 
   // Handle accept
   const handleAccept = useCallback(async () => {

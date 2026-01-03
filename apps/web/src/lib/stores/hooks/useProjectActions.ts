@@ -17,6 +17,8 @@ import { clearAutosave } from "../../persistence/autosave";
 import type { ProjectAudioCollection, ProjectAudioReference, ProjectBeatGridState } from "../types/project";
 import type { AuthoredEventStream } from "../types/authoredEvent";
 import type { AutosaveRecord } from "../../persistence/types";
+import type { AudioInput, AudioInputCollection } from "../types/audioInput";
+import { MIXDOWN_ID } from "../types/audioInput";
 
 /**
  * Hook that provides project lifecycle actions and sets up store synchronization.
@@ -36,6 +38,7 @@ export function useProjectActions() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const isDirty = useProjectStore((s) => s.isDirty);
   const markClean = useProjectStore((s) => s.markClean);
+  const setSuppressDirty = useProjectStore((s) => s.setSuppressDirty);
 
   // Autosave state
   const autosaveStatus = useAutosaveStore((s) => s.status);
@@ -45,6 +48,9 @@ export function useProjectActions() {
 
   // Track if initial sync has been done
   const initialSyncDone = useRef(false);
+
+  // Track if we should skip UI state syncs (to prevent localStorage hydration from marking dirty)
+  const skipUiSyncRef = useRef(true);
 
   // Pending recovery state
   const [pendingRecovery, setPendingRecovery] = useState<AutosaveRecord | null>(null);
@@ -102,7 +108,11 @@ export function useProjectActions() {
     });
 
     // Subscribe to tree state changes
+    // Skip initial syncs to prevent localStorage hydration from marking project dirty
     const unsubTree = useInterpretationTreeStore.subscribe((state, prevState) => {
+      // Skip UI syncs during initial setup (localStorage hydration)
+      if (skipUiSyncRef.current) return;
+
       const relevantChange =
         state.expandedNodes !== prevState.expandedNodes ||
         state.selectedNodeId !== prevState.selectedNodeId ||
@@ -147,7 +157,8 @@ export function useProjectActions() {
                   role: mixdownInput.role,
                   metadata: mixdownInput.metadata!,
                   origin: mixdownInput.origin,
-                  assetId: mixdownInput.assetId,
+                  // Use cloudAssetId for persistent storage references
+                  assetId: mixdownInput.cloudAssetId ?? mixdownInput.assetId,
                 }
               : null,
             stems: collection.stemOrder
@@ -161,7 +172,8 @@ export function useProjectActions() {
                   metadata: stem.metadata,
                   origin: stem.origin,
                   orderIndex: index,
-                  assetId: stem.assetId,
+                  // Use cloudAssetId for persistent storage references
+                  assetId: stem.cloudAssetId ?? stem.assetId,
                 } as ProjectAudioReference;
               })
               .filter((s): s is ProjectAudioReference => s !== null),
@@ -195,96 +207,157 @@ export function useProjectActions() {
     const project = useProjectStore.getState().activeProject;
     if (!project) return;
 
-    // Hydrate frequency bands
-    if (project.interpretation.frequencyBands) {
-      useFrequencyBandStore.getState().importFromJSON(
-        JSON.stringify(project.interpretation.frequencyBands)
-      );
-    }
+    // Suppress dirty marking during hydration to prevent cascading syncs
+    // from marking the project as dirty
+    setSuppressDirty(true);
 
-    // Hydrate musical time
-    if (project.interpretation.musicalTime) {
-      useMusicalTimeStore.getState().importFromJSON(
-        JSON.stringify(project.interpretation.musicalTime)
-      );
-    }
+    try {
+      // Hydrate frequency bands
+      if (project.interpretation.frequencyBands) {
+        useFrequencyBandStore.getState().importFromJSON(
+          JSON.stringify(project.interpretation.frequencyBands)
+        );
+      }
 
-    // Hydrate authored events
-    if (project.interpretation.authoredEvents.length > 0) {
-      const authoredStore = useAuthoredEventStore.getState();
-      authoredStore.reset();
-      for (const stream of project.interpretation.authoredEvents) {
-        // Add stream with all events
-        const streamId = authoredStore.addStream(stream.name, stream.source, {
-          color: stream.color,
-        });
-        if (streamId) {
-          authoredStore.addEvents(
-            streamId,
-            stream.events.map((e) => ({
-              time: e.time,
-              beatPosition: e.beatPosition,
-              weight: e.weight,
-              duration: e.duration,
-              payload: e.payload,
-              provenance: e.provenance,
-            }))
-          );
+      // Hydrate musical time
+      if (project.interpretation.musicalTime) {
+        useMusicalTimeStore.getState().importFromJSON(
+          JSON.stringify(project.interpretation.musicalTime)
+        );
+      }
+
+      // Hydrate authored events
+      if (project.interpretation.authoredEvents.length > 0) {
+        const authoredStore = useAuthoredEventStore.getState();
+        authoredStore.reset();
+        for (const stream of project.interpretation.authoredEvents) {
+          // Add stream with all events
+          const streamId = authoredStore.addStream(stream.name, stream.source, {
+            color: stream.color,
+          });
+          if (streamId) {
+            authoredStore.addEvents(
+              streamId,
+              stream.events.map((e) => ({
+                time: e.time,
+                beatPosition: e.beatPosition,
+                weight: e.weight,
+                duration: e.duration,
+                payload: e.payload,
+                provenance: e.provenance,
+              }))
+            );
+          }
         }
       }
-    }
 
-    // Hydrate beat grid
-    if (project.interpretation.beatGrid) {
-      const bg = project.interpretation.beatGrid;
-      const beatGridStore = useBeatGridStore.getState();
+      // Hydrate beat grid
+      if (project.interpretation.beatGrid) {
+        const bg = project.interpretation.beatGrid;
+        const beatGridStore = useBeatGridStore.getState();
 
-      if (bg.selectedHypothesis) {
-        beatGridStore.selectHypothesis(bg.selectedHypothesis);
-        beatGridStore.setPhaseHypotheses(bg.phaseHypotheses);
-        beatGridStore.setActivePhaseIndex(bg.activePhaseIndex);
-        beatGridStore.setUserNudge(bg.userNudge);
-        beatGridStore.setLocked(bg.isLocked);
-        beatGridStore.setVisible(bg.isVisible);
-        beatGridStore.setMetronomeEnabled(bg.metronomeEnabled);
-        beatGridStore.setConfig(bg.config);
-        beatGridStore.setSubBeatDivision(bg.subBeatDivision);
+        if (bg.selectedHypothesis) {
+          beatGridStore.selectHypothesis(bg.selectedHypothesis);
+          beatGridStore.setPhaseHypotheses(bg.phaseHypotheses);
+          beatGridStore.setActivePhaseIndex(bg.activePhaseIndex);
+          beatGridStore.setUserNudge(bg.userNudge);
+          beatGridStore.setLocked(bg.isLocked);
+          beatGridStore.setVisible(bg.isVisible);
+          beatGridStore.setMetronomeEnabled(bg.metronomeEnabled);
+          beatGridStore.setConfig(bg.config);
+          beatGridStore.setSubBeatDivision(bg.subBeatDivision);
+        }
       }
-    }
 
-    // Hydrate custom signals
-    if (project.interpretation.customSignals) {
-      useCustomSignalStore.getState().loadFromProject(project.interpretation.customSignals);
-    }
+      // Hydrate custom signals
+      if (project.interpretation.customSignals) {
+        useCustomSignalStore.getState().loadFromProject(project.interpretation.customSignals);
+      }
 
-    // Hydrate mesh assets
-    if (project.meshAssets) {
-      useMeshAssetStore.getState().loadFromProject(project.meshAssets);
-    }
+      // Hydrate mesh assets
+      if (project.meshAssets) {
+        useMeshAssetStore.getState().loadFromProject(project.meshAssets);
+      }
 
-    // Hydrate tree state
-    if (project.uiState) {
-      const treeStore = useInterpretationTreeStore.getState();
-      for (const nodeId of project.uiState.treeExpandedNodes) {
-        treeStore.setExpanded(nodeId, true);
+      // Hydrate audio inputs (create stub entries for cloud loading)
+      // This creates the collection structure so cloud loader can fill in audio data
+      if (project.audio) {
+        const audioInputStore = useAudioInputStore.getState();
+        const inputs: Record<string, AudioInput> = {};
+        const stemOrder: string[] = [];
+
+        // Create mixdown stub if present
+        if (project.audio.mixdown) {
+          const mix = project.audio.mixdown;
+          inputs[MIXDOWN_ID] = {
+            id: MIXDOWN_ID,
+            label: mix.label,
+            role: "mixdown",
+            audioBuffer: null, // Will be loaded by cloud loader
+            metadata: mix.metadata,
+            audioUrl: null,
+            origin: mix.origin,
+            createdAt: new Date().toISOString(),
+            cloudAssetId: mix.assetId,
+          };
+        }
+
+        // Create stem stubs
+        // Sort by orderIndex to preserve order
+        const sortedStems = [...project.audio.stems].sort(
+          (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
+        );
+        for (const stem of sortedStems) {
+          inputs[stem.id] = {
+            id: stem.id,
+            label: stem.label,
+            role: "stem",
+            audioBuffer: null, // Will be loaded by cloud loader
+            metadata: stem.metadata,
+            audioUrl: null,
+            origin: stem.origin,
+            createdAt: new Date().toISOString(),
+            cloudAssetId: stem.assetId,
+          };
+          stemOrder.push(stem.id);
+        }
+
+        // Set the collection directly
+        const collection: AudioInputCollection = {
+          version: 1,
+          inputs,
+          stemOrder,
+        };
+        audioInputStore.setCollection(collection);
       }
-      if (project.uiState.treeSelectedNodeId) {
-        treeStore.selectNode(project.uiState.treeSelectedNodeId);
+
+      // Hydrate tree state
+      if (project.uiState) {
+        const treeStore = useInterpretationTreeStore.getState();
+        for (const nodeId of project.uiState.treeExpandedNodes) {
+          treeStore.setExpanded(nodeId, true);
+        }
+        if (project.uiState.treeSelectedNodeId) {
+          treeStore.selectNode(project.uiState.treeSelectedNodeId);
+        }
+        if (project.uiState.sidebarWidth) {
+          treeStore.setSidebarWidth(project.uiState.sidebarWidth);
+        }
+        if (project.uiState.inspectorHeight) {
+          treeStore.setInspectorHeight(project.uiState.inspectorHeight);
+        }
+        // Restore playhead position
+        if (project.uiState.lastPlayheadPosition && project.uiState.lastPlayheadPosition > 0) {
+          usePlaybackStore.getState().setPlayheadTimeSec(project.uiState.lastPlayheadPosition);
+          // Also set cursor time to match
+          usePlaybackStore.getState().setCursorTimeSec(project.uiState.lastPlayheadPosition);
+        }
       }
-      if (project.uiState.sidebarWidth) {
-        treeStore.setSidebarWidth(project.uiState.sidebarWidth);
-      }
-      if (project.uiState.inspectorHeight) {
-        treeStore.setInspectorHeight(project.uiState.inspectorHeight);
-      }
-      // Restore playhead position
-      if (project.uiState.lastPlayheadPosition && project.uiState.lastPlayheadPosition > 0) {
-        usePlaybackStore.getState().setPlayheadTimeSec(project.uiState.lastPlayheadPosition);
-        // Also set cursor time to match
-        usePlaybackStore.getState().setCursorTimeSec(project.uiState.lastPlayheadPosition);
-      }
+    } finally {
+      // Re-enable dirty marking
+      setSuppressDirty(false);
     }
-  }, []);
+  }, [setSuppressDirty]);
 
   // ----------------------------
   // Project Lifecycle Actions
@@ -298,60 +371,72 @@ export function useProjectActions() {
       const projectId = createProject(name);
 
       if (importCurrentState) {
-        // Sync current state from all stores
-        const bandStructure = useFrequencyBandStore.getState().structure;
-        if (bandStructure) {
-          useProjectStore.getState().syncFrequencyBands(bandStructure);
-        }
+        // Suppress dirty marking during initial sync
+        setSuppressDirty(true);
 
-        const musicalTimeStructure = useMusicalTimeStore.getState().structure;
-        if (musicalTimeStructure) {
-          useProjectStore.getState().syncMusicalTime(musicalTimeStructure);
-        }
+        try {
+          // Sync current state from all stores
+          const bandStructure = useFrequencyBandStore.getState().structure;
+          if (bandStructure) {
+            useProjectStore.getState().syncFrequencyBands(bandStructure);
+          }
 
-        const authoredStreams = Array.from(useAuthoredEventStore.getState().streams.values());
-        if (authoredStreams.length > 0) {
-          useProjectStore.getState().syncAuthoredEvents(authoredStreams);
-        }
+          const musicalTimeStructure = useMusicalTimeStore.getState().structure;
+          if (musicalTimeStructure) {
+            useProjectStore.getState().syncMusicalTime(musicalTimeStructure);
+          }
 
-        const beatGridState = useBeatGridStore.getState();
-        if (beatGridState.selectedHypothesis) {
-          useProjectStore.getState().syncBeatGrid({
-            selectedHypothesis: beatGridState.selectedHypothesis,
-            phaseHypotheses: beatGridState.phaseHypotheses,
-            activePhaseIndex: beatGridState.activePhaseIndex,
-            activeBeatGrid: beatGridState.activeBeatGrid,
-            userNudge: beatGridState.userNudge,
-            isLocked: beatGridState.isLocked,
-            isVisible: beatGridState.isVisible,
-            metronomeEnabled: beatGridState.metronomeEnabled,
-            config: beatGridState.config,
-            subBeatDivision: beatGridState.subBeatDivision,
-          });
-        }
+          const authoredStreams = Array.from(useAuthoredEventStore.getState().streams.values());
+          if (authoredStreams.length > 0) {
+            useProjectStore.getState().syncAuthoredEvents(authoredStreams);
+          }
 
-        const customSignalStructure = useCustomSignalStore.getState().structure;
-        if (customSignalStructure) {
-          useProjectStore.getState().syncCustomSignals(customSignalStructure);
-        }
+          const beatGridState = useBeatGridStore.getState();
+          if (beatGridState.selectedHypothesis) {
+            useProjectStore.getState().syncBeatGrid({
+              selectedHypothesis: beatGridState.selectedHypothesis,
+              phaseHypotheses: beatGridState.phaseHypotheses,
+              activePhaseIndex: beatGridState.activePhaseIndex,
+              activeBeatGrid: beatGridState.activeBeatGrid,
+              userNudge: beatGridState.userNudge,
+              isLocked: beatGridState.isLocked,
+              isVisible: beatGridState.isVisible,
+              metronomeEnabled: beatGridState.metronomeEnabled,
+              config: beatGridState.config,
+              subBeatDivision: beatGridState.subBeatDivision,
+            });
+          }
 
-        const meshAssetStructure = useMeshAssetStore.getState().structure;
-        if (meshAssetStructure) {
-          useProjectStore.getState().syncMeshAssets(meshAssetStructure);
-        }
+          const customSignalStructure = useCustomSignalStore.getState().structure;
+          if (customSignalStructure) {
+            useProjectStore.getState().syncCustomSignals(customSignalStructure);
+          }
 
-        const treeState = useInterpretationTreeStore.getState();
-        useProjectStore.getState().syncUIState({
-          treeExpandedNodes: Array.from(treeState.expandedNodes),
-          treeSelectedNodeId: treeState.selectedNodeId,
-          sidebarWidth: treeState.sidebarWidth,
-          inspectorHeight: treeState.inspectorHeight,
-        });
+          const meshAssetStructure = useMeshAssetStore.getState().structure;
+          if (meshAssetStructure) {
+            useProjectStore.getState().syncMeshAssets(meshAssetStructure);
+          }
+
+          // Only sync UI state if there's meaningful state to import
+          // (e.g., a specific node is selected or non-default sidebar width)
+          const treeState = useInterpretationTreeStore.getState();
+          if (treeState.selectedNodeId || treeState.sidebarWidth !== 280) {
+            useProjectStore.getState().syncUIState({
+              treeExpandedNodes: Array.from(treeState.expandedNodes),
+              treeSelectedNodeId: treeState.selectedNodeId,
+              sidebarWidth: treeState.sidebarWidth,
+              inspectorHeight: treeState.inspectorHeight,
+            });
+          }
+        } finally {
+          // Re-enable dirty marking
+          setSuppressDirty(false);
+        }
       }
 
       return projectId;
     },
-    [createProject]
+    [createProject, setSuppressDirty]
   );
 
   /**
@@ -480,6 +565,10 @@ export function useProjectActions() {
     if (success) {
       setPendingRecovery(null);
       initialSyncDone.current = true;
+      // Enable UI syncs after a short delay to let hydration complete
+      setTimeout(() => {
+        skipUiSyncRef.current = false;
+      }, 100);
     }
     return success;
   }, [acceptRecovery]);
@@ -492,7 +581,12 @@ export function useProjectActions() {
     setPendingRecovery(null);
     // Create a new project since we dismissed recovery
     handleCreateProject("Untitled Project", true);
+    useProjectStore.getState().markClean();
     initialSyncDone.current = true;
+    // Enable UI syncs after a short delay to let hydration complete
+    setTimeout(() => {
+      skipUiSyncRef.current = false;
+    }, 100);
   }, [dismissRecovery, handleCreateProject]);
 
   // ----------------------------
@@ -506,7 +600,13 @@ export function useProjectActions() {
     if (!initialSyncDone.current && !activeProject) {
       // Auto-create a project on first mount
       handleCreateProject("Untitled Project", true);
+      // Mark clean since this is a fresh blank project, not user changes
+      useProjectStore.getState().markClean();
       initialSyncDone.current = true;
+      // Enable UI syncs after a short delay to let localStorage hydration complete
+      setTimeout(() => {
+        skipUiSyncRef.current = false;
+      }, 100);
     }
   }, [activeProject, handleCreateProject, pendingRecovery]);
 

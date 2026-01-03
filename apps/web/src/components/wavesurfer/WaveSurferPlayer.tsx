@@ -7,11 +7,11 @@ import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
 import WaveSurfer from "wavesurfer.js";
 import Timeline from "wavesurfer.js/dist/plugins/timeline.esm.js";
 import Regions from "wavesurfer.js/dist/plugins/regions.esm.js";
-import { GripHorizontal, Play, Pause, X } from "lucide-react";
+import { GripHorizontal, Play, Pause, X, Loader2, AlertCircle } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
-import { useAudioStore } from "@/lib/stores/audioStore";
+import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import { useBeatGridStore, SUB_BEAT_DIVISIONS } from "@/lib/stores/beatGridStore";
 import { useConfigStore } from "@/lib/stores/configStore";
 import { useMusicalTimeStore } from "@/lib/stores/musicalTimeStore";
@@ -158,6 +158,12 @@ type WaveSurferPlayerProps = {
    * Used for switching between mixdown and stem audio display.
    */
   displayAudioUrl?: string | null;
+
+  /**
+   * Called when a file is picked from the file input, before WaveSurfer decodes it.
+   * Use this to trigger cloud upload with the original file bytes.
+   */
+  onFilePicked?: (file: File) => void;
 };
 
 /**
@@ -201,6 +207,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     muted,
     onBpmClick,
     displayAudioUrl,
+    onFilePicked,
   }: WaveSurferPlayerProps,
   ref
 ) {
@@ -277,13 +284,12 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
       },
       isPlaying: () => isPlayingRef.current,
       loadUrl: async (url: string, fileName: string) => {
+        void fileName; // Unused - kept for API compatibility
         const ws = wsRef.current;
         if (!ws) return;
 
-        // Set pending filename and URL in store before loading
-        const audioStore = useAudioStore.getState();
-        audioStore.setPendingFileName(fileName);
-        audioStore.setAudioUrl(url);
+        // Note: This method is deprecated. Use setCurrentAudioSource instead.
+        // For URL loading, create a RemoteAudioSource or fetch the file first.
 
         // Clear existing refs (similar to onPickFile)
         regionsPluginRef.current?.clearRegions();
@@ -295,7 +301,14 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         onIsPlayingChangeRef.current?.(false);
 
         // Load from URL - state updates (isReady, isPlaying, zoom) happen via event handlers
-        await ws.load(url);
+        // For blob URLs, fetch and use loadBlob() to avoid range request issues
+        if (url.startsWith("blob:")) {
+          const response = await fetch(url);
+          const blob = await response.blob();
+          ws.loadBlob(blob);
+        } else {
+          await ws.load(url);
+        }
       },
     }),
     []
@@ -379,9 +392,19 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   const subBeatDivision = useBeatGridStore((s) => s.subBeatDivision);
   const setSubBeatDivision = useBeatGridStore((s) => s.setSubBeatDivision);
   const hopSize = useConfigStore((s) => s.hopSize);
-  const sampleRate = useAudioStore((s) => s.audioSampleRate);
+  const sampleRate = useAudioInputStore((s) => s.getAudioSampleRate());
   const getBeatPositionAt = useMusicalTimeStore((s) => s.getBeatPositionAt);
   const musicalTimeStructure = useMusicalTimeStore((s) => s.structure);
+
+  // ==========================================================================
+  // AudioSource: Single Source of Truth for Playback
+  // ==========================================================================
+  // WaveSurfer loads audio by URL only. currentAudioSource is the single
+  // authority on what audio is playing.
+  // ==========================================================================
+  const currentAudioSource = useAudioInputStore((s) => s.currentAudioSource);
+  const currentAudioSourceRef = useRef(currentAudioSource);
+  const lastLoadedSourceIdRef = useRef<string | null>(null);
 
   // Keep the refs updated for callback functions
   useEffect(() => {
@@ -389,11 +412,78 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     setZoomRef.current = setZoom;
   }, []);
 
+  // Keep currentAudioSource ref updated
+  useEffect(() => {
+    currentAudioSourceRef.current = currentAudioSource;
+  }, [currentAudioSource]);
+
+  // ==========================================================================
+  // AudioSource Loading Effect
+  // ==========================================================================
+  // Load audio from currentAudioSource when it becomes ready.
+  // This is the single entry point for WaveSurfer audio loading.
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!ws) return;
+
+    // No source or not ready - nothing to load
+    if (!currentAudioSource || currentAudioSource.status !== "ready" || !currentAudioSource.url) {
+      return;
+    }
+
+    // Already loaded this source - skip
+    if (currentAudioSource.id === lastLoadedSourceIdRef.current) {
+      return;
+    }
+
+    // New source to load
+    const sourceId = currentAudioSource.id;
+    const sourceType = currentAudioSource.type;
+    const url = currentAudioSource.url;
+
+    console.log(`[WaveSurfer] Loading audio source: ${sourceId} (${sourceType})`);
+
+    // Clear state before loading new audio
+    regionsPluginRef.current?.clearRegions();
+    queryRegionRef.current = null;
+    segmentPlaybackRef.current = null;
+    isPlayingRef.current = false;
+    onRegionChangeRef.current?.(null);
+    onSelectCandidateIdRef.current?.(null);
+    onIsPlayingChangeRef.current?.(false);
+
+    // Mark this source as loaded (before async load to prevent double-loading)
+    lastLoadedSourceIdRef.current = sourceId;
+
+    // Load the audio - onReady event will update UI state
+    // For blob URLs, fetch and use loadBlob() to avoid range request issues
+    if (url.startsWith("blob:")) {
+      void (async () => {
+        try {
+          const response = await fetch(url);
+          const blob = await response.blob();
+          ws.loadBlob(blob);
+        } catch (err) {
+          console.error("[WaveSurfer] Failed to load blob URL:", err);
+        }
+      })();
+    } else {
+      void ws.load(url);
+    }
+  }, [currentAudioSource]);
+
   // Track the last loaded display URL to avoid redundant loads
   const lastDisplayAudioUrlRef = useRef<string | null>(null);
   // Flag to distinguish display URL loads from file picker loads
   // Display URL loads should NOT trigger onAudioDecoded (we're just switching display, not loading new audio)
   const isDisplayUrlLoadRef = useRef(false);
+  // Track current displayAudioUrl prop so we can check it when WaveSurfer is first created
+  const displayAudioUrlRef = useRef<string | null | undefined>(displayAudioUrl);
+
+  // Keep displayAudioUrl ref updated for access in WaveSurfer creation effect
+  useEffect(() => {
+    displayAudioUrlRef.current = displayAudioUrl;
+  }, [displayAudioUrl]);
 
   // Handle external audio source switching (for stem/mixdown switching)
   useEffect(() => {
@@ -403,6 +493,14 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
 
     // Avoid reloading the same URL
     if (displayAudioUrl === lastDisplayAudioUrlRef.current) return;
+
+    // Skip if this URL is already being loaded via currentAudioSource
+    // This prevents double-loading when cloud assets set both
+    const source = currentAudioSourceRef.current;
+    if (source?.status === "ready" && source?.url === displayAudioUrl) {
+      return;
+    }
+
     lastDisplayAudioUrlRef.current = displayAudioUrl;
 
     // Mark this as a display URL load - should not trigger onAudioDecoded
@@ -418,7 +516,20 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     onIsPlayingChangeRef.current?.(false);
 
     // Load the new audio URL
-    void ws.load(displayAudioUrl);
+    // For blob URLs, fetch and use loadBlob() to avoid range request issues
+    if (displayAudioUrl.startsWith("blob:")) {
+      void (async () => {
+        try {
+          const response = await fetch(displayAudioUrl);
+          const blob = await response.blob();
+          ws.loadBlob(blob);
+        } catch (err) {
+          console.error("[WaveSurfer] Failed to load blob URL from displayAudioUrl:", err);
+        }
+      })();
+    } else {
+      void ws.load(displayAudioUrl);
+    }
   }, [displayAudioUrl]);
 
   // Region selection debug readout (for trust + tuning).
@@ -527,13 +638,20 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     const onReady = () => {
       setIsReady(true);
 
-      // Only call onAudioDecoded for file picker loads, NOT for display URL switching.
-      // Display URL switching just changes which audio is shown in the waveform,
-      // it doesn't mean new audio was loaded that needs MIR analysis.
+      // =======================================================================
+      // DESIGN: onAudioDecoded is for MIR analysis, not playback.
+      // - Local sources: Call onAudioDecoded (file picker loads need MIR)
+      // - Remote/Generated sources: Don't call (already decoded elsewhere)
+      // - Display URL loads: Don't call (just switching display, no new audio)
+      // =======================================================================
+      const source = currentAudioSourceRef.current;
       const isDisplayUrlLoad = isDisplayUrlLoadRef.current;
       isDisplayUrlLoadRef.current = false; // Reset for next load
 
-      if (!isDisplayUrlLoad) {
+      // Call onAudioDecoded only for local file sources (not remote/generated/display-switching)
+      const shouldCallOnDecoded = source?.type === "local" && !isDisplayUrlLoad;
+
+      if (shouldCallOnDecoded) {
         // Expose decoded audio to the app layer for MIR analysis.
         // WaveSurfer decodes to a WebAudio AudioBuffer; we adapt it to the
         // minimal AudioBufferLike shape that @octoseq/mir expects.
@@ -930,6 +1048,32 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     ws.on("scroll", onScroll);
     ws.on("interaction", onInteraction);
 
+    // Check if there's a pending displayAudioUrl that was set before WaveSurfer was created.
+    // This handles the race condition when loading cloud projects where displayAudioUrl
+    // is set before the WaveSurfer instance exists.
+    // Skip if currentAudioSource will handle the loading.
+    const pendingUrl = displayAudioUrlRef.current;
+    const source = currentAudioSourceRef.current;
+    const sourceWillLoad = source?.status === "ready" && source?.url;
+    if (pendingUrl && pendingUrl !== lastDisplayAudioUrlRef.current && !sourceWillLoad) {
+      lastDisplayAudioUrlRef.current = pendingUrl;
+      isDisplayUrlLoadRef.current = true;
+      // For blob URLs, fetch and use loadBlob() to avoid range request issues
+      if (pendingUrl.startsWith("blob:")) {
+        void (async () => {
+          try {
+            const response = await fetch(pendingUrl);
+            const blob = await response.blob();
+            ws.loadBlob(blob);
+          } catch (err) {
+            console.error("[WaveSurfer] Failed to load blob URL on init:", err);
+          }
+        })();
+      } else {
+        void ws.load(pendingUrl);
+      }
+    }
+
     let raf = 0;
     const tick = () => {
       // Best-effort: WaveSurfer provides getCurrentTime().
@@ -1121,32 +1265,19 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     queryRegionRef.current = null;
   }, [queryRegion, regionsReady]);
 
-  async function onPickFile(file: File) {
-    const ws = wsRef.current;
-    if (!ws) return;
+  function onPickFile(file: File) {
+    // =======================================================================
+    // DESIGN: File picker just notifies parent. Loading is handled by the
+    // currentAudioSource flow: parent sets LocalAudioSource -> resolver
+    // creates blob URL -> WaveSurfer effect loads when ready.
+    // =======================================================================
 
-    // New audio invalidates all regions (query + candidates); clear proactively so UI never shows stale marks.
-    regionsPluginRef.current?.clearRegions();
-    queryRegionRef.current = null;
-    segmentPlaybackRef.current = null;
-    isPlayingRef.current = false;
-    setActiveRegion(null);
-    onRegionChangeRef.current?.(null);
-    onSelectCandidateIdRef.current?.(null);
-    onIsPlayingChangeRef.current?.(false);
+    // Notify parent that a file was picked
+    // Parent will set currentAudioSource, which triggers the loading flow
+    onFilePicked?.(file);
 
-    cleanupObjectUrl();
-    const url = URL.createObjectURL(file);
-    objectUrlRef.current = url;
-
-    // Store URL for band auditioning
-    useAudioStore.getState().setAudioUrl(url);
-
-    setIsReady(false);
-    setIsPlaying(false);
-    setZoom(0);
-
-    await ws.load(url);
+    // Note: State clearing happens in the currentAudioSource loading effect
+    // when the new source is loaded. We don't need to do it here.
   }
 
   function togglePlay() {
@@ -1376,7 +1507,26 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         </div>
       </div>
 
-      {!isReady && <p className="mt-2 text-sm text-zinc-500">Choose an audio file to load it.</p>}
+      {/* Audio source status feedback */}
+      {!isReady && (
+        <div className="mt-2 text-sm">
+          {currentAudioSource?.status === "pending" || currentAudioSource?.status === "resolving" ? (
+            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>
+                {currentAudioSource.status === "pending" ? "Preparing audio..." : "Loading audio..."}
+              </span>
+            </div>
+          ) : currentAudioSource?.status === "failed" ? (
+            <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+              <AlertCircle className="h-4 w-4" />
+              <span>Failed to load audio{currentAudioSource.error ? `: ${currentAudioSource.error}` : ""}</span>
+            </div>
+          ) : (
+            <p className="text-zinc-500">Choose an audio file to load it.</p>
+          )}
+        </div>
+      )}
 
       {/* Intentionally no footer text here; MIR visualisation sits directly under waveform. */}
     </div>

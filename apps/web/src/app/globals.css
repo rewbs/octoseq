@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 /* Vendored from `tw-animate-css` to avoid package export/style resolution issues in Next/Turbopack. */
 @import "./tw-animate.css";
 

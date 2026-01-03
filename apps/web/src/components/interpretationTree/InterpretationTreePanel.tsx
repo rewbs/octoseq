@@ -46,7 +46,7 @@ import {
 } from "@/lib/stores/interpretationTreeStore";
 import { InspectorContent } from "@/components/inspector/InspectorContent";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
-import { useAudioStore } from "@/lib/stores/audioStore";
+import type { AudioSource, RemoteAudioSource, GeneratedAudioSource } from "@/lib/stores/types/audioInput";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useMirStore } from "@/lib/stores/mirStore";
 import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
@@ -452,8 +452,10 @@ export function InterpretationTreePanel() {
   const setInspectorSectionRatio = useInterpretationTreeStore((s) => s.setInspectorSectionRatio);
   const selectAudioInput = useAudioInputStore((s) => s.selectInput);
   const setActiveDisplay = useAudioInputStore((s) => s.setActiveDisplay);
+  const setCurrentAudioSource = useAudioInputStore((s) => s.setCurrentAudioSource);
+  const getInputById = useAudioInputStore((s) => s.getInputById);
   const triggerFileInput = useAudioInputStore((s) => s.triggerFileInput);
-  const hasAudio = useAudioStore((s) => s.audio !== null);
+  const hasAudio = useAudioInputStore((s) => s.getAudio() !== null);
   const setActiveScript = useProjectStore((s) => s.setActiveScript);
   const activeProject = useProjectStore((s) => s.activeProject);
   const isDirty = useProjectStore((s) => s.isDirty);
@@ -492,6 +494,65 @@ export function InterpretationTreePanel() {
   const treeData = useTreeData();
 
   // Handle node selection - also selects audio input, script, or visual tab if applicable
+  // Helper to create an AudioSource from an existing AudioInput
+  const createSourceFromInput = useCallback(
+    (inputId: string): AudioSource | null => {
+      const input = getInputById(inputId);
+      if (!input) return null;
+
+      // If the input already has a URL, create a ready source
+      if (input.audioUrl) {
+        // Determine source type based on origin
+        if (input.origin.kind === "synthetic") {
+          const source: GeneratedAudioSource = {
+            type: "generated",
+            id: input.id,
+            generatedFrom: input.origin.generatedFrom ?? [],
+            status: "ready",
+            url: input.audioUrl,
+          };
+          return source;
+        } else if (input.cloudAssetId) {
+          // Has cloud asset - treat as remote (though URL is already resolved)
+          const source: RemoteAudioSource = {
+            type: "remote",
+            id: input.id,
+            cloudAssetId: input.cloudAssetId,
+            status: "ready",
+            url: input.audioUrl,
+          };
+          return source;
+        } else {
+          // Local file that's already loaded - create as remote with ready status
+          // (We don't have the File object anymore, so we use the existing URL)
+          const source: RemoteAudioSource = {
+            type: "remote",
+            id: input.id,
+            cloudAssetId: input.cloudAssetId ?? "",
+            status: "ready",
+            url: input.audioUrl,
+          };
+          return source;
+        }
+      }
+
+      // If no URL but has cloudAssetId, create pending remote source
+      if (input.cloudAssetId) {
+        const source: RemoteAudioSource = {
+          type: "remote",
+          id: input.id,
+          cloudAssetId: input.cloudAssetId,
+          status: "pending",
+        };
+        return source;
+      }
+
+      // No URL and no cloudAssetId - can't create a source
+      return null;
+    },
+    [getInputById]
+  );
+
   const handleSelectNode = useCallback(
     (nodeId: string) => {
       // Update tree selection
@@ -503,6 +564,15 @@ export function InterpretationTreePanel() {
         selectAudioInput(audioInputId);
         // Also switch the waveform display to this audio source
         setActiveDisplay(audioInputId);
+
+        // =======================================================================
+        // DESIGN: Set currentAudioSource to establish single source of truth.
+        // This is the primary way to switch audio display.
+        // =======================================================================
+        const source = createSourceFromInput(audioInputId);
+        if (source) {
+          setCurrentAudioSource(source);
+        }
       }
 
       // If this is a script node, activate it in the project
@@ -530,9 +600,15 @@ export function InterpretationTreePanel() {
         setDisplayContextInputId(audioSourceId);
         // Also switch waveform to the parent audio source
         setActiveDisplay(audioSourceId);
+
+        // Also set currentAudioSource for the parent audio source
+        const source = createSourceFromInput(audioSourceId);
+        if (source) {
+          setCurrentAudioSource(source);
+        }
       }
     },
-    [selectNode, selectAudioInput, setActiveDisplay, setActiveScript, setVisualTab, setDisplayContextInputId]
+    [selectNode, selectAudioInput, setActiveDisplay, setCurrentAudioSource, createSourceFromInput, setActiveScript, setVisualTab, setDisplayContextInputId]
   );
 
   // Determine if we're in icon-only mode

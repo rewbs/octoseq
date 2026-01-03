@@ -6,10 +6,11 @@
  * - After-dot: properties + methods of resolved type
  * - In-config-map: valid keys (minus existing)
  * - In-band-key: available band IDs/labels
+ * - In-stem-key: available stem names
  * - Unknown: common entity members (graceful fallback)
  */
 
-import type { AvailableBand } from "../rhaiMonaco";
+import type { AvailableBand, AvailableStem } from "../rhaiMonaco";
 import type { CursorContext } from "../context/types";
 import type { RegistryEntry, RegistryMethod, RegistryProperty } from "../registry/types";
 import { getCursorContext } from "../context";
@@ -296,6 +297,63 @@ function getBandKeyCompletions(
 }
 
 /**
+ * Get stem key completions for inputs.stems[...].
+ */
+function getStemKeyCompletions(
+  monaco: MonacoInstance,
+  range: MonacoRange,
+  context: CursorContext,
+  getAvailableStems?: () => AvailableStem[]
+): MonacoCompletionItem[] {
+  if (!getAvailableStems) return [];
+
+  const stems = getAvailableStems();
+  const hasQuote = context.stemKeyHasQuotes ?? false;
+  const partialKey = context.partialStemKey?.toLowerCase() ?? "";
+  const quoteChar = hasQuote ? '"' : '"'; // Default to double quote
+
+  const suggestions: MonacoCompletionItem[] = [];
+
+  for (const stem of stems) {
+    // Filter by partial key if present
+    if (
+      partialKey &&
+      !stem.label.toLowerCase().includes(partialKey) &&
+      !stem.id.toLowerCase().includes(partialKey)
+    ) {
+      continue;
+    }
+
+    const closing = hasQuote ? '"]' : `${quoteChar}]`;
+    const labelInsert = hasQuote ? `${stem.label}${closing}` : `${quoteChar}${stem.label}${quoteChar}]`;
+
+    suggestions.push({
+      label: stem.label,
+      kind: monaco.languages.CompletionItemKind.Value,
+      insertText: labelInsert,
+      detail: "Stem name",
+      documentation: `inputs.stems["${stem.label}"]`,
+      range,
+    });
+
+    // Also offer ID if different from label
+    if (stem.id !== stem.label) {
+      const idInsert = hasQuote ? `${stem.id}${closing}` : `${quoteChar}${stem.id}${quoteChar}]`;
+      suggestions.push({
+        label: stem.id,
+        kind: monaco.languages.CompletionItemKind.Value,
+        insertText: idInsert,
+        detail: "Stem ID",
+        documentation: `inputs.stems["${stem.id}"]`,
+        range,
+      });
+    }
+  }
+
+  return suggestions;
+}
+
+/**
  * Get config-map key completions.
  */
 function getConfigMapKeyCompletions(
@@ -405,9 +463,12 @@ function getFallbackEntityCompletions(
  */
 export function createCompletionProvider(
   monaco: MonacoInstance,
-  options: { getAvailableBands?: () => AvailableBand[] } = {}
+  options: {
+    getAvailableBands?: () => AvailableBand[];
+    getAvailableStems?: () => AvailableStem[];
+  } = {}
 ) {
-  const { getAvailableBands } = options;
+  const { getAvailableBands, getAvailableStems } = options;
 
   return {
     triggerCharacters: [".", "[", '"', "'", ",", "#"],
@@ -437,6 +498,11 @@ export function createCompletionProvider(
         case "in-band-key":
           return {
             suggestions: getBandKeyCompletions(monaco, range, context, getAvailableBands),
+          };
+
+        case "in-stem-key":
+          return {
+            suggestions: getStemKeyCompletions(monaco, range, context, getAvailableStems),
           };
 
         case "in-config-map":

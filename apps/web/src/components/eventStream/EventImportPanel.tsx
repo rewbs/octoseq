@@ -11,7 +11,7 @@ import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useAuthoredEventActions } from "@/lib/stores/hooks/useAuthoredEventActions";
 import { usePlaybackStore } from "@/lib/stores/playbackStore";
-import { useAudioStore } from "@/lib/stores/audioStore";
+import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import { useBeatGridStore } from "@/lib/stores/beatGridStore";
 import { useMirroredCursorTime } from "@/lib/stores/hooks/useDerivedState";
 import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
@@ -70,7 +70,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
 
   // Playback state for preview
   const viewport = usePlaybackStore((s) => s.viewport);
-  const audioDuration = useAudioStore((s) => s.audioDuration);
+  const audioDuration = useAudioInputStore((s) => s.getAudioDuration());
   const setCursorTimeSec = usePlaybackStore((s) => s.setCursorTimeSec);
   const cursorTimeSec = useMirroredCursorTime();
   const beatGridState = useBeatGridStore(

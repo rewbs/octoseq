@@ -26,6 +26,28 @@ export interface MeshAsset {
 
   /** Timestamp when the asset was added. */
   createdAt: string;
+
+  /**
+   * Reference to asset in the cloud (R2).
+   * Populated when the file is uploaded to cloud storage.
+   */
+  cloudAssetId?: string;
+
+  /**
+   * Content hash of the original file (for deduplication).
+   */
+  contentHash?: string;
+
+  /**
+   * MIME type of the original file.
+   */
+  mimeType?: string;
+
+  /**
+   * Original file bytes (for cloud upload and retry).
+   * Kept temporarily until upload completes.
+   */
+  rawBytes?: ArrayBuffer;
 }
 
 /**

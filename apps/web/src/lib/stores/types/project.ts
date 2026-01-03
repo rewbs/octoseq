@@ -18,6 +18,8 @@ import type { AuthoredEventStream } from "./authoredEvent";
 import type { SubBeatDivision } from "../beatGridStore";
 import type { CustomSignalStructure } from "./customSignal";
 import type { MeshAssetStructure } from "./meshAsset";
+import { DEFAULT_SCRIPT } from "@/lib/scripting/defaultScripts";
+import { nanoid } from "nanoid";
 
 // ----------------------------
 // Audio References
@@ -261,7 +263,6 @@ export interface AudioLoadState {
  */
 export function createEmptyProject(name: string): Project {
   const now = new Date().toISOString();
-  const { nanoid } = require("nanoid");
 
   return {
     id: nanoid(),
@@ -299,17 +300,11 @@ export function createEmptyProject(name: string): Project {
  */
 export function createDefaultScript(name: string = "Main"): ProjectScript {
   const now = new Date().toISOString();
-  const { nanoid } = require("nanoid");
 
   return {
     id: nanoid(),
     name,
-    content: `// ${name} script
-// Use 'inputs' to access audio signals and bands
-// Use 'scene' to add entities for rendering
-
-let t = inputs.time;
-`,
+    content: DEFAULT_SCRIPT,
     createdAt: now,
     modifiedAt: now,
   };

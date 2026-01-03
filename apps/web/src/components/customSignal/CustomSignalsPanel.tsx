@@ -9,7 +9,7 @@ import { useCustomSignalStore } from "@/lib/stores/customSignalStore";
 import { useCustomSignalActions } from "@/lib/stores/hooks/useCustomSignalActions";
 import { useInterpretationTreeStore } from "@/lib/stores/interpretationTreeStore";
 import { usePlaybackStore } from "@/lib/stores/playbackStore";
-import { useAudioStore } from "@/lib/stores/audioStore";
+import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { useBeatGridStore } from "@/lib/stores/beatGridStore";
 import { useMirroredCursorTime } from "@/lib/stores/hooks/useDerivedState";
@@ -133,7 +133,7 @@ export function CustomSignalsPanel() {
   const computingSignalId = useCustomSignalStore((s) => s.computingSignalId);
   const selectSignal = useCustomSignalStore((s) => s.selectSignal);
   const viewport = usePlaybackStore((s) => s.viewport);
-  const audioDuration = useAudioStore((s) => s.audioDuration);
+  const audioDuration = useAudioInputStore((s) => s.getAudioDuration());
   const heatmapScheme = useConfigStore((s) => s.heatmapScheme);
   const showDcBin = useConfigStore((s) => s.showDcBin);
   const showMfccC0 = useConfigStore((s) => s.showMfccC0);

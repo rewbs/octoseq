@@ -3,10 +3,10 @@
 import { memo, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { AudioBufferLike, MusicalTimeStructure } from "@octoseq/mir";
 import { computeBeatPosition } from "@octoseq/mir";
-import { GripHorizontal, GripVertical, Rows3, Columns3, FlaskConical, Loader2 } from "lucide-react";
+import { GripHorizontal, GripVertical, Rows3, Columns3, FlaskConical, Loader2, BookOpen } from "lucide-react";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { useHotkeysContext } from "react-hotkeys-hook";
-import { useDebugSignalStore, type RawAnalysisResult, type DebugSignal } from "@/lib/stores";
+import { useConfigStore, useDebugSignalStore, type RawAnalysisResult, type DebugSignal } from "@/lib/stores";
 import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
 import { useBandMirStore } from "@/lib/stores/bandMirStore";
 import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
@@ -137,6 +137,13 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   // Target FPS for preview (affects signal sampling)
   const [targetFps, setTargetFps] = useState(DEFAULT_TARGET_FPS);
   const targetFpsRef = useRef(targetFps);
+
+  // Bypass visualiser rendering (for perf debugging)
+  const bypassVisualiser = useConfigStore((s) => s.bypassVisualiser);
+  const bypassVisualiserRef = useRef(bypassVisualiser);
+  useEffect(() => {
+    bypassVisualiserRef.current = bypassVisualiser;
+  }, [bypassVisualiser]);
 
   // Config-map validation diagnostics (stored for reuse in render loop)
   const configMapDiagsRef = useRef<ConfigMapDiagnostic[]>([]);
@@ -1159,10 +1166,14 @@ fn update(dt, frame) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const visAny = vis as any;
       let frameCompleted = true;
-      if (typeof visAny.render_with_budget === "function") {
-        frameCompleted = visAny.render_with_budget(dt, FRAME_BUDGET_MS);
-      } else {
-        vis.render(dt);
+
+      // Skip visualiser rendering if bypass is enabled (for perf debugging)
+      if (!bypassVisualiserRef.current) {
+        if (typeof visAny.render_with_budget === "function") {
+          frameCompleted = visAny.render_with_budget(dt, FRAME_BUDGET_MS);
+        } else {
+          vis.render(dt);
+        }
       }
 
       const frameEnd = performance.now();
@@ -1367,6 +1378,16 @@ fn update(dt, frame) {
             <FlaskConical className="w-4 h-4" />
           )}
         </button>
+        {/* Scripting reference docs button */}
+        <a
+          href="/docs/scripting-reference"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+          title="Open scripting reference documentation"
+        >
+          <BookOpen className="w-4 h-4" />
+        </a>
         {/* FPS control */}
         <div className="flex items-center gap-1">
           <span className="text-zinc-500 dark:text-zinc-400">FPS:</span>

@@ -4,13 +4,13 @@ import { useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import {
-  useAudioStore,
   useSearchStore,
   useActiveCandidate,
   useFilteredCandidates,
   useActiveFilteredIndex,
   useNavigationActions,
 } from "@/lib/stores";
+import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import type { CandidateFilter } from "@/lib/searchRefinement";
 import type { WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
 
@@ -31,9 +31,9 @@ const filterDefs: Array<{ id: CandidateFilter; label: string }> = [
  */
 export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps) {
   // Audio store
-  const audio = useAudioStore((s) => s.audio);
-  const audioFileName = useAudioStore((s) => s.audioFileName);
-  const audioSampleRate = useAudioStore((s) => s.audioSampleRate);
+  const audio = useAudioInputStore((s) => s.getAudio());
+  const audioFileName = useAudioInputStore((s) => s.getAudioFileName());
+  const audioSampleRate = useAudioInputStore((s) => s.getAudioSampleRate());
 
   // Search store state
   const {

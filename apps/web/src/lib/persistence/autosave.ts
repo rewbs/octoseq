@@ -227,6 +227,7 @@ export function formatAutosaveTimestamp(isoTimestamp: string): string {
  * @param record - The autosave record to check
  * @returns true if the autosave should be offered for recovery
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function isAutosaveRecoverable(record: AutosaveRecord): boolean {
   // Could implement staleness check here (e.g., older than 30 days)
   // For now, always offer recovery

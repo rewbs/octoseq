@@ -1,3 +1,31 @@
+/**
+ * Audio Input Store
+ *
+ * Manages the collection of audio inputs (mixdown + stems) and the current
+ * audio source for playback.
+ *
+ * ## Architecture: Single Source of Truth
+ *
+ * - Playback wants URLs. Analysis wants PCM. Authority wants one owner.
+ * - `currentAudioSource` is the single source of truth for what audio is playing.
+ * - WaveSurfer loads audio by URL only - never pass decoded buffers to it.
+ * - Decoding is for MIR analysis and mixdown generation, not playback.
+ *
+ * ## Audio Source Flow
+ *
+ * 1. User action triggers `setCurrentAudioSource` with a new AudioSource
+ * 2. The `useAudioSourceResolver` hook watches currentAudioSource
+ * 3. When status is 'pending', resolver fetches/creates the URL
+ * 4. Resolver updates status to 'ready' with the URL
+ * 5. WaveSurferPlayer's effect loads the URL when ready
+ *
+ * ## Key Types
+ *
+ * - `AudioInput`: Decoded audio data for MIR analysis (stored in collection)
+ * - `AudioSource`: Playback intent (local file, remote asset, or generated)
+ * - `currentAudioSource`: Points to what's currently playing
+ */
+
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { nanoid } from "nanoid";
@@ -7,6 +35,8 @@ import type {
   AudioInputCollection,
   AudioInputMetadata,
   AudioInputOrigin,
+  AudioSource,
+  AudioSourceStatus,
 } from "./types/audioInput";
 import { MIXDOWN_ID } from "./types/audioInput";
 
@@ -26,6 +56,27 @@ interface AudioInputState {
 
   /** Callback to trigger the file input dialog. Set by page.tsx on mount. */
   triggerFileInput: (() => void) | null;
+
+  // ==========================================================================
+  // AudioSource: Single Source of Truth for Playback
+  // ==========================================================================
+  // DESIGN: WaveSurfer loads audio by URL only. currentAudioSource is the
+  // single authority on what audio is playing. The resolver watches this
+  // and updates the URL when ready.
+  // ==========================================================================
+
+  /**
+   * The current audio source for playback.
+   * This is the single source of truth for WaveSurfer.
+   * Null when no audio is loaded.
+   */
+  currentAudioSource: AudioSource | null;
+
+  /**
+   * Pending file name for URL-based loads.
+   * Set before loading starts, cleared after audio is decoded.
+   */
+  pendingFileName: string | null;
 }
 
 // ----------------------------
@@ -176,6 +227,100 @@ interface AudioInputActions {
       audioUrl: string | null;
     }
   ) => void;
+
+  // ----------------------------
+  // Cloud Asset Operations
+  // ----------------------------
+
+  /**
+   * Set the cloud asset ID for an input after upload completes.
+   */
+  setCloudAssetId: (inputId: string, cloudAssetId: string) => void;
+
+  /**
+   * Set asset metadata (content hash, mime type, raw bytes) for an input.
+   * Called when a file is loaded, before cloud upload.
+   */
+  setAssetMetadata: (
+    inputId: string,
+    metadata: {
+      contentHash?: string;
+      mimeType?: string;
+      rawBuffer?: ArrayBuffer;
+    }
+  ) => void;
+
+  /**
+   * Clear the rawBuffer after upload completes to free memory.
+   */
+  clearRawBuffer: (inputId: string) => void;
+
+  /**
+   * Set the entire collection directly.
+   * Used when hydrating from a loaded project.
+   */
+  setCollection: (collection: AudioInputCollection) => void;
+
+  // ----------------------------
+  // AudioSource Operations
+  // ----------------------------
+  // These actions manage the single source of truth for playback.
+  // WaveSurfer should only load audio from currentAudioSource.url.
+
+  /**
+   * Set the current audio source for playback.
+   * This is the single entry point for changing what audio is playing.
+   * The resolver will watch for changes and update the URL.
+   */
+  setCurrentAudioSource: (source: AudioSource | null) => void;
+
+  /**
+   * Update the status and URL of the current audio source.
+   * Called by the resolver when URL resolution completes or fails.
+   */
+  updateAudioSourceStatus: (
+    status: AudioSourceStatus,
+    url?: string,
+    error?: string
+  ) => void;
+
+  /**
+   * Get the current audio source.
+   */
+  getCurrentAudioSource: () => AudioSource | null;
+
+  /**
+   * Get the playback URL if the current source is ready.
+   * Returns null if no source or source is not ready.
+   */
+  getCurrentAudioUrl: () => string | null;
+
+  // ----------------------------
+  // Convenience Selectors (Legacy audioStore Compatibility)
+  // ----------------------------
+  // These provide flat access to common mixdown properties.
+  // Use these to migrate away from audioStore.
+
+  /** Get the mixdown's decoded audio buffer (for MIR analysis). */
+  getAudio: () => AudioBufferLike | null;
+
+  /** Get the mixdown's sample rate. */
+  getAudioSampleRate: () => number | null;
+
+  /** Get the mixdown's duration in seconds. */
+  getAudioDuration: () => number;
+
+  /** Get the mixdown's total sample count. */
+  getAudioTotalSamples: () => number | null;
+
+  /** Get the mixdown's display name (label or origin fileName). */
+  getAudioFileName: () => string | null;
+
+  /**
+   * Set the pending file name for URL-based loads.
+   * Used to track the intended file name before audio is decoded.
+   */
+  setPendingFileName: (fileName: string | null) => void;
 }
 
 export type AudioInputStore = AudioInputState & AudioInputActions;
@@ -189,6 +334,8 @@ const initialState: AudioInputState = {
   selectedInputId: null,
   activeDisplayId: MIXDOWN_ID,
   triggerFileInput: null,
+  currentAudioSource: null,
+  pendingFileName: null,
 };
 
 // ----------------------------
@@ -581,6 +728,173 @@ export const useAudioInputStore = create<AudioInputStore>()(
           false,
           "replaceStem"
         );
+      },
+
+      // ----------------------------
+      // Cloud Asset Operations
+      // ----------------------------
+
+      setCloudAssetId: (inputId, cloudAssetId) => {
+        const { collection } = get();
+        if (!collection) return;
+
+        const input = collection.inputs[inputId];
+        if (!input) return;
+
+        set(
+          {
+            collection: {
+              ...collection,
+              inputs: {
+                ...collection.inputs,
+                [inputId]: {
+                  ...input,
+                  cloudAssetId,
+                },
+              },
+            },
+          },
+          false,
+          "setCloudAssetId"
+        );
+      },
+
+      setAssetMetadata: (inputId, metadata) => {
+        const { collection } = get();
+        if (!collection) return;
+
+        const input = collection.inputs[inputId];
+        if (!input) return;
+
+        set(
+          {
+            collection: {
+              ...collection,
+              inputs: {
+                ...collection.inputs,
+                [inputId]: {
+                  ...input,
+                  contentHash: metadata.contentHash ?? input.contentHash,
+                  mimeType: metadata.mimeType ?? input.mimeType,
+                  rawBuffer: metadata.rawBuffer ?? input.rawBuffer,
+                },
+              },
+            },
+          },
+          false,
+          "setAssetMetadata"
+        );
+      },
+
+      clearRawBuffer: (inputId) => {
+        const { collection } = get();
+        if (!collection) return;
+
+        const input = collection.inputs[inputId];
+        if (!input) return;
+
+        set(
+          {
+            collection: {
+              ...collection,
+              inputs: {
+                ...collection.inputs,
+                [inputId]: {
+                  ...input,
+                  rawBuffer: undefined,
+                },
+              },
+            },
+          },
+          false,
+          "clearRawBuffer"
+        );
+      },
+
+      setCollection: (collection) => {
+        set({ collection }, false, "setCollection");
+      },
+
+      // ----------------------------
+      // AudioSource Operations
+      // ----------------------------
+      // Single source of truth for playback. WaveSurfer loads from here only.
+
+      setCurrentAudioSource: (source) => {
+        // Revoke previous blob URL if it was a local source
+        const prev = get().currentAudioSource;
+        if (prev?.type === "local" && prev.url) {
+          URL.revokeObjectURL(prev.url);
+        }
+
+        set({ currentAudioSource: source }, false, "setCurrentAudioSource");
+      },
+
+      updateAudioSourceStatus: (status, url, error) => {
+        const { currentAudioSource } = get();
+        if (!currentAudioSource) return;
+
+        set(
+          {
+            currentAudioSource: {
+              ...currentAudioSource,
+              status,
+              url: url ?? currentAudioSource.url,
+              error: error ?? currentAudioSource.error,
+            },
+          },
+          false,
+          "updateAudioSourceStatus"
+        );
+      },
+
+      getCurrentAudioSource: () => {
+        return get().currentAudioSource;
+      },
+
+      getCurrentAudioUrl: () => {
+        const source = get().currentAudioSource;
+        if (!source || source.status !== "ready") return null;
+        return source.url ?? null;
+      },
+
+      // ----------------------------
+      // Convenience Selectors (Legacy audioStore Compatibility)
+      // ----------------------------
+
+      getAudio: () => {
+        const { collection } = get();
+        return collection?.inputs[MIXDOWN_ID]?.audioBuffer ?? null;
+      },
+
+      getAudioSampleRate: () => {
+        const { collection } = get();
+        return collection?.inputs[MIXDOWN_ID]?.metadata?.sampleRate ?? null;
+      },
+
+      getAudioDuration: () => {
+        const { collection } = get();
+        return collection?.inputs[MIXDOWN_ID]?.metadata?.duration ?? 0;
+      },
+
+      getAudioTotalSamples: () => {
+        const { collection } = get();
+        return collection?.inputs[MIXDOWN_ID]?.metadata?.totalSamples ?? null;
+      },
+
+      getAudioFileName: () => {
+        const { collection } = get();
+        const mixdown = collection?.inputs[MIXDOWN_ID];
+        if (!mixdown) return null;
+        // Prefer label, fall back to origin fileName
+        if (mixdown.label && mixdown.label !== "Mixdown") return mixdown.label;
+        if (mixdown.origin.kind === "file") return mixdown.origin.fileName;
+        if (mixdown.origin.kind === "url") return mixdown.origin.fileName ?? null;
+        return mixdown.label;
+      },
+
+      setPendingFileName: (fileName: string | null) => {
+        set({ pendingFileName: fileName }, false, "setPendingFileName");
       },
     }),
     { name: "audio-input-store" }

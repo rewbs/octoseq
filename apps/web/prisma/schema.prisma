@@ -7,6 +7,27 @@ datasource db {
   provider = "postgresql"
 }
 
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum AssetType {
+  AUDIO
+  MESH
+  TEXTURE
+  OTHER
+}
+
+enum AssetStatus {
+  PENDING
+  UPLOADED
+  FAILED
+}
+
+// -----------------------------------------------------------------------------
+// Models
+// -----------------------------------------------------------------------------
+
 model User {
   id        String   @id @default(cuid())
   clerkId   String   @unique
@@ -21,6 +42,65 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Relations
+  projects Project[]
+  assets   Asset[]
+
   @@index([clerkId])
   @@index([email])
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  isPublic  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  owner        User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  workingState ProjectWorkingState?
+  snapshots    ProjectSnapshot[]
+
+  @@index([ownerId])
+}
+
+model ProjectWorkingState {
+  projectId   String   @id
+  workingJson Json
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model ProjectSnapshot {
+  id           String   @id @default(cuid())
+  projectId    String
+  snapshotJson Json
+  createdAt    DateTime @default(now())
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Asset {
+  id           String      @id @default(cuid())
+  ownerId      String
+  contentHash  String
+  r2Key        String
+  type         AssetType
+  metadataJson Json?
+  status       AssetStatus @default(PENDING)
+  createdAt    DateTime    @default(now())
+
+  // Relations
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@index([contentHash])
+  @@unique([ownerId, contentHash])
 }

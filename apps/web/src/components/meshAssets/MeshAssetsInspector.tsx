@@ -4,6 +4,8 @@ import { useRef, useCallback } from "react";
 import { Plus, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMeshAssetStore, useMeshAssets } from "@/lib/stores/meshAssetStore";
+import { useCloudAssetUploader } from "@/lib/hooks/useCloudAssetUploader";
+import { computeContentHash } from "@/lib/persistence/assetHashing";
 
 /**
  * Inspector for the 3D Objects (mesh assets) section.
@@ -17,6 +19,11 @@ export function MeshAssetsInspector() {
   const addAsset = useMeshAssetStore((s) => s.addAsset);
   const removeAsset = useMeshAssetStore((s) => s.removeAsset);
   const renameAsset = useMeshAssetStore((s) => s.renameAsset);
+  const setCloudAssetId = useMeshAssetStore((s) => s.setCloudAssetId);
+  const clearRawBytes = useMeshAssetStore((s) => s.clearRawBytes);
+
+  // Cloud upload
+  const { uploadToCloud, isSignedIn } = useCloudAssetUploader();
 
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -29,14 +36,48 @@ export function MeshAssetsInspector() {
           continue;
         }
 
-        const content = await file.text();
-        addAsset(file.name, content);
+        // Read file as both text (for rendering) and bytes (for upload)
+        const [content, rawBytes] = await Promise.all([
+          file.text(),
+          file.arrayBuffer(),
+        ]);
+
+        // Compute content hash for deduplication
+        const contentHash = await computeContentHash(rawBytes);
+
+        // Add asset to store with raw bytes for potential cloud upload
+        const assetId = addAsset(file.name, content, {
+          rawBytes,
+          mimeType: file.type || "application/octet-stream",
+          contentHash,
+        });
+
+        // Start cloud upload if signed in
+        if (isSignedIn) {
+          console.log("[MeshUpload] Starting cloud upload for:", file.name);
+          uploadToCloud({
+            file,
+            type: "MESH",
+            metadata: {
+              fileName: file.name,
+              fileSize: file.size,
+            },
+            onComplete: (cloudAssetId) => {
+              console.log("[MeshUpload] Upload complete:", cloudAssetId);
+              setCloudAssetId(assetId, cloudAssetId);
+              clearRawBytes(assetId);
+            },
+            onError: (error) => {
+              console.error("[MeshUpload] Upload failed:", error);
+            },
+          });
+        }
       }
 
       // Reset input so the same file can be re-selected
       e.target.value = "";
     },
-    [addAsset]
+    [addAsset, isSignedIn, uploadToCloud, setCloudAssetId, clearRawBytes]
   );
 
   const handleAddClick = () => {

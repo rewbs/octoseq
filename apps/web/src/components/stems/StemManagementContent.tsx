@@ -23,8 +23,11 @@ import { useMirStore } from "@/lib/stores/mirStore";
 import { useCandidateEventStore } from "@/lib/stores/candidateEventStore";
 import { useMirActions } from "@/lib/stores/hooks/useMirActions";
 import { generateMixdownFromStems, createBlobUrlFromBuffer } from "@/lib/audio/mixdownGenerator";
-import type { AudioInput, AudioInputOrigin } from "@/lib/stores/types/audioInput";
+import type { AudioInput, AudioInputOrigin, GeneratedAudioSource } from "@/lib/stores/types/audioInput";
+import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
 import { StemListItem } from "./StemListItem";
+import { useCloudAssetUploader } from "@/lib/hooks/useCloudAssetUploader";
+import { computeContentHash } from "@/lib/persistence/assetHashing";
 
 /**
  * Content panel for managing stems.
@@ -54,6 +57,10 @@ export function StemManagementContent() {
     selectInput,
     updateMixdown,
     getStems,
+    setCloudAssetId,
+    setAssetMetadata,
+    clearRawBuffer,
+    setCurrentAudioSource,
   } = useAudioInputStore(
     useShallow((s) => ({
       collection: s.collection,
@@ -66,8 +73,15 @@ export function StemManagementContent() {
       selectInput: s.selectInput,
       updateMixdown: s.updateMixdown,
       getStems: s.getStems,
+      setCloudAssetId: s.setCloudAssetId,
+      setAssetMetadata: s.setAssetMetadata,
+      clearRawBuffer: s.clearRawBuffer,
+      setCurrentAudioSource: s.setCurrentAudioSource,
     }))
   );
+
+  // Cloud upload
+  const { uploadToCloud, isSignedIn } = useCloudAssetUploader();
 
   const stems = collection?.stemOrder.map((id) => collection.inputs[id]).filter(Boolean) ?? [];
 
@@ -114,8 +128,13 @@ export function StemManagementContent() {
 
       for (const file of Array.from(files)) {
         try {
-          // Decode the audio file
+          // Read file as ArrayBuffer (original bytes for cloud upload)
           const arrayBuffer = await file.arrayBuffer();
+
+          // Compute content hash for deduplication
+          const contentHash = await computeContentHash(arrayBuffer);
+
+          // Decode the audio file (needs a copy since decodeAudioData consumes the buffer)
           const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
 
           // Create blob URL for playback
@@ -146,6 +165,36 @@ export function StemManagementContent() {
             label,
           });
 
+          // Store asset metadata for cloud upload
+          setAssetMetadata(stemId, {
+            contentHash,
+            mimeType: file.type || "audio/mpeg",
+          });
+
+          // Start cloud upload if signed in
+          if (isSignedIn) {
+            console.log("[StemUpload] Starting cloud upload for:", file.name);
+            uploadToCloud({
+              file,
+              type: "AUDIO",
+              metadata: {
+                fileName: file.name,
+                fileSize: file.size,
+                sampleRate: audioBuffer.sampleRate,
+                channels: audioBuffer.numberOfChannels,
+                duration: audioBuffer.duration,
+              },
+              onComplete: (cloudAssetId) => {
+                console.log("[StemUpload] Upload complete:", cloudAssetId);
+                setCloudAssetId(stemId, cloudAssetId);
+                clearRawBuffer(stemId);
+              },
+              onError: (error) => {
+                console.error("[StemUpload] Upload failed:", error);
+              },
+            });
+          }
+
           // Auto-run key MIR analyses on the new stem
           // Wait for analyses to complete before processing next file to avoid cancellation
           await runAnalysis("onsetEnvelope", stemId);
@@ -160,7 +209,7 @@ export function StemManagementContent() {
         fileInputRef.current.value = "";
       }
     },
-    [addStem, runAnalysis]
+    [addStem, runAnalysis, isSignedIn, uploadToCloud, setAssetMetadata, setCloudAssetId, clearRawBuffer]
   );
 
   const handleDeleteStem = useCallback(
@@ -260,15 +309,29 @@ export function StemManagementContent() {
         label: "Generated Mixdown",
       });
 
+      // =======================================================================
+      // DESIGN: Create GeneratedAudioSource with ready status (we have the URL).
+      // This is the single source of truth for playback - WaveSurfer will load
+      // from this URL.
+      // =======================================================================
+      const generatedSource: GeneratedAudioSource = {
+        type: "generated",
+        id: MIXDOWN_ID,
+        generatedFrom: allStems.map((s) => s.id),
+        status: "ready",
+        url: audioUrl,
+      };
+      setCurrentAudioSource(generatedSource);
+
       // Run MIR analysis on the new mixdown
-      await runAnalysis("onsetEnvelope", "mixdown");
-      await runAnalysis("spectralFlux", "mixdown");
+      await runAnalysis("onsetEnvelope", MIXDOWN_ID);
+      await runAnalysis("spectralFlux", MIXDOWN_ID);
     } catch (error) {
       console.error("Failed to generate mixdown:", error);
     } finally {
       setIsGeneratingMixdown(false);
     }
-  }, [getStems, updateMixdown, runAnalysis]);
+  }, [getStems, updateMixdown, setCurrentAudioSource, runAnalysis]);
 
   return (
     <div className="flex flex-col">

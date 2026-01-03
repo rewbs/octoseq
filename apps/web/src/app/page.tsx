@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useShallow } from "zustand/react/shallow";
+import { useAuth } from "@clerk/nextjs";
 
 import { Github } from "lucide-react";
 import Image from "next/image";
@@ -34,14 +35,21 @@ import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useMetronome } from "@/lib/hooks/useMetronome";
 import { useBandAuditioning } from "@/lib/hooks/useBandAuditioning";
 import { useUnsavedChangesWarning } from "@/lib/hooks/useUnsavedChangesWarning";
-import { DemoAudioModal } from "@/components/DemoAudioModal";
+import { DemoProjectsModal } from "@/components/DemoProjectsModal";
+import { ProjectHeader, UploadProgressIndicator } from "@/components/project";
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 import { mirTabDefinitions } from "@/lib/stores/mirStore";
+import { useServerAutosave } from "@/lib/hooks/useServerAutosave";
+import { useAssetUpload } from "@/lib/hooks/useAssetUpload";
+import { useCloudAssetUploader } from "@/lib/hooks/useCloudAssetUploader";
+import { useCloudAssetLoader } from "@/lib/hooks/useCloudAssetLoader";
+import { useAudioSourceResolver } from "@/lib/hooks/useAudioSourceResolver";
+import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
+import type { LocalAudioSource } from "@/lib/stores/types/audioInput";
 import { computePhaseHypotheses, type BeatCandidate } from "@octoseq/mir";
 
 // Stores and hooks
 import {
-  useAudioStore,
   useAudioInputStore,
   usePlaybackStore,
   useConfigStore,
@@ -57,6 +65,7 @@ import {
   useNavigationActions,
   useAudioActions,
   useBandMirActions,
+  useProjectActions,
   useCandidatesById,
   useActiveCandidate,
   useSearchSignal,
@@ -71,8 +80,10 @@ import {
   useVisibleRange,
   useMirroredCursorTime,
   useInterpretationTreeStore,
+  useProjectStore,
+  useAutosaveStore,
 } from "@/lib/stores";
-import { getInspectorNodeType } from "@/lib/nodeTypes";
+import { getInspectorNodeType, getAudioSourceId } from "@/lib/nodeTypes";
 
 export default function Home() {
   // ===== REFS (stay in component) =====
@@ -82,11 +93,11 @@ export default function Home() {
   const userSetUseRefinementRef = useRef(false);
 
   // ===== STORE STATE =====
-  // Audio store
-  const audio = useAudioStore((s) => s.audio);
-  const audioSampleRate = useAudioStore((s) => s.audioSampleRate);
-  const audioTotalSamples = useAudioStore((s) => s.audioTotalSamples);
-  const audioDuration = useAudioStore((s) => s.audioDuration);
+  // Audio (from audioInputStore - single source of truth)
+  const audio = useAudioInputStore((s) => s.getAudio());
+  const audioSampleRate = useAudioInputStore((s) => s.getAudioSampleRate());
+  const audioTotalSamples = useAudioInputStore((s) => s.getAudioTotalSamples());
+  const audioDuration = useAudioInputStore((s) => s.getAudioDuration());
 
   // Audio input store (for waveform switching and stem checks)
   const activeDisplayUrl = useAudioInputStore((s) => s.getActiveDisplayUrl());
@@ -280,7 +291,7 @@ export default function Home() {
   ) as (status: { ready: number; total: number }) => void;
 
   // Audio URL for band auditioning
-  const audioUrl = useAudioStore((s) => s.audioUrl);
+  const audioUrl = useAudioInputStore((s) => s.getCurrentAudioUrl());
 
   // Tree selection state - to hide main viz when custom signals or event streams is selected
   const selectedNodeId = useInterpretationTreeStore((s) => s.selectedNodeId);
@@ -288,9 +299,54 @@ export default function Home() {
   const isCustomSignalSelected = selectedNodeType === "custom-signals-section" || selectedNodeType === "custom-signal";
   const isEventStreamsSelected = selectedNodeType === "event-streams-section" || selectedNodeType === "authored-stream";
 
+  // Derive the active audio source ID from the selected tree node (for filtering band overlays)
+  const activeSourceId = useMemo(() => {
+    if (!selectedNodeId) return MIXDOWN_ID;
+    return getAudioSourceId(selectedNodeId) ?? MIXDOWN_ID;
+  }, [selectedNodeId]);
+
   // ===== ACTION HOOKS =====
   const { runAllAnalyses } = useMirActions();
   const { runBandAnalysis } = useBandMirActions();
+  const { loadProject } = useProjectActions();
+  const { loadProjectAssets } = useCloudAssetLoader();
+
+  // ===== AUTOSAVE RECOVERY ASSET LOADING =====
+  // When a project is recovered from autosave, load its cloud assets
+  const wasRecovered = useAutosaveStore((s) => s.wasRecovered);
+  const recoveryAssetLoadTriggered = useRef(false);
+
+  useEffect(() => {
+    if (wasRecovered && !recoveryAssetLoadTriggered.current) {
+      recoveryAssetLoadTriggered.current = true;
+      console.log("[Recovery] Project recovered from autosave, loading cloud assets...");
+
+      void (async () => {
+        const assetResults = await loadProjectAssets();
+        const successCount = assetResults.filter((r) => r.success).length;
+        const failCount = assetResults.filter((r) => !r.success).length;
+        console.log(`[Recovery] Cloud assets loaded: ${successCount} success, ${failCount} failed`);
+
+        // If the mixdown was loaded successfully, trigger MIR analysis
+        const mixdownLoaded = assetResults.some((r) => r.inputId === MIXDOWN_ID && r.success);
+        if (mixdownLoaded) {
+          console.log("[Recovery] Mixdown loaded, triggering MIR analysis...");
+          runAllAnalyses();
+        }
+      })();
+    }
+
+    // Reset the flag when wasRecovered becomes false (banner dismissed)
+    if (!wasRecovered) {
+      recoveryAssetLoadTriggered.current = false;
+    }
+  }, [wasRecovered, loadProjectAssets, runAllAnalyses]);
+
+  // ===== AUDIO SOURCE RESOLVER =====
+  // Watches currentAudioSource and resolves URLs for playback.
+  // This is the bridge between AudioSource and WaveSurfer.
+  useAudioSourceResolver();
+  const setCurrentAudioSource = useAudioInputStore((s) => s.setCurrentAudioSource);
   const { handleAudioDecoded, triggerFileInput } = useAudioActions({
     fileInputRef,
     onAudioLoaded: runAllAnalyses,
@@ -333,6 +389,39 @@ export default function Home() {
 
   // ===== UNSAVED CHANGES WARNING =====
   useUnsavedChangesWarning();
+
+  // ===== BACKEND PROJECT SYNC =====
+  const { isSignedIn } = useAuth();
+
+  // Backend project ID - set when loading/creating a backend project
+  const [backendProjectId, setBackendProjectId] = useState<string | null>(null);
+  // Track when we need to trigger an initial save after project creation
+  const [pendingInitialSave, setPendingInitialSave] = useState(false);
+
+  // Server autosave - syncs project state to backend when user owns the project
+  const serverAutosave = useServerAutosave({
+    backendProjectId,
+    debounceMs: 2000,
+  });
+
+  // Trigger initial save after backendProjectId is set and hook has re-rendered
+  // This fixes the timing issue where saveNow() was called before React re-rendered
+  useEffect(() => {
+    if (pendingInitialSave && backendProjectId && serverAutosave.isEnabled) {
+      console.log("[ServerAutosave] Triggering initial save for new project");
+      setPendingInitialSave(false);
+      void serverAutosave.saveNow();
+    }
+  }, [pendingInitialSave, backendProjectId, serverAutosave]);
+
+  // Asset upload tracking
+  const { uploads, cancelUpload, removeUpload } = useAssetUpload();
+
+  // Cloud asset uploader for background uploads
+  const { uploadToCloud, isSignedIn: isCloudUploadEnabled } = useCloudAssetUploader();
+
+  // Get project name from store for header
+  const projectName = useProjectStore((s) => s.activeProject?.name ?? "Untitled");
 
   // ===== REGISTER FILE INPUT TRIGGER =====
   // Make triggerFileInput available to other components (e.g., tree panel)
@@ -394,6 +483,61 @@ export default function Home() {
     setPendingAudio(null);
     setShowStemConfirmDialog(false);
   }, []);
+
+  // Handler for when an audio file is picked - sets up AudioSource and triggers cloud upload
+  const handleAudioFilePicked = useCallback(
+    async (file: File) => {
+      // =======================================================================
+      // DESIGN: Set currentAudioSource to establish single source of truth.
+      // The resolver will create a blob URL and WaveSurfer will load it.
+      // =======================================================================
+      const localSource: LocalAudioSource = {
+        type: "local",
+        id: MIXDOWN_ID,
+        file,
+        status: "pending",
+      };
+      setCurrentAudioSource(localSource);
+      console.log("[AudioSource] Set local audio source:", file.name);
+
+      // Cloud upload (if signed in)
+      if (!isCloudUploadEnabled) {
+        console.log("[AudioUpload] User not signed in, skipping cloud upload");
+        return;
+      }
+
+      console.log("[AudioUpload] Starting cloud upload for:", file.name);
+
+      // Upload to cloud in background
+      const result = await uploadToCloud({
+        file,
+        type: "AUDIO",
+        metadata: {
+          fileName: file.name,
+          fileSize: file.size,
+        },
+        onComplete: (cloudAssetId) => {
+          console.log("[AudioUpload] Upload complete, setting cloudAssetId:", cloudAssetId);
+          // Update the mixdown input with the cloud asset ID
+          useAudioInputStore.getState().setCloudAssetId(MIXDOWN_ID, cloudAssetId);
+          // Clear raw buffer since upload is complete
+          useAudioInputStore.getState().clearRawBuffer(MIXDOWN_ID);
+        },
+        onError: (error) => {
+          console.error("[AudioUpload] Upload failed:", error);
+        },
+      });
+
+      if (result) {
+        // Store the content hash and mime type immediately
+        useAudioInputStore.getState().setAssetMetadata(MIXDOWN_ID, {
+          contentHash: result.contentHash,
+          mimeType: result.mimeType,
+        });
+      }
+    },
+    [isCloudUploadEnabled, uploadToCloud, setCurrentAudioSource]
+  );
 
   // Build signal options for tempo hypothesis comparison
   const tempoSignalOptions = useMemo((): SignalOption[] => {
@@ -533,7 +677,7 @@ export default function Home() {
   // Set audio identity for musical time persistence (B4)
   useEffect(() => {
     if (audio && audioSampleRate && audioDuration) {
-      const audioFileName = useAudioStore.getState().audioFileName;
+      const audioFileName = useAudioInputStore.getState().getAudioFileName();
       const identity = {
         filename: audioFileName ?? "unknown",
         duration: audioDuration,
@@ -762,6 +906,66 @@ export default function Home() {
   // ===== RENDER =====
   return (
     <div className="page-bg flex flex-col h-screen bg-zinc-50 font-sans dark:bg-zinc-950 overflow-hidden">
+      {/* Project Header with save status and read-only indicator */}
+      <ProjectHeader
+        projectName={projectName}
+        isOwner={serverAutosave.isOwner}
+        isServerSyncEnabled={serverAutosave.isEnabled}
+        serverStatus={serverAutosave.status}
+        lastSavedAt={serverAutosave.lastSavedAt}
+        backendProjectId={backendProjectId}
+        isSignedIn={isSignedIn ?? false}
+        onCloned={(project) => {
+          // TODO: Load the cloned project
+          console.log("Project cloned:", project);
+          setBackendProjectId(project.id);
+        }}
+        onSaveToCloud={(project) => {
+          // Backend project created - start syncing
+          console.log("Project saved to cloud:", project);
+          setBackendProjectId(project.id);
+          // Mark that we need to trigger initial save after React re-renders
+          // The useEffect will detect this and call saveNow() once the hook has the new backendProjectId
+          setPendingInitialSave(true);
+        }}
+        onLoadProject={async (loadedProject) => {
+          // Load project from server
+          console.log("Loading project:", loadedProject.name);
+
+          // Set the backend project ID to enable server sync
+          setBackendProjectId(loadedProject.id);
+
+          // If we have working state, load it using the project actions hook
+          // This properly hydrates all stores (bands, events, scripts, etc.)
+          if (loadedProject.workingState) {
+            console.log("[ProjectLoad] Working state found, hydrating stores...");
+            const json = JSON.stringify(loadedProject.workingState);
+            const success = loadProject(json);
+            if (success) {
+              console.log("Project loaded successfully");
+
+              // Load cloud assets (audio, meshes) referenced by the project
+              console.log("Loading cloud assets...");
+              const assetResults = await loadProjectAssets();
+              const successCount = assetResults.filter((r) => r.success).length;
+              const failCount = assetResults.filter((r) => !r.success).length;
+              console.log(`Cloud assets loaded: ${successCount} success, ${failCount} failed`);
+
+              // If the mixdown was loaded successfully, trigger MIR analysis
+              const mixdownLoaded = assetResults.some((r) => r.inputId === MIXDOWN_ID && r.success);
+              if (mixdownLoaded) {
+                console.log("[ProjectLoad] Mixdown loaded, triggering MIR analysis...");
+                runAllAnalyses();
+              }
+            } else {
+              console.error("Failed to load project working state");
+            }
+          } else {
+            console.warn("[ProjectLoad] No working state available - project may not have been saved yet");
+          }
+        }}
+      />
+
       <div className="w-full flex-1 flex min-h-0">
         {/* Interpretation Tree Panel (replaces FrequencyBandSidebar) */}
         <InterpretationTreePanel />
@@ -821,6 +1025,7 @@ export default function Home() {
                 muted={mainPlayerMuted}
                 onBpmClick={() => setVisualTab("tempoHypotheses")}
                 displayAudioUrl={activeDisplayUrl}
+                onFilePicked={handleAudioFilePicked}
                 overlayContent={
                   <>
                     <BeatGridOverlay
@@ -861,9 +1066,11 @@ export default function Home() {
                         </p>
                       </div>
                     </div>
-                    <DemoAudioModal
-                      onSelectDemo={async (demo) => {
-                        await playerRef.current?.loadUrl(demo.path, demo.name);
+                    <DemoProjectsModal
+                      onProjectCloned={(project) => {
+                        // TODO: Load project working state into stores
+                        console.log('Project cloned:', project);
+                        alert(`Project "${project.name}" cloned successfully! Project loading will be available soon.`);
                       }}
                     />
                   </div>
@@ -1198,6 +1405,7 @@ export default function Home() {
                             musicalTimeSegments={musicalTimeStructure?.segments}
                             selectedSegmentId={musicalTimeSelectedSegmentId}
                             playheadTimeSec={mirroredCursorTimeSec ?? playheadTimeSec}
+                            sourceId={activeSourceId}
                           />
                         </div>
                       ) : (
@@ -1293,6 +1501,13 @@ export default function Home() {
           <ThemeToggle />
         </div>
       </footer>
+
+      {/* Upload progress indicator (floating) */}
+      <UploadProgressIndicator
+        uploads={uploads}
+        onCancel={cancelUpload}
+        onDismiss={removeUpload}
+      />
     </div>
   );
 }

@@ -1,4 +1,13 @@
-import { PrismaClient, type User } from '../generated/.prisma/client/client';
+import {
+  PrismaClient,
+  type User,
+  type Project,
+  type ProjectWorkingState,
+  type ProjectSnapshot,
+  type Asset,
+  AssetType,
+  AssetStatus,
+} from '../generated/.prisma/client/client';
 import { PrismaNeon } from '@prisma/adapter-neon';
 import { neonConfig } from '@neondatabase/serverless';
 import { env } from './env';
@@ -24,4 +33,5 @@ if (env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
 
-export type { User };
+export type { User, Project, ProjectWorkingState, ProjectSnapshot, Asset };
+export { AssetType, AssetStatus };

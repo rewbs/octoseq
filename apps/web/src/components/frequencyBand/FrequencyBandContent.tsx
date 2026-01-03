@@ -62,7 +62,6 @@ type BandListItemProps = {
 };
 
 export function BandListItem({
-  bandId,
   label,
   enabled,
   isSelected,
@@ -479,9 +478,9 @@ export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: Fr
 
   const handleDiscoverBands = useCallback(() => {
     if (audioDuration > 0 && !isComputing) {
-      computeProposals();
+      computeProposals(sourceId);
     }
-  }, [audioDuration, isComputing, computeProposals]);
+  }, [audioDuration, isComputing, computeProposals, sourceId]);
 
   const snapModeLabels: Record<string, string> = {
     none: "Off",
@@ -645,7 +644,7 @@ export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: Fr
                             : proposal.id
                         )
                       }
-                      onPromote={() => promoteProposal(proposal.id)}
+                      onPromote={() => promoteProposal(proposal.id, sourceId)}
                       onDismiss={() => dismissProposal(proposal.id)}
                     />
                   ))}

@@ -14,7 +14,7 @@ import {
     type BandEventFunctionId,
     type FrequencyBand,
 } from "@octoseq/mir";
-import { useAudioStore } from "../audioStore";
+import { useAudioInputStore } from "../audioInputStore";
 import { useFrequencyBandStore } from "../frequencyBandStore";
 import { useBandMirStore, type BandEvent } from "../bandMirStore";
 import { useConfigStore } from "../configStore";
@@ -50,7 +50,10 @@ export function useBandMirActions() {
             bandIds?: string[],
             functions: BandMirFunctionId[] = ["bandAmplitudeEnvelope", "bandOnsetStrength"]
         ) => {
-            const { audio, audioFileName, audioDuration } = useAudioStore.getState();
+            const audioInputStore = useAudioInputStore.getState();
+            const audio = audioInputStore.getAudio();
+            const audioFileName = audioInputStore.getAudioFileName();
+            const audioDuration = audioInputStore.getAudioDuration();
             if (!audio) return;
 
             const structure = useFrequencyBandStore.getState().structure;
@@ -169,8 +172,11 @@ export function useBandMirActions() {
             bandIds?: string[],
             functions: BandCqtFunctionId[] = ["bandCqtHarmonicEnergy", "bandCqtTonalStability"]
         ) => {
-            const { audio, audioFileName, audioDuration } = useAudioStore.getState();
-            if (!audio) return;
+            const audioInputStore2 = useAudioInputStore.getState();
+            const audio2 = audioInputStore2.getAudio();
+            const audioFileName2 = audioInputStore2.getAudioFileName();
+            const audioDuration2 = audioInputStore2.getAudioDuration();
+            if (!audio2) return;
 
             const structure = useFrequencyBandStore.getState().structure;
             if (!structure) return;
@@ -197,7 +203,7 @@ export function useBandMirActions() {
 
             try {
                 // Create audio ID for cache key
-                const audioId = `${audioFileName ?? "unknown"}:${audioDuration}:${audio.sampleRate}`;
+                const audioId = `${audioFileName2 ?? "unknown"}:${audioDuration2}:${audio2.sampleRate}`;
 
                 // Get or compute CQT spectrogram
                 let cqt: CqtSpectrogram;
@@ -205,10 +211,10 @@ export function useBandMirActions() {
                     cqt = cqtCacheRef.current.cqt;
                 } else {
                     // Create AudioBufferLike from AudioBuffer
-                    const ch0 = audio.getChannelData(0);
+                    const ch0 = audio2.getChannelData(0);
                     const mono = new Float32Array(ch0);
                     const audioLike = {
-                        sampleRate: audio.sampleRate,
+                        sampleRate: audio2.sampleRate,
                         numberOfChannels: 1,
                         getChannelData: () => mono,
                     };

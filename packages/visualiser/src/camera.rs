@@ -122,7 +122,8 @@ impl Default for CameraConfig {
             // Default position: isometric-style view (matches old hardcoded camera)
             position: Vec3Signal::new(4.0, 2.0, 4.0),
             rotation: Vec3Signal::zero(),
-            target: None,
+            // Default to LookAt mode pointing at origin
+            target: Some(Vec3Signal::zero()),
             up: Vec3Signal::new(0.0, 1.0, 0.0),
             fov: SignalOrF32::Scalar(45.0),
             near: SignalOrF32::Scalar(0.1),
@@ -424,7 +425,7 @@ mod tests {
     #[test]
     fn test_default_camera() {
         let config = CameraConfig::default();
-        assert!(!config.is_look_at());
+        assert!(config.is_look_at()); // Default is now LookAt mode pointing at origin
         assert!(!config.has_signals());
     }
 

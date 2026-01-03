@@ -663,7 +663,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
   // ============================================================================
   {
     kind: "namespace",
-    name: "mix",
+    name: "MixSignals",
     path: "inputs.mix",
     description:
       "Mixdown (full mix) audio signal accessors.",

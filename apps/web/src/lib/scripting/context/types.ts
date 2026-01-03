@@ -12,7 +12,8 @@ export type CursorContextKind =
   | "top-level" // At script root, not in expression
   | "after-dot" // After a dot, expecting member completion
   | "in-config-map" // Inside #{ ... }
-  | "in-band-key" // Inside inputs.bands[...] or inputs.bands["..."]
+  | "in-band-key" // Inside inputs.mix.bands[...] or inputs.stems["..."].bands[...]
+  | "in-stem-key" // Inside inputs.stems[...]
   | "in-call" // Inside function call parens
   | "in-string" // Inside string literal
   | "unknown"; // Ambiguous/incomplete
@@ -58,6 +59,12 @@ export interface CursorContext {
 
   /** For in-band-key: whether quotes are present */
   bandKeyHasQuotes?: boolean;
+
+  /** For in-stem-key: partial stem key being typed */
+  partialStemKey?: string;
+
+  /** For in-stem-key: whether quotes are present */
+  stemKeyHasQuotes?: boolean;
 
   /** Prefix being typed (for filtering completions) */
   prefix?: string;

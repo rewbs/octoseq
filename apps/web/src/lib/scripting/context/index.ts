@@ -464,7 +464,9 @@ export function detectConfigMapContext(textUntilPosition: string): ConfigMapCont
 // =============================================================================
 
 /**
- * Detect if the cursor is inside `inputs.bands[...]`.
+ * Detect if the cursor is inside a bands bracket accessor:
+ * - inputs.mix.bands[...]
+ * - inputs.stems["..."].bands[...]
  */
 export function detectBandKeyContext(
   textUntilPosition: string
@@ -472,8 +474,11 @@ export function detectBandKeyContext(
   try {
     const text = trimRight(textUntilPosition);
 
-    // Check for inputs.bands[" or inputs.bands['
-    const quoteMatch = text.match(/inputs\s*\.\s*bands\s*\[\s*(["'])([^"']*)?$/);
+    // Pattern for inputs.mix.bands[ with optional quote and partial key
+    // Also matches inputs.stems["StemName"].bands[
+    const quoteMatch = text.match(
+      /inputs\s*\.\s*(?:mix\s*\.\s*bands|stems\s*\[\s*["'][^"']*["']\s*\]\s*\.\s*bands)\s*\[\s*(["'])([^"']*)?$/
+    );
     if (quoteMatch) {
       return {
         hasQuote: true,
@@ -481,8 +486,45 @@ export function detectBandKeyContext(
       };
     }
 
-    // Check for inputs.bands[
-    if (/inputs\s*\.\s*bands\s*\[$/.test(text)) {
+    // Check for inputs.mix.bands[ or inputs.stems["..."].bands[ without quote
+    if (
+      /inputs\s*\.\s*(?:mix\s*\.\s*bands|stems\s*\[\s*["'][^"']*["']\s*\]\s*\.\s*bands)\s*\[$/.test(
+        text
+      )
+    ) {
+      return { hasQuote: false };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// =============================================================================
+// Stem Key Context Detection
+// =============================================================================
+
+/**
+ * Detect if the cursor is inside `inputs.stems[...]`.
+ */
+export function detectStemKeyContext(
+  textUntilPosition: string
+): { hasQuote: boolean; partialKey?: string } | null {
+  try {
+    const text = trimRight(textUntilPosition);
+
+    // Check for inputs.stems[" or inputs.stems['
+    const quoteMatch = text.match(/inputs\s*\.\s*stems\s*\[\s*(["'])([^"']*)?$/);
+    if (quoteMatch) {
+      return {
+        hasQuote: true,
+        partialKey: quoteMatch[2] || "",
+      };
+    }
+
+    // Check for inputs.stems[
+    if (/inputs\s*\.\s*stems\s*\[$/.test(text)) {
       return { hasQuote: false };
     }
 
@@ -584,6 +626,16 @@ export function getCursorContext(textUntilCursor: string): CursorContext {
         kind: "in-band-key",
         bandKeyHasQuotes: bandKeyContext.hasQuote,
         partialBandKey: bandKeyContext.partialKey,
+      };
+    }
+
+    // Check for stem key context
+    const stemKeyContext = detectStemKeyContext(textUntilCursor);
+    if (stemKeyContext) {
+      return {
+        kind: "in-stem-key",
+        stemKeyHasQuotes: stemKeyContext.hasQuote,
+        partialStemKey: stemKeyContext.partialKey,
       };
     }
 

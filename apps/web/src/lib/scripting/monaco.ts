@@ -5,7 +5,7 @@
  * No longer requires WASM metadata callback - registry is self-contained.
  */
 
-import type { AvailableBand } from "./rhaiMonaco";
+import type { AvailableBand, AvailableStem } from "./rhaiMonaco";
 import { RHAI_LANGUAGE_ID, rhaiTokensProvider, rhaiLanguageConfig } from "./rhaiMonaco";
 import {
   createCompletionProvider,
@@ -32,6 +32,10 @@ export interface RhaiLanguageOptions {
    * Callback to get available frequency bands for band key completion.
    */
   getAvailableBands?: () => AvailableBand[];
+  /**
+   * Callback to get available stems for stem key completion.
+   */
+  getAvailableStems?: () => AvailableStem[];
 }
 
 /**
@@ -49,7 +53,7 @@ export function registerRhaiLanguage(
   options: RhaiLanguageOptions = {}
 ): Disposable[] {
   const disposables: Disposable[] = [];
-  const { getAvailableBands } = options;
+  const { getAvailableBands, getAvailableStems } = options;
 
   // Register the language if not already registered
   const languages = monaco.languages.getLanguages();
@@ -75,7 +79,7 @@ export function registerRhaiLanguage(
   disposables.push(
     monaco.languages.registerCompletionItemProvider(
       RHAI_LANGUAGE_ID,
-      createCompletionProvider(monaco, { getAvailableBands })
+      createCompletionProvider(monaco, { getAvailableBands, getAvailableStems })
     )
   );
 

@@ -1,5 +1,4 @@
 import { useCallback } from "react";
-import { useAudioStore } from "../audioStore";
 import { useAudioInputStore } from "../audioInputStore";
 import { usePlaybackStore } from "../playbackStore";
 import { useMirStore } from "../mirStore";
@@ -20,41 +19,34 @@ interface AudioActionsOptions {
 export function useAudioActions({ fileInputRef, onAudioLoaded }: AudioActionsOptions) {
   const handleAudioDecoded = useCallback(
     (a: { sampleRate: number; getChannelData: (n: number) => Float32Array }) => {
-      const audioStore = useAudioStore.getState();
       const audioInputStore = useAudioInputStore.getState();
       const playbackStore = usePlaybackStore.getState();
       const mirStore = useMirStore.getState();
       const searchStore = useSearchStore.getState();
       const bandProposalStore = useBandProposalStore.getState();
 
-      // Set audio buffer
-      audioStore.setAudio(a as AudioBuffer);
-
       // Get filename: prefer pendingFileName (for URL loads), then fall back to file input
-      const pendingFileName = audioStore.pendingFileName;
+      const pendingFileName = audioInputStore.pendingFileName;
       const fileName = pendingFileName ?? fileInputRef.current?.files?.[0]?.name ?? null;
       const ch0 = a.getChannelData(0);
 
       // Clear pending filename after use
       if (pendingFileName) {
-        audioStore.setPendingFileName(null);
+        audioInputStore.setPendingFileName(null);
       }
 
       // Set metadata
       const duration = ch0.length / a.sampleRate;
-      audioStore.setAudioMetadata({
-        fileName,
-        sampleRate: a.sampleRate,
-        totalSamples: ch0.length,
-        duration,
-      });
 
-      // Initialize audio input store with mixdown
+      // Get the current audio URL from the audio source (set by WaveSurfer before decode)
+      const audioUrl = audioInputStore.getCurrentAudioUrl();
+
       // Determine origin based on how the audio was loaded
       const origin: AudioInputOrigin = pendingFileName
         ? { kind: "url", url: "", fileName: pendingFileName }
         : { kind: "file", fileName: fileName ?? "Unknown" };
 
+      // Initialize/update audio input store with mixdown
       audioInputStore.updateMixdown({
         audioBuffer: a as AudioBuffer,
         metadata: {
@@ -62,7 +54,7 @@ export function useAudioActions({ fileInputRef, onAudioLoaded }: AudioActionsOpt
           totalSamples: ch0.length,
           duration,
         },
-        audioUrl: audioStore.audioUrl,
+        audioUrl,
         origin,
         label: fileName ?? "Mixdown",
       });

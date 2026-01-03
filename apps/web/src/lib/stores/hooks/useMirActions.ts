@@ -2,7 +2,6 @@ import { useCallback, useRef } from "react";
 import type { AudioBufferLike, MirAudioPayload, MirRunRequest, MirResult as MirLibResult, MirFunctionId as MirLibFunctionId } from "@octoseq/mir";
 import { normaliseForWaveform } from "@octoseq/mir";
 import { runMir } from "@octoseq/mir/runner/runMir";
-import { useAudioStore } from "../audioStore";
 import { useAudioInputStore } from "../audioInputStore";
 import { useMirStore } from "../mirStore";
 import { useConfigStore } from "../configStore";
@@ -36,13 +35,14 @@ export function useMirActions() {
     const effectiveCacheKey = cacheKey ?? effectiveInputId;
     let audio: AudioBufferLike | null = null;
 
-    // Check audioInputStore first (works for both stems and generated mixdowns)
-    const audioInput = useAudioInputStore.getState().getInputById(effectiveInputId);
+    // Get audio from audioInputStore (works for both stems and mixdowns)
+    const audioInputStore = useAudioInputStore.getState();
+    const audioInput = audioInputStore.getInputById(effectiveInputId);
     if (audioInput?.audioBuffer) {
       audio = audioInput.audioBuffer;
     } else if (effectiveInputId === MIXDOWN_ID) {
-      // Fall back to main audio store for mixdown (backward compatible with file picker)
-      audio = useAudioStore.getState().audio;
+      // Convenience fallback for mixdown
+      audio = audioInputStore.getAudio();
     }
 
     if (!audio) return;
@@ -242,7 +242,7 @@ export function useMirActions() {
   ];
 
   const runAllAnalyses = useCallback(async () => {
-    const { audio } = useAudioStore.getState();
+    const audio = useAudioInputStore.getState().getAudio();
     if (!audio) return;
 
     for (const fn of ALL_MIR_FUNCTIONS) {

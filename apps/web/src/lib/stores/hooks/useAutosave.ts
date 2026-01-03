@@ -79,26 +79,32 @@ export function useAutosave(options: UseAutosaveOptions = {}): UseAutosaveReturn
   // ----------------------------
 
   const buildAutosaveRecord = useCallback((): AutosaveRecord | null => {
-    const project = useProjectStore.getState().activeProject;
+    const projectStore = useProjectStore.getState();
+    const project = projectStore.activeProject;
     if (!project) return null;
 
-    // Sync current playhead before saving
+    // Capture current playhead position and include it in the export
+    // without triggering a sync (which would cause a loop)
     const currentPlayhead = usePlaybackStore.getState().playheadTimeSec;
-    useProjectStore.getState().syncUIState({ lastPlayheadPosition: currentPlayhead });
 
-    const json = exportToJson();
-    if (!json) return null;
+    // Build the serialized project with the current playhead position
+    const serialized: ProjectSerialized = {
+      version: 1,
+      project: {
+        ...project,
+        uiState: {
+          ...project.uiState,
+          lastPlayheadPosition: currentPlayhead,
+        },
+        modifiedAt: new Date().toISOString(),
+      },
+    };
 
-    try {
-      const parsed = JSON.parse(json) as ProjectSerialized;
-      return {
-        project: parsed,
-        savedAt: new Date().toISOString(),
-      };
-    } catch {
-      return null;
-    }
-  }, [exportToJson]);
+    return {
+      project: serialized,
+      savedAt: new Date().toISOString(),
+    };
+  }, []);
 
   // ----------------------------
   // Autosave Subscription

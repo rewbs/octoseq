@@ -66,6 +66,9 @@ export type HeatmapWithBandOverlayProps = {
 
     /** Playhead/cursor time for position indicator. */
     playheadTimeSec?: number | null;
+
+    /** Audio source ID to filter bands by. If not provided, shows all bands. */
+    sourceId?: string;
 };
 
 // Default mel config (matches typical spectrogram settings)
@@ -97,6 +100,7 @@ export function HeatmapWithBandOverlay({
     musicalTimeSegments = [],
     selectedSegmentId = null,
     playheadTimeSec = null,
+    sourceId,
 }: HeatmapWithBandOverlayProps) {
     const { ref: containerRef, size: containerSize } = useElementSize<HTMLDivElement>();
     const overlayContainerRef = useRef<HTMLDivElement>(null);
@@ -112,6 +116,7 @@ export function HeatmapWithBandOverlay({
         setHoveredKeyframeTime,
         updateBand,
         getBandById,
+        getBandsForSource,
     } = useFrequencyBandStore(
         useShallow((s) => ({
             structure: s.structure,
@@ -123,8 +128,21 @@ export function HeatmapWithBandOverlay({
             setHoveredKeyframeTime: s.setHoveredKeyframeTime,
             updateBand: s.updateBand,
             getBandById: s.getBandById,
+            getBandsForSource: s.getBandsForSource,
         }))
     );
+
+    // Filter bands by sourceId if provided
+    const filteredStructure = useMemo(() => {
+        if (!structure) return null;
+        if (!sourceId) return structure; // No filter, show all bands
+
+        const filteredBands = getBandsForSource(sourceId);
+        return {
+            ...structure,
+            bands: filteredBands,
+        };
+    }, [structure, sourceId, getBandsForSource]);
 
     // Get the actual rendered height from the container
     // The heatmap manages its own height, so we track it
@@ -192,7 +210,7 @@ export function HeatmapWithBandOverlay({
             />
 
             {/* Band overlay positioned on top of heatmap */}
-            {structure && structure.bands.length > 0 && (
+            {filteredStructure && filteredStructure.bands.length > 0 && (
                 <div
                     ref={overlayContainerRef}
                     className="absolute top-0 left-0"
@@ -203,7 +221,7 @@ export function HeatmapWithBandOverlay({
                         endTime={endTime}
                         width={width}
                         height={overlayHeight - 16} // Account for padding and resize handle
-                        structure={structure}
+                        structure={filteredStructure}
                         selectedBandId={selectedBandId}
                         hoveredBandId={hoveredBandId}
                         hoveredKeyframeTime={hoveredKeyframeTime}

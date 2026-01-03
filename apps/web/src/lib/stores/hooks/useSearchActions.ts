@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import type { MirAudioPayload } from "@octoseq/mir";
-import { useAudioStore } from "../audioStore";
+import { useAudioInputStore } from "../audioInputStore";
 import { useSearchStore } from "../searchStore";
 import { usePlaybackStore } from "../playbackStore";
 import { useConfigStore } from "../configStore";
@@ -27,7 +27,7 @@ export function useSearchActions() {
 
   const runSearch = useCallback(
     async (region: { startSec: number; endSec: number }, controls: SearchControls) => {
-      const { audio } = useAudioStore.getState();
+      const audio = useAudioInputStore.getState().getAudio();
       if (!audio) return;
       if (!workerRef.current) throw new Error("worker not initialised");
 

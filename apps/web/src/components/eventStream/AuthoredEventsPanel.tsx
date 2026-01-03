@@ -14,7 +14,7 @@ import {
 } from "@octoseq/mir";
 import { useInterpretationTreeStore } from "@/lib/stores/interpretationTreeStore";
 import { usePlaybackStore } from "@/lib/stores/playbackStore";
-import { useAudioStore } from "@/lib/stores/audioStore";
+import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useAuthoredEventActions } from "@/lib/stores/hooks/useAuthoredEventActions";
 import { useBeatGridStore } from "@/lib/stores/beatGridStore";
@@ -97,7 +97,7 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
 
   // Playback state for preview
   const viewport = usePlaybackStore((s) => s.viewport);
-  const audioDuration = useAudioStore((s) => s.audioDuration);
+  const audioDuration = useAudioInputStore((s) => s.getAudioDuration());
   const setCursorTimeSec = usePlaybackStore((s) => s.setCursorTimeSec);
   const cursorTimeSec = useMirroredCursorTime();
   const beatGridVisible = useBeatGridStore((s) => s.isVisible);
@@ -903,7 +903,7 @@ export function AuthoredEventsPanel() {
   const selectNode = useInterpretationTreeStore((s) => s.selectNode);
   const viewport = usePlaybackStore((s) => s.viewport);
   const setCursorTimeSec = usePlaybackStore((s) => s.setCursorTimeSec);
-  const audioDuration = useAudioStore((s) => s.audioDuration);
+  const audioDuration = useAudioInputStore((s) => s.getAudioDuration());
   const beatGridVisible = useBeatGridStore((s) => s.isVisible);
   const mirroredCursorTimeSec = useMirroredCursorTime();
 

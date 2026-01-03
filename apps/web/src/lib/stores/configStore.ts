@@ -7,6 +7,7 @@ interface ConfigState {
   debug: boolean;
   useWorker: boolean;
   enableGpu: boolean;
+  bypassVisualiser: boolean;
 
   // FFT/Spectrogram
   fftSize: number;
@@ -70,6 +71,7 @@ interface ConfigActions {
   setDebug: (v: boolean) => void;
   setUseWorker: (v: boolean) => void;
   setEnableGpu: (v: boolean) => void;
+  setBypassVisualiser: (v: boolean) => void;
 
   // FFT/Spectrogram setters
   setFftSize: (v: number) => void;
@@ -146,10 +148,11 @@ const initialState: ConfigState = {
   debug: false,
   useWorker: true,
   enableGpu: true,
+  bypassVisualiser: false,
 
   // FFT/Spectrogram
-  fftSize: 512,
-  hopSize: 64,
+  fftSize: 1024,
+  hopSize: 128,
 
   // Mel
   melBands: 64,
@@ -167,7 +170,7 @@ const initialState: ConfigState = {
   peakAdaptiveFactor: "",
 
   // Transient FFT (used by HPSS)
-  transientFftSize: 512,
+  transientFftSize: 1024,
   transientHopSize: 128,
 
   // Timbre FFT (used by MFCC)
@@ -214,6 +217,7 @@ export const useConfigStore = create<ConfigStore>()(
         setDebug: (v) => set({ debug: v }, false, "setDebug"),
         setUseWorker: (v) => set({ useWorker: v }, false, "setUseWorker"),
         setEnableGpu: (v) => set({ enableGpu: v }, false, "setEnableGpu"),
+        setBypassVisualiser: (v) => set({ bypassVisualiser: v }, false, "setBypassVisualiser"),
 
         // FFT/Spectrogram setters
         setFftSize: (v) => set({ fftSize: v }, false, "setFftSize"),
@@ -369,6 +373,7 @@ export const useConfigStore = create<ConfigStore>()(
           debug: state.debug,
           useWorker: state.useWorker,
           enableGpu: state.enableGpu,
+          bypassVisualiser: state.bypassVisualiser,
           fftSize: state.fftSize,
           hopSize: state.hopSize,
           melBands: state.melBands,

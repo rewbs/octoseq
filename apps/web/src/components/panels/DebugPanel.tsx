@@ -15,20 +15,24 @@ export function DebugPanel() {
     debug,
     useWorker,
     enableGpu,
+    bypassVisualiser,
     isDebugOpen,
     setDebug,
     setUseWorker,
     setEnableGpu,
+    setBypassVisualiser,
     setIsDebugOpen,
   } = useConfigStore(
     useShallow((s) => ({
       debug: s.debug,
       useWorker: s.useWorker,
       enableGpu: s.enableGpu,
+      bypassVisualiser: s.bypassVisualiser,
       isDebugOpen: s.isDebugOpen,
       setDebug: s.setDebug,
       setUseWorker: s.setUseWorker,
       setEnableGpu: s.setEnableGpu,
+      setBypassVisualiser: s.setBypassVisualiser,
       setIsDebugOpen: s.setIsDebugOpen,
     }))
   );
@@ -81,6 +85,14 @@ export function DebugPanel() {
               onChange={(e) => setEnableGpu(e.target.checked)}
             />
             <span className="text-zinc-700 dark:text-zinc-200">Enable WebGPU stage (mel projection + onset envelope)</span>
+          </label>
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={bypassVisualiser}
+              onChange={(e) => setBypassVisualiser(e.target.checked)}
+            />
+            <span className="text-zinc-700 dark:text-zinc-200">Bypass visualiser rendering</span>
           </label>
 
           <div className="mt-1.5 text-xs text-zinc-600 dark:text-zinc-300">

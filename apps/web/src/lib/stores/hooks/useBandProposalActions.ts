@@ -4,7 +4,8 @@ import {
     type BandProposalConfig,
     type FrequencyBand,
 } from "@octoseq/mir";
-import { useAudioStore } from "../audioStore";
+import { useAudioInputStore } from "../audioInputStore";
+import { MIXDOWN_ID } from "../types/audioInput";
 import { useFrequencyBandStore } from "../frequencyBandStore";
 import { useBandProposalStore } from "../bandProposalStore";
 
@@ -15,12 +16,18 @@ import { useBandProposalStore } from "../bandProposalStore";
  */
 export function useBandProposalActions() {
     /**
-     * Compute band proposals from the current audio.
+     * Compute band proposals from the specified audio source.
+     * @param sourceId - The audio source ID ("mixdown" or a stem ID). Defaults to "mixdown".
+     * @param config - Optional configuration for proposal generation.
      */
-    const computeProposals = useCallback(async (config?: BandProposalConfig) => {
-        const { audio, audioDuration } = useAudioStore.getState();
-        if (!audio) {
-            useBandProposalStore.getState().setError("No audio loaded");
+    const computeProposals = useCallback(async (sourceId: string = MIXDOWN_ID, config?: BandProposalConfig) => {
+        // Get the correct audio buffer based on sourceId
+        const audioInputStore = useAudioInputStore.getState();
+        const audioDuration = audioInputStore.getAudioDuration();
+        const audioInput = audioInputStore.getInputById(sourceId);
+
+        if (!audioInput?.audioBuffer) {
+            useBandProposalStore.getState().setError(`No audio loaded for source: ${sourceId}`);
             return;
         }
 
@@ -32,11 +39,12 @@ export function useBandProposalActions() {
         proposalStore.setLastConfig(config ?? null);
 
         try {
-            // Create AudioBufferLike from AudioBuffer
-            const ch0 = audio.getChannelData(0);
+            // Use the audio buffer from the specified source
+            const audioBuffer = audioInput.audioBuffer;
+            const ch0 = audioBuffer.getChannelData(0);
             const mono = new Float32Array(ch0);
             const audioLike = {
-                sampleRate: audio.sampleRate,
+                sampleRate: audioBuffer.sampleRate,
                 numberOfChannels: 1,
                 getChannelData: () => mono,
             };
@@ -59,8 +67,10 @@ export function useBandProposalActions() {
     /**
      * Promote a proposal to a real FrequencyBand.
      * The proposal is removed from the proposal list after promotion.
+     * @param proposalId - The ID of the proposal to promote.
+     * @param sourceId - The audio source ID to assign to the band. Defaults to "mixdown".
      */
-    const promoteProposal = useCallback((proposalId: string) => {
+    const promoteProposal = useCallback((proposalId: string, sourceId: string = MIXDOWN_ID) => {
         const proposalStore = useBandProposalStore.getState();
         const frequencyBandStore = useFrequencyBandStore.getState();
 
@@ -70,9 +80,11 @@ export function useBandProposalActions() {
         // Ensure band structure exists
         frequencyBandStore.ensureStructure();
 
-        // Add the band with updated provenance
+        // Add the band with updated provenance and correct sourceId
         const bandToAdd: Omit<FrequencyBand, "id"> = {
             ...proposal.band,
+            // Override sourceId with the correct audio source
+            sourceId,
             // Update provenance to indicate it was imported from a proposal
             provenance: {
                 source: "imported",
@@ -88,13 +100,14 @@ export function useBandProposalActions() {
 
     /**
      * Promote all proposals to real FrequencyBands.
+     * @param sourceId - The audio source ID to assign to all promoted bands. Defaults to "mixdown".
      */
-    const promoteAllProposals = useCallback(() => {
+    const promoteAllProposals = useCallback((sourceId: string = MIXDOWN_ID) => {
         const proposalStore = useBandProposalStore.getState();
         const proposals = [...proposalStore.proposals];
 
         for (const proposal of proposals) {
-            promoteProposal(proposal.id);
+            promoteProposal(proposal.id, sourceId);
         }
     }, [promoteProposal]);
 

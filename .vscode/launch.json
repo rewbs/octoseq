@@ -16,6 +16,14 @@
       "url": "http://localhost:3000",
       "webRoot": "${workspaceFolder}/apps/web",
       "userDataDir": "${workspaceFolder}/.vscode/.chrome"
+    },
+    {
+      "name": "Web: Attach to Chrome",
+      "type": "chrome",
+      "request": "attach",
+      "port": 9222,
+      "url": "http://localhost:3000",
+      "webRoot": "${workspaceFolder}/apps/web"
     }
   ],
   "compounds": [

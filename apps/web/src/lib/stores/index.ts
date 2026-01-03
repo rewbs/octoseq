@@ -1,5 +1,4 @@
 // Stores
-export { useAudioStore, type AudioStore } from "./audioStore";
 export { usePlaybackStore, getMirroredCursorTime, type PlaybackStore } from "./playbackStore";
 export { useConfigStore, type ConfigStore } from "./configStore";
 export { useMirStore, mirTabDefinitions, type MirStore, type VisualTabId } from "./mirStore";
@@ -12,6 +11,7 @@ export { useFrequencyBandStore, type FrequencyBandStore, type BandInvalidationEv
 export { useBandMirStore, setupBandMirInvalidation, type BandMirStore } from "./bandMirStore";
 export { useBandProposalStore, type BandProposalStore } from "./bandProposalStore";
 export { useProjectStore, type ProjectStore } from "./projectStore";
+export { useAutosaveStore, type AutosaveStore } from "./autosaveStore";
 export {
   useInspectionStore,
   type InspectionStore,

@@ -5,7 +5,7 @@ import { Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getAudioSourceId } from "@/lib/nodeTypes";
 import { FrequencyBandContent } from "@/components/frequencyBand/FrequencyBandContent";
-import { useAudioStore } from "@/lib/stores/audioStore";
+import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { useBandMirActions } from "@/lib/stores/hooks/useBandMirActions";
 
@@ -18,8 +18,11 @@ interface BandsInspectorProps {
  * Shows band discovery and management controls.
  */
 export function BandsInspector({ nodeId }: BandsInspectorProps) {
-  const audioDuration = useAudioStore((s) => s.audioDuration);
   const sourceId = getAudioSourceId(nodeId) ?? "mixdown";
+
+  // Get the audio duration for this specific source
+  const audioInput = useAudioInputStore((s) => s.collection?.inputs[sourceId]);
+  const audioDuration = audioInput?.metadata?.duration ?? 0;
   const getBandsForSource = useFrequencyBandStore((s) => s.getBandsForSource);
   const {
     runBandAnalysis,

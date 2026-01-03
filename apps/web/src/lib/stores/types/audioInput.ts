@@ -45,8 +45,21 @@ export interface AudioInput {
    */
   assetId?: string;
   /**
-   * Original ArrayBuffer from file (for asset registration).
-   * Kept temporarily during loading, then cleared after registration.
+   * Reference to asset in the cloud (R2).
+   * Populated when the file is uploaded to cloud storage.
+   */
+  cloudAssetId?: string;
+  /**
+   * Content hash of the original file (for deduplication).
+   */
+  contentHash?: string;
+  /**
+   * MIME type of the original file (e.g., "audio/mpeg", "audio/wav").
+   */
+  mimeType?: string;
+  /**
+   * Original ArrayBuffer from file (for asset registration and cloud upload).
+   * Kept temporarily during loading, then cleared after upload completes.
    */
   rawBuffer?: ArrayBuffer;
 }
@@ -66,3 +79,76 @@ export interface AudioInputCollection {
 
 /** The constant ID used for the mixdown input. */
 export const MIXDOWN_ID = "mixdown";
+
+// =============================================================================
+// AudioSource: Single Source of Truth for Playback
+// =============================================================================
+//
+// DESIGN PRINCIPLES:
+// - Playback wants URLs. Analysis wants PCM. Authority wants one owner.
+// - WaveSurfer loads audio by URL only - never pass decoded buffers to it.
+// - Decoding is for analysis (MIR) and generation (mixdown), not playback.
+// - currentAudioSource is the single source of truth for what audio is playing.
+// =============================================================================
+
+/**
+ * Status of an AudioSource's URL resolution.
+ * - pending: Source set but URL not yet requested
+ * - resolving: URL fetch/creation in progress
+ * - ready: URL available for playback
+ * - failed: Resolution failed (see error field)
+ */
+export type AudioSourceStatus = "pending" | "resolving" | "ready" | "failed";
+
+/**
+ * Base properties shared by all AudioSource variants.
+ */
+interface AudioSourceBase {
+  /** Matches AudioInput.id - links source to its input in the collection. */
+  id: string;
+  /** Resolution status. */
+  status: AudioSourceStatus;
+  /** Playback URL. Set when status is 'ready'. */
+  url?: string;
+  /** Error message. Set when status is 'failed'. */
+  error?: string;
+}
+
+/**
+ * Audio source from a local file (File API).
+ * URL is created via URL.createObjectURL().
+ */
+export interface LocalAudioSource extends AudioSourceBase {
+  type: "local";
+  /** The File object from file picker. */
+  file: File;
+}
+
+/**
+ * Audio source from cloud storage (R2).
+ * URL is obtained via pre-signed download URL.
+ */
+export interface RemoteAudioSource extends AudioSourceBase {
+  type: "remote";
+  /** Reference to asset in cloud storage. */
+  cloudAssetId: string;
+}
+
+/**
+ * Audio source from generated content (e.g., mixdown from stems).
+ * URL is created from the generated audio buffer.
+ */
+export interface GeneratedAudioSource extends AudioSourceBase {
+  type: "generated";
+  /** IDs of source inputs used to generate this audio. */
+  generatedFrom: string[];
+}
+
+/**
+ * Discriminated union of all audio source types.
+ * This is the single source of truth for what audio is currently playing.
+ */
+export type AudioSource =
+  | LocalAudioSource
+  | RemoteAudioSource
+  | GeneratedAudioSource;

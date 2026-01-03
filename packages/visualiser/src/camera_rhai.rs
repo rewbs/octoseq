@@ -29,7 +29,7 @@ camera.rotation = #{ x: 0.0, y: 0.0, z: 0.0 };
 
 // Look-at target position
 // If set (not unit), enables LookAt mode and derives orientation automatically
-camera.target = ();
+camera.target = #{ x: 0.0, y: 0.0, z: 0.0 };
 
 // Up vector for LookAt mode
 camera.up = #{ x: 0.0, y: 1.0, z: 0.0 };
