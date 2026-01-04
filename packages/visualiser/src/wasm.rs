@@ -1035,8 +1035,8 @@ impl WasmVisualiser {
             .map(|(id, label)| (id.clone(), label.clone()))
             .collect();
 
-        // Run analysis with the current named_signals, bands, and band_signals
-        match run_analysis_with_bands(script, &inner.named_signals, &bands, &inner.band_signals, config) {
+        // Run analysis with the current named_signals, bands, band_signals, and musical_time
+        match run_analysis_with_bands(script, &inner.named_signals, &bands, &inner.band_signals, inner.musical_time.as_ref(), config) {
             Ok(result) => {
                 let wasm_signals: Vec<WasmDebugSignal> = result
                     .debug_signals

@@ -2,9 +2,8 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  Save,
-  FolderOpen,
-  Trash2,
+  Download,
+  Upload,
   Plus,
   Edit2,
   Check,
@@ -57,7 +56,6 @@ export function ProjectInspector() {
     createProject,
     saveProject,
     loadProjectFromFile,
-    resetProject,
     renameProject,
   } = useProjectActions();
 
@@ -120,11 +118,6 @@ export function ProjectInspector() {
     });
   }, [requireConfirm, createProject]);
 
-  // Handle Reset with confirmation
-  const handleResetProject = useCallback(() => {
-    requireConfirm("reset", resetProject);
-  }, [requireConfirm, resetProject]);
-
   const formatDate = (isoString: string | undefined) => {
     if (!isoString) return "—";
     const date = new Date(isoString);
@@ -154,8 +147,8 @@ export function ProjectInspector() {
             size="sm"
             onClick={handleLoadClick}
           >
-            <FolderOpen className="h-4 w-4 mr-2" />
-            Open Project...
+            <Upload className="h-4 w-4 mr-2" />
+            Import Project...
           </Button>
         </div>
         <input
@@ -261,25 +254,16 @@ export function ProjectInspector() {
         </label>
         <div className="flex flex-col gap-1">
           <Button variant="outline" size="sm" className="w-full justify-start" onClick={saveProject}>
-            <Save className="h-4 w-4 mr-2" />
-            Save Project
+            <Download className="h-4 w-4 mr-2" />
+            Export Project...
           </Button>
           <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleLoadClick}>
-            <FolderOpen className="h-4 w-4 mr-2" />
-            Open Project...
+            <Upload className="h-4 w-4 mr-2" />
+            Import Project...
           </Button>
           <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleNewProject}>
             <Plus className="h-4 w-4 mr-2" />
             New Project
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full justify-start text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950"
-            onClick={handleResetProject}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Reset Project
           </Button>
         </div>
       </div>

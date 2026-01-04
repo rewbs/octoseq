@@ -10,7 +10,7 @@
  * - Unknown: common entity members (graceful fallback)
  */
 
-import type { AvailableBand, AvailableStem } from "../rhaiMonaco";
+import type { AvailableBand, AvailableStem, AvailableCustomEvent } from "../rhaiMonaco";
 import type { CursorContext } from "../context/types";
 import type { RegistryEntry, RegistryMethod, RegistryProperty } from "../registry/types";
 import { getCursorContext } from "../context";
@@ -354,6 +354,63 @@ function getStemKeyCompletions(
 }
 
 /**
+ * Get custom events key completions for inputs.customEvents[...].
+ */
+function getCustomEventsKeyCompletions(
+  monaco: MonacoInstance,
+  range: MonacoRange,
+  context: CursorContext,
+  getAvailableCustomEvents?: () => AvailableCustomEvent[]
+): MonacoCompletionItem[] {
+  if (!getAvailableCustomEvents) return [];
+
+  const customEvents = getAvailableCustomEvents();
+  const hasQuote = context.customEventsKeyHasQuotes ?? false;
+  const partialKey = context.partialCustomEventsKey?.toLowerCase() ?? "";
+  const quoteChar = hasQuote ? '"' : '"'; // Default to double quote
+
+  const suggestions: MonacoCompletionItem[] = [];
+
+  for (const event of customEvents) {
+    // Filter by partial key if present
+    if (
+      partialKey &&
+      !event.label.toLowerCase().includes(partialKey) &&
+      !event.id.toLowerCase().includes(partialKey)
+    ) {
+      continue;
+    }
+
+    const closing = hasQuote ? '"]' : `${quoteChar}]`;
+    const labelInsert = hasQuote ? `${event.label}${closing}` : `${quoteChar}${event.label}${quoteChar}]`;
+
+    suggestions.push({
+      label: event.label,
+      kind: monaco.languages.CompletionItemKind.Value,
+      insertText: labelInsert,
+      detail: "Event stream",
+      documentation: `inputs.customEvents["${event.label}"] - returns EventStream`,
+      range,
+    });
+
+    // Also offer ID if different from label
+    if (event.id !== event.label) {
+      const idInsert = hasQuote ? `${event.id}${closing}` : `${quoteChar}${event.id}${quoteChar}]`;
+      suggestions.push({
+        label: event.id,
+        kind: monaco.languages.CompletionItemKind.Value,
+        insertText: idInsert,
+        detail: "Event stream ID",
+        documentation: `inputs.customEvents["${event.id}"] - returns EventStream`,
+        range,
+      });
+    }
+  }
+
+  return suggestions;
+}
+
+/**
  * Get config-map key completions.
  */
 function getConfigMapKeyCompletions(
@@ -466,9 +523,10 @@ export function createCompletionProvider(
   options: {
     getAvailableBands?: () => AvailableBand[];
     getAvailableStems?: () => AvailableStem[];
+    getAvailableCustomEvents?: () => AvailableCustomEvent[];
   } = {}
 ) {
-  const { getAvailableBands, getAvailableStems } = options;
+  const { getAvailableBands, getAvailableStems, getAvailableCustomEvents } = options;
 
   return {
     triggerCharacters: [".", "[", '"', "'", ",", "#"],
@@ -503,6 +561,11 @@ export function createCompletionProvider(
         case "in-stem-key":
           return {
             suggestions: getStemKeyCompletions(monaco, range, context, getAvailableStems),
+          };
+
+        case "in-custom-events-key":
+          return {
+            suggestions: getCustomEventsKeyCompletions(monaco, range, context, getAvailableCustomEvents),
           };
 
         case "in-config-map":

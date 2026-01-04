@@ -44,7 +44,7 @@ import { useCloudAssetLoader } from "@/lib/hooks/useCloudAssetLoader";
 import { useAudioSourceResolver } from "@/lib/hooks/useAudioSourceResolver";
 import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
 import type { LocalAudioSource } from "@/lib/stores/types/audioInput";
-import { computePhaseHypotheses, type BeatCandidate } from "@octoseq/mir";
+import { computePhaseHypotheses, createSegmentFromGrid, type BeatCandidate, type MusicalTimeStructure } from "@octoseq/mir";
 
 // Stores and hooks
 import {
@@ -234,6 +234,36 @@ export default function Home() {
       reset: s.reset,
     }))
   );
+
+  // Effective musical time: use committed structure, or fall back to provisional beat grid
+  const effectiveMusicalTimeStructure = useMemo((): MusicalTimeStructure | null => {
+    // If we have a committed musical time structure with segments, use it
+    if (musicalTimeStructure && musicalTimeStructure.segments.length > 0) {
+      return musicalTimeStructure;
+    }
+
+    // Otherwise, create a temporary structure from the provisional beat grid
+    const { activeBeatGrid } = beatGridState;
+    if (!activeBeatGrid) {
+      return null;
+    }
+
+    // Create a temporary segment covering the full audio duration
+    const duration = audioDuration ?? 0;
+    if (duration <= 0) {
+      return null;
+    }
+
+    const segment = createSegmentFromGrid(activeBeatGrid, 0, duration);
+    const now = new Date().toISOString();
+
+    return {
+      version: 1,
+      segments: [segment],
+      createdAt: now,
+      modifiedAt: now,
+    };
+  }, [musicalTimeStructure, beatGridState, audioDuration]);
 
   // Manual tempo store
   const manualHypotheses = useManualTempoStore((s) => s.hypotheses);
@@ -1410,7 +1440,7 @@ export default function Home() {
               mirResults={mirResults as any}
               searchSignal={searchSignal}
               isPlaying={isAudioPlaying}
-              musicalTimeStructure={musicalTimeStructure}
+              musicalTimeStructure={effectiveMusicalTimeStructure}
             />
 
           </section>

@@ -271,6 +271,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   const editorRef = useRef<MonacoEditorLike | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const availableBandsRef = useRef<Array<{ id: string; label: string }>>([]);
+  const availableCustomEventsRef = useRef<Array<{ id: string; label: string }>>([]);
   const { disableScope, enableScope } = useHotkeysContext();
 
   // Handler for Monaco editor initialization
@@ -283,6 +284,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
       // The registry is self-contained - no need for WASM metadata.
       monacoDisposablesRef.current = registerRhaiLanguage(monaco, {
         getAvailableBands: () => availableBandsRef.current,
+        getAvailableCustomEvents: () => availableCustomEventsRef.current,
       });
     },
     []
@@ -918,6 +920,19 @@ fn update(dt, frame) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     availableBandsRef.current = bands.map((b: any) => ({ id: b.id, label: b.label }));
   }, [frequencyBands]);
+
+  // Keep available custom events for editor completions in a ref
+  useEffect(() => {
+    const updateCustomEvents = () => {
+      const streams = useAuthoredEventStore.getState().getAllStreams();
+      availableCustomEventsRef.current = streams.map((s) => ({ id: s.id, label: s.name }));
+    };
+    // Initial sync
+    updateCustomEvents();
+    // Subscribe to store changes
+    const unsubscribe = useAuthoredEventStore.subscribe(updateCustomEvents);
+    return () => unsubscribe();
+  }, []);
 
   // Push band MIR signals to WASM (F4)
   useEffect(() => {

@@ -5,7 +5,7 @@
  * No longer requires WASM metadata callback - registry is self-contained.
  */
 
-import type { AvailableBand, AvailableStem } from "./rhaiMonaco";
+import type { AvailableBand, AvailableStem, AvailableCustomEvent } from "./rhaiMonaco";
 import { RHAI_LANGUAGE_ID, rhaiTokensProvider, rhaiLanguageConfig } from "./rhaiMonaco";
 import {
   createCompletionProvider,
@@ -36,6 +36,10 @@ export interface RhaiLanguageOptions {
    * Callback to get available stems for stem key completion.
    */
   getAvailableStems?: () => AvailableStem[];
+  /**
+   * Callback to get available custom event streams for custom events key completion.
+   */
+  getAvailableCustomEvents?: () => AvailableCustomEvent[];
 }
 
 /**
@@ -53,7 +57,7 @@ export function registerRhaiLanguage(
   options: RhaiLanguageOptions = {}
 ): Disposable[] {
   const disposables: Disposable[] = [];
-  const { getAvailableBands, getAvailableStems } = options;
+  const { getAvailableBands, getAvailableStems, getAvailableCustomEvents } = options;
 
   // Register the language if not already registered
   const languages = monaco.languages.getLanguages();
@@ -79,7 +83,7 @@ export function registerRhaiLanguage(
   disposables.push(
     monaco.languages.registerCompletionItemProvider(
       RHAI_LANGUAGE_ID,
-      createCompletionProvider(monaco, { getAvailableBands, getAvailableStems })
+      createCompletionProvider(monaco, { getAvailableBands, getAvailableStems, getAvailableCustomEvents })
     )
   );
 
@@ -117,4 +121,4 @@ export function attachDiagnostics(monaco: MonacoInstance, model: any): () => voi
 
 // Re-export constants and types for backwards compatibility
 export { RHAI_LANGUAGE_ID } from "./rhaiMonaco";
-export type { AvailableBand } from "./rhaiMonaco";
+export type { AvailableBand, AvailableCustomEvent } from "./rhaiMonaco";

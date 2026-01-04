@@ -343,6 +343,16 @@ export function resolveChainSegments(
       }
     }
 
+    // Handle special case for "customEvents" index access
+    if (segment.kind === "index" && currentEntry.name === "CustomEvents") {
+      // inputs.customEvents["Snares"] -> EventStream
+      const eventStream = registry.entries.get("EventStream");
+      if (eventStream) {
+        currentEntry = eventStream;
+        continue;
+      }
+    }
+
     // Look for a property with this name
     const property = currentEntry.properties.find((p) => p.name === segmentName);
     if (property) {

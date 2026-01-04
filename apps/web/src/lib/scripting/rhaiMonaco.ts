@@ -19,6 +19,7 @@ export const RHAI_LANGUAGE_ID = "rhai";
 
 export type AvailableBand = { id: string; label: string };
 export type AvailableStem = { id: string; label: string };
+export type AvailableCustomEvent = { id: string; label: string };
 
 type MonacoRange = {
   startLineNumber: number;

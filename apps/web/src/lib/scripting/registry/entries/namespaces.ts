@@ -1171,8 +1171,8 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         params: [
           {
             name: "target",
-            type: "Map { x, y, z }",
-            description: "Target position to look at.",
+            type: "Map { x: Signal | f32, y: Signal | f32, z: Signal | f32 }",
+            description: "Target position to look at. Each component can be a Signal or number.",
           },
         ],
         returns: "void",
@@ -1186,8 +1186,8 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         params: [
           {
             name: "center",
-            type: "Map { x, y, z }",
-            description: "Center point to orbit around.",
+            type: "Map { x: Signal | f32, y: Signal | f32, z: Signal | f32 }",
+            description: "Center point to orbit around. Each component can be a Signal or number.",
           },
           {
             name: "radius",
@@ -1201,7 +1201,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
           },
         ],
         returns: "void",
-        example: "camera.orbit(#{ x: 0.0, y: 0.0, z: 0.0 }, 5.0, time.seconds * 0.5);",
+        example: "camera.orbit(#{ x: 0.0, y: 0.0, z: 0.0 }, 5.0, timing.time * 0.5);",
       },
       {
         name: "dolly",
@@ -1211,7 +1211,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         params: [
           {
             name: "distance",
-            type: "f32",
+            type: "Signal | f32",
             description:
               "How far to move (positive = forward, negative = backward).",
           },
@@ -1226,12 +1226,12 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         params: [
           {
             name: "dx",
-            type: "f32",
+            type: "Signal | f32",
             description: "Horizontal movement (positive = right).",
           },
           {
             name: "dy",
-            type: "f32",
+            type: "Signal | f32",
             description: "Vertical movement (positive = up).",
           },
         ],

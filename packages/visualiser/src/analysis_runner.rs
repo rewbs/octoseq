@@ -79,7 +79,7 @@ pub fn run_analysis(
     config: AnalysisConfig,
 ) -> Result<AnalysisResult, String> {
     // Call the extended version with empty bands and band signals
-    run_analysis_with_bands(script, signals, &[], &HashMap::new(), config)
+    run_analysis_with_bands(script, signals, &[], &HashMap::new(), None, config)
 }
 
 /// Run script in analysis mode with band support.
@@ -91,6 +91,7 @@ pub fn run_analysis_with_bands(
     signals: &SignalMap,
     bands: &[(String, String)],
     band_signals: &BandSignalMap,
+    musical_time: Option<&MusicalTimeStructure>,
     config: AnalysisConfig,
 ) -> Result<AnalysisResult, String> {
     // Validate config
@@ -143,7 +144,7 @@ pub fn run_analysis_with_bands(
             signals,
             band_signals,
             &stem_signals,
-            None, // No musical time in basic version
+            musical_time,
             config.duration,
             config.time_step,
         );
@@ -166,7 +167,7 @@ pub fn run_analysis_with_bands(
         }
 
         // Call update (scene graph changes are ignored)
-        engine.update(time, dt, &sampled, signals, band_signals, &stem_signals, &custom_signals, None);
+        engine.update(time, dt, &sampled, signals, band_signals, &stem_signals, &custom_signals, musical_time);
     }
 
     // Collect results

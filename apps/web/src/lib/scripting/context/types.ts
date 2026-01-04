@@ -14,6 +14,7 @@ export type CursorContextKind =
   | "in-config-map" // Inside #{ ... }
   | "in-band-key" // Inside inputs.mix.bands[...] or inputs.stems["..."].bands[...]
   | "in-stem-key" // Inside inputs.stems[...]
+  | "in-custom-events-key" // Inside inputs.customEvents[...]
   | "in-call" // Inside function call parens
   | "in-string" // Inside string literal
   | "unknown"; // Ambiguous/incomplete
@@ -65,6 +66,12 @@ export interface CursorContext {
 
   /** For in-stem-key: whether quotes are present */
   stemKeyHasQuotes?: boolean;
+
+  /** For in-custom-events-key: partial custom events key being typed */
+  partialCustomEventsKey?: string;
+
+  /** For in-custom-events-key: whether quotes are present */
+  customEventsKeyHasQuotes?: boolean;
 
   /** Prefix being typed (for filtering completions) */
   prefix?: string;

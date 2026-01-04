@@ -535,6 +535,39 @@ export function detectStemKeyContext(
 }
 
 // =============================================================================
+// Custom Events Key Context Detection
+// =============================================================================
+
+/**
+ * Detect if the cursor is inside `inputs.customEvents[...]`.
+ */
+export function detectCustomEventsKeyContext(
+  textUntilPosition: string
+): { hasQuote: boolean; partialKey?: string } | null {
+  try {
+    const text = trimRight(textUntilPosition);
+
+    // Check for inputs.customEvents[" or inputs.customEvents['
+    const quoteMatch = text.match(/inputs\s*\.\s*customEvents\s*\[\s*(["'])([^"']*)?$/);
+    if (quoteMatch) {
+      return {
+        hasQuote: true,
+        partialKey: quoteMatch[2] || "",
+      };
+    }
+
+    // Check for inputs.customEvents[
+    if (/inputs\s*\.\s*customEvents\s*\[$/.test(text)) {
+      return { hasQuote: false };
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// =============================================================================
 // Local Variable Type Inference
 // =============================================================================
 
@@ -636,6 +669,16 @@ export function getCursorContext(textUntilCursor: string): CursorContext {
         kind: "in-stem-key",
         stemKeyHasQuotes: stemKeyContext.hasQuote,
         partialStemKey: stemKeyContext.partialKey,
+      };
+    }
+
+    // Check for custom events key context
+    const customEventsKeyContext = detectCustomEventsKeyContext(textUntilCursor);
+    if (customEventsKeyContext) {
+      return {
+        kind: "in-custom-events-key",
+        customEventsKeyHasQuotes: customEventsKeyContext.hasQuote,
+        partialCustomEventsKey: customEventsKeyContext.partialKey,
       };
     }
 

@@ -15,7 +15,7 @@ export {
   USE_NEW_REGISTRY,
   RHAI_LANGUAGE_ID,
 } from "./monaco";
-export type { RhaiLanguageOptions, AvailableBand } from "./monaco";
+export type { RhaiLanguageOptions, AvailableBand, AvailableCustomEvent } from "./monaco";
 
 // Registry types and accessors
 export * from "./registry";

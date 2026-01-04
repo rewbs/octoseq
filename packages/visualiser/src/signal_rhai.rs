@@ -104,6 +104,56 @@ pub fn register_signal_api(engine: &mut Engine) {
     engine.register_fn("add", |s: &mut Signal, value: f32| s.add_scalar(value));
     engine.register_fn("add", |s: &mut Signal, value: i64| s.add_scalar(value as f32));
     engine.register_fn("mul", |s: &mut Signal, other: Signal| s.mul(other));
+
+    // === Arithmetic operators for Signal ===
+    // These allow using +, -, *, / directly with Signals in Rhai scripts
+    // Signal + Signal
+    engine.register_fn("+", |a: Signal, b: Signal| a.add(b));
+    // Signal + f64 (Rhai's default float)
+    engine.register_fn("+", |a: Signal, b: f64| a.add_scalar(b as f32));
+    // f64 + Signal
+    engine.register_fn("+", |a: f64, b: Signal| Signal::constant(a as f32).add(b));
+    // Signal + i64
+    engine.register_fn("+", |a: Signal, b: i64| a.add_scalar(b as f32));
+    // i64 + Signal
+    engine.register_fn("+", |a: i64, b: Signal| Signal::constant(a as f32).add(b));
+
+    // Signal - Signal
+    engine.register_fn("-", |a: Signal, b: Signal| a.sub(b));
+    // Signal - f64
+    engine.register_fn("-", |a: Signal, b: f64| a.sub_scalar(b as f32));
+    // f64 - Signal
+    engine.register_fn("-", |a: f64, b: Signal| Signal::constant(a as f32).sub(b));
+    // Signal - i64
+    engine.register_fn("-", |a: Signal, b: i64| a.sub_scalar(b as f32));
+    // i64 - Signal
+    engine.register_fn("-", |a: i64, b: Signal| Signal::constant(a as f32).sub(b));
+
+    // Signal * Signal
+    engine.register_fn("*", |a: Signal, b: Signal| a.mul(b));
+    // Signal * f64
+    engine.register_fn("*", |a: Signal, b: f64| a.mul(Signal::constant(b as f32)));
+    // f64 * Signal
+    engine.register_fn("*", |a: f64, b: Signal| Signal::constant(a as f32).mul(b));
+    // Signal * i64
+    engine.register_fn("*", |a: Signal, b: i64| a.mul(Signal::constant(b as f32)));
+    // i64 * Signal
+    engine.register_fn("*", |a: i64, b: Signal| Signal::constant(a as f32).mul(b));
+
+    // Signal / Signal
+    engine.register_fn("/", |a: Signal, b: Signal| a.div(b));
+    // Signal / f64
+    engine.register_fn("/", |a: Signal, b: f64| a.div_scalar(b as f32));
+    // f64 / Signal
+    engine.register_fn("/", |a: f64, b: Signal| Signal::constant(a as f32).div(b));
+    // Signal / i64
+    engine.register_fn("/", |a: Signal, b: i64| a.div_scalar(b as f32));
+    // i64 / Signal
+    engine.register_fn("/", |a: i64, b: Signal| Signal::constant(a as f32).div(b));
+
+    // Unary negation
+    engine.register_fn("-", |a: Signal| a.neg());
+
     engine.register_fn(
         "scale",
         |s: &mut Signal, factor: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
@@ -467,7 +517,7 @@ pub fn register_signal_api(engine: &mut Engine) {
             duty,
         })
     });
-    // Overload for i64
+    // Overloads for i64 and mixed types
     engine.register_fn("__gen_square", |freq: i64, phase: i64, duty: f32| {
         Signal::generator(GeneratorNode::Square {
             freq_beats: freq as f32,
@@ -479,6 +529,41 @@ pub fn register_signal_api(engine: &mut Engine) {
         Signal::generator(GeneratorNode::Square {
             freq_beats: freq as f32,
             phase: phase as f32,
+            duty: duty as f32,
+        })
+    });
+    engine.register_fn("__gen_square", |freq: f32, phase: i64, duty: f32| {
+        Signal::generator(GeneratorNode::Square {
+            freq_beats: freq,
+            phase: phase as f32,
+            duty,
+        })
+    });
+    engine.register_fn("__gen_square", |freq: f32, phase: f32, duty: i64| {
+        Signal::generator(GeneratorNode::Square {
+            freq_beats: freq,
+            phase,
+            duty: duty as f32,
+        })
+    });
+    engine.register_fn("__gen_square", |freq: f32, phase: i64, duty: i64| {
+        Signal::generator(GeneratorNode::Square {
+            freq_beats: freq,
+            phase: phase as f32,
+            duty: duty as f32,
+        })
+    });
+    engine.register_fn("__gen_square", |freq: i64, phase: f32, duty: f32| {
+        Signal::generator(GeneratorNode::Square {
+            freq_beats: freq as f32,
+            phase,
+            duty,
+        })
+    });
+    engine.register_fn("__gen_square", |freq: i64, phase: f32, duty: i64| {
+        Signal::generator(GeneratorNode::Square {
+            freq_beats: freq as f32,
+            phase,
             duty: duty as f32,
         })
     });
@@ -515,7 +600,7 @@ pub fn register_signal_api(engine: &mut Engine) {
             phase,
         })
     });
-    // Overload for i64
+    // Overloads for i64 and mixed types
     engine.register_fn("__gen_saw", |freq: i64, phase: i64| {
         Signal::generator(GeneratorNode::Saw {
             freq_beats: freq as f32,
@@ -532,6 +617,12 @@ pub fn register_signal_api(engine: &mut Engine) {
         Signal::generator(GeneratorNode::Saw {
             freq_beats: freq,
             phase: phase as f32,
+        })
+    });
+    engine.register_fn("__gen_saw", |freq: i64, phase: f32| {
+        Signal::generator(GeneratorNode::Saw {
+            freq_beats: freq as f32,
+            phase,
         })
     });
 

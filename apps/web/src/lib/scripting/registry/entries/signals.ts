@@ -837,4 +837,17 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
     ],
     methods: [],
   },
+
+  // ============================================================================
+  // CustomEvents - User-authored event streams (string-keyed map)
+  // ============================================================================
+  {
+    kind: "type",
+    name: "CustomEvents",
+    path: "CustomEvents",
+    description: 'User-authored event streams (string-keyed map). Access via inputs.customEvents["streamName"].',
+    properties: [],
+    methods: [],
+    example: 'inputs.customEvents["Snares"].to_signal()',
+  },
 ];

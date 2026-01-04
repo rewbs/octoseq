@@ -368,6 +368,20 @@ export function useProjectActions() {
    */
   const handleCreateProject = useCallback(
     (name?: string, importCurrentState = false) => {
+      // When creating a fresh new project (not importing current state),
+      // clear all stores to ensure a completely clean slate
+      if (!importCurrentState) {
+        useFrequencyBandStore.getState().clearStructure();
+        useMusicalTimeStore.getState().reset();
+        useAuthoredEventStore.getState().reset();
+        useBeatGridStore.getState().clear();
+        useCustomSignalStore.getState().reset();
+        useMeshAssetStore.getState().reset();
+        useAudioInputStore.getState().reset();
+        usePlaybackStore.getState().setPlayheadTimeSec(0);
+        usePlaybackStore.getState().setCursorTimeSec(0);
+      }
+
       const projectId = createProject(name);
 
       if (importCurrentState) {
