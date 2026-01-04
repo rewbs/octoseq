@@ -8,7 +8,6 @@ import WaveSurfer from "wavesurfer.js";
 import Timeline from "wavesurfer.js/dist/plugins/timeline.esm.js";
 import Regions from "wavesurfer.js/dist/plugins/regions.esm.js";
 import { GripHorizontal, Play, Pause, X, Loader2, AlertCircle } from "lucide-react";
-import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
@@ -30,7 +29,6 @@ import type { AudioBufferLike } from "@octoseq/mir";
 import type { RefinementCandidate } from "@/lib/searchRefinement";
 import type { WaveSurferViewport } from "./types";
 import { AnalysisOverlay } from "./AnalysisOverlay";
-import { SignedOut, SignInButton, SignedIn, UserButton } from "@clerk/nextjs";
 
 // Minimal typing to avoid depending on WaveSurfer's internal plugin registry.
 type RegionLike = {
@@ -1455,21 +1453,6 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
 
         {/* Additional toolbar content from parent */}
         {toolbarRight}
-        <div className="flex items-center justify-center  ml-auto gap-2">
-          <Link href="https://blog.octoseq.xyz/posts/hello-octoseq" target="_blank">
-            <Button size="sm" variant="outline" >
-              About
-            </Button>
-          </Link>
-          <SignedOut>
-            <SignInButton>
-              <Button size="sm" className="bg-blue-400 dark:bg-blue-700">Sign In</Button>
-            </SignInButton>
-          </SignedOut>
-          <SignedIn>
-            <UserButton />
-          </SignedIn>
-        </div>
       </div>
 
       <div

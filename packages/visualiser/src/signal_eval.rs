@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use crate::debug_collector::debug_emit;
 use crate::signal::SignalId;
-use crate::input::InputSignal;
+use crate::input::{BandSignalMap, InputSignal, SignalMap};
 use crate::musical_time::{MusicalTimeSegment, MusicalTimeStructure, DEFAULT_BPM};
 use crate::signal::{
     EasingFunction, EnvelopeShape, GateParams, GeneratorNode, NormaliseParams, NoiseType,
@@ -39,17 +39,17 @@ pub struct EvalContext<'a> {
     /// Musical time structure (for beat-aware operations).
     pub musical_time: Option<&'a MusicalTimeStructure>,
 
-    /// Input signals (raw sample data).
-    pub input_signals: &'a HashMap<String, InputSignal>,
+    /// Input signals (raw sample data wrapped in Rc for cheap sharing).
+    pub input_signals: &'a SignalMap,
 
-    /// Band-scoped input signals: band_key -> feature -> InputSignal
-    pub band_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
+    /// Band-scoped input signals: band_key -> feature -> Rc<InputSignal>
+    pub band_signals: &'a BandSignalMap,
 
-    /// Stem-scoped input signals: stem_id -> feature -> InputSignal
-    pub stem_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
+    /// Stem-scoped input signals: stem_id -> feature -> Rc<InputSignal>
+    pub stem_signals: &'a BandSignalMap,
 
-    /// Custom signals: signal_id -> InputSignal
-    pub custom_signals: &'a HashMap<String, InputSignal>,
+    /// Custom signals: signal_id -> Rc<InputSignal>
+    pub custom_signals: &'a SignalMap,
 
     /// Pre-computed statistics for normalization.
     pub statistics: &'a StatisticsCache,
@@ -73,10 +73,10 @@ impl<'a> EvalContext<'a> {
         dt: f32,
         frame_count: u64,
         musical_time: Option<&'a MusicalTimeStructure>,
-        input_signals: &'a HashMap<String, InputSignal>,
-        band_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
-        stem_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
-        custom_signals: &'a HashMap<String, InputSignal>,
+        input_signals: &'a SignalMap,
+        band_signals: &'a BandSignalMap,
+        stem_signals: &'a BandSignalMap,
+        custom_signals: &'a SignalMap,
         statistics: &'a StatisticsCache,
         state: &'a mut SignalState,
         track_duration: Option<f32>,
@@ -1410,10 +1410,10 @@ mod tests {
     fn make_test_context<'a>(
         time: f32,
         dt: f32,
-        input_signals: &'a HashMap<String, InputSignal>,
-        band_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
-        stem_signals: &'a HashMap<String, HashMap<String, InputSignal>>,
-        custom_signals: &'a HashMap<String, InputSignal>,
+        input_signals: &'a SignalMap,
+        band_signals: &'a BandSignalMap,
+        stem_signals: &'a BandSignalMap,
+        custom_signals: &'a SignalMap,
         statistics: &'a StatisticsCache,
         state: &'a mut SignalState,
     ) -> EvalContext<'a> {

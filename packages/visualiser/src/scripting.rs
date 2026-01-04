@@ -56,7 +56,7 @@ use crate::debug_collector::debug_emit;
 use crate::debug_markers::{add_marker_request, DebugMarkerRequest, ShowEventsOptions, MarkerSpreadMode};
 use crate::event_rhai::{get_named_event_stream_names, get_authored_event_stream_names};
 use crate::event_stream::EventStream;
-use crate::input::InputSignal;
+use crate::input::{BandSignalMap, SignalMap};
 use crate::musical_time::MusicalTimeStructure;
 use crate::scene_graph::{SceneGraph, EntityId, MeshType, RenderMode, LineMode, SceneEntity, LineStrip as SceneLineStrip, PointCloudMode, RadialWave, Ribbon, RibbonMode};
 use crate::deformation::{Deformation, DeformAxis};
@@ -80,6 +80,7 @@ use crate::camera_rhai::{generate_camera_namespace, sync_camera_from_scope};
 use crate::lighting::{LightingConfig, LightingUniforms};
 use crate::lighting_rhai::{generate_lighting_namespace, sync_lighting_from_scope};
 use crate::signal_explorer::{sample_signal_chain, ScriptSignalInfo, SignalChainAnalysis};
+use crate::perf_profiling::{time_start, time_end, should_log_collections};
 use std::sync::Arc;
 
 /// Global debug options set by scripts.
@@ -999,7 +1000,11 @@ mesh.load = |asset_id| {{
 let radial = #{{}};
 radial.__type = "radial_namespace";
 
+// ring() accepts optional options map - if not provided or not a map, uses defaults
 radial.ring = |options| {{
+    // Handle case where options might not be a map (e.g., called with no args)
+    let opts = if type_of(options) == "map" {{ options }} else {{ #{{}} }};
+
     let id = __next_id;
     __next_id += 1;
 
@@ -1008,11 +1013,11 @@ radial.ring = |options| {{
     entity.__type = "radial_ring";
 
     // Ring-specific parameters (all support Signal | f32)
-    entity.__radius = if options.contains("radius") {{ options.radius }} else {{ 1.0 }};
-    entity.__thickness = if options.contains("thickness") {{ options.thickness }} else {{ 0.1 }};
-    entity.__start_angle = if options.contains("start_angle") {{ options.start_angle }} else {{ 0.0 }};
-    entity.__end_angle = if options.contains("end_angle") {{ options.end_angle }} else {{ 6.283185307 }}; // 2*PI
-    entity.__segments = if options.contains("segments") {{ options.segments }} else {{ 64 }};
+    entity.__radius = if opts.contains("radius") {{ opts.radius }} else {{ 1.0 }};
+    entity.__thickness = if opts.contains("thickness") {{ opts.thickness }} else {{ 0.1 }};
+    entity.__start_angle = if opts.contains("start_angle") {{ opts.start_angle }} else {{ 0.0 }};
+    entity.__end_angle = if opts.contains("end_angle") {{ opts.end_angle }} else {{ 6.283185307 }}; // 2*PI
+    entity.__segments = if opts.contains("segments") {{ opts.segments }} else {{ 64 }};
 
     // Standard entity properties
     entity.position = #{{ x: 0.0, y: 0.0, z: 0.0 }};
@@ -1028,6 +1033,18 @@ radial.ring = |options| {{
     entity.lit = true;
     entity.emissive = 0.0;
     entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, radius_x: 1.0, radius_z: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
+
+    // Setter methods for fluent API
+    entity.set_radius = |r| {{ this.__radius = r; this }};
+    entity.set_thickness = |t| {{ this.__thickness = t; this }};
+    entity.set_start_angle = |a| {{ this.__start_angle = a; this }};
+    entity.set_end_angle = |a| {{ this.__end_angle = a; this }};
+    entity.set_segments = |s| {{ this.__segments = s; this }};
+    entity.set_position = |x, y, z| {{ this.position = #{{ x: x, y: y, z: z }}; this }};
+    entity.set_rotation = |x, y, z| {{ this.rotation = #{{ x: x, y: y, z: z }}; this }};
+    entity.set_scale = |s| {{ this.scale = s; this }};
+    entity.set_color = |r, g, b, a| {{ this.color = #{{ r: r, g: g, b: b, a: a }}; this }};
+    entity.set_visible = |v| {{ this.visible = v; this }};
 
     // Instance method
     entity.instance = || {{
@@ -1056,6 +1073,18 @@ radial.ring = |options| {{
         clone.lit = this.lit;
         clone.emissive = this.emissive;
         clone.shadow = this.shadow;
+
+        // Copy setter methods
+        clone.set_radius = this.set_radius;
+        clone.set_thickness = this.set_thickness;
+        clone.set_start_angle = this.set_start_angle;
+        clone.set_end_angle = this.set_end_angle;
+        clone.set_segments = this.set_segments;
+        clone.set_position = this.set_position;
+        clone.set_rotation = this.set_rotation;
+        clone.set_scale = this.set_scale;
+        clone.set_color = this.set_color;
+        clone.set_visible = this.set_visible;
         clone.instance = this.instance;
 
         __entities["" + id] = clone;
@@ -1620,15 +1649,18 @@ feedback.is_enabled = || {{
     /// - `time`/`dt` are used for evaluating any Signal values assigned to entity properties.
     /// - `frame_inputs` are the per-frame sampled numeric inputs passed to the Rhai `update()` function.
     /// - `input_signals`/`band_signals`/`stem_signals`/`custom_signals` are the raw signal buffers used by Signal evaluation.
+    ///
+    /// Note: SignalMap uses Rc<InputSignal> internally, so cloning for thread-local storage is cheap
+    /// (just reference count increments, not deep copies of audio data).
     pub fn update(
         &mut self,
         time: f32,
         dt: f32,
         frame_inputs: &HashMap<String, f32>,
-        input_signals: &HashMap<String, InputSignal>,
-        band_signals: &HashMap<String, HashMap<String, InputSignal>>,
-        stem_signals: &HashMap<String, HashMap<String, InputSignal>>,
-        custom_signals: &HashMap<String, InputSignal>,
+        input_signals: &SignalMap,
+        band_signals: &BandSignalMap,
+        stem_signals: &BandSignalMap,
+        custom_signals: &SignalMap,
         musical_time: Option<&MusicalTimeStructure>,
     ) {
         // Increment frame counter for time.frames signal
@@ -1672,12 +1704,35 @@ feedback.is_enabled = || {{
 
         // Call the update function
         // Note: Pass dt as f32 since Rhai is compiled with f32_float feature
+        let entities_before_update = self.scope.get_value::<rhai::Map>("__entities")
+            .map(|e| e.len())
+            .unwrap_or(0);
+        let next_id_before = self.scope.get_value::<i64>("__next_id").unwrap_or(-1);
+
+        time_start("rhai_update");
         let result: Result<(), Box<EvalAltResult>> = self.engine.call_fn(
             &mut self.scope,
             &ast,
             "update",
             (Dynamic::from(dt), Dynamic::from(inputs_map)),
         );
+        time_end("rhai_update");
+
+        // Log if Rhai update added entities
+        if should_log_collections() {
+            let entities_after_update = self.scope.get_value::<rhai::Map>("__entities")
+                .map(|e| e.len())
+                .unwrap_or(0);
+            let next_id_after = self.scope.get_value::<i64>("__next_id").unwrap_or(-1);
+
+            if entities_before_update != entities_after_update || next_id_before != next_id_after {
+                log::warn!(
+                    "[PERF] rhai_update changed state: __entities {} -> {}, __next_id {} -> {}",
+                    entities_before_update, entities_after_update,
+                    next_id_before, next_id_after
+                );
+            }
+        }
 
         if let Err(e) = result {
             let err_str = e.to_string();
@@ -1688,10 +1743,44 @@ feedback.is_enabled = || {{
         }
 
         // Sync entities from scope to scene graph, evaluating any Signal properties at render time.
+        time_start("sync_entities");
         self.sync_entities_from_scope(time, dt, input_signals, band_signals, stem_signals, custom_signals, musical_time);
+        time_end("sync_entities");
+
+        // Log collection sizes periodically for performance profiling
+        if should_log_collections() {
+            self.log_collection_sizes();
+        }
 
         // Clear thread-local input signals after update is complete
         clear_current_input_signals();
+    }
+
+    /// Log collection sizes for performance profiling.
+    fn log_collection_sizes(&self) {
+        let frame = self.frame_count;
+        let collections = self.signal_state.get_collection_sizes();
+        let scene_stats = format!(
+            "entities={}, meshes={}, lines={}, clouds={}, ribbons={}",
+            self.scene_graph.entities.len(),
+            self.scene_graph.meshes().count(),
+            self.scene_graph.lines().count(),
+            self.scene_graph.point_clouds().count(),
+            self.scene_graph.ribbons().count(),
+        );
+
+        let signal_state_stats: Vec<String> = collections
+            .iter()
+            .map(|(name, count)| format!("{}={}", name, count))
+            .collect();
+
+        log::info!(
+            "[PERF] Frame {} Collections:\n  Signal State: {}\n  Scene Graph: {}\n  SignalId counter: {}",
+            frame,
+            signal_state_stats.join(", "),
+            scene_stats,
+            crate::signal::SignalId::current_count()
+        );
     }
 
     /// Sync entity Maps from scope back to the SceneGraph.
@@ -1702,10 +1791,10 @@ feedback.is_enabled = || {{
         &mut self,
         time: f32,
         dt: f32,
-        input_signals: &HashMap<String, InputSignal>,
-        band_signals: &HashMap<String, HashMap<String, InputSignal>>,
-        stem_signals: &HashMap<String, HashMap<String, InputSignal>>,
-        custom_signals: &HashMap<String, InputSignal>,
+        input_signals: &SignalMap,
+        band_signals: &BandSignalMap,
+        stem_signals: &BandSignalMap,
+        custom_signals: &SignalMap,
         musical_time: Option<&MusicalTimeStructure>,
     ) {
         // Get the entities Map and scene_ids Array from scope
@@ -1768,6 +1857,12 @@ feedback.is_enabled = || {{
 
         // First, collect entity Maps from all scope variables (in case user modified local copies)
         // This handles the copy-on-write behavior of Rhai Maps
+        // Also track which entity IDs are referenced by scope variables
+        time_start("sync_scope_iter");
+        let scope_var_count = self.scope.len();
+        let entities_before = entities.len();
+        let mut scope_referenced_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
+
         for (name, _is_const, value) in self.scope.iter() {
             // Skip internal variables
             if name.starts_with("__") || name == "mesh" || name == "line" || name == "scene" || name == "deform" {
@@ -1779,6 +1874,7 @@ feedback.is_enabled = || {{
                 if let Some(id_dyn) = scope_entity_map.get("__id") {
                     if let Ok(id) = id_dyn.as_int() {
                         let key = format!("{}", id);
+                        scope_referenced_ids.insert(id);
 
                         // Preserve internal fields from the existing entry (like __parent_id)
                         // that are managed by group methods rather than user code
@@ -1806,13 +1902,95 @@ feedback.is_enabled = || {{
             }
         }
 
-        // Update the scope with merged entities
+        // Clean up stale entries from __entities:
+        // Keep only entries that are either in scene_id_set or referenced by a scope variable
+        let keys_to_remove: Vec<String> = entities
+            .keys()
+            .filter_map(|key| {
+                let key_str = key.to_string();
+                if let Ok(id) = key_str.parse::<i64>() {
+                    if !scene_id_set.contains(&id) && !scope_referenced_ids.contains(&id) {
+                        return Some(key_str);
+                    }
+                }
+                None
+            })
+            .collect();
+
+        let removed_count = keys_to_remove.len();
+        for key in &keys_to_remove {
+            entities.remove(key.as_str());
+        }
+
+        // Update the scope with cleaned entities
         self.scope.set_value("__entities", entities.clone());
+        time_end("sync_scope_iter");
+
+        // Log if sync_scope_iter added/changed entity count
+        let entities_after = entities.len();
+        if should_log_collections() {
+            if removed_count > 0 {
+                log::info!(
+                    "[PERF] __entities cleanup: removed {} stale entries (scope_refs={}, scene_ids={})",
+                    removed_count,
+                    scope_referenced_ids.len(),
+                    scene_id_set.len()
+                );
+            }
+            if entities_before != entities_after + removed_count {
+                // This would indicate new entries were added during the loop
+                log::warn!(
+                    "[PERF] sync_scope_iter changed __entities count: {} -> {} (removed: {}, net delta: {})",
+                    entities_before,
+                    entities_after,
+                    removed_count,
+                    entities_after as i64 - entities_before as i64
+                );
+            }
+        }
+
+        // Log scope/entity counts periodically for profiling
+        if should_log_collections() {
+            // Get __next_id to understand entity creation rate
+            let next_id = self.scope.get_value::<i64>("__next_id").unwrap_or(-1);
+
+            // Find the range of keys in __entities
+            let entity_keys: Vec<i64> = entities
+                .keys()
+                .filter_map(|k| k.to_string().parse::<i64>().ok())
+                .collect();
+            let min_key = entity_keys.iter().min().copied().unwrap_or(0);
+            let max_key = entity_keys.iter().max().copied().unwrap_or(0);
+
+            log::info!(
+                "[PERF] sync_entities: scope_vars={}, __entities={}, scene_ids={}, __next_id={}, key_range={}..{}",
+                scope_var_count,
+                entities.len(),
+                scene_id_set.len(),
+                next_id,
+                min_key,
+                max_key
+            );
+
+            // If scope is unexpectedly large, dump variable names to help debug
+            if scope_var_count > 100 {
+                let var_names: Vec<&str> = self.scope.iter()
+                    .map(|(name, _, _)| name)
+                    .collect();
+                log::warn!(
+                    "[PERF] Large scope detected ({} vars). Names: {:?}",
+                    scope_var_count,
+                    var_names
+                );
+            }
+        }
 
         // Collect IDs of entities that should exist
         let mut valid_entity_ids: std::collections::HashSet<EntityId> = std::collections::HashSet::new();
 
         // Sync each entity
+        time_start("sync_entity_props");
+        let mut signal_eval_count = 0usize;
         for (_key, value) in entities.iter() {
             let entity_map = match value.clone().try_cast::<rhai::Map>() {
                 Some(m) => m,
@@ -2387,6 +2565,15 @@ feedback.is_enabled = || {{
                 self.scene_graph.remove_from_scene(entity_id);
             }
         }
+        time_end("sync_entity_props");
+
+        // Log signal evaluation count periodically
+        if should_log_collections() {
+            log::info!(
+                "[PERF] sync_entities completed: signals_cached={}",
+                frame_cache.len()
+            );
+        }
 
         // Remove entities from scene graph that are no longer in __entities
         let entity_ids_to_remove: Vec<EntityId> = self.scene_graph
@@ -2400,23 +2587,33 @@ feedback.is_enabled = || {{
         }
 
         // Sync post-processing effects from scope
+        time_start("sync_post_effects");
         self.sync_post_effects_from_scope(&mut eval_ctx, &mut frame_cache);
+        time_end("sync_post_effects");
 
         // Sync feedback configuration from scope
+        time_start("sync_feedback");
         self.sync_feedback_from_scope(&mut eval_ctx, &mut frame_cache);
+        time_end("sync_feedback");
 
         // Sync camera configuration from scope
+        time_start("sync_camera");
         let (camera_config, camera_uniforms) = sync_camera_from_scope(&self.scope, &mut eval_ctx);
         self.camera_config = camera_config;
         self.camera_uniforms = camera_uniforms;
+        time_end("sync_camera");
 
         // Sync lighting configuration from scope
+        time_start("sync_lighting");
         let (lighting_config, lighting_uniforms) = sync_lighting_from_scope(&self.scope, &mut eval_ctx);
         self.lighting_config = lighting_config;
         self.lighting_uniforms = lighting_uniforms;
+        time_end("sync_lighting");
 
         // Sync particle systems from scope
+        time_start("sync_particles");
         self.sync_particle_systems_from_scope(&mut eval_ctx, &scene_id_set);
+        time_end("sync_particles");
 
         drop(eval_ctx);
         self.signal_state = signal_state;
@@ -2443,6 +2640,8 @@ feedback.is_enabled = || {{
 
         // Scan scope variables for effect maps that may have been modified
         // (similar to how entities are handled)
+        time_start("post_effects_scope_scan");
+        let scope_len = self.scope.len();
         for (name, _is_const, value) in self.scope.iter() {
             // Skip internal variables
             if name.starts_with("__") || name == "fx" || name == "post" || name == "feedback" {
@@ -2461,6 +2660,30 @@ feedback.is_enabled = || {{
                         }
                     }
                 }
+            }
+        }
+        time_end("post_effects_scope_scan");
+
+        // Log scope size periodically - this is likely the cause of performance degradation
+        if should_log_collections() {
+            log::info!(
+                "[PERF] sync_post_effects: scope_len={}, post_effects={}, chain_len={}",
+                scope_len,
+                post_effects.len(),
+                chain.len()
+            );
+
+            // If scope is large, log what types of variables are in it
+            if scope_len > 50 {
+                let mut type_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+                for (_name, _is_const, value) in self.scope.iter() {
+                    let type_name = value.type_name().to_string();
+                    *type_counts.entry(type_name).or_insert(0) += 1;
+                }
+                log::warn!(
+                    "[PERF] Scope variable types: {:?}",
+                    type_counts
+                );
             }
         }
 
@@ -2950,9 +3173,9 @@ feedback.is_enabled = || {{
     pub fn precompute_statistics(
         &mut self,
         signals_needing_stats: &[(crate::signal::SignalId, Signal)],
-        input_signals: &HashMap<String, InputSignal>,
-        band_signals: &HashMap<String, HashMap<String, InputSignal>>,
-        stem_signals: &HashMap<String, HashMap<String, InputSignal>>,
+        input_signals: &SignalMap,
+        band_signals: &BandSignalMap,
+        stem_signals: &BandSignalMap,
         musical_time: Option<&MusicalTimeStructure>,
         duration: f32,
         time_step: f32,
@@ -2968,7 +3191,7 @@ feedback.is_enabled = || {{
             let mut temp_state = SignalState::new();
             let empty_stats = crate::signal_stats::StatisticsCache::new();
 
-            let empty_custom_signals: HashMap<String, crate::input::InputSignal> = HashMap::new();
+            let empty_custom_signals: SignalMap = HashMap::new();
 
             for step in 0..step_count {
                 let time = step as f32 * time_step;
@@ -3171,9 +3394,9 @@ feedback.is_enabled = || {{
         center_time: f32,
         window_beats: f32,
         sample_count: usize,
-        input_signals: &HashMap<String, InputSignal>,
-        band_signals: &HashMap<String, HashMap<String, InputSignal>>,
-        stem_signals: &HashMap<String, HashMap<String, InputSignal>>,
+        input_signals: &SignalMap,
+        band_signals: &BandSignalMap,
+        stem_signals: &BandSignalMap,
         musical_time: Option<&MusicalTimeStructure>,
     ) -> Result<SignalChainAnalysis, String> {
         let signal = self

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FolderOpen, Loader2, User, Calendar } from 'lucide-react';
+import { Rocket, FolderOpen, Loader2, User, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal';
 import { listPublicProjects, cloneProject } from '@/lib/actions/project';
@@ -107,8 +107,8 @@ export function DemoProjectsModal({ onProjectCloned }: DemoProjectsModalProps) {
 
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-        <FolderOpen className="h-4 w-4 mr-1" />
+      <Button className='animate-pulse-glow-blue' size="sm" variant="outline" onClick={() => setOpen(true)}>
+        <Rocket className="h-2 w-2 mr-1" />
         Demos
       </Button>
 

@@ -43,7 +43,19 @@
       "Bash(git -C /Users/rewbs/code/octoseq status)",
       "Bash(pnpm --filter web run lint:*)",
       "Bash(pnpm typecheck:*)",
-      "Bash(pnpm --filter web add:*)"
+      "Bash(pnpm --filter web add:*)",
+      "Bash(git -C /Users/rewbs/code/octoseq log --oneline --since=\"5 days ago\" -- packages/visualiser/src apps/web/src/components/visualiser)",
+      "Bash(git -C /Users/rewbs/code/octoseq show 13fb96d6 --stat)",
+      "Bash(git -C /Users/rewbs/code/octoseq show 13fb96d6 -- packages/visualiser/src/wasm.rs)",
+      "Bash(git -C /Users/rewbs/code/octoseq log --oneline --since=\"4 days ago\" -- packages/visualiser/)",
+      "Bash(git -C /Users/rewbs/code/octoseq log --oneline --since=\"4 days ago\" -- apps/web/src/components/visualiser/)",
+      "Bash(git -C /Users/rewbs/code/octoseq show e1a22137 --stat)",
+      "Bash(git -C /Users/rewbs/code/octoseq show 13fb96d6 -- packages/visualiser/src/scripting.rs)",
+      "Bash(git -C /Users/rewbs/code/octoseq show 13fb96d6 -- packages/visualiser/src/signal_rhai.rs)",
+      "Bash(git -C /Users/rewbs/code/octoseq log --oneline -20 --since=\"5 days ago\")",
+      "Bash(git -C /Users/rewbs/code/octoseq show e1a22137 --name-only)",
+      "Bash(git -C /Users/rewbs/code/octoseq show e1a22137 -- packages/visualiser/src/gpu/renderer.rs)",
+      "Bash(git -C /Users/rewbs/code/octoseq show e1a22137 -- apps/web/src/components/visualiser/VisualiserPanel.tsx)"
     ]
   }
 }

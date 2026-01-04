@@ -6,7 +6,7 @@
 use serde::Serialize;
 use std::collections::HashMap;
 
-use crate::input::InputSignal;
+use crate::input::{BandSignalMap, SignalMap};
 use crate::musical_time::MusicalTimeStructure;
 use crate::signal::{Signal, SignalNode};
 use crate::signal_eval::EvalContext;
@@ -341,9 +341,9 @@ pub fn sample_signal(
     signal: &Signal,
     times: &[f32],
     dt: f32,
-    input_signals: &HashMap<String, InputSignal>,
-    band_signals: &HashMap<String, HashMap<String, InputSignal>>,
-    stem_signals: &HashMap<String, HashMap<String, InputSignal>>,
+    input_signals: &SignalMap,
+    band_signals: &BandSignalMap,
+    stem_signals: &BandSignalMap,
     statistics: &StatisticsCache,
     state: &mut SignalState,
     musical_time: Option<&MusicalTimeStructure>,
@@ -362,7 +362,7 @@ pub fn sample_signal(
     let mut current_value = 0.0f32;
 
     // Custom signals not yet supported in signal explorer
-    let empty_custom_signals: HashMap<String, InputSignal> = HashMap::new();
+    let empty_custom_signals: SignalMap = HashMap::new();
 
     for (i, &time) in times.iter().enumerate() {
         let mut ctx = EvalContext::new(
@@ -421,9 +421,9 @@ pub fn sample_signal_chain(
     center_time: f32,
     window_beats: f32,
     sample_count: usize,
-    input_signals: &HashMap<String, InputSignal>,
-    band_signals: &HashMap<String, HashMap<String, InputSignal>>,
-    stem_signals: &HashMap<String, HashMap<String, InputSignal>>,
+    input_signals: &SignalMap,
+    band_signals: &BandSignalMap,
+    stem_signals: &BandSignalMap,
     statistics: &StatisticsCache,
     state: &mut SignalState,
     musical_time: Option<&MusicalTimeStructure>,

@@ -117,14 +117,21 @@ export function useCloudAssetLoader(): CloudAssetLoaderReturn {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        // Decode the audio (needed for MIR analysis)
+        // Get the raw audio data
         const arrayBuffer = await response.arrayBuffer();
-        const audioContext = new AudioContext();
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-        // Use the pre-signed download URL directly for playback
-        // (Blob URLs were causing issues with empty blobs when re-fetched)
-        const audioUrl = assetInfo.downloadUrl;
+        // Create a blob URL from the fetched data for playback
+        // This is CORS-safe and works with Web Audio API (required for band auditioning)
+        // Note: Pre-signed URLs don't have CORS headers, so they can't be used with
+        // crossOrigin="anonymous" which is needed for MediaElementSource connections.
+        // Important: Create blob BEFORE decoding since decodeAudioData neuters the ArrayBuffer
+        const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
+        const audioUrl = URL.createObjectURL(blob);
+
+        // Decode the audio (needed for MIR analysis)
+        // Note: We need to clone the buffer since we already used it for the blob
+        const audioContext = new AudioContext();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
 
         // Create a wrapper that matches AudioBufferLike interface
         const audioBufferLike = {
@@ -155,11 +162,11 @@ export function useCloudAssetLoader(): CloudAssetLoaderReturn {
           });
 
           // =================================================================
-          // DESIGN: Update AudioSource to ready with the pre-signed URL.
+          // DESIGN: Update AudioSource to ready with the blob URL.
           // WaveSurfer will load directly from this URL.
           // =================================================================
           audioInputStore.updateAudioSourceStatus('ready', audioUrl);
-          console.log('[CloudAssetLoader] AudioSource ready with pre-signed URL');
+          console.log('[CloudAssetLoader] AudioSource ready with blob URL');
 
           // Set the cloud asset ID
           audioInputStore.setCloudAssetId(inputId, assetId);

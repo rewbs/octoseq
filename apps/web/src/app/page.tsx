@@ -5,7 +5,6 @@ import { useShallow } from "zustand/react/shallow";
 import { useAuth } from "@clerk/nextjs";
 
 import { Github } from "lucide-react";
-import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
@@ -35,7 +34,6 @@ import { useKeyboardShortcuts } from "@/lib/hooks/useKeyboardShortcuts";
 import { useMetronome } from "@/lib/hooks/useMetronome";
 import { useBandAuditioning } from "@/lib/hooks/useBandAuditioning";
 import { useUnsavedChangesWarning } from "@/lib/hooks/useUnsavedChangesWarning";
-import { DemoProjectsModal } from "@/components/DemoProjectsModal";
 import { ProjectHeader, UploadProgressIndicator } from "@/components/project";
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 import { mirTabDefinitions } from "@/lib/stores/mirStore";
@@ -964,6 +962,11 @@ export default function Home() {
             console.warn("[ProjectLoad] No working state available - project may not have been saved yet");
           }
         }}
+        onDemoProjectCloned={(project) => {
+          // TODO: Load project working state into stores
+          console.log('Project cloned:', project);
+          alert(`Project "${project.name}" cloned successfully! Project loading will be available soon.`);
+        }}
       />
 
       <div className="w-full flex-1 flex min-h-0">
@@ -1052,27 +1055,6 @@ export default function Home() {
                 }
                 toolbarLeft={
                   <div className="flex items-center gap-2">
-                    <div className="relative flex flex-col  items-center justify-center mr-4">
-                      <Image
-                        src="/SquidPlain.png"
-                        alt="Octoseq"
-                        width={36}
-                        height={36}
-                        className="h-14 w-14 rounded-3xl bg-stone-200 p-1 dark:bg-stone-800 hover:scale-125 hover:rotate-180 transition-all"
-                      />
-                      <div className="absolute top-8 inset-0 flex items-center justify-center">
-                        <p className="w-full text-tiny tracking-[0.25em] font font-mono  text-zinc-900 dark:text-zinc-100 text-shadow-lg text-shadow-stone-500/50 dark:text-shadow-stone-100/50 text-center backdrop-blur-lg backdrop-opacity-20 ">
-                          octoseq
-                        </p>
-                      </div>
-                    </div>
-                    <DemoProjectsModal
-                      onProjectCloned={(project) => {
-                        // TODO: Load project working state into stores
-                        console.log('Project cloned:', project);
-                        alert(`Project "${project.name}" cloned successfully! Project loading will be available soon.`);
-                      }}
-                    />
                   </div>
                 }
                 toolbarRight={

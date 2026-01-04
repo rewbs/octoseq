@@ -33,6 +33,8 @@ import {
 } from "@/lib/scripting";
 import { SignalExplorerPanel } from "@/components/signalExplorer";
 import { useSignalExplorerStore } from "@/lib/stores/signalExplorerStore";
+import { useScriptErrorStore } from "@/lib/stores/scriptErrorStore";
+import { ScriptErrorHistory } from "./ScriptErrorHistory";
 import {
   detectSignalAtCursor,
   cursorChangedSignal,
@@ -145,6 +147,9 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
     bypassVisualiserRef.current = bypassVisualiser;
   }, [bypassVisualiser]);
 
+  // WASM performance profiling toggle - state only, effect is defined after isReady
+  const wasmProfiling = useConfigStore((s) => s.wasmProfiling);
+
   // Config-map validation diagnostics (stored for reuse in render loop)
   const configMapDiagsRef = useRef<ConfigMapDiagnostic[]>([]);
 
@@ -246,9 +251,20 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
 
   const [isReady, setIsReady] = useState(false);
   const [webGpuError, setWebGpuError] = useState<string | null>(null);
+
+  // Sync WASM profiling toggle when visualiser is ready or setting changes
+  useEffect(() => {
+    if (!visRef.current || !isReady) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vis = visRef.current as any;
+    if (typeof vis.set_profiling_enabled === "function") {
+      vis.set_profiling_enabled(wasmProfiling);
+    }
+  }, [wasmProfiling, isReady]);
+
   const timeRef = useRef(playbackTime);
-  const [scriptError, setScriptError] = useState<string | null>(null);
   const [scriptDiagnostics, setScriptDiagnostics] = useState<ScriptDiagnostic[]>([]);
+  const { setCurrentDiagnostics, addToHistory } = useScriptErrorStore();
   const monacoDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
   const hotkeysScopeDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
   const scriptApiRef = useRef<ScriptApiMetadata | null>(null);
@@ -764,6 +780,11 @@ fn update(dt, frame) {
 
     // Push MIR event streams (e.g., beatCandidates) from the MIR store
     if (typeof vis.push_event_stream === "function") {
+      // Clear existing event streams before pushing new ones to prevent memory leaks
+      if (typeof vis.clear_event_streams === "function") {
+        vis.clear_event_streams();
+      }
+
       const mirStoreResults = useMirStore.getState().mirResults;
 
       // Push beatCandidates as an event stream
@@ -1086,23 +1107,22 @@ fn update(dt, frame) {
       configMapDiagsRef.current = configMapDiags;
 
       setScriptDiagnostics(diags);
+      setCurrentDiagnostics(diags);
+      if (diags.length > 0) {
+        addToHistory(diags);
+      }
       applyDiagnosticsToEditor(diags, configMapDiags);
 
       if (success) {
-        setScriptError(diags[0]?.message ?? null);
-
         // Update Signal Explorer with script signals and refresh current analysis
         updateScriptSignals(visAny);
         refreshCurrentSignal(visAny, timeRef.current);
 
         // Request render to show script changes immediately (even when paused)
         requestRender();
-      } else {
-        const err = diags[0]?.message ?? vis.get_script_error() ?? "Unknown script error";
-        setScriptError(err);
       }
     }
-  }, [script, isReady, applyDiagnosticsToEditor, bandMirResults, frequencyBands, requestRender]);
+  }, [script, isReady, applyDiagnosticsToEditor, bandMirResults, frequencyBands, requestRender, setCurrentDiagnostics, addToHistory]);
 
   // Render Loop
   useEffect(() => {
@@ -1207,9 +1227,10 @@ fn update(dt, frame) {
         const diags = parseScriptDiagnosticsJson(diagJson);
         if (diags.length > 0) {
           setScriptDiagnostics(diags);
+          setCurrentDiagnostics(diags);
+          addToHistory(diags);
           // Preserve config-map warnings alongside runtime errors
           applyDiagnosticsToEditor(diags, configMapDiagsRef.current);
-          setScriptError(diags[0]?.message ?? null);
         }
       }
       rafRef.current = requestAnimationFrame(loop);
@@ -1239,7 +1260,7 @@ fn update(dt, frame) {
     return () => {
       cancelAnimationFrame(rafRef.current);
     };
-  }, [applyDiagnosticsToEditor, isReady]);
+  }, [applyDiagnosticsToEditor, isReady, setCurrentDiagnostics, addToHistory]);
 
   // Resize observer
   useEffect(() => {
@@ -1421,9 +1442,7 @@ fn update(dt, frame) {
         {analysisError && (
           <span className="text-red-500 text-xs" title={analysisError}>Analysis error</span>
         )}
-        {scriptError && (
-          <span className="text-red-500 text-xs" title={scriptError}>⚠️ Script error</span>
-        )}
+        <ScriptErrorHistory />
       </div>
 
       {/* Main content area - uses flex for horizontal, block for vertical */}
@@ -1456,6 +1475,7 @@ fn update(dt, frame) {
                     wordWrap: "on",
                     automaticLayout: true,
                     tabSize: 2,
+                    fixedOverflowWidgets: true,
                   }}
                 />
               </div>
@@ -1512,6 +1532,7 @@ fn update(dt, frame) {
                     wordWrap: "on",
                     automaticLayout: true,
                     tabSize: 2,
+                    fixedOverflowWidgets: true,
                   }}
                 />
               </div>

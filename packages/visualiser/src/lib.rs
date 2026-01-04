@@ -51,6 +51,9 @@ pub mod lighting_rhai;
 // Debug visualization
 pub mod debug_markers;
 
+// Performance profiling
+pub mod perf_profiling;
+
 // Particle system modules
 pub mod particle;
 pub mod particle_eval;

@@ -180,6 +180,24 @@ impl SignalState {
             .entry(id)
             .or_insert_with(|| DelayBuffer::new(capacity))
     }
+
+    /// Get collection sizes for profiling.
+    /// Returns a tuple of (name, count) pairs.
+    pub fn get_collection_sizes(&self) -> Vec<(&'static str, usize)> {
+        vec![
+            ("exp_smooth_state", self.exp_smooth_state.len()),
+            ("gate_state", self.gate_state.len()),
+            ("ma_buffers", self.ma_buffers.len()),
+            ("pink_noise_state", self.pink_noise_state.len()),
+            ("diff_state", self.diff_state.len()),
+            ("integrate_state", self.integrate_state.len()),
+            ("delay_buffers", self.delay_buffers.len()),
+            ("warned_missing_bands", self.warned_missing_bands.len()),
+            ("warned_missing_stems", self.warned_missing_stems.len()),
+            ("warned_missing_custom", self.warned_missing_custom_signals.len()),
+            ("warned_missing_stats", self.warned_missing_stats.len()),
+        ]
+    }
 }
 
 /// Ring buffer for moving average computation.

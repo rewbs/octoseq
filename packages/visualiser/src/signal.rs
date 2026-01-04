@@ -28,6 +28,12 @@ impl SignalId {
     pub fn new() -> Self {
         Self(SIGNAL_ID_COUNTER.fetch_add(1, Ordering::Relaxed))
     }
+
+    /// Get the current signal ID counter value (for profiling).
+    /// This indicates how many signals have been created since startup.
+    pub fn current_count() -> u64 {
+        SIGNAL_ID_COUNTER.load(Ordering::Relaxed)
+    }
 }
 
 impl Default for SignalId {

@@ -6,7 +6,10 @@ struct PointCloudUniforms {
     model: mat4x4<f32>,
     color: vec4<f32>,
     point_size: f32,
-    _padding: vec3<f32>,
+    // Use separate f32s instead of vec3 to avoid 16-byte alignment requirement
+    _padding0: f32,
+    _padding1: f32,
+    _padding2: f32,
 }
 
 @group(0) @binding(0)

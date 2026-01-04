@@ -48,3 +48,11 @@ web-sys = { version = "0.3", features = [
 ] }
 rhai = { version = "1.20", features = ["no_module", "no_custom_syntax", "f32_float", "wasm-bindgen"] }
 getrandom = { version = "0.3", features = ["wasm_js"] }
+
+# Profiling profiles - use `wasm-pack build --profiling` for readable function names
+[profile.release]
+debug = true  # Enables DWARF debug info for profiling
+
+[profile.profiling]
+inherits = "release"
+debug = 2  # Full debug info for profiling

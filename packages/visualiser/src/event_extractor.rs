@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use crate::event_stream::{
     Event, EventCluster, EventExtractionDebug, EventStream, PickEventsOptions, WeightMode,
 };
-use crate::input::InputSignal;
+use crate::input::{BandSignalMap, InputSignal, SignalMap};
 use crate::musical_time::{MusicalTimeStructure, DEFAULT_BPM};
 use crate::signal::Signal;
 use crate::signal_eval::EvalContext;
@@ -36,9 +36,9 @@ pub struct EventExtractor {
     time_step: f32,
     collect_debug: bool,
     /// Band-scoped input signals (optional).
-    band_signals: HashMap<String, HashMap<String, InputSignal>>,
+    band_signals: BandSignalMap,
     /// Stem-scoped input signals (optional).
-    stem_signals: HashMap<String, HashMap<String, InputSignal>>,
+    stem_signals: BandSignalMap,
 }
 
 impl EventExtractor {
@@ -63,19 +63,13 @@ impl EventExtractor {
     }
 
     /// Set band-scoped input signals for evaluation.
-    pub fn with_band_signals(
-        mut self,
-        band_signals: HashMap<String, HashMap<String, InputSignal>>,
-    ) -> Self {
+    pub fn with_band_signals(mut self, band_signals: BandSignalMap) -> Self {
         self.band_signals = band_signals;
         self
     }
 
     /// Set stem-scoped input signals for evaluation.
-    pub fn with_stem_signals(
-        mut self,
-        stem_signals: HashMap<String, HashMap<String, InputSignal>>,
-    ) -> Self {
+    pub fn with_stem_signals(mut self, stem_signals: BandSignalMap) -> Self {
         self.stem_signals = stem_signals;
         self
     }
@@ -91,7 +85,7 @@ impl EventExtractor {
     /// Returns the EventStream and optionally debug data if enabled.
     pub fn extract(
         &self,
-        signals: &HashMap<String, InputSignal>,
+        signals: &SignalMap,
     ) -> Result<(EventStream, Option<EventExtractionDebug>), String> {
         // Step 1: Evaluate signal across time grid
         let (times, values) = self.evaluate_signal_grid(signals)?;
@@ -160,7 +154,7 @@ impl EventExtractor {
     /// Evaluate the source signal across the entire time grid.
     fn evaluate_signal_grid(
         &self,
-        signals: &HashMap<String, InputSignal>,
+        signals: &SignalMap,
     ) -> Result<(Vec<f32>, Vec<f32>), String> {
         let step_count = ((self.duration / self.time_step).ceil() as usize).max(1);
         let mut times = Vec::with_capacity(step_count);
@@ -170,8 +164,7 @@ impl EventExtractor {
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
         // Custom signals not yet supported in event extractor
-        let empty_custom_signals: std::collections::HashMap<String, crate::input::InputSignal> =
-            std::collections::HashMap::new();
+        let empty_custom_signals: SignalMap = HashMap::new();
 
         for i in 0..step_count {
             let t = i as f32 * self.time_step;
@@ -628,9 +621,9 @@ mod tests {
     use super::*;
     use crate::signal::Signal;
 
-    fn make_test_signal(values: Vec<f32>, sample_rate: f32) -> HashMap<String, InputSignal> {
+    fn make_test_signal(values: Vec<f32>, sample_rate: f32) -> SignalMap {
         let mut signals = HashMap::new();
-        signals.insert("test".to_string(), InputSignal::new(values, sample_rate));
+        signals.insert("test".to_string(), std::rc::Rc::new(InputSignal::new(values, sample_rate)));
         signals
     }
 

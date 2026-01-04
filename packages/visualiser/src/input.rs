@@ -1,3 +1,17 @@
+use std::collections::HashMap;
+use std::rc::Rc;
+
+/// Type alias for reference-counted InputSignal.
+/// Using Rc allows cheap cloning when passing signals between contexts
+/// (e.g., to thread-local storage for script execution).
+pub type SharedSignal = Rc<InputSignal>;
+
+/// Type alias for a map of named signals.
+pub type SignalMap = HashMap<String, SharedSignal>;
+
+/// Type alias for band-scoped signals (band_key -> feature -> signal).
+pub type BandSignalMap = HashMap<String, SignalMap>;
+
 /// Represents a 1D signal over time.
 #[derive(Clone)]
 pub struct InputSignal {

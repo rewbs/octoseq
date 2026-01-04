@@ -4,12 +4,11 @@
 //! enabling scripts to use the Signal API with method chaining.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 
 use rhai::{Dynamic, Engine, EvalAltResult, ImmutableString};
 
 use crate::event_rhai::{register_event_api, PickBuilder};
-use crate::input::InputSignal;
+use crate::input::{BandSignalMap, SignalMap};
 use crate::signal::{
     GateBuilder, GeneratorNode, NormaliseBuilder, NoiseType, Signal, SignalNode, SignalParam,
     SmoothBuilder,
@@ -17,17 +16,16 @@ use crate::signal::{
 
 // Thread-local storage for input signals during script execution.
 // Used by sample_at to access raw signal data at specific times.
+// Uses Rc<InputSignal> (via SignalMap) for cheap cloning when setting up thread-locals.
 thread_local! {
-    static CURRENT_INPUT_SIGNALS: RefCell<Option<HashMap<String, InputSignal>>> = const { RefCell::new(None) };
-    static CURRENT_BAND_SIGNALS: RefCell<Option<HashMap<String, HashMap<String, InputSignal>>>> = const { RefCell::new(None) };
-    static CURRENT_CUSTOM_SIGNALS: RefCell<Option<HashMap<String, InputSignal>>> = const { RefCell::new(None) };
+    static CURRENT_INPUT_SIGNALS: RefCell<Option<SignalMap>> = const { RefCell::new(None) };
+    static CURRENT_BAND_SIGNALS: RefCell<Option<BandSignalMap>> = const { RefCell::new(None) };
+    static CURRENT_CUSTOM_SIGNALS: RefCell<Option<SignalMap>> = const { RefCell::new(None) };
 }
 
 /// Set the input signals for the current thread (call before script execution).
-pub fn set_current_input_signals(
-    inputs: HashMap<String, InputSignal>,
-    bands: HashMap<String, HashMap<String, InputSignal>>,
-) {
+/// Uses Rc<InputSignal> internally so cloning is cheap (just reference count increment).
+pub fn set_current_input_signals(inputs: SignalMap, bands: BandSignalMap) {
     CURRENT_INPUT_SIGNALS.with(|cell| {
         *cell.borrow_mut() = Some(inputs);
     });
@@ -37,7 +35,8 @@ pub fn set_current_input_signals(
 }
 
 /// Set the custom signals for the current thread (call before script execution).
-pub fn set_current_custom_signals(custom_signals: HashMap<String, InputSignal>) {
+/// Uses Rc<InputSignal> internally so cloning is cheap (just reference count increment).
+pub fn set_current_custom_signals(custom_signals: SignalMap) {
     CURRENT_CUSTOM_SIGNALS.with(|cell| {
         *cell.borrow_mut() = Some(custom_signals);
     });

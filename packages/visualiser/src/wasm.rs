@@ -9,7 +9,7 @@ use crate::analysis_runner::{run_analysis_with_bands, run_analysis_with_events_a
 use crate::event_stream::Event;
 use crate::frequency_band::{FrequencyBandStructure, FrequencyBoundsAtTime};
 use crate::gpu::renderer::Renderer;
-use crate::input::InputSignal;
+use crate::input::{BandSignalMap, InputSignal, SharedSignal, SignalMap};
 use crate::musical_time::MusicalTimeStructure;
 use crate::script_api::script_api_metadata_json;
 // Note: ScriptSignalInfo and SignalChainAnalysis are used via state methods
@@ -65,19 +65,22 @@ struct VisualiserContext {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     state: VisualiserState,
-    rotation_signal: Option<InputSignal>,
-    zoom_signal: Option<InputSignal>,
+    rotation_signal: Option<SharedSignal>,
+    zoom_signal: Option<SharedSignal>,
     /// Named signals for dynamic script inputs (e.g., "spectralCentroid", "onsetEnvelope")
-    named_signals: HashMap<String, InputSignal>,
-    /// Band-scoped signals: band_key -> feature -> InputSignal
+    /// Uses Rc<InputSignal> for cheap cloning when passing to script execution.
+    named_signals: SignalMap,
+    /// Band-scoped signals: band_key -> feature -> Rc<InputSignal>
     /// band_key can be either band ID or label for lookup flexibility
-    band_signals: HashMap<String, HashMap<String, InputSignal>>,
+    /// Uses Rc<InputSignal> for cheap cloning when passing to script execution.
+    band_signals: BandSignalMap,
     /// Band ID -> label (for script namespace generation + editor UX).
     band_id_to_label: HashMap<String, String>,
     /// Stem ID -> label (for tracking/UX, actual signals stored in VisualiserState).
     stem_id_to_label: HashMap<String, String>,
     /// Custom signals: user-defined 1D signals extracted from 2D data
-    custom_signals: HashMap<String, InputSignal>,
+    /// Uses Rc<InputSignal> for cheap cloning when passing to script execution.
+    custom_signals: SignalMap,
     /// Custom signal ID -> label for namespace generation
     custom_signal_id_to_label: HashMap<String, String>,
     /// Musical time structure for beat-aware signal processing
@@ -112,13 +115,13 @@ impl WasmVisualiser {
     pub fn push_rotation_data(&self, samples: &[f32], sample_rate: f32) {
         log::info!("Rust received rotation data: {} samples, rate {}", samples.len(), sample_rate);
         let mut inner = self.inner.borrow_mut();
-        inner.rotation_signal = Some(InputSignal::new(samples.to_vec(), sample_rate));
+        inner.rotation_signal = Some(Rc::new(InputSignal::new(samples.to_vec(), sample_rate)));
     }
 
     pub fn push_zoom_data(&self, samples: &[f32], sample_rate: f32) {
         log::info!("Rust received zoom data: {} samples, rate {}", samples.len(), sample_rate);
         let mut inner = self.inner.borrow_mut();
-        inner.zoom_signal = Some(InputSignal::new(samples.to_vec(), sample_rate));
+        inner.zoom_signal = Some(Rc::new(InputSignal::new(samples.to_vec(), sample_rate)));
     }
 
     // Legacy support (optional, can remove if we update TS)
@@ -131,7 +134,7 @@ impl WasmVisualiser {
     pub fn push_signal(&self, name: &str, samples: &[f32], sample_rate: f32) {
         log::info!("Rust received signal '{}': {} samples, rate {}", name, samples.len(), sample_rate);
         let mut inner = self.inner.borrow_mut();
-        inner.named_signals.insert(name.to_string(), InputSignal::new(samples.to_vec(), sample_rate));
+        inner.named_signals.insert(name.to_string(), Rc::new(InputSignal::new(samples.to_vec(), sample_rate)));
     }
 
     /// Clear all named signals.
@@ -257,19 +260,20 @@ impl WasmVisualiser {
             sample_rate
         );
         let mut inner = self.inner.borrow_mut();
-        let signal = InputSignal::new(samples.to_vec(), sample_rate);
+        // Wrap in Rc for cheap cloning when storing under multiple keys
+        let signal = Rc::new(InputSignal::new(samples.to_vec(), sample_rate));
 
         // Store under band ID
         inner
             .band_signals
             .entry(band_id.to_string())
             .or_default()
-            .insert(feature.to_string(), signal.clone());
+            .insert(feature.to_string(), Rc::clone(&signal));
         inner
             .band_id_to_label
             .insert(band_id.to_string(), band_label.to_string());
 
-        // Also store under label if different from ID
+        // Also store under label if different from ID (cheap Rc clone)
         if band_label != band_id {
             inner
                 .band_signals
@@ -323,7 +327,8 @@ impl WasmVisualiser {
             sample_rate
         );
         let mut inner = self.inner.borrow_mut();
-        let signal = InputSignal::new(samples.to_vec(), sample_rate);
+        // Wrap in Rc for cheap cloning when storing under multiple keys
+        let signal = Rc::new(InputSignal::new(samples.to_vec(), sample_rate));
 
         // Store label mapping for tracking
         inner
@@ -397,17 +402,18 @@ impl WasmVisualiser {
             sample_rate
         );
         let mut inner = self.inner.borrow_mut();
-        let signal = InputSignal::new(samples.to_vec(), sample_rate);
+        // Wrap in Rc for cheap cloning when storing under multiple keys
+        let signal = Rc::new(InputSignal::new(samples.to_vec(), sample_rate));
 
         // Store under signal ID
         inner
             .custom_signals
-            .insert(signal_id.to_string(), signal.clone());
+            .insert(signal_id.to_string(), Rc::clone(&signal));
         inner
             .custom_signal_id_to_label
             .insert(signal_id.to_string(), label.to_string());
 
-        // Also store under label if different from ID
+        // Also store under label if different from ID (cheap Rc clone)
         if label != signal_id {
             inner
                 .custom_signals
@@ -729,11 +735,7 @@ impl WasmVisualiser {
         custom_signals.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
         inner.state.set_available_custom_signals(custom_signals);
 
-        let result = inner.state.load_script(script);
-        if !result {
-            log::error!("Failed to load script: {:?}", inner.state.get_script_error());
-        }
-        result
+        inner.state.load_script(script)
     }
 
     /// Check if a script is currently loaded.
@@ -780,6 +782,17 @@ impl WasmVisualiser {
     pub fn set_debug_options(&self, wireframe: bool, bounding_boxes: bool) {
         let mut inner = self.inner.borrow_mut();
         inner.state.set_debug_options(wireframe, bounding_boxes);
+    }
+
+    /// Enable or disable performance profiling.
+    /// When enabled, console timing and collection size logging will be active.
+    pub fn set_profiling_enabled(&self, enabled: bool) {
+        crate::perf_profiling::set_profiling_enabled(enabled);
+    }
+
+    /// Check if performance profiling is currently enabled.
+    pub fn is_profiling_enabled(&self) -> bool {
+        crate::perf_profiling::is_profiling_enabled()
     }
 
     /// Isolate a single entity for rendering (useful for debugging).

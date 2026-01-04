@@ -14,7 +14,7 @@ use crate::event_rhai::{
     take_pending_extractions,
 };
 use crate::event_stream::{EventExtractionDebug, EventStream};
-use crate::input::InputSignal;
+use crate::input::{BandSignalMap, SignalMap};
 use crate::musical_time::MusicalTimeStructure;
 use crate::scripting::ScriptEngine;
 
@@ -75,7 +75,7 @@ pub struct AnalysisResult {
 /// No rendering or GPU operations occur.
 pub fn run_analysis(
     script: &str,
-    signals: &HashMap<String, InputSignal>,
+    signals: &SignalMap,
     config: AnalysisConfig,
 ) -> Result<AnalysisResult, String> {
     // Call the extended version with empty bands and band signals
@@ -88,9 +88,9 @@ pub fn run_analysis(
 /// and band signals for evaluation.
 pub fn run_analysis_with_bands(
     script: &str,
-    signals: &HashMap<String, InputSignal>,
+    signals: &SignalMap,
     bands: &[(String, String)],
-    band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+    band_signals: &BandSignalMap,
     config: AnalysisConfig,
 ) -> Result<AnalysisResult, String> {
     // Validate config
@@ -131,8 +131,8 @@ pub fn run_analysis_with_bands(
 
     // Pre-compute statistics for signals that need normalization
     let signals_needing_stats = engine.collect_signals_requiring_statistics();
-    let stem_signals: std::collections::HashMap<String, std::collections::HashMap<String, crate::input::InputSignal>> = std::collections::HashMap::new();
-    let custom_signals: std::collections::HashMap<String, crate::input::InputSignal> = std::collections::HashMap::new();
+    let stem_signals: BandSignalMap = std::collections::HashMap::new();
+    let custom_signals: SignalMap = std::collections::HashMap::new();
     if !signals_needing_stats.is_empty() {
         log::info!(
             "Pre-computing statistics for {} signals before analysis...",
@@ -213,7 +213,7 @@ pub struct ExtendedAnalysisResult {
 /// 6. Returns debug signals AND event streams
 pub fn run_analysis_with_events(
     script: &str,
-    signals: &HashMap<String, InputSignal>,
+    signals: &SignalMap,
     musical_time: Option<&MusicalTimeStructure>,
     config: AnalysisConfig,
     collect_event_debug: bool,
@@ -225,9 +225,9 @@ pub fn run_analysis_with_events(
 /// Run script in analysis mode with event extraction and band support.
 pub fn run_analysis_with_events_and_bands(
     script: &str,
-    signals: &HashMap<String, InputSignal>,
+    signals: &SignalMap,
     bands: &[(String, String)],
-    band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+    band_signals: &BandSignalMap,
     musical_time: Option<&MusicalTimeStructure>,
     config: AnalysisConfig,
     collect_event_debug: bool,
@@ -274,8 +274,8 @@ pub fn run_analysis_with_events_and_bands(
 
     // Pre-compute statistics for signals that need normalization
     let signals_needing_stats = engine.collect_signals_requiring_statistics();
-    let stem_signals: std::collections::HashMap<String, std::collections::HashMap<String, crate::input::InputSignal>> = std::collections::HashMap::new();
-    let custom_signals: std::collections::HashMap<String, crate::input::InputSignal> = std::collections::HashMap::new();
+    let stem_signals: BandSignalMap = std::collections::HashMap::new();
+    let custom_signals: SignalMap = std::collections::HashMap::new();
     if !signals_needing_stats.is_empty() {
         log::info!(
             "Pre-computing statistics for {} signals before analysis...",

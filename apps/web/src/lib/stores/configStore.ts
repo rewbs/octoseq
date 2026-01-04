@@ -8,6 +8,7 @@ interface ConfigState {
   useWorker: boolean;
   enableGpu: boolean;
   bypassVisualiser: boolean;
+  wasmProfiling: boolean;
 
   // FFT/Spectrogram
   fftSize: number;
@@ -72,6 +73,7 @@ interface ConfigActions {
   setUseWorker: (v: boolean) => void;
   setEnableGpu: (v: boolean) => void;
   setBypassVisualiser: (v: boolean) => void;
+  setWasmProfiling: (v: boolean) => void;
 
   // FFT/Spectrogram setters
   setFftSize: (v: number) => void;
@@ -149,6 +151,7 @@ const initialState: ConfigState = {
   useWorker: true,
   enableGpu: true,
   bypassVisualiser: false,
+  wasmProfiling: false,
 
   // FFT/Spectrogram
   fftSize: 1024,
@@ -218,6 +221,7 @@ export const useConfigStore = create<ConfigStore>()(
         setUseWorker: (v) => set({ useWorker: v }, false, "setUseWorker"),
         setEnableGpu: (v) => set({ enableGpu: v }, false, "setEnableGpu"),
         setBypassVisualiser: (v) => set({ bypassVisualiser: v }, false, "setBypassVisualiser"),
+        setWasmProfiling: (v) => set({ wasmProfiling: v }, false, "setWasmProfiling"),
 
         // FFT/Spectrogram setters
         setFftSize: (v) => set({ fftSize: v }, false, "setFftSize"),
@@ -374,6 +378,7 @@ export const useConfigStore = create<ConfigStore>()(
           useWorker: state.useWorker,
           enableGpu: state.enableGpu,
           bypassVisualiser: state.bypassVisualiser,
+          wasmProfiling: state.wasmProfiling,
           fftSize: state.fftSize,
           hopSize: state.hopSize,
           melBands: state.melBands,

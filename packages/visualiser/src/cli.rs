@@ -14,7 +14,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use crate::gpu::renderer::Renderer;
-use crate::input::InputSignal;
+use crate::input::{BandSignalMap, InputSignal, SharedSignal, SignalMap};
 use crate::render_job::{BatchJobSpec, RenderJobSpec, RenderMetadata, RenderPhase};
 use crate::video_encode::{check_ffmpeg, encode_video_with_ffmpeg, FfmpegStatus};
 use crate::visualiser::VisualiserState;
@@ -299,10 +299,11 @@ async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet: boo
 
     // Render frames
     for i in 0..total_frames {
-        let empty_signals: HashMap<String, InputSignal> = HashMap::new();
-        let empty_band_signals: HashMap<String, HashMap<String, InputSignal>> = HashMap::new();
-        let empty_custom_signals: HashMap<String, InputSignal> = HashMap::new();
-        state.update(dt, Some(&signal), None, &empty_signals, &empty_band_signals, &empty_custom_signals, None);
+        let empty_signals: SignalMap = HashMap::new();
+        let empty_band_signals: BandSignalMap = HashMap::new();
+        let empty_custom_signals: SignalMap = HashMap::new();
+        let signal_rc: SharedSignal = std::rc::Rc::new(signal.clone());
+        state.update(dt, Some(&signal_rc), None, &empty_signals, &empty_band_signals, &empty_custom_signals, None);
 
         // Render to texture
         renderer.render(&texture_view, &state);

@@ -261,7 +261,7 @@ function TreeNodeRenderer({
         className={cn(
           "px-1 py-0.5 rounded transition-colors flex items-center gap-1",
           !hasAudio
-            ? "text-blue-600 dark:text-blue-400 bg-blue-500/20 border border-blue-500 animate-pulse-glow-blue"
+            ? "text-blue-600 dark:text-blue-400 bg-blue-500/20 border border-blue-500"
             : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
         )}
         title={hasAudio ? "Change audio" : "Load audio"}

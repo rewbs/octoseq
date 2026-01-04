@@ -2,10 +2,14 @@
 
 import { useState } from 'react';
 import { Eye, Copy, Cloud, CloudOff, Check, Loader2, AlertCircle, Upload, FolderOpen } from 'lucide-react';
+import Link from 'next/link';
+import { SignedOut, SignInButton, SignedIn, UserButton } from '@clerk/nextjs';
 import { Button } from '@/components/ui/button';
 import { cloneProject, createProject } from '@/lib/actions/project';
 import { MyProjectsModal } from './MyProjectsModal';
+import { DemoProjectsModal } from '@/components/DemoProjectsModal';
 import type { ServerAutosaveStatus } from '@/lib/hooks/useServerAutosave';
+import Image from 'next/image';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -40,6 +44,8 @@ interface ProjectHeaderProps {
   onSaveToCloud?: (project: { id: string; name: string }) => void;
   /** Callback when a project is loaded from the server */
   onLoadProject?: (project: LoadedProject) => void;
+  /** Callback when a demo project is cloned */
+  onDemoProjectCloned?: (project: { id: string; name: string }) => void;
 }
 
 // -----------------------------------------------------------------------------
@@ -195,6 +201,7 @@ function ReadOnlyBanner({
 
   return (
     <div className="flex items-center gap-3 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
+
       <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
         <Eye className="h-4 w-4" />
         <span className="text-sm font-medium">Viewing read-only project</span>
@@ -232,6 +239,7 @@ export function ProjectHeader({
   onCloned,
   onSaveToCloud,
   onLoadProject,
+  onDemoProjectCloned,
 }: ProjectHeaderProps) {
   const [showMyProjects, setShowMyProjects] = useState(false);
 
@@ -246,9 +254,23 @@ export function ProjectHeader({
       )}
 
       {/* Project info bar */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-medium truncate">{projectName}</span>
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 gap-6">
+        <div className="relative flex flex-col  items-center justify-center mr-4">
+          <Image
+            src="/SquidPlain.png"
+            alt="Octoseq"
+            width={36}
+            height={36}
+            className="h-14 w-14 rounded-3xl bg-stone-200 p-1 dark:bg-stone-800 hover:scale-125 hover:rotate-180 transition-all"
+          />
+          <div className="absolute bottom-10 inset-0 flex items-center justify-center  pointer-events-none">
+            <p className="w-full text-tiny tracking-[0.25em] font font-mono  text-zinc-900 dark:text-zinc-100 text-shadow-lg text-shadow-stone-500/50 dark:text-shadow-stone-100/50 text-center backdrop-blur-lg backdrop-opacity-20 ">
+              octoseq
+            </p>
+          </div>
+          <span className="absolute bottom-0 bg-red-800/60 text-white text-tiny tracking-[0.125em] font font-mono  font-light px-0.5 py-0.125 rounded-sm shadow-sm  pointer-events-none">
+            alpha
+          </span>
         </div>
 
         <div className="flex items-center gap-3">
@@ -256,7 +278,7 @@ export function ProjectHeader({
           {(
             <Button
               size="sm"
-              variant="ghost"
+              variant="outline"
               onClick={() => setShowMyProjects(true)}
               className="h-7 text-xs"
             >
@@ -274,6 +296,27 @@ export function ProjectHeader({
               serverStatus={serverStatus}
             />
           )}
+        </div>
+
+        {/* Demo projects loader */}
+        {onDemoProjectCloned && <DemoProjectsModal onProjectCloned={onDemoProjectCloned} />}
+
+
+        {/* Right side: About and Auth */}
+        <div className="flex items-center gap-2 ml-auto">
+          <Link href="https://blog.octoseq.xyz/posts/hello-octoseq" target="_blank">
+            <Button size="sm" variant="outline">
+              About
+            </Button>
+          </Link>
+          <SignedOut>
+            <SignInButton>
+              <Button size="sm" className="bg-blue-400 dark:bg-blue-700">Sign In</Button>
+            </SignInButton>
+          </SignedOut>
+          <SignedIn>
+            <UserButton />
+          </SignedIn>
         </div>
       </div>
 

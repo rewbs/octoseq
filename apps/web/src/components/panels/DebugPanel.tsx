@@ -16,11 +16,13 @@ export function DebugPanel() {
     useWorker,
     enableGpu,
     bypassVisualiser,
+    wasmProfiling,
     isDebugOpen,
     setDebug,
     setUseWorker,
     setEnableGpu,
     setBypassVisualiser,
+    setWasmProfiling,
     setIsDebugOpen,
   } = useConfigStore(
     useShallow((s) => ({
@@ -28,11 +30,13 @@ export function DebugPanel() {
       useWorker: s.useWorker,
       enableGpu: s.enableGpu,
       bypassVisualiser: s.bypassVisualiser,
+      wasmProfiling: s.wasmProfiling,
       isDebugOpen: s.isDebugOpen,
       setDebug: s.setDebug,
       setUseWorker: s.setUseWorker,
       setEnableGpu: s.setEnableGpu,
       setBypassVisualiser: s.setBypassVisualiser,
+      setWasmProfiling: s.setWasmProfiling,
       setIsDebugOpen: s.setIsDebugOpen,
     }))
   );
@@ -93,6 +97,14 @@ export function DebugPanel() {
               onChange={(e) => setBypassVisualiser(e.target.checked)}
             />
             <span className="text-zinc-700 dark:text-zinc-200">Bypass visualiser rendering</span>
+          </label>
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={wasmProfiling}
+              onChange={(e) => setWasmProfiling(e.target.checked)}
+            />
+            <span className="text-zinc-700 dark:text-zinc-200">WASM performance profiling (console)</span>
           </label>
 
           <div className="mt-1.5 text-xs text-zinc-600 dark:text-zinc-300">

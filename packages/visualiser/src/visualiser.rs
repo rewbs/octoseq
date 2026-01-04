@@ -8,7 +8,7 @@
 use std::collections::{HashMap, HashSet};
 use crate::debug_markers::DebugMarkerLayer;
 use crate::feedback::FeedbackConfig;
-use crate::input::InputSignal;
+use crate::input::{BandSignalMap, SharedSignal, SignalMap};
 use crate::mesh_asset::MeshAssetRegistry;
 use crate::musical_time::MusicalTimeStructure;
 use crate::script_diagnostics::ScriptDiagnostic;
@@ -101,8 +101,8 @@ pub struct VisualiserState {
     /// Global seed for deterministic particle systems.
     /// This is used as a base seed when particle systems don't specify their own seed.
     global_seed: u64,
-    /// Stem-scoped input signals (stem_id -> feature -> InputSignal)
-    stem_signals: HashMap<String, HashMap<String, InputSignal>>,
+    /// Stem-scoped input signals (stem_id -> feature -> Rc<InputSignal>)
+    stem_signals: BandSignalMap,
 }
 
 impl VisualiserState {
@@ -182,20 +182,21 @@ impl VisualiserState {
 
     /// Push a stem-scoped signal.
     /// Stores under both stem_id and label for dual-access support.
+    /// Takes SharedSignal (Rc<InputSignal>) for cheap cloning when storing under multiple keys.
     pub fn push_stem_signal(
         &mut self,
         stem_id: &str,
         stem_label: &str,
         feature: &str,
-        signal: InputSignal,
+        signal: SharedSignal,
     ) {
-        // Store under stem ID
+        // Store under stem ID (cheap Rc clone)
         self.stem_signals
             .entry(stem_id.to_string())
             .or_default()
-            .insert(feature.to_string(), signal.clone());
+            .insert(feature.to_string(), std::rc::Rc::clone(&signal));
 
-        // Also store under label if different from ID
+        // Also store under label if different from ID (cheap Rc clone)
         if stem_label != stem_id {
             self.stem_signals
                 .entry(stem_label.to_string())
@@ -314,11 +315,11 @@ impl VisualiserState {
     pub fn update(
         &mut self,
         dt: f32,
-        rotation_signal: Option<&InputSignal>,
-        zoom_signal: Option<&InputSignal>,
-        named_signals: &HashMap<String, InputSignal>,
-        band_signals: &HashMap<String, HashMap<String, InputSignal>>,
-        custom_signals: &HashMap<String, InputSignal>,
+        rotation_signal: Option<&SharedSignal>,
+        zoom_signal: Option<&SharedSignal>,
+        named_signals: &SignalMap,
+        band_signals: &BandSignalMap,
+        custom_signals: &SignalMap,
         musical_time: Option<&MusicalTimeStructure>,
     ) {
         self.time += dt;
@@ -403,11 +404,11 @@ impl VisualiserState {
     pub fn update_with_budget<F>(
         &mut self,
         dt: f32,
-        rotation_signal: Option<&InputSignal>,
-        zoom_signal: Option<&InputSignal>,
-        named_signals: &HashMap<String, InputSignal>,
-        band_signals: &HashMap<String, HashMap<String, InputSignal>>,
-        custom_signals: &HashMap<String, InputSignal>,
+        rotation_signal: Option<&SharedSignal>,
+        zoom_signal: Option<&SharedSignal>,
+        named_signals: &SignalMap,
+        band_signals: &BandSignalMap,
+        custom_signals: &SignalMap,
         musical_time: Option<&MusicalTimeStructure>,
         budget: &FrameBudget,
         get_time: F,
@@ -521,8 +522,8 @@ impl VisualiserState {
         center_time: f32,
         window_beats: f32,
         sample_count: usize,
-        input_signals: &HashMap<String, InputSignal>,
-        band_signals: &HashMap<String, HashMap<String, InputSignal>>,
+        input_signals: &SignalMap,
+        band_signals: &BandSignalMap,
         musical_time: Option<&MusicalTimeStructure>,
     ) -> Result<SignalChainAnalysis, String> {
         self.script_engine.analyze_signal_chain(

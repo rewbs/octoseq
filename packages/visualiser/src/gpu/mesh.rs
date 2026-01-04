@@ -297,19 +297,20 @@ pub fn create_radial_ring_geometry(
         ));
     }
 
-    // Generate quad strip indices
+    // Generate quad strip indices with CCW winding for +Z normal
+    // Vertices are arranged as: inner_0, outer_0, inner_1, outer_1, ...
     for i in 0..seg_count {
         let base = (i * 2) as u16;
-        // Two triangles per quad
-        // Triangle 1: inner_i, inner_i+1, outer_i
-        indices.push(base);
-        indices.push(base + 2);
-        indices.push(base + 1);
+        // Two triangles per quad, CCW winding when viewed from +Z
+        // Triangle 1: inner_curr, outer_curr, inner_next
+        indices.push(base);      // inner_i
+        indices.push(base + 1);  // outer_i
+        indices.push(base + 2);  // inner_i+1
 
-        // Triangle 2: outer_i, inner_i+1, outer_i+1
-        indices.push(base + 1);
-        indices.push(base + 2);
-        indices.push(base + 3);
+        // Triangle 2: outer_curr, outer_next, inner_next
+        indices.push(base + 1);  // outer_i
+        indices.push(base + 3);  // outer_i+1
+        indices.push(base + 2);  // inner_i+1
     }
 
     (vertices, indices)
