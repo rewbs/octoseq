@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { hzToFeatureIndex, computeLocalStats, type MelConversionConfig } from "@octoseq/mir";
 import { useCustomSignalStore } from "@/lib/stores/customSignalStore";
 import { useCustomSignalActions } from "@/lib/stores/hooks/useCustomSignalActions";
+import { useDebugSignalStore } from "@/lib/stores/debugSignalStore";
 import { useInterpretationTreeStore } from "@/lib/stores/interpretationTreeStore";
 import { usePlaybackStore } from "@/lib/stores/playbackStore";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
@@ -138,6 +139,10 @@ export function CustomSignalsPanel() {
   const showDcBin = useConfigStore((s) => s.showDcBin);
   const showMfccC0 = useConfigStore((s) => s.showMfccC0);
   const getMelConfig = useConfigStore((s) => s.getMelConfig);
+
+  // Debug/probe signals from script analysis
+  const debugSignals = useDebugSignalStore((s) => s.debugSignals);
+  const debugSignalsIsRunning = useDebugSignalStore((s) => s.isRunning);
 
   // Get mel config for frequency calculations - memoize to avoid recalc on every render
   // Use 8000 Hz as default fMax to match typical web audio / data computation defaults
@@ -472,53 +477,105 @@ export function CustomSignalsPanel() {
   // Section view - show list of signals with add button
   if (isCustomSignalsSection) {
     return (
-      <div className="border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Custom Signals
-          </h2>
-          <Button size="sm" variant="outline" onClick={handleAddSignal}>
-            <Plus className="h-4 w-4 mr-1" />
-            Add Signal
-          </Button>
-        </div>
-        {signals.length === 0 ? (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Custom signals let you extract 1D signals from 2D spectral data
-            (mel spectrogram, HPSS, MFCC) with configurable frequency ranges
-            and reduction algorithms.
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {signals.map((s) => {
-              const hasResult = resultCache.has(s.id);
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => {
-                    selectNode(`custom-signals:${s.id}`);
-                    selectSignal(s.id);
-                  }}
-                  className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                    !s.enabled ? "opacity-50" : ""
-                  } ${
-                    hasResult
-                      ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-950/30"
-                      : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
-                  } hover:bg-zinc-100 dark:hover:bg-zinc-700`}
-                >
-                  {s.name}
-                  {hasResult && (
-                    <span className="ml-1.5 text-green-600 dark:text-green-400">
-                      ✓
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+      <div className="border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50">
+        {/* Custom Signals section */}
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-700">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Custom Signals
+            </h2>
+            <Button size="sm" variant="outline" onClick={handleAddSignal}>
+              <Plus className="h-4 w-4 mr-1" />
+              Add Signal
+            </Button>
           </div>
-        )}
+          {signals.length === 0 ? (
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              Custom signals let you extract 1D signals from 2D spectral data
+              (mel spectrogram, HPSS, MFCC) with configurable frequency ranges
+              and reduction algorithms.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {signals.map((s) => {
+                const hasResult = resultCache.has(s.id);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      selectNode(`custom-signals:${s.id}`);
+                      selectSignal(s.id);
+                    }}
+                    className={`px-3 py-1.5 text-sm rounded border transition-colors ${
+                      !s.enabled ? "opacity-50" : ""
+                    } ${
+                      hasResult
+                        ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-950/30"
+                        : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                    } hover:bg-zinc-100 dark:hover:bg-zinc-700`}
+                  >
+                    {s.name}
+                    {hasResult && (
+                      <span className="ml-1.5 text-green-600 dark:text-green-400">
+                        ✓
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Probe Signals section */}
+        <div className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              Probe Signals
+            </h2>
+            {debugSignalsIsRunning && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-400" />
+            )}
+            {debugSignals.length > 0 && (
+              <span className="text-xs text-zinc-400">
+                ({debugSignals.length})
+              </span>
+            )}
+          </div>
+          {debugSignals.length === 0 ? (
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              Use <code className="px-1 py-0.5 bg-zinc-200 dark:bg-zinc-700 rounded text-xs">.probe(&quot;name&quot;)</code> on
+              any signal in your Rhai script to capture its values during analysis.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {debugSignals.map((dbgSignal) => (
+                <div key={dbgSignal.name} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300 font-mono">
+                      {dbgSignal.name}
+                    </span>
+                    <span className="text-xs text-zinc-400">
+                      {dbgSignal.values.length} samples
+                    </span>
+                  </div>
+                  <SignalViewer
+                    signal={createContinuousSignal(dbgSignal.times, dbgSignal.values)}
+                    viewport={viewport}
+                    cursorTimeSec={cursorTimeSec}
+                    onCursorTimeChange={setCursorTimeSec}
+                    initialHeight={60}
+                    mode="filled"
+                    color={{ stroke: "rgb(16, 185, 129)", fill: "rgba(16, 185, 129, 0.3)" }}
+                    showBeatGrid={beatGridState.isVisible}
+                    audioDuration={audioDuration ?? 0}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
