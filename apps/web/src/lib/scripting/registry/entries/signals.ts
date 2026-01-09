@@ -248,6 +248,104 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
         example: 'inputs.onsetEnvelope.probe("onset")',
         notes: "Use with analysis mode / host evaluation; this does not print.",
       },
+      // === Comparison operations (Boolean signals) ===
+      {
+        name: "lt",
+        path: "Signal.lt",
+        description: "Less than: returns 1.0 if this < other, else 0.0.",
+        params: [
+          { name: "other", type: "Signal | float", description: "Value to compare against." },
+        ],
+        returns: "Signal",
+        chainsTo: "Signal",
+        example: "inputs.mix.energy.lt(0.5)",
+        notes: "Returns a boolean signal (1.0 = true, 0.0 = false).",
+      },
+      {
+        name: "gt",
+        path: "Signal.gt",
+        description: "Greater than: returns 1.0 if this > other, else 0.0.",
+        params: [
+          { name: "other", type: "Signal | float", description: "Value to compare against." },
+        ],
+        returns: "Signal",
+        chainsTo: "Signal",
+        example: "inputs.mix.energy.gt(0.5)",
+        notes: "Returns a boolean signal (1.0 = true, 0.0 = false).",
+      },
+      {
+        name: "le",
+        path: "Signal.le",
+        description: "Less than or equal: returns 1.0 if this <= other, else 0.0.",
+        params: [
+          { name: "other", type: "Signal | float", description: "Value to compare against." },
+        ],
+        returns: "Signal",
+        chainsTo: "Signal",
+        example: "inputs.mix.energy.le(0.5)",
+      },
+      {
+        name: "ge",
+        path: "Signal.ge",
+        description: "Greater than or equal: returns 1.0 if this >= other, else 0.0.",
+        params: [
+          { name: "other", type: "Signal | float", description: "Value to compare against." },
+        ],
+        returns: "Signal",
+        chainsTo: "Signal",
+        example: "inputs.mix.energy.ge(0.5)",
+      },
+      {
+        name: "eq",
+        path: "Signal.eq",
+        description: "Equal: returns 1.0 if this == other (within epsilon), else 0.0.",
+        params: [
+          { name: "other", type: "Signal | float", description: "Value to compare against." },
+        ],
+        returns: "Signal",
+        chainsTo: "Signal",
+        example: "timing.beatPhase.floor().eq(0)",
+        notes: "Uses epsilon tolerance (1e-6) for float comparison.",
+      },
+      {
+        name: "ne",
+        path: "Signal.ne",
+        description: "Not equal: returns 1.0 if this != other (outside epsilon), else 0.0.",
+        params: [
+          { name: "other", type: "Signal | float", description: "Value to compare against." },
+        ],
+        returns: "Signal",
+        chainsTo: "Signal",
+        example: "timing.beatIndex.ne(0)",
+      },
+      // === Logical operations ===
+      {
+        name: "and",
+        path: "Signal.and",
+        description: "Logical AND: returns 1.0 if both this and other are > 0.",
+        params: [{ name: "other", type: "Signal", description: "Other boolean signal." }],
+        returns: "Signal",
+        chainsTo: "Signal",
+        example: "energy.gt(0.5).and(flux.gt(0.3))",
+      },
+      {
+        name: "or",
+        path: "Signal.or",
+        description: "Logical OR: returns 1.0 if either this or other is > 0.",
+        params: [{ name: "other", type: "Signal", description: "Other boolean signal." }],
+        returns: "Signal",
+        chainsTo: "Signal",
+        example: "energy.gt(0.8).or(onset.gt(0.9))",
+      },
+      {
+        name: "not",
+        path: "Signal.not",
+        description: "Logical NOT: returns 1.0 if this <= 0, else 0.0.",
+        params: [],
+        returns: "Signal",
+        chainsTo: "Signal",
+        example: "isSilent.not()",
+      },
     ],
   },
 
@@ -370,6 +468,58 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
         returns: "Signal",
         chainsTo: "Signal",
         example: "inputs.amplitude.gate.hysteresis(0.6, 0.4)",
+      },
+    ],
+  },
+
+  // ============================================================================
+  // SelectBuilder - Conditional selection
+  // ============================================================================
+  {
+    kind: "builder",
+    name: "SelectBuilder",
+    path: "SelectBuilder",
+    description:
+      "Conditional selection builder (returned by signal.select()). Build piecewise signals by chaining .when() calls and finalizing with .otherwise().",
+    parent: "signal",
+    properties: [],
+    methods: [
+      {
+        name: "when",
+        path: "SelectBuilder.when",
+        description:
+          "Add a condition/value pair. When condition > 0 (true), use the corresponding value.",
+        params: [
+          {
+            name: "condition",
+            type: "Signal",
+            description: "Boolean signal (> 0 = true).",
+          },
+          {
+            name: "value",
+            type: "Signal",
+            description: "Value signal to use when condition is true.",
+          },
+        ],
+        returns: "SelectBuilder",
+        chainsTo: "SelectBuilder",
+        example: ".when(energy.gt(0.5), highSignal)",
+      },
+      {
+        name: "otherwise",
+        path: "SelectBuilder.otherwise",
+        description:
+          "Finalize the builder with a default value. This is required to build the Signal.",
+        params: [
+          {
+            name: "default",
+            type: "Signal",
+            description: "Fallback value when no condition matches.",
+          },
+        ],
+        returns: "Signal",
+        chainsTo: "Signal",
+        example: ".otherwise(gen.constant(0.0))",
       },
     ],
   },

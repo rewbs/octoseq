@@ -548,6 +548,66 @@ impl Signal {
         })
     }
 
+    // === Comparison Operations ===
+
+    /// Less than: returns 1.0 if self < other, else 0.0.
+    /// Creates a boolean-valued signal.
+    pub fn lt(&self, other: Signal) -> Signal {
+        Signal::new(SignalNode::Lt(self.clone(), other))
+    }
+
+    /// Greater than: returns 1.0 if self > other, else 0.0.
+    /// Creates a boolean-valued signal.
+    pub fn gt(&self, other: Signal) -> Signal {
+        Signal::new(SignalNode::Gt(self.clone(), other))
+    }
+
+    /// Less than or equal: returns 1.0 if self <= other, else 0.0.
+    /// Creates a boolean-valued signal.
+    pub fn le(&self, other: Signal) -> Signal {
+        Signal::new(SignalNode::Le(self.clone(), other))
+    }
+
+    /// Greater than or equal: returns 1.0 if self >= other, else 0.0.
+    /// Creates a boolean-valued signal.
+    pub fn ge(&self, other: Signal) -> Signal {
+        Signal::new(SignalNode::Ge(self.clone(), other))
+    }
+
+    /// Equality: returns 1.0 if self == other (within epsilon), else 0.0.
+    /// Creates a boolean-valued signal.
+    /// Note: Named `eq_signal` to avoid conflict with Rust's `Eq` trait.
+    pub fn eq_signal(&self, other: Signal) -> Signal {
+        Signal::new(SignalNode::Eq(self.clone(), other))
+    }
+
+    /// Not equal: returns 1.0 if self != other (outside epsilon), else 0.0.
+    /// Creates a boolean-valued signal.
+    /// Note: Named `ne_signal` to avoid conflict with Rust's `PartialEq` trait.
+    pub fn ne_signal(&self, other: Signal) -> Signal {
+        Signal::new(SignalNode::Ne(self.clone(), other))
+    }
+
+    // === Logical Operations ===
+
+    /// Logical AND: returns 1.0 if both self > 0 and other > 0, else 0.0.
+    /// Creates a boolean-valued signal.
+    pub fn and(&self, other: Signal) -> Signal {
+        Signal::new(SignalNode::And(self.clone(), other))
+    }
+
+    /// Logical OR: returns 1.0 if self > 0 or other > 0, else 0.0.
+    /// Creates a boolean-valued signal.
+    pub fn or(&self, other: Signal) -> Signal {
+        Signal::new(SignalNode::Or(self.clone(), other))
+    }
+
+    /// Logical NOT: returns 1.0 if self <= 0, else 0.0.
+    /// Creates a boolean-valued signal.
+    pub fn not(&self) -> Signal {
+        Signal::new(SignalNode::Not { source: self.clone() })
+    }
+
     // === Utility ===
 
     // === Sampling Configuration ===
@@ -651,7 +711,15 @@ impl Signal {
             SignalNode::Add(a, b)
             | SignalNode::Mul(a, b)
             | SignalNode::Sub(a, b)
-            | SignalNode::Div(a, b) => {
+            | SignalNode::Div(a, b)
+            | SignalNode::Lt(a, b)
+            | SignalNode::Gt(a, b)
+            | SignalNode::Le(a, b)
+            | SignalNode::Ge(a, b)
+            | SignalNode::Eq(a, b)
+            | SignalNode::Ne(a, b)
+            | SignalNode::And(a, b)
+            | SignalNode::Or(a, b) => {
                 a.collect_normalise_sources(sources);
                 b.collect_normalise_sources(sources);
             }
@@ -699,8 +767,17 @@ impl Signal {
             | SignalNode::Diff { source }
             | SignalNode::Integrate { source, .. }
             | SignalNode::Delay { source, .. }
-            | SignalNode::Anticipate { source, .. } => {
+            | SignalNode::Anticipate { source, .. }
+            | SignalNode::Not { source } => {
                 source.collect_normalise_sources(sources);
+            }
+            // Conditional selection - traverse all branches
+            SignalNode::Select { cases, default } => {
+                for (cond, value) in cases {
+                    cond.collect_normalise_sources(sources);
+                    value.collect_normalise_sources(sources);
+                }
+                default.collect_normalise_sources(sources);
             }
             // Leaf nodes don't have children
             SignalNode::Input { .. }
@@ -978,6 +1055,51 @@ impl Signal {
             }
             SignalNode::EventPhaseBetween { events } => {
                 format!("EventPhaseBetween(count={})", events.len())
+            }
+            // Comparison operations
+            SignalNode::Lt(a, b) => {
+                format!("{}.Lt({})", self.describe_node(&a.node), self.describe_node(&b.node))
+            }
+            SignalNode::Gt(a, b) => {
+                format!("{}.Gt({})", self.describe_node(&a.node), self.describe_node(&b.node))
+            }
+            SignalNode::Le(a, b) => {
+                format!("{}.Le({})", self.describe_node(&a.node), self.describe_node(&b.node))
+            }
+            SignalNode::Ge(a, b) => {
+                format!("{}.Ge({})", self.describe_node(&a.node), self.describe_node(&b.node))
+            }
+            SignalNode::Eq(a, b) => {
+                format!("{}.Eq({})", self.describe_node(&a.node), self.describe_node(&b.node))
+            }
+            SignalNode::Ne(a, b) => {
+                format!("{}.Ne({})", self.describe_node(&a.node), self.describe_node(&b.node))
+            }
+            // Logical operations
+            SignalNode::And(a, b) => {
+                format!("{}.And({})", self.describe_node(&a.node), self.describe_node(&b.node))
+            }
+            SignalNode::Or(a, b) => {
+                format!("{}.Or({})", self.describe_node(&a.node), self.describe_node(&b.node))
+            }
+            SignalNode::Not { source } => {
+                format!("{}.Not()", self.describe_node(&source.node))
+            }
+            // Conditional selection
+            SignalNode::Select { cases, default } => {
+                let mut desc = String::from("Select(");
+                for (i, (cond, val)) in cases.iter().enumerate() {
+                    if i > 0 {
+                        desc.push_str(", ");
+                    }
+                    desc.push_str(&format!(
+                        "when({}, {})",
+                        self.describe_node(&cond.node),
+                        self.describe_node(&val.node)
+                    ));
+                }
+                desc.push_str(&format!(", otherwise({}))", self.describe_node(&default.node)));
+                desc
             }
         }
     }
@@ -1264,6 +1386,37 @@ pub enum SignalNode {
     Delay { source: Signal, beats: SignalParam },
     /// Anticipate by N beats (look ahead in time). Beats can be constant or signal.
     Anticipate { source: Signal, beats: SignalParam },
+
+    // === Comparison Operations (Boolean Signals) ===
+    /// Less than: returns 1.0 if a < b, else 0.0.
+    Lt(Signal, Signal),
+    /// Greater than: returns 1.0 if a > b, else 0.0.
+    Gt(Signal, Signal),
+    /// Less than or equal: returns 1.0 if a <= b, else 0.0.
+    Le(Signal, Signal),
+    /// Greater than or equal: returns 1.0 if a >= b, else 0.0.
+    Ge(Signal, Signal),
+    /// Equality: returns 1.0 if a == b (within epsilon), else 0.0.
+    Eq(Signal, Signal),
+    /// Not equal: returns 1.0 if a != b (outside epsilon), else 0.0.
+    Ne(Signal, Signal),
+
+    // === Logical Operations ===
+    /// Logical AND: returns 1.0 if both a > 0 and b > 0, else 0.0.
+    And(Signal, Signal),
+    /// Logical OR: returns 1.0 if a > 0 or b > 0, else 0.0.
+    Or(Signal, Signal),
+    /// Logical NOT: returns 1.0 if source <= 0, else 0.0.
+    Not { source: Signal },
+
+    // === Conditional Selection ===
+    /// Conditional selection: evaluates cases in order, returns first true match.
+    /// - `cases`: Vec of (condition, value) pairs.
+    /// - `default`: Fallback value when no condition matches.
+    Select {
+        cases: Vec<(Signal, Signal)>,
+        default: Box<Signal>,
+    },
 }
 
 /// Generator node for oscillators, noise, and other signal sources.
@@ -1629,6 +1782,43 @@ impl GateBuilder {
     }
 }
 
+/// Builder for conditional selection, returned by `signal.select()`.
+///
+/// Accumulates condition/value pairs until `.otherwise()` finalizes the Signal.
+/// Conditions are evaluated in order; the first true (> 0) condition wins.
+#[derive(Clone, Default)]
+pub struct SelectBuilder {
+    /// Accumulated (condition, value) pairs.
+    pub cases: Vec<(Signal, Signal)>,
+}
+
+impl SelectBuilder {
+    /// Create a new empty SelectBuilder.
+    pub fn new() -> Self {
+        Self { cases: Vec::new() }
+    }
+
+    /// Add a condition/value pair.
+    ///
+    /// When the condition evaluates to > 0 (true), the corresponding
+    /// value signal is used. Conditions are evaluated in order.
+    pub fn when(mut self, condition: Signal, value: Signal) -> Self {
+        self.cases.push((condition, value));
+        self
+    }
+
+    /// Finalize the builder with a default value.
+    ///
+    /// This is REQUIRED to build a valid Signal. The default is used when
+    /// no condition evaluates to true (> 0).
+    pub fn otherwise(self, default: Signal) -> Signal {
+        Signal::new(SignalNode::Select {
+            cases: self.cases,
+            default: Box::new(default),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1726,5 +1916,61 @@ mod tests {
             SignalNode::BandInput { band_key, feature, .. }
             if band_key == "Bass" && feature == "energy"
         ));
+    }
+
+    #[test]
+    fn test_comparison_operators() {
+        let a = Signal::constant(1.0);
+        let b = Signal::constant(2.0);
+
+        let lt = a.lt(b.clone());
+        assert!(matches!(&*lt.node, SignalNode::Lt(_, _)));
+
+        let gt = a.gt(b.clone());
+        assert!(matches!(&*gt.node, SignalNode::Gt(_, _)));
+
+        let le = a.le(b.clone());
+        assert!(matches!(&*le.node, SignalNode::Le(_, _)));
+
+        let ge = a.ge(b.clone());
+        assert!(matches!(&*ge.node, SignalNode::Ge(_, _)));
+
+        let eq = a.eq_signal(b.clone());
+        assert!(matches!(&*eq.node, SignalNode::Eq(_, _)));
+
+        let ne = a.ne_signal(b);
+        assert!(matches!(&*ne.node, SignalNode::Ne(_, _)));
+    }
+
+    #[test]
+    fn test_logical_operators() {
+        let a = Signal::constant(1.0);
+        let b = Signal::constant(0.0);
+
+        let and_signal = a.and(b.clone());
+        assert!(matches!(&*and_signal.node, SignalNode::And(_, _)));
+
+        let or_signal = a.or(b.clone());
+        assert!(matches!(&*or_signal.node, SignalNode::Or(_, _)));
+
+        let not_signal = a.not();
+        assert!(matches!(&*not_signal.node, SignalNode::Not { .. }));
+    }
+
+    #[test]
+    fn test_select_builder() {
+        let energy = Signal::input("energy");
+        let cond1 = energy.gt(Signal::constant(0.8));
+        let val1 = Signal::constant(1.0);
+        let cond2 = energy.gt(Signal::constant(0.5));
+        let val2 = Signal::constant(0.5);
+        let default = Signal::constant(0.0);
+
+        let selected = SelectBuilder::new()
+            .when(cond1, val1)
+            .when(cond2, val2)
+            .otherwise(default);
+
+        assert!(matches!(&*selected.node, SignalNode::Select { cases, default: _ } if cases.len() == 2));
     }
 }

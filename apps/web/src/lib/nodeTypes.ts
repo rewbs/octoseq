@@ -23,8 +23,10 @@ export type InspectorNodeType =
   | "authored-stream"
   | "candidate-events"
   | "candidate-stream"
-  | "custom-signals-section"
-  | "custom-signal"
+  | "derived-signals-section"
+  | "derived-signal"
+  | "composed-signals-section"
+  | "composed-signal"
   | "assets-section"
   | "mesh-assets"
   | "scripts-section"
@@ -46,7 +48,8 @@ export function getInspectorNodeType(nodeId: string | null): InspectorNodeType {
   // Top-level sections
   if (nodeId === TREE_NODE_IDS.AUDIO) return "audio-section";
   if (nodeId === TREE_NODE_IDS.EVENT_STREAMS) return "event-streams-section";
-  if (nodeId === TREE_NODE_IDS.CUSTOM_SIGNALS) return "custom-signals-section";
+  if (nodeId === TREE_NODE_IDS.DERIVED_SIGNALS) return "derived-signals-section";
+  if (nodeId === TREE_NODE_IDS.COMPOSED_SIGNALS) return "composed-signals-section";
   if (nodeId === TREE_NODE_IDS.ASSETS) return "assets-section";
   if (nodeId === TREE_NODE_IDS.THREE_D_OBJECTS) return "mesh-assets";
   if (nodeId === TREE_NODE_IDS.SCRIPTS) return "scripts-section";
@@ -83,8 +86,11 @@ export function getInspectorNodeType(nodeId: string | null): InspectorNodeType {
   if (nodeId.startsWith("event-streams:authored:")) return "authored-stream";
   if (nodeId.startsWith("event-streams:candidates:")) return "candidate-stream";
 
-  // Custom signal nodes
-  if (nodeId.startsWith("custom-signals:")) return "custom-signal";
+  // Derived signal nodes
+  if (nodeId.startsWith("derived-signals:")) return "derived-signal";
+
+  // Composed signal nodes
+  if (nodeId.startsWith("composed-signals:")) return "composed-signal";
 
   // Script nodes
   if (nodeId.startsWith("scripts:")) return "script";
@@ -160,14 +166,27 @@ export function getMirAnalysisId(nodeId: string): string | null {
 }
 
 /**
- * Extract the custom signal ID from a custom signal node ID.
+ * Extract the derived signal ID from a derived signal node ID.
  *
- * @param nodeId - The tree node ID (e.g., "custom-signals:abc123")
- * @returns The custom signal ID or null
+ * @param nodeId - The tree node ID (e.g., "derived-signals:abc123")
+ * @returns The derived signal ID or null
  */
-export function getCustomSignalId(nodeId: string): string | null {
-  if (nodeId.startsWith("custom-signals:")) {
-    return nodeId.slice("custom-signals:".length);
+export function getDerivedSignalId(nodeId: string): string | null {
+  if (nodeId.startsWith("derived-signals:")) {
+    return nodeId.slice("derived-signals:".length);
+  }
+  return null;
+}
+
+/**
+ * Extract the composed signal ID from a composed signal node ID.
+ *
+ * @param nodeId - The tree node ID (e.g., "composed-signals:abc123")
+ * @returns The composed signal ID or null
+ */
+export function getComposedSignalId(nodeId: string): string | null {
+  if (nodeId.startsWith("composed-signals:")) {
+    return nodeId.slice("composed-signals:".length);
   }
   return null;
 }

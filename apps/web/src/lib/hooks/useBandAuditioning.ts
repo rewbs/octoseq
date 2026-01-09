@@ -8,8 +8,11 @@ import { frequencyBoundsAt, type FrequencyBandStructure, type FrequencyBand } fr
 // ----------------------------
 
 export type UseBandAuditioningOptions = {
-    /** The audio source URL or blob URL to filter. */
-    audioUrl: string | null;
+    /**
+     * Function to get the audio URL for a given source ID.
+     * This allows the hook to use the correct audio source based on the band's sourceId.
+     */
+    getAudioUrlForSource: (sourceId: string) => string | null;
 
     /** Whether auditioning is enabled. */
     enabled: boolean;
@@ -61,7 +64,7 @@ export type UseBandAuditioningResult = {
 // ----------------------------
 
 export function useBandAuditioning({
-    audioUrl,
+    getAudioUrlForSource,
     enabled,
     soloedBandId,
     structure,
@@ -85,6 +88,10 @@ export function useBandAuditioning({
         soloedBandId && structure
             ? structure.bands.find((b) => b.id === soloedBandId) ?? null
             : null;
+
+    // Get the audio URL for the soloed band's source
+    // This ensures we filter the correct audio (stem vs mixdown)
+    const audioUrl = soloedBand ? getAudioUrlForSource(soloedBand.sourceId) : null;
 
     const isAuditioning = enabled && soloedBand !== null;
 

@@ -17,56 +17,12 @@ import {
 } from "@octoseq/mir";
 
 // ----------------------------
-// Audio Identity (for persistence key)
-// ----------------------------
-
-export interface AudioIdentity {
-    filename: string;
-    duration: number;
-    sampleRate: number;
-}
-
-/**
- * Simple hash function for generating storage keys.
- */
-function simpleHash(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        const char = str.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; // Convert to 32-bit integer
-    }
-    return Math.abs(hash).toString(36);
-}
-
-/**
- * Generate the localStorage key for a given audio identity.
- */
-function getStorageKey(audio: AudioIdentity): string {
-    const hash = simpleHash(`${audio.filename}:${audio.duration}:${audio.sampleRate}`);
-    return `octoseq-musical-time-${hash}`;
-}
-
-// ----------------------------
-// Persisted Structure
-// ----------------------------
-
-interface PersistedMusicalTime {
-    version: 1;
-    audioIdentity: AudioIdentity;
-    structure: MusicalTimeStructure;
-}
-
-// ----------------------------
 // Store State
 // ----------------------------
 
 interface MusicalTimeState {
     /** The authoritative musical time structure (null if not yet authored). */
     structure: MusicalTimeStructure | null;
-
-    /** Audio identity for persistence (set when audio is loaded). */
-    audioIdentity: AudioIdentity | null;
 
     /** Currently selected segment for editing. */
     selectedSegmentId: string | null;
@@ -83,10 +39,6 @@ interface MusicalTimeState {
 // ----------------------------
 
 interface MusicalTimeActions {
-    // Audio identity
-    /** Set the audio identity (called when audio is loaded). */
-    setAudioIdentity: (identity: AudioIdentity | null) => void;
-
     // Promotion workflow
     /** Promote a beat grid to a musical time segment. */
     promoteGrid: (grid: BeatGrid, startTime: number, endTime: number) => string;
@@ -128,16 +80,7 @@ interface MusicalTimeActions {
     /** Initialize or create an empty structure if none exists. */
     ensureStructure: () => void;
 
-    // Persistence
-    /** Save to localStorage. */
-    saveToLocalStorage: () => void;
-
-    /** Load from localStorage. Returns true if data was loaded. */
-    loadFromLocalStorage: () => boolean;
-
-    /** Clear persisted data from localStorage. */
-    clearLocalStorage: () => void;
-
+    // Serialization
     /** Export structure to JSON string. */
     exportToJSON: () => string | null;
 
@@ -156,7 +99,6 @@ export type MusicalTimeStore = MusicalTimeState & MusicalTimeActions;
 
 const initialState: MusicalTimeState = {
     structure: null,
-    audioIdentity: null,
     selectedSegmentId: null,
     isEditing: false,
     lastKnownBeatPosition: null,
@@ -172,24 +114,11 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
             ...initialState,
 
             // ----------------------------
-            // Audio Identity
-            // ----------------------------
-
-            setAudioIdentity: (identity) => {
-                set({ audioIdentity: identity }, false, "setAudioIdentity");
-
-                // Try to load persisted data for this audio
-                if (identity) {
-                    get().loadFromLocalStorage();
-                }
-            },
-
-            // ----------------------------
             // Promotion Workflow
             // ----------------------------
 
             promoteGrid: (grid, startTime, endTime) => {
-                const { structure, audioIdentity } = get();
+                const { structure } = get();
 
                 // Create segment from grid
                 const segment = createSegmentFromGrid(grid, startTime, endTime);
@@ -218,11 +147,6 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
 
                 set({ structure: newStructure }, false, "promoteGrid");
 
-                // Auto-save
-                if (audioIdentity) {
-                    get().saveToLocalStorage();
-                }
-
                 return segment.id;
             },
 
@@ -231,7 +155,7 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
             // ----------------------------
 
             addSegment: (segmentData) => {
-                const { structure, audioIdentity } = get();
+                const { structure } = get();
                 const now = new Date().toISOString();
 
                 const segment: MusicalTimeSegment = {
@@ -254,15 +178,11 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
 
                 set({ structure: newStructure }, false, "addSegment");
 
-                if (audioIdentity) {
-                    get().saveToLocalStorage();
-                }
-
                 return segment.id;
             },
 
             updateSegment: (id, updates) => {
-                const { structure, audioIdentity } = get();
+                const { structure } = get();
                 if (!structure) return;
 
                 const now = new Date().toISOString();
@@ -281,14 +201,10 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
                     false,
                     "updateSegment"
                 );
-
-                if (audioIdentity) {
-                    get().saveToLocalStorage();
-                }
             },
 
             removeSegment: (id) => {
-                const { structure, selectedSegmentId, audioIdentity } = get();
+                const { structure, selectedSegmentId } = get();
                 if (!structure) return;
 
                 const segmentIndex = structure.segments.findIndex((seg) => seg.id === id);
@@ -312,9 +228,6 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
                         false,
                         "removeSegment"
                     );
-                    if (audioIdentity) {
-                        get().saveToLocalStorage();
-                    }
                     return;
                 }
 
@@ -350,14 +263,10 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
                     false,
                     "removeSegment"
                 );
-
-                if (audioIdentity) {
-                    get().saveToLocalStorage();
-                }
             },
 
             splitSegmentAt: (id, splitTime) => {
-                const { structure, audioIdentity } = get();
+                const { structure } = get();
                 if (!structure) return null;
 
                 const segment = structure.segments.find((seg) => seg.id === id);
@@ -385,10 +294,6 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
                         "splitSegmentAt"
                     );
 
-                    if (audioIdentity) {
-                        get().saveToLocalStorage();
-                    }
-
                     return [before.id, after.id];
                 } catch (error) {
                     console.error("Failed to split segment:", error);
@@ -397,7 +302,7 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
             },
 
             updateBoundary: (segmentId, newEndTime) => {
-                const { structure, audioIdentity } = get();
+                const { structure } = get();
                 if (!structure) return;
 
                 // Find the segment and its index
@@ -439,10 +344,6 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
                     false,
                     "updateBoundary"
                 );
-
-                if (audioIdentity) {
-                    get().saveToLocalStorage();
-                }
             },
 
             // ----------------------------
@@ -492,7 +393,6 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
             // ----------------------------
 
             clearStructure: () => {
-                const { audioIdentity } = get();
                 set(
                     {
                         structure: null,
@@ -502,10 +402,6 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
                     false,
                     "clearStructure"
                 );
-
-                if (audioIdentity) {
-                    get().clearLocalStorage();
-                }
             },
 
             ensureStructure: () => {
@@ -516,85 +412,8 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
             },
 
             // ----------------------------
-            // Persistence
+            // Serialization
             // ----------------------------
-
-            saveToLocalStorage: () => {
-                const { structure, audioIdentity } = get();
-                if (!structure || !audioIdentity) return;
-
-                const key = getStorageKey(audioIdentity);
-                const persisted: PersistedMusicalTime = {
-                    version: 1,
-                    audioIdentity,
-                    structure,
-                };
-
-                try {
-                    localStorage.setItem(key, JSON.stringify(persisted));
-                } catch (error) {
-                    console.error("Failed to save musical time to localStorage:", error);
-                }
-            },
-
-            loadFromLocalStorage: () => {
-                const { audioIdentity } = get();
-                if (!audioIdentity) return false;
-
-                const key = getStorageKey(audioIdentity);
-
-                try {
-                    const json = localStorage.getItem(key);
-                    if (!json) return false;
-
-                    const persisted = JSON.parse(json) as PersistedMusicalTime;
-
-                    // Version check
-                    if (persisted.version !== 1) {
-                        console.warn(`Unknown musical time version: ${persisted.version}`);
-                        return false;
-                    }
-
-                    // Validate audio identity matches
-                    const { filename, duration, sampleRate } = persisted.audioIdentity;
-                    if (
-                        filename !== audioIdentity.filename ||
-                        Math.abs(duration - audioIdentity.duration) > 0.1 ||
-                        sampleRate !== audioIdentity.sampleRate
-                    ) {
-                        console.warn("Audio identity mismatch - not loading persisted data");
-                        return false;
-                    }
-
-                    set(
-                        {
-                            structure: persisted.structure,
-                            selectedSegmentId: null,
-                            lastKnownBeatPosition: null,
-                        },
-                        false,
-                        "loadFromLocalStorage"
-                    );
-
-                    return true;
-                } catch (error) {
-                    console.error("Failed to load musical time from localStorage:", error);
-                    return false;
-                }
-            },
-
-            clearLocalStorage: () => {
-                const { audioIdentity } = get();
-                if (!audioIdentity) return;
-
-                const key = getStorageKey(audioIdentity);
-
-                try {
-                    localStorage.removeItem(key);
-                } catch (error) {
-                    console.error("Failed to clear musical time from localStorage:", error);
-                }
-            },
 
             exportToJSON: () => {
                 const { structure } = get();
@@ -617,7 +436,6 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
                         console.warn("Validation warnings on import:", errors);
                     }
 
-                    const { audioIdentity } = get();
                     set(
                         {
                             structure,
@@ -627,10 +445,6 @@ export const useMusicalTimeStore = create<MusicalTimeStore>()(
                         false,
                         "importFromJSON"
                     );
-
-                    if (audioIdentity) {
-                        get().saveToLocalStorage();
-                    }
 
                     return true;
                 } catch (error) {

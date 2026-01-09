@@ -1018,6 +1018,7 @@ radial.ring = |options| {{
     entity.__start_angle = if opts.contains("start_angle") {{ opts.start_angle }} else {{ 0.0 }};
     entity.__end_angle = if opts.contains("end_angle") {{ opts.end_angle }} else {{ 6.283185307 }}; // 2*PI
     entity.__segments = if opts.contains("segments") {{ opts.segments }} else {{ 64 }};
+    entity.__depth = if opts.contains("depth") {{ opts.depth }} else {{ 0.0 }}; // 0 = flat, >0 = 3D extruded
 
     // Standard entity properties
     entity.position = #{{ x: 0.0, y: 0.0, z: 0.0 }};
@@ -1040,6 +1041,7 @@ radial.ring = |options| {{
     entity.set_start_angle = |a| {{ this.__start_angle = a; this }};
     entity.set_end_angle = |a| {{ this.__end_angle = a; this }};
     entity.set_segments = |s| {{ this.__segments = s; this }};
+    entity.set_depth = |d| {{ this.__depth = d; this }};
     entity.set_position = |x, y, z| {{ this.position = #{{ x: x, y: y, z: z }}; this }};
     entity.set_rotation = |x, y, z| {{ this.rotation = #{{ x: x, y: y, z: z }}; this }};
     entity.set_scale = |s| {{ this.scale = s; this }};
@@ -1059,6 +1061,7 @@ radial.ring = |options| {{
         clone.__start_angle = this.__start_angle;
         clone.__end_angle = this.__end_angle;
         clone.__segments = this.__segments;
+        clone.__depth = this.__depth;
 
         clone.position = #{{ x: this.position.x, y: this.position.y, z: this.position.z }};
         clone.rotation = #{{ x: this.rotation.x, y: this.rotation.y, z: this.rotation.z }};
@@ -1080,6 +1083,7 @@ radial.ring = |options| {{
         clone.set_start_angle = this.set_start_angle;
         clone.set_end_angle = this.set_end_angle;
         clone.set_segments = this.set_segments;
+        clone.set_depth = this.set_depth;
         clone.set_position = this.set_position;
         clone.set_rotation = this.set_rotation;
         clone.set_scale = this.set_scale;
@@ -2046,12 +2050,16 @@ feedback.is_enabled = || {{
                         let segments = entity_map.get("__segments")
                             .and_then(|d| d.as_int().ok())
                             .unwrap_or(64) as u32;
+                        let depth = entity_map.get("__depth")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(0.0);
                         self.create_entity_with_id(entity_id, MeshType::RadialRing {
                             radius,
                             thickness,
                             start_angle,
                             end_angle,
                             segments,
+                            depth,
                         });
                     }
                     "line_strip" | "line_trace" => {
@@ -2326,12 +2334,16 @@ feedback.is_enabled = || {{
                         let segments = entity_map.get("__segments")
                             .and_then(|d| d.as_int().ok())
                             .unwrap_or(64) as u32;
+                        let depth = entity_map.get("__depth")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            .unwrap_or(0.0);
                         mesh.mesh_type = MeshType::RadialRing {
                             radius,
                             thickness,
                             start_angle,
                             end_angle,
                             segments,
+                            depth,
                         };
                     }
                 }

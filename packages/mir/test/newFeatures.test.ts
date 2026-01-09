@@ -52,7 +52,13 @@ describe("@octoseq/mir new MIR features", () => {
         const spec = await spectrogram(makeAudioFromMono(mono, sampleRate), { fftSize: 1024, hopSize: 256, window: "hann" });
         const mel = await melSpectrogram(spec, { nMels: 64 });
 
-        const onset = onsetEnvelopeFromMel(mel, { smoothMs: 20, diffMethod: "rectified" });
+        const onset = onsetEnvelopeFromMel(mel, {
+            smoothMs: 20,
+            diffMethod: "rectified",
+            // Disable silence gating for this test - it tests raw onset detection
+            silenceGate: { enabled: false },
+            binGate: { enabled: false },
+        });
 
         // For click-tracks we expect a few strong peaks. Use a simple relative threshold.
         let max = 0;

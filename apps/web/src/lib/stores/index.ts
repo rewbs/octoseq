@@ -6,7 +6,7 @@ export { useSearchStore, type SearchStore } from "./searchStore";
 export { useDebugSignalStore, type DebugSignalStore } from "./debugSignalStore";
 export { useScriptErrorStore, type ScriptErrorStore, type HistoricalScriptError } from "./scriptErrorStore";
 export { useBeatGridStore, type BeatGridStore } from "./beatGridStore";
-export { useMusicalTimeStore, type MusicalTimeStore, type AudioIdentity } from "./musicalTimeStore";
+export { useMusicalTimeStore, type MusicalTimeStore } from "./musicalTimeStore";
 export { useManualTempoStore, type ManualTempoStore, type ExtendedTempoHypothesis, type TempoHypothesisSource, type BeatMark } from "./manualTempoStore";
 export { useFrequencyBandStore, type FrequencyBandStore, type BandInvalidationEvent, type BandInvalidationCallback } from "./frequencyBandStore";
 export { useBandMirStore, setupBandMirInvalidation, type BandMirStore } from "./bandMirStore";
@@ -35,6 +35,7 @@ export {
   type AuthoredEventStore,
   getAuthoredColor,
 } from "./authoredEventStore";
+export { useComposedSignalStore } from "./composedSignalStore";
 
 // Types
 export type { UiMirResult, SearchResult, MirTimings, DebugSignal, AnalysisResult, RawAnalysisResult } from "./types";
@@ -50,6 +51,12 @@ export type {
   ProjectUIState,
   AudioLoadStatus,
 } from "./types/project";
+export type {
+  ComposedSignalDefinition,
+  ComposedSignalNode,
+  ComposedSignalStructure,
+  InterpolationType,
+} from "./types/composedSignal";
 
 // Action hooks
 export { useMirActions } from "./hooks/useMirActions";
@@ -60,6 +67,7 @@ export { useBandMirActions } from "./hooks/useBandMirActions";
 export { useBandProposalActions } from "./hooks/useBandProposalActions";
 export { useCandidateEventActions } from "./hooks/useCandidateEventActions";
 export { useAuthoredEventActions } from "./hooks/useAuthoredEventActions";
+export { useComposedSignalActions } from "./hooks/useComposedSignalActions";
 export { useProjectActions } from "./hooks/useProjectActions";
 
 // Derived state hooks

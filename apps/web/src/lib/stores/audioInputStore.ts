@@ -316,6 +316,9 @@ interface AudioInputActions {
   /** Get the mixdown's display name (label or origin fileName). */
   getAudioFileName: () => string | null;
 
+  /** Get the sample rate of the currently active display (stem or mixdown). */
+  getActiveDisplaySampleRate: () => number | null;
+
   /**
    * Set the pending file name for URL-based loads.
    * Used to track the intended file name before audio is decoded.
@@ -891,6 +894,11 @@ export const useAudioInputStore = create<AudioInputStore>()(
         if (mixdown.origin.kind === "file") return mixdown.origin.fileName;
         if (mixdown.origin.kind === "url") return mixdown.origin.fileName ?? null;
         return mixdown.label;
+      },
+
+      getActiveDisplaySampleRate: () => {
+        const { collection, activeDisplayId } = get();
+        return collection?.inputs[activeDisplayId]?.metadata?.sampleRate ?? null;
       },
 
       setPendingFileName: (fileName: string | null) => {

@@ -27,6 +27,11 @@ export function MirConfigModal() {
     onsetSmoothMs,
     onsetDiffMethod,
     onsetUseLog,
+    silenceGateEnabled,
+    silenceGateEnterMargin,
+    silenceGateExitMargin,
+    silenceGateHangoverMs,
+    silenceGatePostSuppressMs,
     peakMinIntervalMs,
     peakThreshold,
     peakAdaptiveFactor,
@@ -48,6 +53,7 @@ export function MirConfigModal() {
     cqtBinsPerOctave,
     cqtFMin,
     cqtFMax,
+    mirSampleRate,
   } = useConfigStore(
     useShallow((s) => ({
       isConfigOpen: s.isConfigOpen,
@@ -59,6 +65,11 @@ export function MirConfigModal() {
       onsetSmoothMs: s.onsetSmoothMs,
       onsetDiffMethod: s.onsetDiffMethod,
       onsetUseLog: s.onsetUseLog,
+      silenceGateEnabled: s.silenceGateEnabled,
+      silenceGateEnterMargin: s.silenceGateEnterMargin,
+      silenceGateExitMargin: s.silenceGateExitMargin,
+      silenceGateHangoverMs: s.silenceGateHangoverMs,
+      silenceGatePostSuppressMs: s.silenceGatePostSuppressMs,
       peakMinIntervalMs: s.peakMinIntervalMs,
       peakThreshold: s.peakThreshold,
       peakAdaptiveFactor: s.peakAdaptiveFactor,
@@ -80,6 +91,7 @@ export function MirConfigModal() {
       cqtBinsPerOctave: s.cqtBinsPerOctave,
       cqtFMin: s.cqtFMin,
       cqtFMax: s.cqtFMax,
+      mirSampleRate: s.mirSampleRate,
     }))
   );
 
@@ -93,6 +105,11 @@ export function MirConfigModal() {
     setOnsetSmoothMs,
     setOnsetDiffMethod,
     setOnsetUseLog,
+    setSilenceGateEnabled,
+    setSilenceGateEnterMargin,
+    setSilenceGateExitMargin,
+    setSilenceGateHangoverMs,
+    setSilenceGatePostSuppressMs,
     setPeakMinIntervalMs,
     setPeakThreshold,
     setPeakAdaptiveFactor,
@@ -114,6 +131,7 @@ export function MirConfigModal() {
     setCqtBinsPerOctave,
     setCqtFMin,
     setCqtFMax,
+    setMirSampleRate,
   } = useConfigStore(
     useShallow((s) => ({
       setIsConfigOpen: s.setIsConfigOpen,
@@ -125,6 +143,11 @@ export function MirConfigModal() {
       setOnsetSmoothMs: s.setOnsetSmoothMs,
       setOnsetDiffMethod: s.setOnsetDiffMethod,
       setOnsetUseLog: s.setOnsetUseLog,
+      setSilenceGateEnabled: s.setSilenceGateEnabled,
+      setSilenceGateEnterMargin: s.setSilenceGateEnterMargin,
+      setSilenceGateExitMargin: s.setSilenceGateExitMargin,
+      setSilenceGateHangoverMs: s.setSilenceGateHangoverMs,
+      setSilenceGatePostSuppressMs: s.setSilenceGatePostSuppressMs,
       setPeakMinIntervalMs: s.setPeakMinIntervalMs,
       setPeakThreshold: s.setPeakThreshold,
       setPeakAdaptiveFactor: s.setPeakAdaptiveFactor,
@@ -146,6 +169,7 @@ export function MirConfigModal() {
       setCqtBinsPerOctave: s.setCqtBinsPerOctave,
       setCqtFMin: s.setCqtFMin,
       setCqtFMax: s.setCqtFMax,
+      setMirSampleRate: s.setMirSampleRate,
     }))
   );
 
@@ -218,6 +242,26 @@ export function MirConfigModal() {
         </div>
 
         <div className="space-y-3">
+          {/* Audio Preprocessing */}
+          <div className="rounded-md border border-zinc-100 bg-zinc-50/50 p-2 dark:border-zinc-800/50 dark:bg-zinc-900/50">
+            <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              Audio Preprocessing
+            </h3>
+            <label className="grid grid-cols-[160px,1fr] items-center gap-2">
+              <span className="text-xs text-zinc-600 dark:text-zinc-300">MIR Sample Rate</span>
+              <select
+                value={mirSampleRate}
+                onChange={(e) => setMirSampleRate(Number(e.target.value))}
+                className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+              >
+                <option value={8000}>8,000 Hz (fastest)</option>
+                <option value={16000}>16,000 Hz</option>
+                <option value={22050}>22,050 Hz</option>
+                <option value={44100}>44,100 Hz (native)</option>
+              </select>
+            </label>
+          </div>
+
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <label className="grid grid-cols-[160px,1fr] items-center gap-2">
               <span className="text-xs text-zinc-600 dark:text-zinc-300">FFT size (power of 2)</span>
@@ -338,6 +382,88 @@ export function MirConfigModal() {
                       Log-compress differences
                     </span>
                   </label>
+                </div>
+
+                {/* Silence Gating */}
+                <div className="mt-2 border-t border-zinc-200 pt-2 dark:border-zinc-700">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={silenceGateEnabled}
+                      onChange={(e) => setSilenceGateEnabled(e.target.checked)}
+                    />
+                    <span className="text-xs font-medium text-zinc-600 dark:text-zinc-300">
+                      Enable silence gating
+                    </span>
+                  </label>
+                  {silenceGateEnabled && (
+                    <div className="mt-2 space-y-1.5 pl-5">
+                      <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
+                        <span className="text-xs text-zinc-600 dark:text-zinc-300">
+                          Enter margin (dB)
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={24}
+                          step={1}
+                          value={silenceGateEnterMargin}
+                          onChange={(e) => setSilenceGateEnterMargin(Number(e.target.value))}
+                        />
+                        <span className="text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">
+                          {silenceGateEnterMargin}
+                        </span>
+                      </label>
+                      <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
+                        <span className="text-xs text-zinc-600 dark:text-zinc-300">
+                          Exit margin (dB)
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={24}
+                          step={1}
+                          value={silenceGateExitMargin}
+                          onChange={(e) => setSilenceGateExitMargin(Number(e.target.value))}
+                        />
+                        <span className="text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">
+                          {silenceGateExitMargin}
+                        </span>
+                      </label>
+                      <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
+                        <span className="text-xs text-zinc-600 dark:text-zinc-300">
+                          Hangover (ms)
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={200}
+                          step={10}
+                          value={silenceGateHangoverMs}
+                          onChange={(e) => setSilenceGateHangoverMs(Number(e.target.value))}
+                        />
+                        <span className="text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">
+                          {silenceGateHangoverMs}
+                        </span>
+                      </label>
+                      <label className="grid grid-cols-[180px,1fr,60px] items-center gap-2">
+                        <span className="text-xs text-zinc-600 dark:text-zinc-300">
+                          Post-silence suppress (ms)
+                        </span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={200}
+                          step={10}
+                          value={silenceGatePostSuppressMs}
+                          onChange={(e) => setSilenceGatePostSuppressMs(Number(e.target.value))}
+                        />
+                        <span className="text-right text-xs tabular-nums text-zinc-600 dark:text-zinc-300">
+                          {silenceGatePostSuppressMs}
+                        </span>
+                      </label>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

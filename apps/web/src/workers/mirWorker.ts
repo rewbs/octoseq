@@ -133,6 +133,30 @@ function serialiseResult(
         };
     }
 
+    if (result.kind === "activity") {
+        // Activity results - transfer activityLevel as a 1D signal
+        const valuesBuf = result.activityLevel.buffer.slice(
+            result.activityLevel.byteOffset,
+            result.activityLevel.byteOffset + result.activityLevel.byteLength
+        ) as ArrayBuffer;
+        transfer.push(valuesBuf);
+
+        return {
+            msg: {
+                type: "RESULT",
+                jobId,
+                workerTotalMs,
+                result: {
+                    kind: "1d",
+                    times: timesBuf,
+                    values: valuesBuf,
+                    meta: result.meta,
+                },
+            },
+            transfer,
+        };
+    }
+
     // 2d
     const data2d: ArrayBuffer[] = new Array(result.data.length);
     for (let i = 0; i < result.data.length; i++) {

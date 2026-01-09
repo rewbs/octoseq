@@ -24,6 +24,13 @@ interface ConfigState {
   onsetDiffMethod: "rectified" | "abs";
   onsetUseLog: boolean;
 
+  // Silence Gating (for onset detection)
+  silenceGateEnabled: boolean;
+  silenceGateEnterMargin: number;
+  silenceGateExitMargin: number;
+  silenceGateHangoverMs: number;
+  silenceGatePostSuppressMs: number;
+
   // Peak picking
   peakMinIntervalMs: number;
   peakThreshold: string;
@@ -65,6 +72,9 @@ interface ConfigState {
   cqtBinsPerOctave: number;
   cqtFMin: string; // Keep as string for optional input
   cqtFMax: string;
+
+  // MIR Audio Preprocessing
+  mirSampleRate: number; // Target sample rate for MIR analysis (Hz)
 }
 
 interface ConfigActions {
@@ -88,6 +98,13 @@ interface ConfigActions {
   setOnsetSmoothMs: (v: number) => void;
   setOnsetDiffMethod: (v: "rectified" | "abs") => void;
   setOnsetUseLog: (v: boolean) => void;
+
+  // Silence Gating setters
+  setSilenceGateEnabled: (v: boolean) => void;
+  setSilenceGateEnterMargin: (v: number) => void;
+  setSilenceGateExitMargin: (v: number) => void;
+  setSilenceGateHangoverMs: (v: number) => void;
+  setSilenceGatePostSuppressMs: (v: number) => void;
 
   // Peak picking setters
   setPeakMinIntervalMs: (v: number) => void;
@@ -131,11 +148,19 @@ interface ConfigActions {
   setCqtFMin: (v: string) => void;
   setCqtFMax: (v: string) => void;
 
+  // MIR Audio Preprocessing setters
+  setMirSampleRate: (v: number) => void;
+
   // Utility
   parseOptionalNumber: (v: string) => number | undefined;
   getSpectrogramConfig: () => { fftSize: number; hopSize: number; window: "hann" };
   getMelConfig: () => { nMels: number; fMin?: number; fMax?: number };
-  getOnsetConfig: () => { smoothMs: number; diffMethod: "rectified" | "abs"; useLog: boolean };
+  getOnsetConfig: () => {
+    smoothMs: number;
+    diffMethod: "rectified" | "abs";
+    useLog: boolean;
+    silenceGate: { enabled: boolean; enterMargin: number; exitMargin: number; hangoverMs: number; postSilenceSuppressMs: number };
+  };
   getPeakPickConfig: () => { minIntervalSec: number; threshold?: number; adaptiveFactor?: number };
   getHpssConfig: () => { timeMedian: number; freqMedian: number; spectrogram: { fftSize: number; hopSize: number; window: "hann" } };
   getMfccConfig: () => { nCoeffs: number; spectrogram: { fftSize: number; hopSize: number; window: "hann" } };
@@ -166,6 +191,13 @@ const initialState: ConfigState = {
   onsetSmoothMs: 20,
   onsetDiffMethod: "rectified",
   onsetUseLog: false,
+
+  // Silence Gating (disabled by default to preserve existing behavior)
+  silenceGateEnabled: false,
+  silenceGateEnterMargin: 6,
+  silenceGateExitMargin: 3,
+  silenceGateHangoverMs: 50,
+  silenceGatePostSuppressMs: 50,
 
   // Peak picking
   peakMinIntervalMs: 120,
@@ -208,6 +240,9 @@ const initialState: ConfigState = {
   cqtBinsPerOctave: 24,
   cqtFMin: "", // empty = use library default (32.7 Hz, C1)
   cqtFMax: "", // empty = use library default (8372 Hz, C9)
+
+  // MIR Audio Preprocessing
+  mirSampleRate: 8000, // Default 8kHz - matches previous WaveSurfer behavior
 };
 
 export const useConfigStore = create<ConfigStore>()(
@@ -236,6 +271,13 @@ export const useConfigStore = create<ConfigStore>()(
         setOnsetSmoothMs: (v) => set({ onsetSmoothMs: v }, false, "setOnsetSmoothMs"),
         setOnsetDiffMethod: (v) => set({ onsetDiffMethod: v }, false, "setOnsetDiffMethod"),
         setOnsetUseLog: (v) => set({ onsetUseLog: v }, false, "setOnsetUseLog"),
+
+        // Silence Gating setters
+        setSilenceGateEnabled: (v) => set({ silenceGateEnabled: v }, false, "setSilenceGateEnabled"),
+        setSilenceGateEnterMargin: (v) => set({ silenceGateEnterMargin: v }, false, "setSilenceGateEnterMargin"),
+        setSilenceGateExitMargin: (v) => set({ silenceGateExitMargin: v }, false, "setSilenceGateExitMargin"),
+        setSilenceGateHangoverMs: (v) => set({ silenceGateHangoverMs: v }, false, "setSilenceGateHangoverMs"),
+        setSilenceGatePostSuppressMs: (v) => set({ silenceGatePostSuppressMs: v }, false, "setSilenceGatePostSuppressMs"),
 
         // Peak picking setters
         setPeakMinIntervalMs: (v) => set({ peakMinIntervalMs: v }, false, "setPeakMinIntervalMs"),
@@ -279,6 +321,9 @@ export const useConfigStore = create<ConfigStore>()(
         setCqtFMin: (v) => set({ cqtFMin: v }, false, "setCqtFMin"),
         setCqtFMax: (v) => set({ cqtFMax: v }, false, "setCqtFMax"),
 
+        // MIR Audio Preprocessing setters
+        setMirSampleRate: (v) => set({ mirSampleRate: v }, false, "setMirSampleRate"),
+
         // Utility
         parseOptionalNumber: (v: string): number | undefined => {
           if (v.trim() === "") return undefined;
@@ -311,6 +356,13 @@ export const useConfigStore = create<ConfigStore>()(
             smoothMs: state.onsetSmoothMs,
             diffMethod: state.onsetDiffMethod,
             useLog: state.onsetUseLog,
+            silenceGate: {
+              enabled: state.silenceGateEnabled,
+              enterMargin: state.silenceGateEnterMargin,
+              exitMargin: state.silenceGateExitMargin,
+              hangoverMs: state.silenceGateHangoverMs,
+              postSilenceSuppressMs: state.silenceGatePostSuppressMs,
+            },
           };
         },
 
@@ -387,6 +439,11 @@ export const useConfigStore = create<ConfigStore>()(
           onsetSmoothMs: state.onsetSmoothMs,
           onsetDiffMethod: state.onsetDiffMethod,
           onsetUseLog: state.onsetUseLog,
+          silenceGateEnabled: state.silenceGateEnabled,
+          silenceGateEnterMargin: state.silenceGateEnterMargin,
+          silenceGateExitMargin: state.silenceGateExitMargin,
+          silenceGateHangoverMs: state.silenceGateHangoverMs,
+          silenceGatePostSuppressMs: state.silenceGatePostSuppressMs,
           peakMinIntervalMs: state.peakMinIntervalMs,
           peakThreshold: state.peakThreshold,
           peakAdaptiveFactor: state.peakAdaptiveFactor,
@@ -409,6 +466,7 @@ export const useConfigStore = create<ConfigStore>()(
           cqtBinsPerOctave: state.cqtBinsPerOctave,
           cqtFMin: state.cqtFMin,
           cqtFMax: state.cqtFMax,
+          mirSampleRate: state.mirSampleRate,
         }),
       }
     ),

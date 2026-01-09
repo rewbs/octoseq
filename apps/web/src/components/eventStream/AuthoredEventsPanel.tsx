@@ -19,7 +19,7 @@ import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useAuthoredEventActions } from "@/lib/stores/hooks/useAuthoredEventActions";
 import { useBeatGridStore } from "@/lib/stores/beatGridStore";
 import { useMirroredCursorTime } from "@/lib/stores/hooks/useDerivedState";
-import { useCustomSignalStore } from "@/lib/stores/customSignalStore";
+import { useDerivedSignalStore } from "@/lib/stores/derivedSignalStore";
 import { useBandMirStore } from "@/lib/stores/bandMirStore";
 import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { useMirStore, mirTabDefinitions, makeInputMirCacheKey } from "@/lib/stores/mirStore";
@@ -103,11 +103,11 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
   const beatGridVisible = useBeatGridStore((s) => s.isVisible);
   const bpm = useBeatGridStore((s) => s.selectedHypothesis?.bpm ?? null);
 
-  // Get available signals from various sources
-  const customSignals = useCustomSignalStore(
+  // Get available signals from various sources (now called derived signals)
+  const derivedSignals = useDerivedSignalStore(
     useShallow((s) => s.structure?.signals ?? [])
   );
-  const customSignalResults = useCustomSignalStore((s) => s.resultCache);
+  const derivedSignalResults = useDerivedSignalStore((s) => s.resultCache);
 
   const bands = useFrequencyBandStore(
     useShallow((s) => s.structure?.bands ?? [])
@@ -123,8 +123,8 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
     const sources: SignalSource[] = [];
 
     // Custom Signals
-    for (const signal of customSignals) {
-      if (customSignalResults.has(signal.id)) {
+    for (const signal of derivedSignals) {
+      if (derivedSignalResults.has(signal.id)) {
         sources.push({
           kind: "customSignal",
           id: signal.id,
@@ -214,7 +214,7 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
     }
 
     return sources;
-  }, [customSignals, customSignalResults, bands, bandMirCache, bandCqtCache, mirResults, inputMirCache]);
+  }, [derivedSignals, derivedSignalResults, bands, bandMirCache, bandCqtCache, mirResults, inputMirCache]);
 
   // Group sources by groupLabel
   const groupedSources = useMemo(() => {
@@ -243,7 +243,7 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
     if (!selectedSource) return null;
 
     if (selectedSource.kind === "customSignal") {
-      const result = customSignalResults.get(selectedSource.id);
+      const result = derivedSignalResults.get(selectedSource.id);
       if (!result) return null;
       return { times: result.times, values: result.values };
     }
@@ -280,7 +280,7 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
     }
 
     return null;
-  }, [selectedSource, customSignalResults, bandMirCache, bandCqtCache, mirResults, inputMirCache]);
+  }, [selectedSource, derivedSignalResults, bandMirCache, bandCqtCache, mirResults, inputMirCache]);
 
   // Peak detection state
   const detectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

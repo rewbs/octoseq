@@ -6,6 +6,8 @@ export type {
   MirRunMeta,
   Mir1DResult,
   Mir2DResult,
+  MirActivityDiagnostics,
+  MirActivityResult,
   MirResult,
   MirFunctionId,
   MirRunRequest,
@@ -97,8 +99,44 @@ export { amplitudeEnvelope, spectralCentroid, spectralFlux } from "./dsp/spectra
 // Onsets / Peaks
 // ----------------------------
 
-export type { OnsetEnvelope, OnsetEnvelopeOptions, OnsetEnvelopeGpuResult } from "./dsp/onset";
+export type {
+    OnsetEnvelope,
+    OnsetEnvelopeResult,
+    OnsetDiagnostics,
+    OnsetEnvelopeOptions,
+    OnsetEnvelopeGpuResult,
+    SilenceGateConfig,
+    BinGateConfig,
+    SilenceGateResult,
+} from "./dsp/onset";
 export { onsetEnvelopeFromSpectrogram, onsetEnvelopeFromMel, onsetEnvelopeFromMelGpu } from "./dsp/onset";
+
+export {
+    computeFrameEnergyFromMel,
+    computeFrameEnergyFromSpectrogram,
+    computeSilenceGating,
+    estimateNoiseFloor,
+    buildActivityMask,
+    withSilenceGateDefaults,
+    withBinGateDefaults,
+} from "./dsp/silenceGating";
+
+// ----------------------------
+// Activity Signal
+// ----------------------------
+
+export type {
+    ActivitySignal,
+    ActivityConfig,
+    ActivityDiagnostics,
+} from "./dsp/activity";
+export {
+    computeActivityFromMel,
+    computeActivityFromSpectrogram,
+    computeActivityFromAudio,
+    applyActivityGating,
+    interpolateActivity,
+} from "./dsp/activity";
 
 export type { PeakPickEvent, PeakPickOptions } from "./dsp/peakPick";
 export { peakPick } from "./dsp/peakPick";
@@ -302,6 +340,13 @@ export {
 } from "./dsp/cqtSignals";
 
 // ----------------------------
+// Pitch Detection (P1)
+// ----------------------------
+
+export type { PitchConfig, PitchResult, PitchActivityOptions } from "./dsp/pitch";
+export { pitchF0, pitchConfidence } from "./dsp/pitch";
+
+// ----------------------------
 // Band Proposals (F5)
 // ----------------------------
 
@@ -341,12 +386,68 @@ export {
 } from "./dsp/customSignalReduction";
 
 // ----------------------------
+// Event to Signal Conversion
+// ----------------------------
+
+export type {
+    DiscreteEvent,
+    EventWindowSpec,
+    EnvelopeShape,
+    EventToSignalOptions,
+    EventSignalResult,
+    EventReducer,
+    EventToSignalParams,
+} from "./dsp/eventToSignal";
+export {
+    eventCount,
+    eventDensity,
+    weightedSum,
+    weightedMean,
+    eventEnvelope,
+    eventsToSignal,
+} from "./dsp/eventToSignal";
+
+// ----------------------------
+// Signal Transforms
+// ----------------------------
+
+export type {
+    TransformSmoothMovingAverage,
+    TransformSmoothExponential,
+    TransformSmoothGaussian,
+    TransformSmooth,
+    TransformNormalizeMinMax,
+    TransformNormalizeRobust,
+    TransformNormalizeZScore,
+    TransformNormalize,
+    TransformScale,
+    TransformPolarity,
+    TransformClamp,
+    TransformRemap,
+    TransformStep,
+    TransformChain,
+    TransformContext,
+} from "./dsp/signalTransforms";
+export {
+    applyTransformStep,
+    applyTransformChain,
+    getTransformLabel,
+    createDefaultTransform,
+} from "./dsp/signalTransforms";
+
+// ----------------------------
 // Visualisation utilities
 // ----------------------------
 
 export { normaliseForWaveform } from "./util/normalise";
 export type { Spectrogram2D, SpectrogramToDbOptions } from "./util/display";
 export { spectrogramToDb, clampDb } from "./util/display";
+
+// ----------------------------
+// Audio Preprocessing
+// ----------------------------
+
+export { resample } from "./dsp/resample";
 
 // ----------------------------
 // Utility helpers

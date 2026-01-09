@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import { useMirStore } from "@/lib/stores/mirStore";
 import { useCandidateEventStore } from "@/lib/stores/candidateEventStore";
+import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { useMirActions } from "@/lib/stores/hooks/useMirActions";
 import { generateMixdownFromStems, createBlobUrlFromBuffer } from "@/lib/audio/mixdownGenerator";
 import type { AudioInput, AudioInputOrigin, GeneratedAudioSource } from "@/lib/stores/types/audioInput";
@@ -232,6 +233,9 @@ export function StemManagementContent() {
 
           // Clear candidate events for this stem
           useCandidateEventStore.getState().clearForSource(stemId);
+
+          // Clear frequency bands for this stem
+          useFrequencyBandStore.getState().clearBandsForSource(stemId);
 
           // Set up undo with timeout
           const timeoutId = setTimeout(() => {

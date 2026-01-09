@@ -9,7 +9,8 @@ import { useProjectStore } from "@/lib/stores/projectStore";
 import { TREE_NODE_IDS } from "@/lib/stores/interpretationTreeStore";
 import { useMirStore, mirTabDefinitions, makeInputMirCacheKey } from "@/lib/stores/mirStore";
 import { useBandMirStore } from "@/lib/stores/bandMirStore";
-import { useCustomSignalStore } from "@/lib/stores/customSignalStore";
+import { useDerivedSignalStore } from "@/lib/stores/derivedSignalStore";
+import { useComposedSignalStore } from "@/lib/stores/composedSignalStore";
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 import type { BandMirFunctionId, BandCqtFunctionId, BandEventFunctionId } from "@octoseq/mir";
 
@@ -170,8 +171,9 @@ export function useTreeData(): TreeNodeData[] {
   const bandMirCache = useBandMirStore((s) => s.cache);
   const bandCqtCache = useBandMirStore((s) => s.cqtCache);
   const bandEventCache = useBandMirStore((s) => s.typedEventCache);
-  const customSignalStructure = useCustomSignalStore((s) => s.structure);
-  const customSignalResultCache = useCustomSignalStore((s) => s.resultCache);
+  const derivedSignalStructure = useDerivedSignalStore((s) => s.structure);
+  const derivedSignalResultCache = useDerivedSignalStore((s) => s.resultCache);
+  const composedSignalStructure = useComposedSignalStore((s) => s.structure);
 
   return useMemo(() => {
     const stemCount = audioCollection?.stemOrder.length ?? 0;
@@ -338,13 +340,13 @@ export function useTreeData(): TreeNodeData[] {
         hasChildren: true,
         children: audioChildren,
       },
-      // Custom Signals section
+      // Derived Signals section
       (() => {
-        const customSignals = customSignalStructure?.signals ?? [];
-        const signalChildren: TreeNodeData[] = customSignals.map((signal) => {
-          const hasResult = customSignalResultCache.has(signal.id);
+        const derivedSignals = derivedSignalStructure?.signals ?? [];
+        const signalChildren: TreeNodeData[] = derivedSignals.map((signal) => {
+          const hasResult = derivedSignalResultCache.has(signal.id);
           return {
-            id: `custom-signals:${signal.id}`,
+            id: `derived-signals:${signal.id}`,
             label: signal.name,
             iconName: hasResult ? "activity" : "circle-dashed",
             hasChildren: false,
@@ -353,11 +355,31 @@ export function useTreeData(): TreeNodeData[] {
         });
 
         return {
-          id: TREE_NODE_IDS.CUSTOM_SIGNALS,
-          label: "Custom Signals",
+          id: TREE_NODE_IDS.DERIVED_SIGNALS,
+          label: "Derived Signals",
           iconName: "waveform",
           hasChildren: true,
-          badge: customSignals.length > 0 ? String(customSignals.length) : undefined,
+          badge: derivedSignals.length > 0 ? String(derivedSignals.length) : undefined,
+          children: signalChildren,
+        };
+      })(),
+      // Composed Signals section (human-authored interpretation curves)
+      (() => {
+        const composedSignals = composedSignalStructure?.signals ?? [];
+        const signalChildren: TreeNodeData[] = composedSignals.map((signal) => ({
+          id: `composed-signals:${signal.id}`,
+          label: signal.name,
+          iconName: signal.enabled ? "spline" : "circle-dashed",
+          hasChildren: false,
+          isDisabled: !signal.enabled,
+        }));
+
+        return {
+          id: TREE_NODE_IDS.COMPOSED_SIGNALS,
+          label: "Composed Signals",
+          iconName: "spline",
+          hasChildren: true,
+          badge: composedSignals.length > 0 ? String(composedSignals.length) : undefined,
           children: signalChildren,
         };
       })(),
@@ -434,7 +456,7 @@ export function useTreeData(): TreeNodeData[] {
     ];
 
     return tree;
-  }, [audioCollection, frequencyBandStructure, candidateStreams, authoredStreams, activeProject, isDirty, inputMirCache, bandMirCache, bandCqtCache, bandEventCache, customSignalStructure, customSignalResultCache]);
+  }, [audioCollection, frequencyBandStructure, candidateStreams, authoredStreams, activeProject, isDirty, inputMirCache, bandMirCache, bandCqtCache, bandEventCache, derivedSignalStructure, derivedSignalResultCache, composedSignalStructure]);
 }
 
 /**

@@ -244,10 +244,11 @@ pub fn extract_edges(indices: &[u16]) -> Vec<u16> {
     edges.into_iter().flat_map(|(a, b)| [a, b]).collect()
 }
 
-/// Create a radial ring/arc in the XY plane (facing +Z).
+/// Create a radial ring/arc, optionally extruded in Z for 3D depth.
 ///
 /// The ring extends from `radius - thickness/2` to `radius + thickness/2`.
 /// Angles are in radians, with 0 pointing along +X and increasing counter-clockwise.
+/// When `depth > 0`, creates a 3D extruded ring with front, back, inner, and outer faces.
 ///
 /// # Arguments
 /// * `radius` - Distance from center to middle of ring
@@ -255,62 +256,168 @@ pub fn extract_edges(indices: &[u16]) -> Vec<u16> {
 /// * `start_angle` - Starting angle in radians
 /// * `end_angle` - Ending angle in radians
 /// * `segments` - Number of segments around the arc
+/// * `depth` - Extrusion depth in Z (0 = flat double-sided ring)
 pub fn create_radial_ring_geometry(
     radius: f32,
     thickness: f32,
     start_angle: f32,
     end_angle: f32,
     segments: u32,
+    depth: f32,
 ) -> (Vec<Vertex>, Vec<u16>) {
     let inner_radius = (radius - thickness / 2.0).max(0.0);
     let outer_radius = radius + thickness / 2.0;
     let seg_count = segments.max(3);
+    let half_depth = depth / 2.0;
 
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
 
-    // Normal faces +Z for XY plane ring
-    let normal = [0.0, 0.0, 1.0];
+    // Color gradient: inner is darker, outer is lighter
+    let inner_color = [0.7, 0.7, 0.7];
+    let outer_color = [1.0, 1.0, 1.0];
+    let edge_color = [0.85, 0.85, 0.85];
 
+    // Normals
+    let front_normal = [0.0, 0.0, 1.0];
+    let back_normal = [0.0, 0.0, -1.0];
+
+    // === FRONT FACE (z = +half_depth) ===
+    let front_start = vertices.len() as u16;
     for i in 0..=seg_count {
         let t = i as f32 / seg_count as f32;
         let angle = start_angle + t * (end_angle - start_angle);
         let cos_a = angle.cos();
         let sin_a = angle.sin();
 
-        // Color gradient: inner is darker, outer is lighter
-        let inner_color = [0.7, 0.7, 0.7];
-        let outer_color = [1.0, 1.0, 1.0];
-
-        // Inner vertex
+        // Inner vertex (front)
         vertices.push(Vertex::new(
-            [inner_radius * cos_a, inner_radius * sin_a, 0.0],
-            normal,
+            [inner_radius * cos_a, inner_radius * sin_a, half_depth],
+            front_normal,
             inner_color,
         ));
-
-        // Outer vertex
+        // Outer vertex (front)
         vertices.push(Vertex::new(
-            [outer_radius * cos_a, outer_radius * sin_a, 0.0],
-            normal,
+            [outer_radius * cos_a, outer_radius * sin_a, half_depth],
+            front_normal,
             outer_color,
         ));
     }
 
-    // Generate quad strip indices with CCW winding for +Z normal
-    // Vertices are arranged as: inner_0, outer_0, inner_1, outer_1, ...
+    // Front face indices (CCW when viewed from +Z)
     for i in 0..seg_count {
-        let base = (i * 2) as u16;
-        // Two triangles per quad, CCW winding when viewed from +Z
-        // Triangle 1: inner_curr, outer_curr, inner_next
-        indices.push(base);      // inner_i
-        indices.push(base + 1);  // outer_i
-        indices.push(base + 2);  // inner_i+1
+        let base = front_start + (i * 2) as u16;
+        indices.push(base);
+        indices.push(base + 1);
+        indices.push(base + 2);
+        indices.push(base + 1);
+        indices.push(base + 3);
+        indices.push(base + 2);
+    }
 
-        // Triangle 2: outer_curr, outer_next, inner_next
-        indices.push(base + 1);  // outer_i
-        indices.push(base + 3);  // outer_i+1
-        indices.push(base + 2);  // inner_i+1
+    // === BACK FACE (z = -half_depth) ===
+    let back_start = vertices.len() as u16;
+    for i in 0..=seg_count {
+        let t = i as f32 / seg_count as f32;
+        let angle = start_angle + t * (end_angle - start_angle);
+        let cos_a = angle.cos();
+        let sin_a = angle.sin();
+
+        // Inner vertex (back)
+        vertices.push(Vertex::new(
+            [inner_radius * cos_a, inner_radius * sin_a, -half_depth],
+            back_normal,
+            inner_color,
+        ));
+        // Outer vertex (back)
+        vertices.push(Vertex::new(
+            [outer_radius * cos_a, outer_radius * sin_a, -half_depth],
+            back_normal,
+            outer_color,
+        ));
+    }
+
+    // Back face indices (CW when viewed from +Z = CCW from -Z)
+    for i in 0..seg_count {
+        let base = back_start + (i * 2) as u16;
+        indices.push(base);
+        indices.push(base + 2);
+        indices.push(base + 1);
+        indices.push(base + 1);
+        indices.push(base + 2);
+        indices.push(base + 3);
+    }
+
+    // Only add edge faces if there's actual depth
+    if depth > 0.001 {
+        // === OUTER EDGE (facing outward from center) ===
+        let outer_edge_start = vertices.len() as u16;
+        for i in 0..=seg_count {
+            let t = i as f32 / seg_count as f32;
+            let angle = start_angle + t * (end_angle - start_angle);
+            let cos_a = angle.cos();
+            let sin_a = angle.sin();
+            let normal = [cos_a, sin_a, 0.0]; // Points outward radially
+
+            // Front-outer vertex
+            vertices.push(Vertex::new(
+                [outer_radius * cos_a, outer_radius * sin_a, half_depth],
+                normal,
+                edge_color,
+            ));
+            // Back-outer vertex
+            vertices.push(Vertex::new(
+                [outer_radius * cos_a, outer_radius * sin_a, -half_depth],
+                normal,
+                edge_color,
+            ));
+        }
+
+        // Outer edge indices (CCW when viewed from outside)
+        for i in 0..seg_count {
+            let base = outer_edge_start + (i * 2) as u16;
+            // Quad: front_i, back_i, front_i+1, back_i+1
+            indices.push(base);
+            indices.push(base + 1);
+            indices.push(base + 2);
+            indices.push(base + 1);
+            indices.push(base + 3);
+            indices.push(base + 2);
+        }
+
+        // === INNER EDGE (facing inward toward center) ===
+        let inner_edge_start = vertices.len() as u16;
+        for i in 0..=seg_count {
+            let t = i as f32 / seg_count as f32;
+            let angle = start_angle + t * (end_angle - start_angle);
+            let cos_a = angle.cos();
+            let sin_a = angle.sin();
+            let normal = [-cos_a, -sin_a, 0.0]; // Points inward radially
+
+            // Front-inner vertex
+            vertices.push(Vertex::new(
+                [inner_radius * cos_a, inner_radius * sin_a, half_depth],
+                normal,
+                edge_color,
+            ));
+            // Back-inner vertex
+            vertices.push(Vertex::new(
+                [inner_radius * cos_a, inner_radius * sin_a, -half_depth],
+                normal,
+                edge_color,
+            ));
+        }
+
+        // Inner edge indices (CCW when viewed from inside - reversed winding)
+        for i in 0..seg_count {
+            let base = inner_edge_start + (i * 2) as u16;
+            indices.push(base);
+            indices.push(base + 2);
+            indices.push(base + 1);
+            indices.push(base + 1);
+            indices.push(base + 2);
+            indices.push(base + 3);
+        }
     }
 
     (vertices, indices)

@@ -23,7 +23,8 @@ import { TempoHypothesesViewer, type SignalOption } from "@/components/tempo/Tem
 import { MusicalTimePanel } from "@/components/tempo/MusicalTimePanel";
 import { WaveSurferPlayer, type WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
 import { VisualiserPanel } from "@/components/visualiser/VisualiserPanel";
-import { CustomSignalsPanel } from "@/components/customSignal/CustomSignalsPanel";
+import { DerivedSignalsPanel } from "@/components/derivedSignal/DerivedSignalsPanel";
+import { ComposedSignalsPanel } from "@/components/composedSignal/ComposedSignalsPanel";
 import { MeshAssetsPanel } from "@/components/meshAssets";
 import { AuthoredEventsPanel } from "@/components/eventStream";
 import { SearchPanel } from "@/components/search/SearchPanel";
@@ -214,7 +215,6 @@ export default function Home() {
   const musicalTimeStructure = useMusicalTimeStore((s) => s.structure);
   const musicalTimeSelectedSegmentId = useMusicalTimeStore((s) => s.selectedSegmentId);
   const {
-    setAudioIdentity,
     promoteGrid,
     selectSegment: selectMusicalTimeSegment,
     removeSegment: removeMusicalTimeSegment,
@@ -224,7 +224,6 @@ export default function Home() {
     reset: resetMusicalTime,
   } = useMusicalTimeStore(
     useShallow((s) => ({
-      setAudioIdentity: s.setAudioIdentity,
       promoteGrid: s.promoteGrid,
       selectSegment: s.selectSegment,
       removeSegment: s.removeSegment,
@@ -302,7 +301,6 @@ export default function Home() {
 
   // Frequency band store
   const hasBands = useFrequencyBandStore((s) => (s.structure?.bands.length ?? 0) > 0);
-  const setFrequencyBandAudioIdentity = useFrequencyBandStore((s) => s.setAudioIdentity);
   const { structure: bandStructure, soloedBandId, mutedBandIds } = useFrequencyBandStore(
     useShallow((s) => ({
       structure: s.structure,
@@ -318,13 +316,18 @@ export default function Home() {
     []
   ) as (status: { ready: number; total: number }) => void;
 
-  // Audio URL for band auditioning
-  const audioUrl = useAudioInputStore((s) => s.getCurrentAudioUrl());
+  // Get audio URL for a specific source (used by band auditioning)
+  const getInputById = useAudioInputStore((s) => s.getInputById);
+  const getAudioUrlForSource = useCallback(
+    (sourceId: string) => getInputById(sourceId)?.audioUrl ?? null,
+    [getInputById]
+  );
 
-  // Tree selection state - to hide main viz when custom signals or event streams is selected
+  // Tree selection state - to hide main viz when derived signals or event streams is selected
   const selectedNodeId = useInterpretationTreeStore((s) => s.selectedNodeId);
   const selectedNodeType = useMemo(() => getInspectorNodeType(selectedNodeId), [selectedNodeId]);
-  const isCustomSignalSelected = selectedNodeType === "custom-signals-section" || selectedNodeType === "custom-signal";
+  const isDerivedSignalSelected = selectedNodeType === "derived-signals-section" || selectedNodeType === "derived-signal";
+  const isComposedSignalSelected = selectedNodeType === "composed-signals-section" || selectedNodeType === "composed-signal";
   const isEventStreamsSelected = selectedNodeType === "event-streams-section" || selectedNodeType === "authored-stream";
 
   // Derive the active audio source ID from the selected tree node (for filtering band overlays)
@@ -404,7 +407,7 @@ export default function Home() {
   // ===== BAND AUDITIONING =====
   const [mainPlayerMuted, setMainPlayerMuted] = useState(false);
   useBandAuditioning({
-    audioUrl,
+    getAudioUrlForSource,
     enabled: true,
     soloedBandId,
     mutedBandIds,
@@ -702,30 +705,12 @@ export default function Home() {
     return setupBandMirInvalidation();
   }, []);
 
-  // Set audio identity for musical time persistence (B4)
+  // Reset musical time when audio is cleared
   useEffect(() => {
-    if (audio && audioSampleRate && audioDuration) {
-      const audioFileName = useAudioInputStore.getState().getAudioFileName();
-      const identity = {
-        filename: audioFileName ?? "unknown",
-        duration: audioDuration,
-        sampleRate: audioSampleRate,
-      };
-      setAudioIdentity(identity);
-      setFrequencyBandAudioIdentity(identity);
-    } else {
-      setAudioIdentity(null);
-      setFrequencyBandAudioIdentity(null);
+    if (!audio) {
       resetMusicalTime();
     }
-  }, [
-    audio,
-    audioSampleRate,
-    audioDuration,
-    setAudioIdentity,
-    setFrequencyBandAudioIdentity,
-    resetMusicalTime,
-  ]);
+  }, [audio, resetMusicalTime]);
 
   // Handle promotion of beat grid to musical time
   const handlePromoteGrid = useCallback(
@@ -1137,8 +1122,8 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Main visualization section - hidden when custom signals or event streams is selected */}
-              {!isCustomSignalSelected && !isEventStreamsSelected && <div className="mt-1.5">
+              {/* Main visualization section - hidden when derived signals, composed signals, or event streams is selected */}
+              {!isDerivedSignalSelected && !isComposedSignalSelected && !isEventStreamsSelected && <div className="mt-1.5">
 
                 {visualTab === "search" ? (
                   hasSearchResult ? (
@@ -1190,7 +1175,10 @@ export default function Home() {
                       visualTab === "onsetEnvelope" ||
                       visualTab === "cqtHarmonicEnergy" ||
                       visualTab === "cqtBassPitchMotion" ||
-                      visualTab === "cqtTonalStability" ? (
+                      visualTab === "cqtTonalStability" ||
+                      visualTab === "pitchF0" ||
+                      visualTab === "pitchConfidence" ||
+                      visualTab === "activity" ? (
                       tabResult?.kind === "1d" && tabResult.fn === visualTab ? (
                         <>
                           <SignalViewer
@@ -1429,7 +1417,8 @@ export default function Home() {
               </div>}
             </div>
             {visualTab === "search" && <SearchPanel playerRef={playerRef} />}
-            <CustomSignalsPanel />
+            <DerivedSignalsPanel />
+            <ComposedSignalsPanel />
             <MeshAssetsPanel />
             <AuthoredEventsPanel />
             <VisualiserPanel

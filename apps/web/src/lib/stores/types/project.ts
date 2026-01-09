@@ -16,7 +16,8 @@ import type {
 import type { AudioInputMetadata, AudioInputOrigin } from "./audioInput";
 import type { AuthoredEventStream } from "./authoredEvent";
 import type { SubBeatDivision } from "../beatGridStore";
-import type { CustomSignalStructure } from "./customSignal";
+import type { DerivedSignalStructure } from "./derivedSignal";
+import type { ComposedSignalStructure } from "./composedSignal";
 import type { MeshAssetStructure } from "./meshAsset";
 import { DEFAULT_SCRIPT } from "@/lib/scripting/defaultScripts";
 import { nanoid } from "nanoid";
@@ -140,8 +141,10 @@ export interface ProjectInterpretation {
   authoredEvents: AuthoredEventStream[];
   /** Active beat grid state (even if not promoted). */
   beatGrid: ProjectBeatGridState | null;
-  /** Custom signal definitions for 2D→1D extraction. */
-  customSignals: CustomSignalStructure | null;
+  /** Derived signal definitions for interpretation-layer signal extraction. */
+  derivedSignals: DerivedSignalStructure | null;
+  /** Composed signal definitions for human-authored interpretation curves. */
+  composedSignals: ComposedSignalStructure | null;
 }
 
 // ----------------------------
@@ -278,7 +281,8 @@ export function createEmptyProject(name: string): Project {
       musicalTime: null,
       authoredEvents: [],
       beatGrid: null,
-      customSignals: null,
+      derivedSignals: null,
+      composedSignals: null,
     },
     scripts: {
       scripts: [],

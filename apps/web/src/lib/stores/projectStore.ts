@@ -11,7 +11,8 @@ import { devtools } from "zustand/middleware";
 
 import type { FrequencyBandStructure, MusicalTimeStructure } from "@octoseq/mir";
 import type { AuthoredEventStream } from "./types/authoredEvent";
-import type { CustomSignalStructure } from "./types/customSignal";
+import type { DerivedSignalStructure } from "./types/derivedSignal";
+import type { ComposedSignalStructure } from "./types/composedSignal";
 import type { MeshAssetStructure } from "./types/meshAsset";
 import type {
   Project,
@@ -118,8 +119,11 @@ interface ProjectActions {
   /** Sync beat grid state from beatGridStore. */
   syncBeatGrid: (state: ProjectBeatGridState | null) => void;
 
-  /** Sync custom signals from customSignalStore. */
-  syncCustomSignals: (structure: CustomSignalStructure | null) => void;
+  /** Sync derived signals from derivedSignalStore. */
+  syncDerivedSignals: (structure: DerivedSignalStructure | null) => void;
+
+  /** Sync composed signals from composedSignalStore. */
+  syncComposedSignals: (structure: ComposedSignalStructure | null) => void;
 
   /** Sync mesh assets from meshAssetStore. */
   syncMeshAssets: (structure: MeshAssetStructure | null) => void;
@@ -273,7 +277,8 @@ export const useProjectStore = create<ProjectStore>()(
             musicalTime: null,
             authoredEvents: [],
             beatGrid: null,
-            customSignals: null,
+            derivedSignals: null,
+            composedSignals: null,
           },
           scripts: {
             scripts: [defaultScript],
@@ -488,7 +493,7 @@ export const useProjectStore = create<ProjectStore>()(
         );
       },
 
-      syncCustomSignals: (structure) => {
+      syncDerivedSignals: (structure) => {
         const { activeProject, suppressDirty } = get();
         if (!activeProject) return;
 
@@ -499,7 +504,7 @@ export const useProjectStore = create<ProjectStore>()(
                 ...state.activeProject,
                 interpretation: {
                   ...state.activeProject.interpretation,
-                  customSignals: structure,
+                  derivedSignals: structure,
                 },
                 modifiedAt: new Date().toISOString(),
               }
@@ -507,7 +512,30 @@ export const useProjectStore = create<ProjectStore>()(
             isDirty: suppressDirty ? state.isDirty : true,
           }),
           false,
-          "syncCustomSignals"
+          "syncDerivedSignals"
+        );
+      },
+
+      syncComposedSignals: (structure) => {
+        const { activeProject, suppressDirty } = get();
+        if (!activeProject) return;
+
+        set(
+          (state) => ({
+            activeProject: state.activeProject
+              ? {
+                ...state.activeProject,
+                interpretation: {
+                  ...state.activeProject.interpretation,
+                  composedSignals: structure,
+                },
+                modifiedAt: new Date().toISOString(),
+              }
+              : null,
+            isDirty: suppressDirty ? state.isDirty : true,
+          }),
+          false,
+          "syncComposedSignals"
         );
       },
 

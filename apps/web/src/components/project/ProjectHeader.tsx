@@ -157,7 +157,7 @@ function SaveToCloudButton({
         ) : (
           <Upload className="h-3.5 w-3.5 mr-1.5" />
         )}
-        {isSaving ? 'Saving...' : 'Save to cloud'}
+        {isSaving ? 'Saving...' : 'Save Project'}
       </Button>
       {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
     </div>
@@ -283,7 +283,7 @@ export function ProjectHeader({
               className="h-7 text-xs"
             >
               <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
-              Load
+              Load Project
             </Button>
           )}
 

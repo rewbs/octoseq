@@ -367,13 +367,13 @@ Signals are **not** automatically coerced into numbers inside Rhai. Use:
 - `timing.*` for time-based animation (returns Signals, not numbers)
 
 **Namespace structure:**
-- `inputs.mix` - Mixdown audio signals: `rms`, `energy`, `centroid`, `flux`, `onset`, `searchSimilarity`, `harmonic`, `bassMotion`, `tonal`
+- `inputs.mix` - Mixdown audio signals: `rms`, `energy`, `centroid`, `flux`, `onset`, `searchSimilarity`, `harmonic`, `bassMotion`, `tonal`, `pitch`, `pitchConfidence`, `activity`
   - `inputs.mix.bands[...]` - Frequency band signals
   - `inputs.mix.beatCandidates`, `inputs.mix.onsetPeaks` - Pre-extracted event streams
-- `inputs.stems` - Per-stem signals (if stems are available): `inputs.stems["Drums"].energy`
+- `inputs.stems` - Per-stem signals (if stems are available): `inputs.stems["Drums"].energy`, `inputs.stems["Vocals"].pitch`
   - `inputs.stems[...].bands[...]` - Per-stem frequency bands
   - `inputs.stems[...].beatCandidates`, `inputs.stems[...].onsetPeaks` - Per-stem events
-- `inputs.customSignals` - User-defined 1D signals extracted from 2D data: `inputs.customSignals["MySignal"]`
+- `inputs.customSignals` - Derived signals (user-defined 1D signals from 2D spectral data, 1D MIR outputs, or event streams): `inputs.customSignals["Bass Energy"]`
 - `inputs.customEvents` - User-authored event streams: `inputs.customEvents["Hits"]`
 
 Per-frame sampled values are accessed from the map passed to `update()`:
@@ -448,6 +448,35 @@ cube.color = #{
     a: 1.0
 };
 ```
+
+### Derived Signals (Custom Signals)
+
+Derived Signals are user-defined 1D signals created from various source types. They are accessible via `inputs.customSignals["signal_name"]`.
+
+**Source Types:**
+- **2D Spectral Data** (spectrogram, MFCC, chroma) → reduced to 1D via algorithms like `mean`, `max`, `spectralCentroid`
+- **1D MIR Outputs** (energy, flux, centroid) → passed through directly or transformed
+- **Event Streams** (beat candidates, onset peaks, authored events) → converted to continuous signals via envelope generators
+
+**Accessing in Scripts:**
+```rhai
+// Access derived signal by name
+let bass_energy = inputs.customSignals["Bass Energy"];
+
+// Compose with other Signal operations
+cube.scale = bass_energy
+    .smooth.exponential(0.05, 0.2)
+    .normalise.robust()
+    .scale(0.5)
+    .add(1.0);
+
+// Combine with other signals
+let combined = inputs.customSignals["Bass Energy"]
+    .scale(0.5)
+    .add(inputs.customSignals["Treble Energy"].scale(0.5));
+```
+
+Derived Signals are pre-computed and cached, making them efficient for complex derivations that would be expensive to compute per-frame.
 
 ### Time Signals
 
@@ -2241,6 +2270,62 @@ fn update(dt, frame) {
 }
 ```
 
+### Example 18: Pitch-Reactive Visualization
+
+Use detected pitch (f0) and confidence signals to drive visualization. The `pitch` signal returns frequency in Hz (0 for unvoiced frames), while `pitchConfidence` returns a value in [0, 1].
+
+```rhai
+let vocal_sphere = mesh.sphere();
+let background = mesh.plane();
+
+// Pitch signal (Hz) - use normalise.robust() to map to 0-1 range for visuals
+let pitch = inputs.mix.pitch
+    .smooth.exponential(0.05, 0.15)
+    .normalise.robust();  // Maps typical vocal range to 0-1
+
+// Confidence signal - use to gate pitch when not confident
+let confidence = inputs.mix.pitchConfidence
+    .smooth.exponential(0.1, 0.3);
+
+// Derive "voiced" signal by thresholding confidence
+let voiced = confidence.gate.threshold(0.5);
+
+// Only react to pitch when we're confident it's voiced
+let pitch_when_voiced = pitch.mul(voiced);
+
+fn init(ctx) {
+    vocal_sphere.position = #{ x: 0.0, y: 1.0, z: 0.0 };
+    vocal_sphere.scale = 0.5;
+    background.position = #{ x: 0.0, y: -0.5, z: 0.0 };
+    background.rotation.x = -1.57;  // Lay flat
+    background.scale = 5.0;
+
+    scene.add(vocal_sphere);
+    scene.add(background);
+}
+
+fn update(dt, frame) {
+    // Sphere rises with pitch (higher pitch = higher position)
+    vocal_sphere.position.y = pitch_when_voiced.scale(2.0).add(0.5);
+
+    // Color shifts from cool (low pitch) to warm (high pitch)
+    vocal_sphere.color = #{
+        r: pitch_when_voiced.scale(0.8).add(0.2),  // More red at high pitch
+        g: 0.4,
+        b: pitch_when_voiced.scale(-0.6).add(0.8),  // More blue at low pitch
+        a: 1.0
+    };
+
+    // Glow intensity based on confidence
+    vocal_sphere.scale = confidence.scale(0.3).add(0.3);
+
+    // Background pulses when confident
+    background.color.a = voiced.scale(0.5).add(0.5);
+}
+```
+
+**Tip:** For stems with vocals, use `inputs.stems["Vocals"].pitch` for cleaner pitch tracking. The pitch signal works best on monophonic sources (isolated vocals, bass, lead synths).
+
 ---
 
 ## Reference
@@ -2356,6 +2441,75 @@ Parameters marked with `†` can accept either a constant (`f32`) or a `Signal` 
 | ---------- | -------------------------- | --------------------------------- |
 | `probe`    | `(name: String) -> Signal` | Attach debug probe                |
 | `describe` | `() -> String`             | Human-readable graph description  |
+
+#### Comparison (Boolean Signals)
+
+Comparison methods return boolean-valued signals (1.0 = true, 0.0 = false).
+
+| Method | Signature                                 | Description                           |
+| ------ | ----------------------------------------- | ------------------------------------- |
+| `lt`   | `(Signal) -> Signal` or `(f32) -> Signal` | Less than                             |
+| `gt`   | `(Signal) -> Signal` or `(f32) -> Signal` | Greater than                          |
+| `le`   | `(Signal) -> Signal` or `(f32) -> Signal` | Less than or equal                    |
+| `ge`   | `(Signal) -> Signal` or `(f32) -> Signal` | Greater than or equal                 |
+| `eq`   | `(Signal) -> Signal` or `(f32) -> Signal` | Equal (epsilon tolerance: 1e-6)       |
+| `ne`   | `(Signal) -> Signal` or `(f32) -> Signal` | Not equal                             |
+
+```rhai
+let isLoud = inputs.mix.energy.gt(0.7);
+let isQuiet = inputs.mix.energy.lt(0.2);
+let isOnBeat = timing.beatPhase.lt(0.1);
+```
+
+#### Logical Operations
+
+Combine boolean signals with logical operators.
+
+| Method | Signature              | Description                           |
+| ------ | ---------------------- | ------------------------------------- |
+| `and`  | `(Signal) -> Signal`   | True if both > 0                      |
+| `or`   | `(Signal) -> Signal`   | True if either > 0                    |
+| `not`  | `() -> Signal`         | True if <= 0                          |
+
+```rhai
+let isMedium = energy.ge(0.3).and(energy.le(0.7));
+let isActive = energy.gt(0.5).or(flux.gt(0.3));
+let isSilent = energy.lt(0.1);
+let isNotSilent = isSilent.not();
+```
+
+#### Conditional Selection
+
+Use `signal.select()` to build piecewise signals that choose between different values based on conditions.
+
+| Method                       | Signature                              | Description                     |
+| ---------------------------- | -------------------------------------- | ------------------------------- |
+| `signal.select()`            | `() -> SelectBuilder`                  | Start conditional selection     |
+| `SelectBuilder.when`         | `(condition: Signal, value: Signal) -> SelectBuilder` | Add condition/value pair |
+| `SelectBuilder.otherwise`    | `(default: Signal) -> Signal`          | Finalize with default (required)|
+
+Conditions are evaluated in order; the first condition that evaluates to true (> 0) wins.
+The `.otherwise()` call is **required** to produce a valid Signal.
+
+```rhai
+// Basic usage - intensity based on energy level
+let intensity = signal.select()
+    .when(energy.gt(0.8), gen.constant(1.0))
+    .when(energy.gt(0.5), energy)
+    .when(energy.gt(0.2), energy.scale(0.5))
+    .otherwise(gen.constant(0.0));
+
+// Different behaviors for verse vs chorus
+let isChorus = inputs.mix.energy.gt(0.6);
+let scale = signal.select()
+    .when(isChorus, gen.sin(2.0, 0.0).map(-1, 1, 0.5, 2.0))
+    .otherwise(gen.constant(1.0));
+
+cube.scale = scale;
+```
+
+**Important**: `signal.select()` produces a Signal, not control flow. It is evaluated per-frame
+like any other signal. This is signal composition, not imperative branching.
 
 ### Time Signals
 

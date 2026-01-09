@@ -287,7 +287,7 @@ pub struct Renderer {
 
     // Dynamic radial ring geometry (regenerated when parameters change)
     radial_ring_geometry: Option<MeshGeometry>,
-    radial_ring_params: Option<(f32, f32, f32, f32, u32)>, // (radius, thickness, start, end, segments)
+    radial_ring_params: Option<(f32, f32, f32, f32, u32, f32)>, // (radius, thickness, start, end, segments, depth)
 
     // Staging buffer for deformed vertices (reused each frame)
     deformed_vertex_staging: wgpu::Buffer,
@@ -1000,8 +1000,9 @@ impl Renderer {
         start_angle: f32,
         end_angle: f32,
         segments: u32,
+        depth: f32,
     ) -> &MeshGeometry {
-        let params = (radius, thickness, start_angle, end_angle, segments);
+        let params = (radius, thickness, start_angle, end_angle, segments, depth);
 
         // Regenerate if parameters changed
         if self.radial_ring_params != Some(params) {
@@ -1011,6 +1012,7 @@ impl Renderer {
                 start_angle,
                 end_angle,
                 segments,
+                depth,
             );
 
             let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -1200,6 +1202,50 @@ impl Renderer {
             );
         }
 
+        // Pre-write material global uniforms for all meshes BEFORE the render pass.
+        // This fixes the bug where multiple meshes with the same material would all
+        // use the last mesh's transform (because queue.write_buffer is immediate).
+        //
+        // First, write base uniforms to slot 0 for shadow pipeline (which only uses view_proj)
+        self.material_global_uniforms.view_proj = self.uniforms.view_proj;
+        self.material_global_uniforms.model = glam::Mat4::IDENTITY.to_cols_array_2d();
+        self.material_global_uniforms.time = state.time;
+        self.material_global_uniforms.dt = 0.016;
+        self.material_global_uniforms.lighting_enabled = lighting.enabled;
+        self.material_global_uniforms.entity_emissive = 0.0;
+        self.material_pipeline_manager.update_global_uniforms_at(
+            &self.queue,
+            &self.material_global_uniforms,
+            0,
+        );
+
+        // Then write per-entity uniforms for all meshes with materials
+        for (mesh_idx, (_entity_id, mesh, world_matrix)) in meshes_to_render.iter().enumerate() {
+            if mesh_idx >= MAX_MESHES_PER_FRAME {
+                break;
+            }
+
+            // Only pre-write for meshes that have materials
+            if mesh.material_id.is_some() {
+                self.material_global_uniforms.view_proj = self.uniforms.view_proj;
+                self.material_global_uniforms.model = world_matrix.to_cols_array_2d();
+                self.material_global_uniforms.time = state.time;
+                self.material_global_uniforms.dt = 0.016; // ~60fps default
+                self.material_global_uniforms.lighting_enabled = if mesh.lit {
+                    lighting.enabled
+                } else {
+                    0
+                };
+                self.material_global_uniforms.entity_emissive = mesh.emissive;
+
+                self.material_pipeline_manager.update_global_uniforms_at(
+                    &self.queue,
+                    &self.material_global_uniforms,
+                    mesh_idx,
+                );
+            }
+        }
+
         // Render scene to post-processor's scene texture
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1227,8 +1273,8 @@ impl Renderer {
             render_pass.set_pipeline(&self.shadow_pipeline);
             render_pass.set_vertex_buffer(0, self.plane_geometry.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.plane_geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-            // Bind globals (group 0)
-            render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[]);
+            // Bind globals (group 0) with offset 0 - shadow shader only uses view_proj which is same for all
+            render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[0]);
 
             for (_entity_id, mesh, _world_matrix) in meshes_to_render.iter() {
                 if !mesh.shadow.enabled {
@@ -1312,23 +1358,8 @@ impl Renderer {
 
                                         // Use material pipeline
                                         if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
-                                            // Update global uniforms with per-entity values
-                                            self.material_global_uniforms.view_proj = self.uniforms.view_proj;
-                                            self.material_global_uniforms.model = world_matrix.to_cols_array_2d();
-                                            self.material_global_uniforms.time = state.time;
-                                            self.material_global_uniforms.dt = 0.016; // ~60fps default
-                                            // Per-entity lighting control: if mesh.lit is false, disable lighting for this entity
-                                            // (preserving global lighting_enabled if mesh.lit is true)
-                                            self.material_global_uniforms.lighting_enabled = if mesh.lit {
-                                                lighting.enabled
-                                            } else {
-                                                0
-                                            };
-                                            self.material_global_uniforms.entity_emissive = mesh.emissive;
-                                            self.material_pipeline_manager.update_global_uniforms(
-                                                &self.queue,
-                                                &self.material_global_uniforms,
-                                            );
+                                            // Global uniforms are pre-written before render pass,
+                                            // use dynamic offset to index into the correct slot
 
                                             // Evaluate and update material params
                                             let params = self.evaluate_material_params(mat_id, &mesh.material_params);
@@ -1338,9 +1369,10 @@ impl Renderer {
                                                 &params,
                                             );
 
-                                            // Draw with material
+                                            // Draw with material using dynamic offset for per-entity uniforms
+                                            let material_dynamic_offset = MaterialPipelineManager::dynamic_offset_for_slot(mesh_idx);
                                             render_pass.set_pipeline(&resources.pipeline);
-                                            render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[]);
+                                            render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[material_dynamic_offset]);
                                             render_pass.set_bind_group(1, &resources.bind_group, &[]);
                                             if use_deformed {
                                                 render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
@@ -1414,10 +1446,10 @@ impl Renderer {
                             }
                         }
                     }
-                    MeshType::RadialRing { radius, thickness, start_angle, end_angle, segments } => {
+                    MeshType::RadialRing { radius, thickness, start_angle, end_angle, segments, depth } => {
                         // Generate or get cached radial ring geometry
                         let _geom = self.get_or_create_radial_ring_geometry(
-                            *radius, *thickness, *start_angle, *end_angle, *segments
+                            *radius, *thickness, *start_angle, *end_angle, *segments, *depth
                         );
                         let geometry = self.radial_ring_geometry.as_ref().unwrap();
                         let num_indices = geometry.num_indices;
@@ -1437,20 +1469,8 @@ impl Renderer {
                                         .unwrap_or_default();
 
                                     if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
-                                        self.material_global_uniforms.view_proj = self.uniforms.view_proj;
-                                        self.material_global_uniforms.model = world_matrix.to_cols_array_2d();
-                                        self.material_global_uniforms.time = state.time;
-                                        self.material_global_uniforms.dt = 0.016;
-                                        self.material_global_uniforms.lighting_enabled = if mesh.lit {
-                                            lighting.enabled
-                                        } else {
-                                            0
-                                        };
-                                        self.material_global_uniforms.entity_emissive = mesh.emissive;
-                                        self.material_pipeline_manager.update_global_uniforms(
-                                            &self.queue,
-                                            &self.material_global_uniforms,
-                                        );
+                                        // Global uniforms are pre-written before render pass,
+                                        // use dynamic offset to index into the correct slot
 
                                         // Evaluate and update material params
                                         let params = self.evaluate_material_params(mat_id, &mesh.material_params);
@@ -1460,8 +1480,10 @@ impl Renderer {
                                             &params,
                                         );
 
+                                        // Draw with material using dynamic offset for per-entity uniforms
+                                        let material_dynamic_offset = MaterialPipelineManager::dynamic_offset_for_slot(mesh_idx);
                                         render_pass.set_pipeline(&resources.pipeline);
-                                        render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[]);
+                                        render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[material_dynamic_offset]);
                                         render_pass.set_bind_group(1, &resources.bind_group, &[]);
                                         render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
 
@@ -1548,22 +1570,8 @@ impl Renderer {
 
                                     // Use material pipeline
                                     if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
-                                        // Update global uniforms with per-entity values
-                                        self.material_global_uniforms.view_proj = self.uniforms.view_proj;
-                                        self.material_global_uniforms.model = world_matrix.to_cols_array_2d();
-                                        self.material_global_uniforms.time = state.time;
-                                        self.material_global_uniforms.dt = 0.016; // ~60fps default
-                                        // Per-entity lighting control: if mesh.lit is false, disable lighting for this entity
-                                        self.material_global_uniforms.lighting_enabled = if mesh.lit {
-                                            lighting.enabled
-                                        } else {
-                                            0
-                                        };
-                                        self.material_global_uniforms.entity_emissive = mesh.emissive;
-                                        self.material_pipeline_manager.update_global_uniforms(
-                                            &self.queue,
-                                            &self.material_global_uniforms,
-                                        );
+                                        // Global uniforms are pre-written before render pass,
+                                        // use dynamic offset to index into the correct slot
 
                                         // Evaluate and update material params
                                         let params = self.evaluate_material_params(mat_id, &mesh.material_params);
@@ -1573,9 +1581,10 @@ impl Renderer {
                                             &params,
                                         );
 
-                                        // Draw with material
+                                        // Draw with material using dynamic offset for per-entity uniforms
+                                        let material_dynamic_offset = MaterialPipelineManager::dynamic_offset_for_slot(mesh_idx);
                                         render_pass.set_pipeline(&resources.pipeline);
-                                        render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[]);
+                                        render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[material_dynamic_offset]);
                                         render_pass.set_bind_group(1, &resources.bind_group, &[]);
                                         render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
 

@@ -22,13 +22,14 @@ pub enum MeshType {
     Sphere,
     /// Reference to a loaded mesh asset by ID.
     Asset(String),
-    /// A radial ring/arc in the XY plane (facing +Z).
+    /// A radial ring/arc, optionally extruded in Z for 3D depth.
     RadialRing {
         radius: f32,
         thickness: f32,
         start_angle: f32,
         end_angle: f32,
         segments: u32,
+        depth: f32,
     },
 }
 

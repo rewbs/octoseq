@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import type { AudioBufferLike, MirAudioPayload, MirRunRequest, MirResult as MirLibResult, MirFunctionId as MirLibFunctionId } from "@octoseq/mir";
-import { normaliseForWaveform } from "@octoseq/mir";
+import { normaliseForWaveform, resample } from "@octoseq/mir";
 import { runMir } from "@octoseq/mir/runner/runMir";
 import { useAudioInputStore } from "../audioInputStore";
 import { useMirStore } from "../mirStore";
@@ -73,10 +73,26 @@ export function useMirActions() {
     mirStore.setLastTimings(null);
 
     const ch0 = audio.getChannelData(0);
-    // Copy into a standalone typed array so we can transfer its ArrayBuffer into the worker.
+    const originalSampleRate = audio.sampleRate;
+    const targetSampleRate = configStore.mirSampleRate;
+
+    // Resample audio if target sample rate differs from original
+    let mono: Float32Array;
+    let effectiveSampleRate: number;
+    if (targetSampleRate > 0 && targetSampleRate !== originalSampleRate) {
+      mono = resample(ch0, originalSampleRate, targetSampleRate);
+      effectiveSampleRate = targetSampleRate;
+      console.log(`[MIR DEBUG] inputId=${effectiveInputId}, originalSampleRate=${originalSampleRate}, targetSampleRate=${targetSampleRate}, originalSamples=${ch0.length}, resampledSamples=${mono.length}, duration=${mono.length / effectiveSampleRate}s`);
+    } else {
+      // Copy into a standalone typed array so we can transfer its ArrayBuffer into the worker.
+      mono = new Float32Array(ch0);
+      effectiveSampleRate = originalSampleRate;
+      console.log(`[MIR DEBUG] inputId=${effectiveInputId}, sampleRate=${effectiveSampleRate}, samples=${mono.length}, duration=${mono.length / effectiveSampleRate}s`);
+    }
+
     const payload: MirAudioPayload = {
-      sampleRate: audio.sampleRate,
-      mono: new Float32Array(ch0),
+      sampleRate: effectiveSampleRate,
+      mono,
     };
 
     const request: MirRunRequest = {
@@ -126,6 +142,8 @@ export function useMirActions() {
         backend: meta.backend,
         usedGpu: meta.usedGpu,
       });
+
+      console.log(`[MIR] ${selected} completed in ${meta.timings.totalMs.toFixed(1)}ms (cpu: ${(meta.timings.cpuMs ?? 0).toFixed(1)}ms, gpu: ${(meta.timings.gpuMs ?? 0).toFixed(1)}ms, backend: ${meta.backend})`);
 
       // Helper to store result (both in legacy store and per-input cache)
       const storeResult = (r: UiMirResult) => {
@@ -192,6 +210,17 @@ export function useMirActions() {
         return;
       }
 
+      if (result.kind === "activity") {
+        // Activity results are stored as 1D signals (activityLevel)
+        storeResult({
+          kind: "1d",
+          fn: selected,
+          times: result.times,
+          values: result.activityLevel,
+        });
+        return;
+      }
+
       // 2d
       storeResult({
         kind: "2d",
@@ -239,6 +268,9 @@ export function useMirActions() {
     "cqtHarmonicEnergy",
     "cqtBassPitchMotion",
     "cqtTonalStability",
+    "pitchF0",
+    "pitchConfidence",
+    "activity",
   ];
 
   const runAllAnalyses = useCallback(async () => {

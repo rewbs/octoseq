@@ -12,7 +12,6 @@ import {
     validateBandStructure,
     validateFrequencyBand,
 } from "@octoseq/mir";
-import type { AudioIdentity } from "./musicalTimeStore";
 
 // ----------------------------
 // Invalidation Events
@@ -34,41 +33,6 @@ export type BandInvalidationEvent =
  * Callback type for invalidation listeners.
  */
 export type BandInvalidationCallback = (event: BandInvalidationEvent) => void;
-
-// ----------------------------
-// Storage Key Generation
-// ----------------------------
-
-/**
- * Simple hash function for generating storage keys.
- */
-function simpleHash(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        const char = str.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; // Convert to 32-bit integer
-    }
-    return Math.abs(hash).toString(36);
-}
-
-/**
- * Generate the localStorage key for frequency bands.
- */
-function getStorageKey(audio: AudioIdentity): string {
-    const hash = simpleHash(`${audio.filename}:${audio.duration}:${audio.sampleRate}`);
-    return `octoseq-frequency-bands-${hash}`;
-}
-
-// ----------------------------
-// Persisted Structure
-// ----------------------------
-
-interface PersistedFrequencyBands {
-    version: 1;
-    audioIdentity: AudioIdentity;
-    structure: FrequencyBandStructure;
-}
 
 // ----------------------------
 // Migration
@@ -159,9 +123,6 @@ interface FrequencyBandState {
     /** The authoritative frequency band structure (null if no bands defined). */
     structure: FrequencyBandStructure | null;
 
-    /** Audio identity for persistence (set when audio is loaded). */
-    audioIdentity: AudioIdentity | null;
-
     /** Currently selected band for editing. */
     selectedBandId: string | null;
 
@@ -202,10 +163,6 @@ interface FrequencyBandState {
 // ----------------------------
 
 interface FrequencyBandActions {
-    // Audio identity
-    /** Set the audio identity (called when audio is loaded). */
-    setAudioIdentity: (identity: AudioIdentity | null) => void;
-
     // Band management
     /** Add a band. Returns the new band ID. */
     addBand: (band: Omit<FrequencyBand, "id">) => string;
@@ -255,16 +212,7 @@ interface FrequencyBandActions {
     /** Clear all bands belonging to a specific source (e.g., when stem is removed). */
     clearBandsForSource: (sourceId: string) => void;
 
-    // Persistence
-    /** Save to localStorage. */
-    saveToLocalStorage: () => void;
-
-    /** Load from localStorage. Returns true if data was loaded. */
-    loadFromLocalStorage: () => boolean;
-
-    /** Clear persisted data from localStorage. */
-    clearLocalStorage: () => void;
-
+    // Serialization
     /** Export structure to JSON string. */
     exportToJSON: () => string | null;
 
@@ -327,7 +275,6 @@ export type FrequencyBandStore = FrequencyBandState & FrequencyBandActions;
 
 const initialState: FrequencyBandState = {
     structure: null,
-    audioIdentity: null,
     selectedBandId: null,
     isEditing: false,
     invalidationListeners: new Map(),
@@ -351,61 +298,11 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
             ...initialState,
 
             // ----------------------------
-            // Audio Identity
-            // ----------------------------
-
-            setAudioIdentity: (identity) => {
-                const prev = get().audioIdentity;
-                const invalidationListeners = get().invalidationListeners;
-
-                const isSameAudio =
-                    prev &&
-                    identity &&
-                    prev.filename === identity.filename &&
-                    Math.abs(prev.duration - identity.duration) <= 0.1 &&
-                    prev.sampleRate === identity.sampleRate;
-
-                // On audio change (or clearing), reset authored/UI state but preserve invalidation listeners.
-                // This prevents bands from leaking across tracks while keeping derived-cache wiring intact.
-                if (!identity) {
-                    set(
-                        {
-                            ...initialState,
-                            invalidationListeners,
-                            audioIdentity: null,
-                        },
-                        false,
-                        "setAudioIdentity"
-                    );
-                    get()._emitInvalidation({ kind: "structure_cleared" });
-                    return;
-                }
-
-                if (!isSameAudio) {
-                    set(
-                        {
-                            ...initialState,
-                            invalidationListeners,
-                            audioIdentity: identity,
-                        },
-                        false,
-                        "setAudioIdentity"
-                    );
-                    get()._emitInvalidation({ kind: "structure_cleared" });
-                } else {
-                    set({ audioIdentity: identity }, false, "setAudioIdentity");
-                }
-
-                // Try to load persisted data for this audio
-                get().loadFromLocalStorage();
-            },
-
-            // ----------------------------
             // Band Management
             // ----------------------------
 
             addBand: (bandData) => {
-                const { structure, audioIdentity } = get();
+                const { structure } = get();
                 const now = new Date().toISOString();
 
                 const band: FrequencyBand = {
@@ -435,15 +332,11 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                 set({ structure: newStructure }, false, "addBand");
                 get()._emitInvalidation({ kind: "band_added", bandId: band.id });
 
-                if (audioIdentity) {
-                    get().saveToLocalStorage();
-                }
-
                 return band.id;
             },
 
             updateBand: (id, updates) => {
-                const { structure, audioIdentity } = get();
+                const { structure } = get();
                 if (!structure) return;
 
                 const now = new Date().toISOString();
@@ -466,14 +359,10 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                 );
 
                 get()._emitInvalidation({ kind: "band_updated", bandId: id, changedFields });
-
-                if (audioIdentity) {
-                    get().saveToLocalStorage();
-                }
             },
 
             removeBand: (id) => {
-                const { structure, selectedBandId, audioIdentity } = get();
+                const { structure, selectedBandId } = get();
                 if (!structure) return;
 
                 const now = new Date().toISOString();
@@ -492,10 +381,6 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                 );
 
                 get()._emitInvalidation({ kind: "band_removed", bandId: id });
-
-                if (audioIdentity) {
-                    get().saveToLocalStorage();
-                }
             },
 
             setBandEnabled: (id, enabled) => {
@@ -510,7 +395,7 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
             },
 
             reorderBands: (orderedIds) => {
-                const { structure, audioIdentity } = get();
+                const { structure } = get();
                 if (!structure) return;
 
                 const now = new Date().toISOString();
@@ -530,10 +415,6 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                     false,
                     "reorderBands"
                 );
-
-                if (audioIdentity) {
-                    get().saveToLocalStorage();
-                }
             },
 
             // ----------------------------
@@ -582,7 +463,6 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
             // ----------------------------
 
             clearStructure: () => {
-                const { audioIdentity } = get();
                 set(
                     {
                         structure: null,
@@ -592,10 +472,6 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                     "clearStructure"
                 );
                 get()._emitInvalidation({ kind: "structure_cleared" });
-
-                if (audioIdentity) {
-                    get().clearLocalStorage();
-                }
             },
 
             ensureStructure: () => {
@@ -606,7 +482,7 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
             },
 
             initializeWithStandardBands: (duration, sourceId = "mixdown") => {
-                const { structure, audioIdentity } = get();
+                const { structure } = get();
                 const now = new Date().toISOString();
                 const newBands = createStandardBands(duration, sourceId);
 
@@ -626,14 +502,10 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
 
                 set({ structure: newStructure }, false, "initializeWithStandardBands");
                 get()._emitInvalidation({ kind: "structure_imported" });
-
-                if (audioIdentity) {
-                    get().saveToLocalStorage();
-                }
             },
 
             clearBandsForSource: (sourceId) => {
-                const { structure, audioIdentity, selectedBandId } = get();
+                const { structure, selectedBandId } = get();
                 if (!structure) return;
 
                 const now = new Date().toISOString();
@@ -663,98 +535,11 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                 for (const bandId of removedBandIds) {
                     get()._emitInvalidation({ kind: "band_removed", bandId });
                 }
-
-                if (audioIdentity) {
-                    get().saveToLocalStorage();
-                }
             },
 
             // ----------------------------
-            // Persistence
+            // Serialization
             // ----------------------------
-
-            saveToLocalStorage: () => {
-                const { structure, audioIdentity } = get();
-                if (!structure || !audioIdentity) return;
-
-                const key = getStorageKey(audioIdentity);
-                const persisted: PersistedFrequencyBands = {
-                    version: 1,
-                    audioIdentity,
-                    structure,
-                };
-
-                try {
-                    localStorage.setItem(key, JSON.stringify(persisted));
-                } catch (error) {
-                    console.error("Failed to save frequency bands to localStorage:", error);
-                }
-            },
-
-            loadFromLocalStorage: () => {
-                const { audioIdentity } = get();
-                if (!audioIdentity) return false;
-
-                const key = getStorageKey(audioIdentity);
-
-                try {
-                    const json = localStorage.getItem(key);
-                    if (!json) return false;
-
-                    const persisted = JSON.parse(json) as PersistedFrequencyBands;
-
-                    // Version check for persistence wrapper
-                    if (persisted.version !== 1) {
-                        console.warn(`Unknown persistence version: ${persisted.version}`);
-                        return false;
-                    }
-
-                    // Validate audio identity matches
-                    const { filename, duration, sampleRate } = persisted.audioIdentity;
-                    if (
-                        filename !== audioIdentity.filename ||
-                        Math.abs(duration - audioIdentity.duration) > 0.1 ||
-                        sampleRate !== audioIdentity.sampleRate
-                    ) {
-                        console.warn("Audio identity mismatch - not loading persisted bands");
-                        return false;
-                    }
-
-                    // Migrate structure if needed (handles v1 -> v2 migration)
-                    const migratedStructure = migrateStructure(persisted.structure);
-                    if (!migratedStructure) {
-                        console.error("Failed to migrate frequency band structure");
-                        return false;
-                    }
-
-                    set(
-                        {
-                            structure: migratedStructure,
-                            selectedBandId: null,
-                        },
-                        false,
-                        "loadFromLocalStorage"
-                    );
-
-                    return true;
-                } catch (error) {
-                    console.error("Failed to load frequency bands from localStorage:", error);
-                    return false;
-                }
-            },
-
-            clearLocalStorage: () => {
-                const { audioIdentity } = get();
-                if (!audioIdentity) return;
-
-                const key = getStorageKey(audioIdentity);
-
-                try {
-                    localStorage.removeItem(key);
-                } catch (error) {
-                    console.error("Failed to clear frequency bands from localStorage:", error);
-                }
-            },
 
             exportToJSON: () => {
                 const { structure } = get();
@@ -778,7 +563,6 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                         console.warn("Validation warnings on import:", errors);
                     }
 
-                    const { audioIdentity } = get();
                     set(
                         {
                             structure,
@@ -789,10 +573,6 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                     );
 
                     get()._emitInvalidation({ kind: "structure_imported" });
-
-                    if (audioIdentity) {
-                        get().saveToLocalStorage();
-                    }
 
                     return true;
                 } catch (error) {

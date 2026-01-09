@@ -8,7 +8,8 @@ import { useAuthoredEventStore } from "../authoredEventStore";
 import { useBeatGridStore } from "../beatGridStore";
 import { useInterpretationTreeStore } from "../interpretationTreeStore";
 import { useAudioInputStore } from "../audioInputStore";
-import { useCustomSignalStore } from "../customSignalStore";
+import { useDerivedSignalStore } from "../derivedSignalStore";
+import { useComposedSignalStore } from "../composedSignalStore";
 import { useMeshAssetStore } from "../meshAssetStore";
 import { usePlaybackStore } from "../playbackStore";
 import { useAutosaveStore } from "../autosaveStore";
@@ -129,10 +130,17 @@ export function useProjectActions() {
       }
     });
 
-    // Subscribe to custom signal changes
-    const unsubCustomSignals = useCustomSignalStore.subscribe((state, prevState) => {
+    // Subscribe to derived signal changes
+    const unsubDerivedSignals = useDerivedSignalStore.subscribe((state, prevState) => {
       if (state.structure !== prevState.structure && useProjectStore.getState().activeProject) {
-        useProjectStore.getState().syncCustomSignals(state.structure);
+        useProjectStore.getState().syncDerivedSignals(state.structure);
+      }
+    });
+
+    // Subscribe to composed signal changes
+    const unsubComposedSignals = useComposedSignalStore.subscribe((state, prevState) => {
+      if (state.structure !== prevState.structure && useProjectStore.getState().activeProject) {
+        useProjectStore.getState().syncComposedSignals(state.structure);
       }
     });
 
@@ -189,7 +197,8 @@ export function useProjectActions() {
       unsubAuthored();
       unsubBeatGrid();
       unsubTree();
-      unsubCustomSignals();
+      unsubDerivedSignals();
+      unsubComposedSignals();
       unsubMeshAssets();
       unsubAudio();
     };
@@ -269,9 +278,14 @@ export function useProjectActions() {
         }
       }
 
-      // Hydrate custom signals
-      if (project.interpretation.customSignals) {
-        useCustomSignalStore.getState().loadFromProject(project.interpretation.customSignals);
+      // Hydrate derived signals
+      if (project.interpretation.derivedSignals) {
+        useDerivedSignalStore.getState().loadFromProject(project.interpretation.derivedSignals);
+      }
+
+      // Hydrate composed signals
+      if (project.interpretation.composedSignals) {
+        useComposedSignalStore.getState().loadFromProject(project.interpretation.composedSignals);
       }
 
       // Hydrate mesh assets
@@ -375,7 +389,7 @@ export function useProjectActions() {
         useMusicalTimeStore.getState().reset();
         useAuthoredEventStore.getState().reset();
         useBeatGridStore.getState().clear();
-        useCustomSignalStore.getState().reset();
+        useDerivedSignalStore.getState().reset();
         useMeshAssetStore.getState().reset();
         useAudioInputStore.getState().reset();
         usePlaybackStore.getState().setPlayheadTimeSec(0);
@@ -421,9 +435,9 @@ export function useProjectActions() {
             });
           }
 
-          const customSignalStructure = useCustomSignalStore.getState().structure;
-          if (customSignalStructure) {
-            useProjectStore.getState().syncCustomSignals(customSignalStructure);
+          const derivedSignalStructure = useDerivedSignalStore.getState().structure;
+          if (derivedSignalStructure) {
+            useProjectStore.getState().syncDerivedSignals(derivedSignalStructure);
           }
 
           const meshAssetStructure = useMeshAssetStore.getState().structure;
@@ -543,7 +557,7 @@ export function useProjectActions() {
     useMusicalTimeStore.getState().reset();
     useAuthoredEventStore.getState().reset();
     useBeatGridStore.getState().clear();
-    useCustomSignalStore.getState().reset();
+    useDerivedSignalStore.getState().reset();
     useMeshAssetStore.getState().reset();
     usePlaybackStore.getState().setPlayheadTimeSec(0);
     usePlaybackStore.getState().setCursorTimeSec(0);

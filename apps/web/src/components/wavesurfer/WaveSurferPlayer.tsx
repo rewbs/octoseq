@@ -7,7 +7,7 @@ import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
 import WaveSurfer from "wavesurfer.js";
 import Timeline from "wavesurfer.js/dist/plugins/timeline.esm.js";
 import Regions from "wavesurfer.js/dist/plugins/regions.esm.js";
-import { GripHorizontal, Play, Pause, X, Loader2, AlertCircle } from "lucide-react";
+import { GripHorizontal, Play, Pause, X, Loader2, AlertCircle, Info, Headphones, Music, Clock, Film } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
@@ -162,6 +162,7 @@ type WaveSurferPlayerProps = {
    * Use this to trigger cloud upload with the original file bytes.
    */
   onFilePicked?: (file: File) => void;
+
 };
 
 /**
@@ -538,6 +539,53 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
     startSample: number;
     durationSamples: number;
   } | null>(null);
+
+  // Timing info popover state
+  const [showTimingInfo, setShowTimingInfo] = useState(false);
+  const timingInfoRef = useRef<HTMLDivElement>(null);
+
+  // Load FPS from localStorage (same key as VisualiserPanel)
+  const [targetFps, setTargetFps] = useState(() => {
+    if (typeof window === "undefined") return 30;
+    try {
+      const stored = window.localStorage.getItem("octoseq:visualiser-fps:v1");
+      if (stored) {
+        const parsed = parseInt(stored, 10);
+        if (!isNaN(parsed) && parsed >= 1 && parsed <= 120) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+    return 30;
+  });
+
+  // Listen for storage changes (in case FPS is changed in VisualiserPanel)
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "octoseq:visualiser-fps:v1" && e.newValue) {
+        const parsed = parseInt(e.newValue, 10);
+        if (!isNaN(parsed) && parsed >= 1 && parsed <= 120) {
+          setTargetFps(parsed);
+        }
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  // Close timing info popover when clicking outside
+  useEffect(() => {
+    if (!showTimingInfo) return;
+    const handleClickOutside = (e: globalThis.MouseEvent) => {
+      if (timingInfoRef.current && !timingInfoRef.current.contains(e.target as Node)) {
+        setShowTimingInfo(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showTimingInfo]);
 
   // Resizable height state
   const [panelHeight, setPanelHeight] = useState(initialHeight);
@@ -1378,6 +1426,94 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
                 return "— BPM";
               })()}
             </button>
+            {/* Timing info popover */}
+            <div className="relative" ref={timingInfoRef}>
+              <button
+                type="button"
+                onClick={() => setShowTimingInfo((prev) => !prev)}
+                className="p-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                title="Timing conversions"
+              >
+                <Info className="w-3.5 h-3.5" />
+              </button>
+              {showTimingInfo && (
+                <div className="absolute left-0 top-full mt-1 z-50 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg p-3 min-w-[300px]">
+                  {(() => {
+                    // Compute current BPM
+                    const segment = musicalTimeStructure?.segments?.find(
+                      (s) => playheadTime >= s.startTime && playheadTime < s.endTime
+                    );
+                    const bpm = segment?.bpm ?? activeBeatGrid?.bpm ?? selectedHypothesis?.bpm ?? 0;
+                    const sr = sampleRate || 0;
+                    const beatDurationSec = bpm > 0 ? 60 / bpm : 0;
+                    const frameDurationSec = targetFps > 0 ? 1 / targetFps : 0;
+                    const sampleDurationSec = sr > 0 ? 1 / sr : 0;
+
+                    // Format helper for large numbers
+                    const fmt = (n: number, decimals = 2) => {
+                      if (!Number.isFinite(n) || n === 0) return "—";
+                      return n >= 1000 ? n.toLocaleString(undefined, { maximumFractionDigits: decimals }) : n.toFixed(decimals);
+                    };
+
+                    return (
+                      <div className="text-xs space-y-3">
+                        {/* Sample Rate */}
+                        <div>
+                          <div className="flex items-center gap-1.5 font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                            <Headphones className="w-3.5 h-3.5" />
+                            Sample Rate: {sr > 0 ? `${(sr / 1000).toFixed(1)} kHz` : "—"}
+                          </div>
+                          <div className="text-zinc-500 dark:text-zinc-400 space-y-0.5 pl-5">
+                            <div>1 second = {fmt(sr, 0)} samples</div>
+                            <div>1 beat = {fmt(sr * beatDurationSec, 0)} samples</div>
+                            <div>1 frame = {fmt(sr * frameDurationSec, 1)} samples</div>
+                          </div>
+                        </div>
+
+                        {/* BPM */}
+                        <div>
+                          <div className="flex items-center gap-1.5 font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                            <Music className="w-3.5 h-3.5" />
+                            BPM: {bpm > 0 ? bpm.toFixed(1) : "—"}
+                          </div>
+                          <div className="text-zinc-500 dark:text-zinc-400 space-y-0.5 pl-5">
+                            <div>1 second = {fmt(bpm / 60)} beats</div>
+                            <div>1 frame = {fmt(bpm / 60 / targetFps, 4)} beats</div>
+                            <div>1 sample = {sr > 0 ? fmt(bpm / 60 / sr, 6) : "—"} beats</div>
+                          </div>
+                        </div>
+
+                        {/* FPS */}
+                        <div>
+                          <div className="flex items-center gap-1.5 font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                            <Film className="w-3.5 h-3.5" />
+                            FPS: {targetFps}
+                          </div>
+                          <div className="text-zinc-500 dark:text-zinc-400 space-y-0.5 pl-5">
+                            <div>1 second = {targetFps} frames</div>
+                            <div>1 beat = {fmt(targetFps * beatDurationSec)} frames</div>
+                            <div>1 sample = {sr > 0 ? fmt(targetFps / sr, 6) : "—"} frames</div>
+                          </div>
+                        </div>
+
+                        {/* Seconds */}
+                        <div>
+                          <div className="flex items-center gap-1.5 font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+                            <Clock className="w-3.5 h-3.5" />
+                            Seconds
+                          </div>
+                          <div className="text-zinc-500 dark:text-zinc-400 space-y-0.5 pl-5">
+                            <div>1 beat = {fmt(beatDurationSec, 4)} seconds</div>
+                            <div>1 frame = {fmt(frameDurationSec, 4)} seconds</div>
+                            <div>1 sample = {fmt(sampleDurationSec, 6)} seconds</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
             <select
               value={subBeatDivision}
               onChange={(e) => setSubBeatDivision(Number(e.target.value) as typeof subBeatDivision)}

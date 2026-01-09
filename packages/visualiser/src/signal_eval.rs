@@ -17,8 +17,8 @@ use crate::input::{BandSignalMap, InputSignal, SignalMap};
 use crate::musical_time::{MusicalTimeSegment, MusicalTimeStructure, DEFAULT_BPM};
 use crate::signal::{
     EasingFunction, EnvelopeShape, GateParams, GeneratorNode, NormaliseParams, NoiseType,
-    OverlapMode, SamplingConfig, SamplingStrategy, SamplingWindow, Signal, SignalNode,
-    SmoothParams, TimeUnit, ToSignalOptions, WindowDirection,
+    OverlapMode, SamplingConfig, SamplingStrategy, SamplingWindow, SelectBuilder, Signal,
+    SignalNode, SmoothParams, TimeUnit, ToSignalOptions, WindowDirection,
 };
 use crate::signal_state::SignalState;
 use crate::signal_stats::StatisticsCache;
@@ -527,6 +527,76 @@ impl Signal {
             SignalNode::Anticipate { source, beats } => {
                 let b = beats.evaluate(ctx);
                 self.evaluate_anticipate(source, b, ctx)
+            }
+
+            // === Comparison Operations (Boolean Signals) ===
+            SignalNode::Lt(a, b) => {
+                let va = a.evaluate(ctx);
+                let vb = b.evaluate(ctx);
+                if va < vb { 1.0 } else { 0.0 }
+            }
+
+            SignalNode::Gt(a, b) => {
+                let va = a.evaluate(ctx);
+                let vb = b.evaluate(ctx);
+                if va > vb { 1.0 } else { 0.0 }
+            }
+
+            SignalNode::Le(a, b) => {
+                let va = a.evaluate(ctx);
+                let vb = b.evaluate(ctx);
+                if va <= vb { 1.0 } else { 0.0 }
+            }
+
+            SignalNode::Ge(a, b) => {
+                let va = a.evaluate(ctx);
+                let vb = b.evaluate(ctx);
+                if va >= vb { 1.0 } else { 0.0 }
+            }
+
+            SignalNode::Eq(a, b) => {
+                let va = a.evaluate(ctx);
+                let vb = b.evaluate(ctx);
+                // Use epsilon for float comparison
+                if (va - vb).abs() < 1e-6 { 1.0 } else { 0.0 }
+            }
+
+            SignalNode::Ne(a, b) => {
+                let va = a.evaluate(ctx);
+                let vb = b.evaluate(ctx);
+                // Use epsilon for float comparison
+                if (va - vb).abs() >= 1e-6 { 1.0 } else { 0.0 }
+            }
+
+            // === Logical Operations ===
+            SignalNode::And(a, b) => {
+                let va = a.evaluate(ctx);
+                let vb = b.evaluate(ctx);
+                if va > 0.0 && vb > 0.0 { 1.0 } else { 0.0 }
+            }
+
+            SignalNode::Or(a, b) => {
+                let va = a.evaluate(ctx);
+                let vb = b.evaluate(ctx);
+                if va > 0.0 || vb > 0.0 { 1.0 } else { 0.0 }
+            }
+
+            SignalNode::Not { source } => {
+                let v = source.evaluate(ctx);
+                if v <= 0.0 { 1.0 } else { 0.0 }
+            }
+
+            // === Conditional Selection ===
+            SignalNode::Select { cases, default } => {
+                // Evaluate conditions in order, return first true match
+                for (cond, value) in cases {
+                    let cond_val = cond.evaluate(ctx);
+                    if cond_val > 0.0 {
+                        return value.evaluate(ctx);
+                    }
+                }
+                // No condition matched, return default
+                default.evaluate(ctx)
             }
         }
     }
@@ -1640,5 +1710,125 @@ mod tests {
         // Unknown feature returns 0
         let unknown_feature = Signal::stem_input("drums", "unknown");
         assert!((unknown_feature.evaluate(&mut ctx) - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_evaluate_comparisons() {
+        let inputs = HashMap::new();
+        let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
+        let stats = StatisticsCache::new();
+        let mut state = SignalState::new();
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
+
+        let a = Signal::constant(0.3);
+        let b = Signal::constant(0.7);
+
+        // a < b -> 1.0
+        let lt = a.lt(b.clone());
+        assert!((lt.evaluate(&mut ctx) - 1.0).abs() < 0.001);
+
+        // a > b -> 0.0
+        let gt = a.gt(b.clone());
+        assert!((gt.evaluate(&mut ctx) - 0.0).abs() < 0.001);
+
+        // a <= b -> 1.0
+        let le = a.le(b.clone());
+        assert!((le.evaluate(&mut ctx) - 1.0).abs() < 0.001);
+
+        // a >= b -> 0.0
+        let ge = a.ge(b.clone());
+        assert!((ge.evaluate(&mut ctx) - 0.0).abs() < 0.001);
+
+        // Test equality with epsilon
+        let c = Signal::constant(0.5);
+        let d = Signal::constant(0.5);
+        let eq = c.eq_signal(d);
+        assert!((eq.evaluate(&mut ctx) - 1.0).abs() < 0.001);
+
+        // Test inequality
+        let ne = a.ne_signal(b);
+        assert!((ne.evaluate(&mut ctx) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_evaluate_logical() {
+        let inputs = HashMap::new();
+        let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
+        let stats = StatisticsCache::new();
+        let mut state = SignalState::new();
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
+
+        let truthy = Signal::constant(1.0);
+        let falsy = Signal::constant(0.0);
+
+        // AND: both must be > 0
+        assert!((truthy.and(truthy.clone()).evaluate(&mut ctx) - 1.0).abs() < 0.001);
+        assert!((truthy.and(falsy.clone()).evaluate(&mut ctx) - 0.0).abs() < 0.001);
+        assert!((falsy.and(truthy.clone()).evaluate(&mut ctx) - 0.0).abs() < 0.001);
+
+        // OR: either > 0
+        assert!((truthy.or(falsy.clone()).evaluate(&mut ctx) - 1.0).abs() < 0.001);
+        assert!((falsy.or(falsy.clone()).evaluate(&mut ctx) - 0.0).abs() < 0.001);
+
+        // NOT: <= 0 -> 1.0
+        assert!((truthy.not().evaluate(&mut ctx) - 0.0).abs() < 0.001);
+        assert!((falsy.not().evaluate(&mut ctx) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_evaluate_select() {
+        let inputs = HashMap::new();
+        let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
+        let stats = StatisticsCache::new();
+        let mut state = SignalState::new();
+        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);
+
+        // Test: first condition true
+        let cond1 = Signal::constant(1.0); // truthy
+        let val1 = Signal::constant(10.0);
+        let cond2 = Signal::constant(1.0); // truthy but won't be evaluated
+        let val2 = Signal::constant(20.0);
+        let default = Signal::constant(0.0);
+
+        let selected = SelectBuilder::new()
+            .when(cond1, val1)
+            .when(cond2, val2)
+            .otherwise(default);
+
+        assert!((selected.evaluate(&mut ctx) - 10.0).abs() < 0.001);
+
+        // Test: first false, second true
+        let cond1 = Signal::constant(0.0); // falsy
+        let val1 = Signal::constant(10.0);
+        let cond2 = Signal::constant(1.0); // truthy
+        let val2 = Signal::constant(20.0);
+        let default = Signal::constant(0.0);
+
+        let selected = SelectBuilder::new()
+            .when(cond1, val1)
+            .when(cond2, val2)
+            .otherwise(default);
+
+        assert!((selected.evaluate(&mut ctx) - 20.0).abs() < 0.001);
+
+        // Test: all false, falls through to default
+        let cond1 = Signal::constant(0.0);
+        let val1 = Signal::constant(10.0);
+        let cond2 = Signal::constant(0.0);
+        let val2 = Signal::constant(20.0);
+        let default = Signal::constant(99.0);
+
+        let selected = SelectBuilder::new()
+            .when(cond1, val1)
+            .when(cond2, val2)
+            .otherwise(default);
+
+        assert!((selected.evaluate(&mut ctx) - 99.0).abs() < 0.001);
     }
 }

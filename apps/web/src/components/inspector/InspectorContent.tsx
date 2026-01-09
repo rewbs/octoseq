@@ -9,7 +9,8 @@ import { BandInspector } from "./BandInspector";
 import { AuthoredEventsInspector } from "./AuthoredEventsInspector";
 import { AuthoredStreamInspector } from "./AuthoredStreamInspector";
 import { CandidateEventsInspector } from "./CandidateEventsInspector";
-import { CustomSignalsInspector } from "@/components/customSignal/CustomSignalsInspector";
+import { DerivedSignalsInspector } from "@/components/derivedSignal/DerivedSignalsInspector";
+import { ComposedSignalInspector } from "@/components/composedSignal/ComposedSignalInspector";
 import { MeshAssetsInspector } from "@/components/meshAssets";
 import { ScriptInspector } from "./ScriptInspector";
 import { ScriptsInspector } from "./ScriptsInspector";
@@ -94,9 +95,13 @@ export function InspectorContent({ nodeId }: InspectorContentProps) {
       // TODO: Add CandidateStreamInspector for individual candidate stream details
       return <CandidateEventsInspector />;
 
-    case "custom-signals-section":
-    case "custom-signal":
-      return <CustomSignalsInspector nodeId={nodeId} />;
+    case "derived-signals-section":
+    case "derived-signal":
+      return <DerivedSignalsInspector nodeId={nodeId} />;
+
+    case "composed-signals-section":
+    case "composed-signal":
+      return <ComposedSignalInspector nodeId={nodeId} />;
 
     case "assets-section":
       return (

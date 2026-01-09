@@ -79,6 +79,20 @@ const DEFAULT_MEL_CONFIG: MelConversionConfig = {
 };
 
 // ----------------------------
+// Layout Constants
+// ----------------------------
+
+// These values must match TimeAlignedHeatmapPixi's layout:
+// - 1px border (top + bottom = 2px)
+// - p-1 padding (4px top + 4px bottom = 8px)
+// - h-2 resize handle (8px)
+// Total non-canvas height = 18px
+const HEATMAP_NON_CANVAS_HEIGHT = 18;
+
+// Offset from top of container to canvas = border (1px) + padding (4px)
+const HEATMAP_CANVAS_TOP_OFFSET = 5;
+
+// ----------------------------
 // Component
 // ----------------------------
 
@@ -161,13 +175,16 @@ export function HeatmapWithBandOverlay({
         };
     }, [startTime, endTime, width]);
 
+    // Calculate the actual canvas height (total height minus non-canvas elements)
+    const canvasHeight = overlayHeight - HEATMAP_NON_CANVAS_HEIGHT;
+
     // Set up drag interaction
     const { handleDragStart } = useBandInteraction({
         containerRef: overlayContainerRef,
         startTime,
         endTime,
         width,
-        height: overlayHeight - 16,
+        height: canvasHeight,
         melConfig,
     });
 
@@ -214,13 +231,13 @@ export function HeatmapWithBandOverlay({
                 <div
                     ref={overlayContainerRef}
                     className="absolute top-0 left-0"
-                    style={{ padding: "4px" }}
+                    style={{ padding: `${HEATMAP_CANVAS_TOP_OFFSET}px` }}
                 >
                     <FrequencyBandOverlay
                         startTime={startTime}
                         endTime={endTime}
                         width={width}
-                        height={overlayHeight - 16} // Account for padding and resize handle
+                        height={canvasHeight}
                         structure={filteredStructure}
                         selectedBandId={selectedBandId}
                         hoveredBandId={hoveredBandId}
@@ -239,13 +256,13 @@ export function HeatmapWithBandOverlay({
             {viewport && audioDuration > 0 && (
                 <div
                     className="absolute inset-x-0 top-0 z-10"
-                    style={{ padding: "4px" }}
+                    style={{ padding: `${HEATMAP_CANVAS_TOP_OFFSET}px` }}
                 >
                     <BeatGridOverlay
                         viewport={viewport}
                         beatGrid={beatGrid}
                         audioDuration={audioDuration}
-                        height={overlayHeight - 16}
+                        height={canvasHeight}
                         isVisible={beatGridVisible}
                         musicalTimeSegments={musicalTimeSegments}
                         selectedSegmentId={selectedSegmentId}
@@ -257,12 +274,12 @@ export function HeatmapWithBandOverlay({
             {viewport && (
                 <div
                     className="absolute inset-x-0 top-0 pointer-events-none z-10"
-                    style={{ padding: "4px" }}
+                    style={{ padding: `${HEATMAP_CANVAS_TOP_OFFSET}px` }}
                 >
                     <HeatmapPlayheadOverlay
                         viewport={viewport}
                         timeSec={playheadTimeSec}
-                        height={overlayHeight - 16}
+                        height={canvasHeight}
                         widthPx={width}
                     />
                 </div>

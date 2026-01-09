@@ -10,8 +10,8 @@ use rhai::{Dynamic, Engine, EvalAltResult, ImmutableString};
 use crate::event_rhai::{register_event_api, PickBuilder};
 use crate::input::{BandSignalMap, SignalMap};
 use crate::signal::{
-    GateBuilder, GeneratorNode, NormaliseBuilder, NoiseType, Signal, SignalNode, SignalParam,
-    SmoothBuilder,
+    GateBuilder, GeneratorNode, NormaliseBuilder, NoiseType, SelectBuilder, Signal, SignalNode,
+    SignalParam, SmoothBuilder,
 };
 
 // Thread-local storage for input signals during script execution.
@@ -309,6 +309,74 @@ pub fn register_signal_api(engine: &mut Engine) {
             Ok(s.anticipate(to_signal_param(beats)?))
         },
     );
+
+    // === Comparison operations (boolean signals) ===
+    // These return signals that evaluate to 1.0 (true) or 0.0 (false)
+    engine.register_fn("lt", |s: &mut Signal, other: Signal| s.lt(other));
+    engine.register_fn("lt", |s: &mut Signal, value: f64| {
+        s.lt(Signal::constant(value as f32))
+    });
+    engine.register_fn("lt", |s: &mut Signal, value: i64| {
+        s.lt(Signal::constant(value as f32))
+    });
+
+    engine.register_fn("gt", |s: &mut Signal, other: Signal| s.gt(other));
+    engine.register_fn("gt", |s: &mut Signal, value: f64| {
+        s.gt(Signal::constant(value as f32))
+    });
+    engine.register_fn("gt", |s: &mut Signal, value: i64| {
+        s.gt(Signal::constant(value as f32))
+    });
+
+    engine.register_fn("le", |s: &mut Signal, other: Signal| s.le(other));
+    engine.register_fn("le", |s: &mut Signal, value: f64| {
+        s.le(Signal::constant(value as f32))
+    });
+    engine.register_fn("le", |s: &mut Signal, value: i64| {
+        s.le(Signal::constant(value as f32))
+    });
+
+    engine.register_fn("ge", |s: &mut Signal, other: Signal| s.ge(other));
+    engine.register_fn("ge", |s: &mut Signal, value: f64| {
+        s.ge(Signal::constant(value as f32))
+    });
+    engine.register_fn("ge", |s: &mut Signal, value: i64| {
+        s.ge(Signal::constant(value as f32))
+    });
+
+    // Named 'eq' in Rhai (maps to eq_signal internally)
+    engine.register_fn("eq", |s: &mut Signal, other: Signal| s.eq_signal(other));
+    engine.register_fn("eq", |s: &mut Signal, value: f64| {
+        s.eq_signal(Signal::constant(value as f32))
+    });
+    engine.register_fn("eq", |s: &mut Signal, value: i64| {
+        s.eq_signal(Signal::constant(value as f32))
+    });
+
+    // Named 'ne' in Rhai (maps to ne_signal internally)
+    engine.register_fn("ne", |s: &mut Signal, other: Signal| s.ne_signal(other));
+    engine.register_fn("ne", |s: &mut Signal, value: f64| {
+        s.ne_signal(Signal::constant(value as f32))
+    });
+    engine.register_fn("ne", |s: &mut Signal, value: i64| {
+        s.ne_signal(Signal::constant(value as f32))
+    });
+
+    // === Logical operations ===
+    engine.register_fn("and", |s: &mut Signal, other: Signal| s.and(other));
+    engine.register_fn("or", |s: &mut Signal, other: Signal| s.or(other));
+    engine.register_fn("not", |s: &mut Signal| s.not());
+
+    // === SelectBuilder ===
+    engine.register_type_with_name::<SelectBuilder>("SelectBuilder");
+    engine.register_fn("when", |b: &mut SelectBuilder, cond: Signal, value: Signal| {
+        b.clone().when(cond, value)
+    });
+    engine.register_fn("otherwise", |b: &mut SelectBuilder, default: Signal| {
+        b.clone().otherwise(default)
+    });
+    // Factory function for signal namespace (wrapped in SIGNAL_API_RHAI)
+    engine.register_fn("__signal_select", SelectBuilder::new);
 
     // === Explicit sampling (escape hatch) ===
     // WARNING: This is an imperative escape hatch. Only works reliably on Input/BandInput signals.
@@ -732,6 +800,12 @@ pub fn register_signal_api(engine: &mut Engine) {
 ///
 /// This provides the `gen` namespace, `timing` namespace, and `inputs` object.
 pub const SIGNAL_API_RHAI: &str = r#"
+// === Signal Namespace ===
+// Provides signal factory functions like select() for conditional signal composition.
+let signal = #{};
+signal.__type = "signal_namespace";
+signal.select = || __signal_select();
+
 // === Signal Generators Namespace ===
 let gen = #{};
 gen.__type = "gen_namespace";
@@ -801,6 +875,9 @@ pub fn generate_inputs_namespace(signal_names: &[&str]) -> String {
             "spectralFlux" => ("flux", "spectralFlux"),
             "onsetEnvelope" => ("onset", "onsetEnvelope"),
             "amplitudeEnvelope" => ("energy", "amplitudeEnvelope"),
+            // Pitch detection (P1)
+            "pitchF0" => ("pitch", "pitchF0"),
+            "pitchConfidence" => ("pitchConfidence", "pitchConfidence"),
             other => (other, other),
         };
 
@@ -869,7 +946,7 @@ inputs.mix.bands["{id}"].onsetPeaks = __band_events_get("{id}:onsetPeaks");
 /// Generate Rhai code to add stem signal accessors to the inputs.stems namespace.
 ///
 /// Each stem is accessible both by ID and by label (if different).
-/// Stems expose the same signal features as the mixdown (energy, centroid, flux, onset).
+/// Stems expose the same signal features as the mixdown (energy, centroid, flux, onset, pitch, pitchConfidence).
 ///
 /// This generates code like:
 /// ```rhai
@@ -879,6 +956,8 @@ inputs.mix.bands["{id}"].onsetPeaks = __band_events_get("{id}:onsetPeaks");
 /// inputs.stems["stem-abc123"].flux = __stem_signal_input("stem-abc123", "flux");
 /// inputs.stems["stem-abc123"].centroid = __stem_signal_input("stem-abc123", "centroid");
 /// inputs.stems["stem-abc123"].onset = __stem_signal_input("stem-abc123", "onset");
+/// inputs.stems["stem-abc123"].pitch = __stem_signal_input("stem-abc123", "pitch");
+/// inputs.stems["stem-abc123"].pitchConfidence = __stem_signal_input("stem-abc123", "pitchConfidence");
 /// inputs.stems["stem-abc123"].beatCandidates = __event_stream_get("stem:stem-abc123:beatCandidates");
 /// inputs.stems["stem-abc123"].onsetPeaks = __event_stream_get("stem:stem-abc123:onsetPeaks");
 /// inputs.stems["stem-abc123"].label = "Drums";
@@ -886,7 +965,7 @@ inputs.mix.bands["{id}"].onsetPeaks = __band_events_get("{id}:onsetPeaks");
 /// inputs.stems["Drums"] = inputs.stems["stem-abc123"];
 /// ```
 ///
-/// Note: Uses consistent naming (centroid, flux, onset, energy) - no aliases.
+/// Note: Uses consistent naming (centroid, flux, onset, energy, pitch, pitchConfidence) - no aliases.
 pub fn generate_stems_namespace(stems: &[(String, String)]) -> String {
     let mut code = String::from("inputs.stems = #{};\ninputs.stems.__type = \"stems_namespace\";\n");
 
@@ -900,6 +979,8 @@ inputs.stems["{id}"].energy = __stem_signal_input("{id}", "energy");
 inputs.stems["{id}"].flux = __stem_signal_input("{id}", "flux");
 inputs.stems["{id}"].centroid = __stem_signal_input("{id}", "centroid");
 inputs.stems["{id}"].onset = __stem_signal_input("{id}", "onset");
+inputs.stems["{id}"].pitch = __stem_signal_input("{id}", "pitch");
+inputs.stems["{id}"].pitchConfidence = __stem_signal_input("{id}", "pitchConfidence");
 inputs.stems["{id}"].beatCandidates = __event_stream_get("stem:{id}:beatCandidates");
 inputs.stems["{id}"].onsetPeaks = __event_stream_get("stem:{id}:onsetPeaks");
 inputs.stems["{id}"].label = "{label}";

@@ -129,7 +129,48 @@ export type TempoHypothesesResult = {
     meta: MirRunMeta;
 };
 
-export type MirResult = Mir1DResult | Mir2DResult | MirEventsResult | BeatCandidatesResult | TempoHypothesesResult;
+/**
+ * Diagnostics for activity signal computation.
+ * Provides information about the signal detection quality.
+ */
+export type MirActivityDiagnostics = {
+    /** Estimated noise floor value (in log-energy scale). */
+    noiseFloor: number;
+    /** Enter threshold value (in log-energy scale). */
+    enterThreshold: number;
+    /** Exit threshold value (in log-energy scale). */
+    exitThreshold: number;
+    /** Total frames processed. */
+    totalFrames: number;
+    /** Number of frames marked as active. */
+    activeFrames: number;
+    /** Fraction of frames that are active (0-1). */
+    activeFraction: number;
+};
+
+/**
+ * Result of activity detection.
+ *
+ * Activity represents "signal present" vs "silence/noise floor".
+ * Use activityLevel for soft gating (0-1) or isActive for hard gating (boolean).
+ */
+export type MirActivityResult = {
+    kind: "activity";
+    /** Frame times in seconds. */
+    times: Float32Array;
+    /** Activity level per frame (0-1), suitable for soft gating. */
+    activityLevel: Float32Array;
+    /** Binary activity flag per frame (0 or 1), suitable for hard gating. */
+    isActive: Uint8Array;
+    /** Suppression mask (1 = in post-silence suppression window). */
+    suppressMask: Uint8Array;
+    /** Execution metadata. */
+    meta: MirRunMeta;
+    /** Diagnostics about detection quality. */
+    diagnostics: MirActivityDiagnostics;
+};
+
+export type MirResult = Mir1DResult | Mir2DResult | MirEventsResult | BeatCandidatesResult | TempoHypothesesResult | MirActivityResult;
 
 // ----------------------------
 // Beat Grid Phase Alignment (B3)
@@ -576,7 +617,12 @@ export type MirFunctionId =
     // CQT-derived signals (F5)
     | "cqtHarmonicEnergy"
     | "cqtBassPitchMotion"
-    | "cqtTonalStability";
+    | "cqtTonalStability"
+    // Pitch detection (P1)
+    | "pitchF0"
+    | "pitchConfidence"
+    // Activity detection
+    | "activity";
 
 export type MirRunRequest = {
     fn: MirFunctionId;
@@ -657,6 +703,32 @@ export type MirRunRequest = {
         fMax?: number;
         /** Hop size in samples. Auto-computed if not specified. */
         hopSize?: number;
+    };
+
+    // Pitch detection configuration (P1)
+    pitch?: {
+        /** Minimum frequency in Hz. Default: 50. */
+        fMinHz?: number;
+        /** Maximum frequency in Hz. Default: 1000. */
+        fMaxHz?: number;
+        /** YIN threshold for voiced detection (0-1). Default: 0.15. */
+        threshold?: number;
+    };
+
+    // Activity detection configuration
+    activity?: {
+        /** Percentile for noise floor estimation (0-100). Default: 10. */
+        energyPercentile?: number;
+        /** dB margin above noise floor to enter active state. Default: 6. */
+        enterMargin?: number;
+        /** dB margin above noise floor to exit active state. Default: 3. */
+        exitMargin?: number;
+        /** Hangover duration in ms to prevent rapid toggling. Default: 50. */
+        hangoverMs?: number;
+        /** Minimum active duration in ms. Default: 30. */
+        minActiveMs?: number;
+        /** Smoothing window in ms for activity level. Default: 20. */
+        smoothMs?: number;
     };
 };
 

@@ -42,6 +42,12 @@ pub enum TransformType {
     RateChange,
     /// Debug probe
     Debug,
+    /// Comparison: Lt, Gt, Le, Ge, Eq, Ne
+    Comparison,
+    /// Logical: And, Or, Not
+    Logic,
+    /// Conditional selection: Select
+    Conditional,
 }
 
 impl TransformType {
@@ -61,6 +67,9 @@ impl TransformType {
             TransformType::TimeShift => "TimeShift",
             TransformType::RateChange => "RateChange",
             TransformType::Debug => "Debug",
+            TransformType::Comparison => "Comparison",
+            TransformType::Logic => "Logic",
+            TransformType::Conditional => "Conditional",
         }
     }
 }
@@ -205,6 +214,22 @@ pub fn node_transform_type(node: &SignalNode) -> TransformType {
 
         // Debug
         SignalNode::Debug { .. } => TransformType::Debug,
+
+        // Comparison
+        SignalNode::Lt(_, _)
+        | SignalNode::Gt(_, _)
+        | SignalNode::Le(_, _)
+        | SignalNode::Ge(_, _)
+        | SignalNode::Eq(_, _)
+        | SignalNode::Ne(_, _) => TransformType::Comparison,
+
+        // Logic
+        SignalNode::And(_, _)
+        | SignalNode::Or(_, _)
+        | SignalNode::Not { .. } => TransformType::Logic,
+
+        // Conditional
+        SignalNode::Select { .. } => TransformType::Conditional,
     }
 }
 
@@ -272,7 +297,8 @@ fn get_primary_source(node: &SignalNode) -> Option<&Signal> {
         | SignalNode::Diff { source }
         | SignalNode::Integrate { source, .. }
         | SignalNode::Delay { source, .. }
-        | SignalNode::Anticipate { source, .. } => Some(source),
+        | SignalNode::Anticipate { source, .. }
+        | SignalNode::Not { source } => Some(source),
 
         // Binary ops - follow the first operand as the primary chain
         SignalNode::Add(a, _)
@@ -280,10 +306,21 @@ fn get_primary_source(node: &SignalNode) -> Option<&Signal> {
         | SignalNode::Mul(a, _)
         | SignalNode::Div(a, _)
         | SignalNode::Mix { a, .. }
-        | SignalNode::Lerp { a, .. } => Some(a),
+        | SignalNode::Lerp { a, .. }
+        | SignalNode::Lt(a, _)
+        | SignalNode::Gt(a, _)
+        | SignalNode::Le(a, _)
+        | SignalNode::Ge(a, _)
+        | SignalNode::Eq(a, _)
+        | SignalNode::Ne(a, _)
+        | SignalNode::And(a, _)
+        | SignalNode::Or(a, _) => Some(a),
 
         // Atan2 - y is primary
         SignalNode::Atan2 { y, .. } => Some(y),
+
+        // Select - follow the default as primary chain
+        SignalNode::Select { default, .. } => Some(default.as_ref()),
     }
 }
 

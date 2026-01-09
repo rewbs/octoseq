@@ -13,7 +13,8 @@ export const TREE_NODE_IDS = {
   // Top-level sections (children of project)
   AUDIO: "audio",
   EVENT_STREAMS: "event-streams",
-  CUSTOM_SIGNALS: "custom-signals",
+  DERIVED_SIGNALS: "derived-signals",
+  COMPOSED_SIGNALS: "composed-signals",
   SCRIPTS: "scripts",
   TEXT: "text",
 

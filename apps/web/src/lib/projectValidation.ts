@@ -168,9 +168,15 @@ function migrateProject(
         musicalTime: null,
         authoredEvents: [],
         beatGrid: null,
-        customSignals: null,
+        derivedSignals: null,
+        composedSignals: null,
       };
       warnings.push("Added missing interpretation data");
+    }
+
+    // Ensure composedSignals exists (for projects created before this field was added)
+    if (migrated.interpretation && migrated.interpretation.composedSignals === undefined) {
+      migrated.interpretation.composedSignals = null;
     }
 
     // Ensure scripts exists
@@ -240,11 +246,11 @@ export function validateProjectIds(project: Project): string[] {
     }
   }
 
-  // Check custom signal IDs
-  if (project.interpretation.customSignals) {
-    for (const signal of project.interpretation.customSignals.signals) {
+  // Check derived signal IDs
+  if (project.interpretation.derivedSignals) {
+    for (const signal of project.interpretation.derivedSignals.signals) {
       if (seenIds.has(signal.id)) {
-        warnings.push(`Duplicate custom signal ID: ${signal.id}`);
+        warnings.push(`Duplicate derived signal ID: ${signal.id}`);
       }
       seenIds.add(signal.id);
     }

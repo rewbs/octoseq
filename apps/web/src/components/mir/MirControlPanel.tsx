@@ -17,4 +17,9 @@ export type MirFunctionId =
     | "mfccDeltaDelta"
     | "cqtHarmonicEnergy"
     | "cqtBassPitchMotion"
-    | "cqtTonalStability";
+    | "cqtTonalStability"
+    // Pitch detection (P1)
+    | "pitchF0"
+    | "pitchConfidence"
+    // Activity detection
+    | "activity";

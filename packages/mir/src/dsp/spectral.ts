@@ -1,4 +1,23 @@
 import type { Spectrogram } from "./spectrogram";
+import type { ActivitySignal } from "./activity";
+
+/**
+ * Options for activity-aware spectral features.
+ */
+export type SpectralActivityOptions = {
+    /**
+     * Activity signal to use for gating.
+     * If provided, feature values will be zeroed in inactive regions.
+     */
+    activity?: ActivitySignal;
+
+    /**
+     * Behavior for inactive frames.
+     * - "zero": Output 0 (default)
+     * - "hold": Hold the last active value
+     */
+    inactiveBehavior?: "zero" | "hold";
+};
 
 export type AmplitudeEnvelopeConfig = {
     /** Hop size in samples (determines time resolution). Default: 512 */
@@ -58,18 +77,40 @@ export function amplitudeEnvelope(
  * Spectral centroid per frame (Hz).
  *
  * Output is aligned 1:1 with `spec.times`.
+ *
+ * When activity gating is enabled:
+ * - Inactive frames output 0 (or hold last valid value if configured)
+ * - This prevents noise-induced centroid values during silence
+ *
+ * @param spec - Input spectrogram
+ * @param options - Activity gating options
  */
-export function spectralCentroid(spec: Spectrogram): Float32Array {
+export function spectralCentroid(
+    spec: Spectrogram,
+    options?: SpectralActivityOptions
+): Float32Array {
     const nFrames = spec.times.length;
     const out = new Float32Array(nFrames);
 
     const nBins = (spec.fftSize >>> 1) + 1;
     const binHz = spec.sampleRate / spec.fftSize;
 
+    const activity = options?.activity;
+    const holdBehavior = options?.inactiveBehavior === "hold";
+    let lastActiveValue = 0;
+
     for (let t = 0; t < nFrames; t++) {
+        // Check activity if provided
+        const isActive = activity ? (activity.isActive[t] ?? 0) === 1 : true;
+
+        if (!isActive) {
+            out[t] = holdBehavior ? lastActiveValue : 0;
+            continue;
+        }
+
         const mags = spec.magnitudes[t];
         if (!mags) {
-            out[t] = 0;
+            out[t] = holdBehavior ? lastActiveValue : 0;
             continue;
         }
 
@@ -84,7 +125,9 @@ export function spectralCentroid(spec: Spectrogram): Float32Array {
             den += m;
         }
 
-        out[t] = den > 0 ? num / den : 0;
+        const centroid = den > 0 ? num / den : 0;
+        out[t] = centroid;
+        lastActiveValue = centroid;
     }
 
     return out;
@@ -98,16 +141,39 @@ export function spectralCentroid(spec: Spectrogram): Float32Array {
  * - First frame flux is 0.
  *
  * Output is aligned 1:1 with `spec.times`.
+ *
+ * When activity gating is enabled:
+ * - Inactive frames output 0
+ * - Post-silence suppression is applied (first active frames after silence are zeroed)
+ * - This prevents false flux spikes at silence/sound boundaries
+ *
+ * @param spec - Input spectrogram
+ * @param options - Activity gating options
  */
-export function spectralFlux(spec: Spectrogram): Float32Array {
+export function spectralFlux(
+    spec: Spectrogram,
+    options?: SpectralActivityOptions
+): Float32Array {
     const nFrames = spec.times.length;
     const out = new Float32Array(nFrames);
 
     const nBins = (spec.fftSize >>> 1) + 1;
+    const activity = options?.activity;
 
     let prev: Float32Array | null = null;
 
     for (let t = 0; t < nFrames; t++) {
+        // Check activity and suppression if provided
+        const isActive = activity ? (activity.isActive[t] ?? 0) === 1 : true;
+        const isSuppressed = activity ? (activity.suppressMask[t] ?? 0) === 1 : false;
+
+        if (!isActive || isSuppressed) {
+            out[t] = 0;
+            // Reset prev to avoid spurious flux when activity resumes
+            prev = null;
+            continue;
+        }
+
         const mags = spec.magnitudes[t];
         if (!mags) {
             out[t] = 0;

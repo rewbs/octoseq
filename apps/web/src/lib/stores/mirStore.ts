@@ -150,6 +150,11 @@ export const mirTabDefinitions: Array<{ id: MirFunctionId; label: string; kind: 
   { id: "cqtHarmonicEnergy", label: "CQT Harmonic Energy (1D)", kind: "1d" },
   { id: "cqtBassPitchMotion", label: "CQT Bass Pitch Motion (1D)", kind: "1d" },
   { id: "cqtTonalStability", label: "CQT Tonal Stability (1D)", kind: "1d" },
+  // Pitch detection (P1)
+  { id: "pitchF0", label: "Pitch F0 (1D)", kind: "1d" },
+  { id: "pitchConfidence", label: "Pitch Confidence (1D)", kind: "1d" },
+  // Activity detection
+  { id: "activity", label: "Activity (1D)", kind: "1d" },
   { id: "onsetEnvelope", label: "Onset Envelope (1D)", kind: "1d" },
   { id: "onsetPeaks", label: "Onset Peaks (events)", kind: "events" },
   { id: "beatCandidates", label: "Beat Candidates (events)", kind: "events" },

@@ -48,14 +48,14 @@ export function BandsInspector({ nodeId }: BandsInspectorProps) {
         "bandOnsetStrength",
         "bandSpectralFlux",
         "bandSpectralCentroid",
-      ]);
+      ], sourceId);
 
       // Run CQT-based band analyses for all bands
       await runBandCqtAnalysis(bandIds, [
         "bandCqtHarmonicEnergy",
         "bandCqtBassPitchMotion",
         "bandCqtTonalStability",
-      ]);
+      ], sourceId);
 
       // Extract events from the band signals
       await runTypedEventExtraction(bandIds, [
@@ -67,7 +67,7 @@ export function BandsInspector({ nodeId }: BandsInspectorProps) {
     } finally {
       setIsRunningAll(false);
     }
-  }, [bandIds, runBandAnalysis, runBandCqtAnalysis, runTypedEventExtraction]);
+  }, [bandIds, sourceId, runBandAnalysis, runBandCqtAnalysis, runTypedEventExtraction]);
 
   return (
     <div className="p-2 space-y-4">

@@ -7,6 +7,7 @@ import {
     cqtSpectrogram,
     withCqtDefaults,
     peakPick,
+    resample,
     type Spectrogram,
     type CqtSpectrogram,
     type BandMirFunctionId,
@@ -18,6 +19,7 @@ import { useAudioInputStore } from "../audioInputStore";
 import { useFrequencyBandStore } from "../frequencyBandStore";
 import { useBandMirStore, type BandEvent } from "../bandMirStore";
 import { useConfigStore } from "../configStore";
+import { MIXDOWN_ID } from "../types/audioInput";
 
 const waitForNextPaint = () =>
     new Promise<void>((resolve) => {
@@ -48,13 +50,32 @@ export function useBandMirActions() {
     const runBandAnalysis = useCallback(
         async (
             bandIds?: string[],
-            functions: BandMirFunctionId[] = ["bandAmplitudeEnvelope", "bandOnsetStrength"]
+            functions: BandMirFunctionId[] = ["bandAmplitudeEnvelope", "bandOnsetStrength"],
+            sourceId: string = MIXDOWN_ID
         ) => {
             const audioInputStore = useAudioInputStore.getState();
-            const audio = audioInputStore.getAudio();
-            const audioFileName = audioInputStore.getAudioFileName();
-            const audioDuration = audioInputStore.getAudioDuration();
+
+            // Get the correct audio source based on sourceId
+            let audio: AudioBuffer | { sampleRate: number; getChannelData: (ch: number) => Float32Array } | null = null;
+            let audioFileName: string | null = null;
+            let audioDuration: number | null = null;
+
+            if (sourceId === MIXDOWN_ID) {
+                audio = audioInputStore.getAudio();
+                audioFileName = audioInputStore.getAudioFileName();
+                audioDuration = audioInputStore.getAudioDuration();
+            } else {
+                const audioInput = audioInputStore.getInputById(sourceId);
+                if (audioInput?.audioBuffer) {
+                    audio = audioInput.audioBuffer;
+                    audioFileName = audioInput.label ?? sourceId;
+                    audioDuration = audioInput.metadata?.duration ?? null;
+                }
+            }
+
             if (!audio) return;
+
+            console.log(`[BAND MIR DEBUG] sourceId=${sourceId}, sampleRate=${audio.sampleRate}`);
 
             const structure = useFrequencyBandStore.getState().structure;
             if (!structure) return;
@@ -82,10 +103,18 @@ export function useBandMirActions() {
 
             try {
                 const spectrogramConfig = configStore.getSpectrogramConfig();
+                const targetSampleRate = configStore.mirSampleRate;
+                const originalSampleRate = audio.sampleRate;
+
+                // Determine effective sample rate after potential resampling
+                const effectiveSampleRate = (targetSampleRate > 0 && targetSampleRate !== originalSampleRate)
+                    ? targetSampleRate
+                    : originalSampleRate;
 
                 // Create a cache key that includes BOTH audio identity and spectrogram config.
                 // This prevents stale reuse when FFT/hop settings change.
-                const audioId = `${audioFileName ?? "unknown"}:${audioDuration}:${audio.sampleRate}`;
+                // Include target sample rate in cache key to invalidate when MIR sample rate changes.
+                const audioId = `${audioFileName ?? "unknown"}:${audioDuration}:${effectiveSampleRate}`;
                 const specKey = `${audioId}:fft=${spectrogramConfig.fftSize}:hop=${spectrogramConfig.hopSize}:win=${spectrogramConfig.window}`;
 
                 // Get or compute spectrogram
@@ -96,11 +125,18 @@ export function useBandMirActions() {
                 ) {
                     spec = spectrogramCacheRef.current.spec;
                 } else {
-                    // Create AudioBufferLike from AudioBuffer
+                    // Create AudioBufferLike from AudioBuffer, with optional resampling
                     const ch0 = audio.getChannelData(0);
-                    const mono = new Float32Array(ch0);
+                    let mono: Float32Array;
+                    if (targetSampleRate > 0 && targetSampleRate !== originalSampleRate) {
+                        mono = resample(ch0, originalSampleRate, targetSampleRate);
+                        console.log(`[BAND MIR DEBUG] Resampled from ${originalSampleRate}Hz to ${targetSampleRate}Hz, samples: ${ch0.length} -> ${mono.length}`);
+                    } else {
+                        mono = new Float32Array(ch0);
+                    }
+
                     const audioLike = {
-                        sampleRate: audio.sampleRate,
+                        sampleRate: effectiveSampleRate,
                         numberOfChannels: 1,
                         getChannelData: () => mono,
                     };
@@ -131,28 +167,30 @@ export function useBandMirActions() {
     const runSingleBandAnalysis = useCallback(
         async (
             bandId: string,
-            functions: BandMirFunctionId[] = ["bandAmplitudeEnvelope", "bandOnsetStrength"]
+            functions: BandMirFunctionId[] = ["bandAmplitudeEnvelope", "bandOnsetStrength"],
+            sourceId: string = MIXDOWN_ID
         ) => {
-            return runBandAnalysis([bandId], functions);
+            return runBandAnalysis([bandId], functions, sourceId);
         },
         [runBandAnalysis]
     );
 
     const runAllBandAnalysis = useCallback(
         async (
-            functions: BandMirFunctionId[] = ["bandAmplitudeEnvelope", "bandOnsetStrength"]
+            functions: BandMirFunctionId[] = ["bandAmplitudeEnvelope", "bandOnsetStrength"],
+            sourceId: string = MIXDOWN_ID
         ) => {
-            return runBandAnalysis(undefined, functions);
+            return runBandAnalysis(undefined, functions, sourceId);
         },
         [runBandAnalysis]
     );
 
     const invalidateAndRecompute = useCallback(
-        async (bandId: string) => {
+        async (bandId: string, sourceId: string = MIXDOWN_ID) => {
             const bandMirStore = useBandMirStore.getState();
             bandMirStore.invalidateBand(bandId);
             bandMirStore.invalidateBandEvents(bandId);
-            await runSingleBandAnalysis(bandId);
+            await runSingleBandAnalysis(bandId, undefined, sourceId);
         },
         [runSingleBandAnalysis]
     );
@@ -170,12 +208,29 @@ export function useBandMirActions() {
     const runBandCqtAnalysis = useCallback(
         async (
             bandIds?: string[],
-            functions: BandCqtFunctionId[] = ["bandCqtHarmonicEnergy", "bandCqtTonalStability"]
+            functions: BandCqtFunctionId[] = ["bandCqtHarmonicEnergy", "bandCqtTonalStability"],
+            sourceId: string = MIXDOWN_ID
         ) => {
             const audioInputStore2 = useAudioInputStore.getState();
-            const audio2 = audioInputStore2.getAudio();
-            const audioFileName2 = audioInputStore2.getAudioFileName();
-            const audioDuration2 = audioInputStore2.getAudioDuration();
+
+            // Get the correct audio source based on sourceId
+            let audio2: AudioBuffer | { sampleRate: number; getChannelData: (ch: number) => Float32Array } | null = null;
+            let audioFileName2: string | null = null;
+            let audioDuration2: number | null = null;
+
+            if (sourceId === MIXDOWN_ID) {
+                audio2 = audioInputStore2.getAudio();
+                audioFileName2 = audioInputStore2.getAudioFileName();
+                audioDuration2 = audioInputStore2.getAudioDuration();
+            } else {
+                const audioInput = audioInputStore2.getInputById(sourceId);
+                if (audioInput?.audioBuffer) {
+                    audio2 = audioInput.audioBuffer;
+                    audioFileName2 = audioInput.label ?? sourceId;
+                    audioDuration2 = audioInput.metadata?.duration ?? null;
+                }
+            }
+
             if (!audio2) return;
 
             const structure = useFrequencyBandStore.getState().structure;
@@ -202,19 +257,35 @@ export function useBandMirActions() {
             await waitForNextPaint();
 
             try {
-                // Create audio ID for cache key
-                const audioId = `${audioFileName2 ?? "unknown"}:${audioDuration2}:${audio2.sampleRate}`;
+                const configStore2 = useConfigStore.getState();
+                const targetSampleRate = configStore2.mirSampleRate;
+                const originalSampleRate = audio2.sampleRate;
+
+                // Determine effective sample rate after potential resampling
+                const effectiveSampleRate = (targetSampleRate > 0 && targetSampleRate !== originalSampleRate)
+                    ? targetSampleRate
+                    : originalSampleRate;
+
+                // Create audio ID for cache key (include effective sample rate)
+                const audioId = `${audioFileName2 ?? "unknown"}:${audioDuration2}:${effectiveSampleRate}`;
 
                 // Get or compute CQT spectrogram
                 let cqt: CqtSpectrogram;
                 if (cqtCacheRef.current && cqtCacheRef.current.audioId === audioId) {
                     cqt = cqtCacheRef.current.cqt;
                 } else {
-                    // Create AudioBufferLike from AudioBuffer
+                    // Create AudioBufferLike from AudioBuffer, with optional resampling
                     const ch0 = audio2.getChannelData(0);
-                    const mono = new Float32Array(ch0);
+                    let mono: Float32Array;
+                    if (targetSampleRate > 0 && targetSampleRate !== originalSampleRate) {
+                        mono = resample(ch0, originalSampleRate, targetSampleRate);
+                        console.log(`[BAND CQT DEBUG] Resampled from ${originalSampleRate}Hz to ${targetSampleRate}Hz, samples: ${ch0.length} -> ${mono.length}`);
+                    } else {
+                        mono = new Float32Array(ch0);
+                    }
+
                     const audioLike = {
-                        sampleRate: audio2.sampleRate,
+                        sampleRate: effectiveSampleRate,
                         numberOfChannels: 1,
                         getChannelData: () => mono,
                     };

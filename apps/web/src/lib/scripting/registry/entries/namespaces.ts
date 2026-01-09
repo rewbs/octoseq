@@ -392,6 +392,35 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
   },
 
   // ============================================================================
+  // signal - Signal factory namespace
+  // ============================================================================
+  {
+    kind: "namespace",
+    name: "signal",
+    path: "signal",
+    description:
+      "Signal factory namespace. Provides advanced signal construction utilities like conditional selection.",
+    properties: [],
+    methods: [
+      {
+        name: "select",
+        path: "signal.select",
+        description:
+          "Start a conditional selection builder. Chain with .when(condition, value) and finalize with .otherwise(default).",
+        params: [],
+        returns: "SelectBuilder",
+        chainsTo: "SelectBuilder",
+        example: `let s = signal.select()
+  .when(energy.gt(0.8), gen.constant(1.0))
+  .when(energy.gt(0.4), energy)
+  .otherwise(gen.constant(0.0));`,
+        notes:
+          "Conditions are evaluated in order; first true (> 0) wins. The .otherwise() call is required.",
+      },
+    ],
+  },
+
+  // ============================================================================
   // gen - Signal generator namespace
   // ============================================================================
   {
@@ -654,6 +683,13 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         description: 'User-authored event streams: inputs.customEvents["beats"].',
         readonly: true,
       },
+      {
+        name: "composedSignals",
+        path: "inputs.composedSignals",
+        type: "ComposedSignals",
+        description: 'Human-authored interpretation curves (keyframe envelopes): inputs.composedSignals["intensity"].',
+        readonly: true,
+      },
     ],
     methods: [],
   },
@@ -729,6 +765,29 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         path: "inputs.mix.tonal",
         type: "Signal",
         description: "CQT tonal stability - measures harmonic stability vs modulation (0-1).",
+        readonly: true,
+      },
+      // Pitch detection (P1)
+      {
+        name: "pitch",
+        path: "inputs.mix.pitch",
+        type: "Signal",
+        description: "Detected pitch frequency in Hz. Returns 0 for unvoiced/silent frames. Derived from YIN algorithm.",
+        readonly: true,
+      },
+      {
+        name: "pitchConfidence",
+        path: "inputs.mix.pitchConfidence",
+        type: "Signal",
+        description: "Pitch detection confidence (0-1). Use with .gate(threshold) to derive voiced/unvoiced signal.",
+        readonly: true,
+      },
+      // Activity detection
+      {
+        name: "activity",
+        path: "inputs.mix.activity",
+        type: "Signal",
+        description: "Activity level (0-1). Measures signal presence vs silence/noise floor. Use for gating other signals.",
         readonly: true,
       },
       {

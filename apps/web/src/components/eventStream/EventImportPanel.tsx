@@ -5,7 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Plus, Sparkles, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { pickPeaks, pickPeaksAdaptive, DEFAULT_PEAK_PICKING_PARAMS, type PeakPickingParams } from "@octoseq/mir";
-import { useCustomSignalStore } from "@/lib/stores/customSignalStore";
+import { useDerivedSignalStore } from "@/lib/stores/derivedSignalStore";
 import { useBandMirStore } from "@/lib/stores/bandMirStore";
 import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
@@ -80,10 +80,10 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
   );
 
   // Get available signals - use useShallow for array/object selectors to avoid infinite loops
-  const customSignals = useCustomSignalStore(
+  const derivedSignals = useDerivedSignalStore(
     useShallow((s) => s.structure?.signals ?? [])
   );
-  const customSignalResults = useCustomSignalStore((s) => s.resultCache);
+  const derivedSignalResults = useDerivedSignalStore((s) => s.resultCache);
 
   const bands = useFrequencyBandStore(
     useShallow((s) => s.structure?.bands ?? [])
@@ -97,8 +97,8 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
     const sources: SignalSource[] = [];
 
     // Add computed custom signals
-    for (const signal of customSignals) {
-      if (customSignalResults.has(signal.id)) {
+    for (const signal of derivedSignals) {
+      if (derivedSignalResults.has(signal.id)) {
         sources.push({
           kind: "customSignal",
           signalId: signal.id,
@@ -120,7 +120,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
     }
 
     return sources;
-  }, [customSignals, customSignalResults, bands, bandMirCache]);
+  }, [derivedSignals, derivedSignalResults, bands, bandMirCache]);
 
   // Find selected source
   const selectedSource = useMemo(() => {
@@ -136,7 +136,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
     if (!selectedSource) return null;
 
     if (selectedSource.kind === "customSignal") {
-      const result = customSignalResults.get(selectedSource.signalId);
+      const result = derivedSignalResults.get(selectedSource.signalId);
       if (!result) return null;
       return { times: result.times, values: result.values };
     } else {
@@ -148,7 +148,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
         values: result.values,
       };
     }
-  }, [selectedSource, customSignalResults, bandMirCache]);
+  }, [selectedSource, derivedSignalResults, bandMirCache]);
 
   // Compute peaks from signal (debounced via auto-detect)
   const detectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

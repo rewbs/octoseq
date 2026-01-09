@@ -15,6 +15,9 @@ import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useMeshAssets } from "@/lib/stores/meshAssetStore";
+import { useDerivedSignalStore, useDerivedSignals } from "@/lib/stores/derivedSignalStore";
+import { useComposedSignalStore } from "@/lib/stores/composedSignalStore";
+import { useComposedSignalActions } from "@/lib/stores/hooks/useComposedSignalActions";
 import type { BandMirFunctionId } from "@octoseq/mir";
 
 // We import the mock type if the real package isn't built yet, preventing TS errors.
@@ -271,6 +274,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   const editorRef = useRef<MonacoEditorLike | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const availableBandsRef = useRef<Array<{ id: string; label: string }>>([]);
+  const availableStemsRef = useRef<Array<{ id: string; label: string }>>([]);
   const availableCustomEventsRef = useRef<Array<{ id: string; label: string }>>([]);
   const { disableScope, enableScope } = useHotkeysContext();
 
@@ -284,6 +288,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
       // The registry is self-contained - no need for WASM metadata.
       monacoDisposablesRef.current = registerRhaiLanguage(monaco, {
         getAvailableBands: () => availableBandsRef.current,
+        getAvailableStems: () => availableStemsRef.current,
         getAvailableCustomEvents: () => availableCustomEventsRef.current,
       });
     },
@@ -748,6 +753,9 @@ fn update(dt, frame) {
         bassMotion: "cqtBassPitchMotion",
         cqtTonalStability: "cqtTonalStability",
         tonal: "cqtTonalStability",
+        activity: "activity",
+        pitchF0: "pitchF0",
+        pitchConfidence: "pitchConfidence",
       };
 
       for (const [signalName, mirKey] of Object.entries(signalMappings)) {
@@ -934,6 +942,20 @@ fn update(dt, frame) {
     return () => unsubscribe();
   }, []);
 
+  // Keep available stems for editor completions in a ref
+  useEffect(() => {
+    const updateStems = () => {
+      const inputs = useAudioInputStore.getState().getAllInputsOrdered();
+      const stems = inputs.filter((i) => i.role === "stem");
+      availableStemsRef.current = stems.map((s) => ({ id: s.id, label: s.label }));
+    };
+    // Initial sync
+    updateStems();
+    // Subscribe to store changes
+    const unsubscribe = useAudioInputStore.subscribe(updateStems);
+    return () => unsubscribe();
+  }, []);
+
   // Push band MIR signals to WASM (F4)
   useEffect(() => {
     if (!visRef.current || !isReady) return;
@@ -1101,6 +1123,91 @@ fn update(dt, frame) {
     // Request render to reflect any new assets
     requestRender();
   }, [meshAssets, isReady, requestRender]);
+
+  // Get derived signals and their results for WASM sync
+  const derivedSignals = useDerivedSignals();
+  const getSignalResult = useDerivedSignalStore((s) => s.getSignalResult);
+
+  // Get composed signals for WASM sync
+  const composedSignalStructure = useComposedSignalStore((s) => s.structure);
+  const { exportAllSignalsToArrays } = useComposedSignalActions();
+
+  // Sync derived signals to WASM visualiser
+  useEffect(() => {
+    if (!visRef.current || !isReady) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vis = visRef.current as any;
+    const duration = audioDuration ?? 0;
+
+    // Build list of enabled signals with computed results
+    const signalsToSync: Array<{ id: string; name: string; values: Float32Array; sampleRate: number }> = [];
+    for (const signal of derivedSignals) {
+      if (!signal.enabled) continue;
+      const result = getSignalResult(signal.id);
+      if (!result || result.status !== "computed" || !result.values) continue;
+      const sampleRate = duration > 0 ? result.values.length / duration : 0;
+      signalsToSync.push({
+        id: signal.id,
+        name: signal.name,
+        values: result.values,
+        sampleRate,
+      });
+    }
+
+    // Set available custom signals for namespace generation
+    if (typeof vis.set_available_custom_signals === "function") {
+      const signalList = signalsToSync.map((s) => [s.id, s.name]);
+      vis.set_available_custom_signals(JSON.stringify(signalList));
+    }
+
+    // Clear previous custom signals
+    if (typeof vis.clear_custom_signals === "function") {
+      vis.clear_custom_signals();
+    }
+
+    // Push each signal
+    if (typeof vis.push_custom_signal === "function") {
+      for (const s of signalsToSync) {
+        vis.push_custom_signal(s.id, s.name, s.values, s.sampleRate);
+      }
+    }
+
+    // Request render when signals change
+    requestRender();
+  }, [derivedSignals, getSignalResult, isReady, audioDuration, requestRender]);
+
+  // Sync composed signals to WASM visualiser
+  useEffect(() => {
+    if (!visRef.current || !isReady) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const vis = visRef.current as any;
+    const duration = audioDuration ?? 0;
+
+    // Get enabled composed signals as Float32Arrays
+    const signalArrays = exportAllSignalsToArrays();
+
+    // Set available composed signals for namespace generation
+    if (typeof vis.set_available_composed_signals === "function") {
+      const signalList = Array.from(signalArrays.keys()).map((name) => [name, name]);
+      vis.set_available_composed_signals(JSON.stringify(signalList));
+    }
+
+    // Clear previous composed signals
+    if (typeof vis.clear_composed_signals === "function") {
+      vis.clear_composed_signals();
+    }
+
+    // Push each signal
+    if (typeof vis.push_composed_signal === "function") {
+      for (const [name, values] of signalArrays) {
+        const sampleRate = duration > 0 ? values.length / duration : 0;
+        vis.push_composed_signal(name, values, sampleRate);
+      }
+    }
+
+    // Request render when signals change
+    requestRender();
+  }, [composedSignalStructure, exportAllSignalsToArrays, isReady, audioDuration, requestRender]);
 
   // Load script when enabled or script changes
   useEffect(() => {

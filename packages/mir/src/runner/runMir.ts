@@ -10,6 +10,8 @@ import { amplitudeEnvelope, spectralCentroid, spectralFlux } from "../dsp/spectr
 import { spectrogram, type AudioBufferLike, type Spectrogram, type SpectrogramConfig } from "../dsp/spectrogram";
 import { cqtSpectrogram, withCqtDefaults } from "../dsp/cqt";
 import { harmonicEnergy, bassPitchMotion, tonalStability } from "../dsp/cqtSignals";
+import { pitchF0, pitchConfidence } from "../dsp/pitch";
+import { computeActivityFromMel } from "../dsp/activity";
 import type { MirGPU } from "../gpu/context";
 import type { CqtConfig, MirAudioPayload, MirBackend, MirResult, MirRunRequest } from "../types";
 
@@ -546,6 +548,96 @@ export async function runMir(
                     totalMs: end - t0,
                     cpuMs: (cqtEnd - cqtStart) + (end - cqtEnd),
                 },
+            },
+        };
+    }
+
+    // ----------------------------
+    // Pitch detection (P1)
+    // ----------------------------
+
+    if (request.fn === "pitchF0" || request.fn === "pitchConfidence") {
+        // Pitch detection works directly on raw audio samples (like amplitudeEnvelope).
+        // Uses YIN algorithm for monophonic pitch estimation.
+        const pitchStart = nowMs();
+
+        const pitchConfig = {
+            fMinHz: request.pitch?.fMinHz,
+            fMaxHz: request.pitch?.fMaxHz,
+            threshold: request.pitch?.threshold,
+            hopSize: specConfig.hopSize,
+            windowSize: specConfig.fftSize,
+        };
+
+        const result = request.fn === "pitchF0"
+            ? pitchF0(audio.mono, audio.sampleRate, pitchConfig)
+            : pitchConfidence(audio.mono, audio.sampleRate, pitchConfig);
+
+        const end = nowMs();
+
+        return {
+            kind: "1d",
+            times: result.times,
+            values: result.values,
+            meta: {
+                backend: "cpu",
+                usedGpu: false,
+                timings: {
+                    totalMs: end - t0,
+                    cpuMs: end - pitchStart,
+                },
+            },
+        };
+    }
+
+    // ----------------------------
+    // Activity detection
+    // ----------------------------
+
+    if (request.fn === "activity") {
+        // Activity detection requires mel spectrogram.
+        const { mel, cpuExtraMs: melCpuMs } = await computeMel(false);
+        const activityStart = nowMs();
+
+        const activityConfig = {
+            energyPercentile: request.activity?.energyPercentile,
+            enterMargin: request.activity?.enterMargin,
+            exitMargin: request.activity?.exitMargin,
+            hangoverMs: request.activity?.hangoverMs,
+            minActiveMs: request.activity?.minActiveMs,
+            smoothMs: request.activity?.smoothMs,
+        };
+
+        const activity = computeActivityFromMel(mel, activityConfig);
+        const end = nowMs();
+
+        // Compute diagnostics
+        let activeCount = 0;
+        for (let i = 0; i < activity.isActive.length; i++) {
+            if (activity.isActive[i]) activeCount++;
+        }
+
+        return {
+            kind: "activity",
+            times: activity.times,
+            activityLevel: activity.activityLevel,
+            isActive: activity.isActive,
+            suppressMask: activity.suppressMask,
+            meta: {
+                backend: "cpu",
+                usedGpu: false,
+                timings: {
+                    totalMs: end - t0,
+                    cpuMs: cpuAfterSpec - cpuStart + melCpuMs + (end - activityStart),
+                },
+            },
+            diagnostics: {
+                noiseFloor: activity.diagnostics.noiseFloor,
+                enterThreshold: activity.diagnostics.enterThreshold,
+                exitThreshold: activity.diagnostics.exitThreshold,
+                totalFrames: activity.times.length,
+                activeFrames: activeCount,
+                activeFraction: activity.times.length > 0 ? activeCount / activity.times.length : 0,
             },
         };
     }

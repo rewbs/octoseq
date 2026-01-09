@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { Loader2, Play, RefreshCw } from "lucide-react";
+import { Loader2, Pencil, Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import { useMirStore } from "@/lib/stores/mirStore";
 import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
@@ -29,6 +30,9 @@ const ALL_MIR_ANALYSES: MirFunctionId[] = [
   "cqtHarmonicEnergy",
   "cqtBassPitchMotion",
   "cqtTonalStability",
+  // Pitch detection (P1)
+  "pitchF0",
+  "pitchConfidence",
 ];
 
 interface AudioSourceInspectorProps {
@@ -42,6 +46,7 @@ interface AudioSourceInspectorProps {
 export function AudioSourceInspector({ sourceId }: AudioSourceInspectorProps) {
   const getInputById = useAudioInputStore((s) => s.getInputById);
   const replaceStem = useAudioInputStore((s) => s.replaceStem);
+  const renameInput = useAudioInputStore((s) => s.renameInput);
   const invalidateInputMir = useMirStore((s) => s.invalidateInputMir);
   const getBandsForSource = useFrequencyBandStore((s) => s.getBandsForSource);
   const { runAnalysis } = useMirActions();
@@ -52,8 +57,11 @@ export function AudioSourceInspector({ sourceId }: AudioSourceInspectorProps) {
   } = useBandMirActions();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const labelInputRef = useRef<HTMLInputElement>(null);
   const [isRunningAll, setIsRunningAll] = useState(false);
   const [isReplacing, setIsReplacing] = useState(false);
+  const [isEditingLabel, setIsEditingLabel] = useState(false);
+  const [editLabelValue, setEditLabelValue] = useState("");
 
   const isStem = sourceId !== MIXDOWN_ID;
   const audioInput = getInputById(sourceId);
@@ -81,14 +89,14 @@ export function AudioSourceInspector({ sourceId }: AudioSourceInspectorProps) {
           "bandOnsetStrength",
           "bandSpectralFlux",
           "bandSpectralCentroid",
-        ]);
+        ], sourceId);
 
         // Run CQT-based band analyses
         await runBandCqtAnalysis(bandIds, [
           "bandCqtHarmonicEnergy",
           "bandCqtBassPitchMotion",
           "bandCqtTonalStability",
-        ]);
+        ], sourceId);
 
         // Extract events from the band signals
         await runTypedEventExtraction(bandIds, [
@@ -152,8 +160,63 @@ export function AudioSourceInspector({ sourceId }: AudioSourceInspectorProps) {
     [isStem, sourceId, replaceStem, invalidateInputMir, runAnalysis]
   );
 
+  const handleStartEditLabel = useCallback(() => {
+    setEditLabelValue(audioInput?.label ?? "");
+    setIsEditingLabel(true);
+    // Focus the input after state update
+    setTimeout(() => labelInputRef.current?.focus(), 0);
+  }, [audioInput?.label]);
+
+  const handleSaveLabel = useCallback(() => {
+    const trimmed = editLabelValue.trim();
+    if (trimmed && trimmed !== audioInput?.label) {
+      renameInput(sourceId, trimmed);
+    }
+    setIsEditingLabel(false);
+  }, [editLabelValue, audioInput?.label, renameInput, sourceId]);
+
+  const handleCancelEditLabel = useCallback(() => {
+    setIsEditingLabel(false);
+    setEditLabelValue(audioInput?.label ?? "");
+  }, [audioInput?.label]);
+
   return (
     <div className="p-2 space-y-4">
+      {/* Label Section - for stems, show editable label */}
+      {isStem && (
+        <div className="space-y-2">
+          <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
+            Label
+          </div>
+          {isEditingLabel ? (
+            <Input
+              ref={labelInputRef}
+              type="text"
+              value={editLabelValue}
+              onChange={(e) => setEditLabelValue(e.target.value)}
+              onBlur={handleSaveLabel}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSaveLabel();
+                if (e.key === "Escape") handleCancelEditLabel();
+              }}
+              className="h-8 text-sm"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={handleStartEditLabel}
+              className="w-full flex items-center justify-between px-2 py-1.5 text-sm text-left rounded border border-transparent hover:border-zinc-300 dark:hover:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            >
+              <span className="truncate">{audioInput?.label}</span>
+              <Pencil className="h-3 w-3 text-zinc-400 shrink-0 ml-2" />
+            </button>
+          )}
+          <div className="text-xs text-zinc-400 dark:text-zinc-500">
+            Use in scripts: inputs.stems[&quot;{audioInput?.label}&quot;]
+          </div>
+        </div>
+      )}
+
       {/* Actions Section */}
       <div className="space-y-2">
         <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">

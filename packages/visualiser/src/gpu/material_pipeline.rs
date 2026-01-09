@@ -14,6 +14,14 @@ use crate::gpu::mesh::Vertex;
 /// Must be large enough for any material's parameters.
 const MAX_MATERIAL_UNIFORM_SIZE: u64 = 256;
 
+/// Maximum number of meshes that can be rendered per frame.
+/// Must match the value in renderer.rs.
+const MAX_MESHES_PER_FRAME: usize = 256;
+
+/// Alignment for uniform buffer entries (matches UNIFORM_ALIGNMENT in renderer.rs).
+/// GlobalUniforms is 256 bytes, so this alignment is exact.
+const GLOBAL_UNIFORM_ALIGNMENT: usize = 256;
+
 /// Global uniforms shared by all materials.
 ///
 /// Total size: 256 bytes (16-byte aligned blocks).
@@ -103,7 +111,8 @@ impl MaterialPipelineManager {
         format: wgpu::TextureFormat,
         registry: &MaterialRegistry,
     ) -> Self {
-        // Create global bind group layout
+        // Create global bind group layout with dynamic offset support
+        // This allows per-entity uniforms to be indexed at render time
         let global_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Material Global Bind Group Layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -111,27 +120,34 @@ impl MaterialPipelineManager {
                 visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+                    has_dynamic_offset: true, // Enable dynamic offsets for per-entity data
+                    min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<GlobalUniforms>() as u64),
                 },
                 count: None,
             }],
         });
 
-        // Create global uniform buffer
-        let global_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Material Global Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[GlobalUniforms::default()]),
+        // Create global uniform buffer large enough for all meshes per frame
+        // Each mesh gets its own slot at GLOBAL_UNIFORM_ALIGNMENT offset
+        let global_uniform_buffer_size = (GLOBAL_UNIFORM_ALIGNMENT * MAX_MESHES_PER_FRAME) as u64;
+        let global_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Material Global Uniform Buffer (Dynamic)"),
+            size: global_uniform_buffer_size,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
-        // Create global bind group
+        // Create global bind group with specific buffer size for dynamic binding
         let global_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Material Global Bind Group"),
             layout: &global_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: global_uniform_buffer.as_entire_binding(),
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &global_uniform_buffer,
+                    offset: 0,
+                    size: wgpu::BufferSize::new(std::mem::size_of::<GlobalUniforms>() as u64),
+                }),
             }],
         });
 
@@ -324,9 +340,18 @@ impl MaterialPipelineManager {
         self.resources.get(id)
     }
 
-    /// Update global uniforms.
-    pub fn update_global_uniforms(&self, queue: &wgpu::Queue, uniforms: &GlobalUniforms) {
-        queue.write_buffer(&self.global_uniform_buffer, 0, bytemuck::cast_slice(&[*uniforms]));
+    /// Update global uniforms at a specific slot.
+    ///
+    /// The `slot` parameter is the mesh index (0 to MAX_MESHES_PER_FRAME-1).
+    /// This writes to `slot * GLOBAL_UNIFORM_ALIGNMENT` offset in the buffer.
+    pub fn update_global_uniforms_at(&self, queue: &wgpu::Queue, uniforms: &GlobalUniforms, slot: usize) {
+        let offset = (slot * GLOBAL_UNIFORM_ALIGNMENT) as u64;
+        queue.write_buffer(&self.global_uniform_buffer, offset, bytemuck::cast_slice(&[*uniforms]));
+    }
+
+    /// Get the dynamic offset for a mesh slot.
+    pub fn dynamic_offset_for_slot(slot: usize) -> u32 {
+        (slot * GLOBAL_UNIFORM_ALIGNMENT) as u32
     }
 
     /// Update material-specific uniforms.
