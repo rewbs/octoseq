@@ -39,18 +39,30 @@ export type StreamId = string;
 
 export type StreamKind = "mixdown" | "stem" | "band";
 
-export type AudioOrigin = "file" | "url" | "demo" | "cloud" | "generated";
+/** How a stream's audio came to exist. */
+export type AudioOrigin =
+  | { kind: "file"; fileName: string }
+  | { kind: "url"; url: string; fileName?: string }
+  | { kind: "separated"; parentStreamId: StreamId; method: string }
+  | { kind: "generated"; generatedFrom: StreamId[] };
 
 /**
  * Reference to backing audio. Decoded PCM is intentionally NOT stored here — it lives
- * in the non-reactive audioCache, keyed by StreamId.
+ * in the non-reactive audioCache, keyed by StreamId. Likewise the original encoded
+ * bytes (for upload/registration) live in rawFileCache.
  */
 export interface AudioReference {
   origin: AudioOrigin;
-  /** Playable URL (object URL or remote). Null until resolved. */
+  /** Blob/object URL for playback and auditioning. Null until created. */
   url: string | null;
-  /** Cloud asset id when persisted. */
+  /** Local asset-registry id (IndexedDB), when registered. */
   assetId?: string;
+  /** Cloud (R2) asset id, when uploaded. */
+  cloudAssetId?: string;
+  /** Content hash of the original file (deduplication). */
+  contentHash?: string;
+  /** MIME type of the original file. */
+  mimeType?: string;
   fileName?: string;
   durationSec: number;
   sampleRate: number;

@@ -1,11 +1,11 @@
 import { useCallback } from "react";
-import { useAudioInputStore } from "../audioInputStore";
+import type { AudioBufferLike } from "@octoseq/mir";
 import { usePlaybackStore } from "../playbackStore";
 import { useMirStore } from "../mirStore";
 import { useSearchStore } from "../searchStore";
 import { useBandProposalStore } from "../bandProposalStore";
 import { useCandidateEventStore } from "../candidateEventStore";
-import type { AudioInputOrigin } from "../types/audioInput";
+import { loadMixdown, useAudioSourceStore, type AudioOrigin } from "@/lib/streams";
 
 interface AudioActionsOptions {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
@@ -18,57 +18,50 @@ interface AudioActionsOptions {
  */
 export function useAudioActions({ fileInputRef, onAudioLoaded }: AudioActionsOptions) {
   const handleAudioDecoded = useCallback(
-    (a: { sampleRate: number; getChannelData: (n: number) => Float32Array }) => {
-      const audioInputStore = useAudioInputStore.getState();
+    (a: AudioBufferLike) => {
+      const audioSourceStore = useAudioSourceStore.getState();
       const playbackStore = usePlaybackStore.getState();
-      const mirStore = useMirStore.getState();
       const searchStore = useSearchStore.getState();
-      const bandProposalStore = useBandProposalStore.getState();
 
       // Get filename: prefer pendingFileName (for URL loads), then fall back to file input
-      const pendingFileName = audioInputStore.pendingFileName;
+      const pendingFileName = audioSourceStore.pendingFileName;
       const fileName = pendingFileName ?? fileInputRef.current?.files?.[0]?.name ?? null;
       const ch0 = a.getChannelData(0);
 
       // Clear pending filename after use
       if (pendingFileName) {
-        audioInputStore.setPendingFileName(null);
+        audioSourceStore.setPendingFileName(null);
       }
 
-      // Set metadata
       const duration = ch0.length / a.sampleRate;
 
       // Get the current audio URL from the audio source (set by WaveSurfer before decode)
-      const audioUrl = audioInputStore.getCurrentAudioUrl();
+      const audioUrl = audioSourceStore.getCurrentUrl();
 
       // Determine origin based on how the audio was loaded
-      const origin: AudioInputOrigin = pendingFileName
+      const origin: AudioOrigin = pendingFileName
         ? { kind: "url", url: "", fileName: pendingFileName }
         : { kind: "file", fileName: fileName ?? "Unknown" };
 
-      // Initialize/update audio input store with mixdown
-      audioInputStore.updateMixdown({
-        audioBuffer: a as AudioBuffer,
-        metadata: {
+      // Initialize/replace the mixdown stream. This also caches the PCM and
+      // invalidates analyses for the mixdown and its dependent bands.
+      loadMixdown({
+        audio: {
+          origin,
+          url: audioUrl,
+          fileName: fileName ?? undefined,
+          durationSec: duration,
           sampleRate: a.sampleRate,
-          totalSamples: ch0.length,
-          duration,
+          channels: a.numberOfChannels,
         },
-        audioUrl,
-        origin,
+        buffer: a,
         label: fileName ?? "Mixdown",
       });
 
-      // Clear MIR results
-      mirStore.clearMirResults();
-
-      // Reset search state
+      // Reset legacy stores still in use (deleted in later Phase 1 tasks)
+      useMirStore.getState().clearMirResults();
       searchStore.resetSearch();
-
-      // Reset band proposals (F5) — proposals are ephemeral and scoped to the current audio.
-      bandProposalStore.reset();
-
-      // Reset candidate events — candidates are ephemeral and scoped to the current audio.
+      useBandProposalStore.getState().reset();
       useCandidateEventStore.getState().reset();
 
       // Reset playback state

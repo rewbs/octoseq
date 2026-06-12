@@ -45,7 +45,7 @@ import { useCloudAssetLoader } from "@/lib/hooks/useCloudAssetLoader";
 import { useAudioSourceResolver } from "@/lib/hooks/useAudioSourceResolver";
 import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
 import type { LocalAudioSource } from "@/lib/stores/types/audioInput";
-import { computePhaseHypotheses, createSegmentFromGrid, type BeatCandidate, type MusicalTimeStructure } from "@octoseq/mir";
+import { computePhaseHypotheses, createSegmentFromGrid, type AudioBufferLike, type BeatCandidate, type MusicalTimeStructure } from "@octoseq/mir";
 
 // Stores and hooks
 import {
@@ -471,15 +471,12 @@ export default function Home() {
 
   // ===== STEM CONFIRMATION DIALOG =====
   // State for pending audio load when stems exist
-  const [pendingAudio, setPendingAudio] = useState<{
-    sampleRate: number;
-    getChannelData: (n: number) => Float32Array;
-  } | null>(null);
+  const [pendingAudio, setPendingAudio] = useState<AudioBufferLike | null>(null);
   const [showStemConfirmDialog, setShowStemConfirmDialog] = useState(false);
 
   // Wrapped audio decoded handler that shows confirmation if stems exist
   const handleAudioDecodedWithConfirmation = useCallback(
-    (a: { sampleRate: number; getChannelData: (n: number) => Float32Array }) => {
+    (a: AudioBufferLike) => {
       if (hasStems) {
         // Store pending audio and show confirmation dialog
         setPendingAudio(a);

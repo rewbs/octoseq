@@ -3,7 +3,7 @@ import type { AudioReference } from "../types";
 
 export function makeAudioRef(overrides: Partial<AudioReference> = {}): AudioReference {
   return {
-    origin: "file",
+    origin: { kind: "file", fileName: "test.wav" },
     url: null,
     fileName: "test.wav",
     durationSec: 10,

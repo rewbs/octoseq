@@ -7,7 +7,17 @@ export * from "./types";
 export { useStreamStore } from "./streamStore";
 export type { AddStemParams, AddBandParams, BandShapePatch } from "./streamStore";
 export { useAnalysisStore } from "./analysisStore";
-export { audioCache } from "./audioCache";
+export { audioCache, rawFileCache } from "./audioCache";
+export { useAudioSourceStore } from "./audioSourceStore";
+export type {
+  AudioSource,
+  AudioSourceStatus,
+  LocalAudioSource,
+  RemoteAudioSource,
+  GeneratedAudioSource,
+} from "./audioSourceStore";
+export { toDisplaySignal, toDisplayEvents } from "./display";
+export type { DisplaySignal, DisplayEvent } from "./display";
 export {
   loadMixdown,
   addStemWithAudio,
