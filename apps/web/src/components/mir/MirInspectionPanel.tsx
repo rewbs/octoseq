@@ -2,9 +2,8 @@
 
 import { useMemo } from "react";
 import { useInspectionStore } from "@/lib/stores/inspectionStore";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useStreamStore, MIXDOWN_STREAM_ID } from "@/lib/streams";
 import { mirTabDefinitions } from "@/lib/stores/mirStore";
-import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
 import { InspectionViewModeSelector } from "./InspectionViewModeSelector";
 import { SingleSignalInspector } from "./SingleSignalInspector";
 import { ComparisonInspector } from "./ComparisonInspector";
@@ -66,24 +65,25 @@ function MirFunctionSelector() {
 
 function InspectionContextBadge() {
   const viewMode = useInspectionStore((s) => s.viewMode);
-  const selectedInputId = useAudioInputStore((s) => s.selectedInputId);
-  const getInputById = useAudioInputStore((s) => s.getInputById);
+  const selectedStreamId = useStreamStore((s) => s.selectedStreamId);
+  const selectedStream = useStreamStore((s) =>
+    s.selectedStreamId ? s.streams.get(s.selectedStreamId) ?? null : null
+  );
 
   const contextLabel = useMemo(() => {
     switch (viewMode) {
       case "mixdown":
         return "Mixdown";
       case "selected-stem": {
-        if (!selectedInputId) return "No stem selected";
-        const input = getInputById(selectedInputId);
-        return input?.label ?? selectedInputId;
+        if (!selectedStreamId) return "No stem selected";
+        return selectedStream?.label ?? selectedStreamId;
       }
       case "compare-all":
         return "All Sources";
       default:
         return viewMode;
     }
-  }, [viewMode, selectedInputId, getInputById]);
+  }, [viewMode, selectedStreamId, selectedStream]);
 
   return (
     <div className="text-xs text-zinc-500 dark:text-zinc-400">
@@ -105,21 +105,21 @@ export function MirInspectionPanel({
 }: MirInspectionPanelProps) {
   const viewMode = useInspectionStore((s) => s.viewMode);
   const selectedFunction = useInspectionStore((s) => s.selectedFunction);
-  const selectedInputId = useAudioInputStore((s) => s.selectedInputId);
+  const selectedStreamId = useStreamStore((s) => s.selectedStreamId);
 
   // Determine which input ID to use based on view mode
   const effectiveInputId = useMemo(() => {
     switch (viewMode) {
       case "mixdown":
-        return MIXDOWN_ID;
+        return MIXDOWN_STREAM_ID;
       case "selected-stem":
-        return selectedInputId ?? MIXDOWN_ID;
+        return selectedStreamId ?? MIXDOWN_STREAM_ID;
       case "compare-all":
         return null; // Compare mode uses all sources
       default:
-        return MIXDOWN_ID;
+        return MIXDOWN_STREAM_ID;
     }
-  }, [viewMode, selectedInputId]);
+  }, [viewMode, selectedStreamId]);
 
   return (
     <div className="flex flex-col gap-3 p-3 bg-white dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800">

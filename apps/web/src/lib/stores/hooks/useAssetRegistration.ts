@@ -2,11 +2,17 @@
 
 import { useCallback } from "react";
 import { useProjectStore } from "../projectStore";
-import { useAudioInputStore } from "../audioInputStore";
 import { registerAsset, getAsset } from "../../persistence/assetRegistry";
 import { isIndexedDBAvailable } from "../../persistence/db";
 import type { AssetType, AssetAudioMetadata } from "../../persistence/types";
-import type { AudioInput, AudioInputMetadata, AudioInputOrigin } from "../types/audioInput";
+import type { AudioInputMetadata, AudioInputOrigin } from "../types/audioInput";
+import {
+  audioCache,
+  isAudioStream,
+  rawFileCache,
+  useStreamStore,
+  type AudioOrigin,
+} from "@/lib/streams";
 
 /**
  * Hook for registering audio assets with the local asset registry.
@@ -18,10 +24,10 @@ import type { AudioInput, AudioInputMetadata, AudioInputOrigin } from "../types/
  */
 export function useAssetRegistration() {
   /**
-   * Register an audio input with the asset registry.
-   * Updates the audioInputStore with the assetId.
+   * Register an audio stream with the asset registry.
+   * Updates the stream's AudioReference with the assetId.
    *
-   * @param inputId - The audio input ID
+   * @param inputId - The stream ID
    * @param rawBuffer - The raw ArrayBuffer of the audio file
    * @returns Promise resolving to the assetId, or null if registration failed
    */
@@ -35,9 +41,9 @@ export function useAssetRegistration() {
         return null;
       }
 
-      const input = useAudioInputStore.getState().getInputById(inputId);
-      if (!input || !input.metadata) {
-        console.warn("[AssetRegistration] Input not found or missing metadata");
+      const stream = useStreamStore.getState().getStream(inputId);
+      if (!stream || !isAudioStream(stream)) {
+        console.warn("[AssetRegistration] Stream not found or has no backing audio");
         return null;
       }
 
@@ -48,38 +54,42 @@ export function useAssetRegistration() {
       }
 
       try {
+        const origin = stream.audio.origin;
         const assetType: AssetType =
-          input.role === "mixdown"
+          stream.kind === "mixdown"
             ? "audio:mixdown"
-            : input.origin.kind === "stem"
+            : origin.kind === "separated"
               ? "audio:derived"
               : "audio:stem";
 
+        const pcm = audioCache.get(inputId);
         const metadata: AssetAudioMetadata = {
-          sampleRate: input.metadata.sampleRate,
-          channels: input.audioBuffer?.numberOfChannels ?? 2,
-          duration: input.metadata.duration,
-          totalSamples: input.metadata.totalSamples,
+          sampleRate: stream.audio.sampleRate,
+          channels: pcm?.numberOfChannels ?? stream.audio.channels,
+          duration: stream.audio.durationSec,
+          totalSamples:
+            pcm?.getChannelData(0).length ??
+            Math.round(stream.audio.durationSec * stream.audio.sampleRate),
         };
 
         const fileName =
-          input.origin.kind === "file"
-            ? input.origin.fileName
-            : input.origin.kind === "url"
-              ? input.origin.fileName
+          origin.kind === "file"
+            ? origin.fileName
+            : origin.kind === "url"
+              ? origin.fileName
               : undefined;
 
         const assetId = await registerAsset(
           rawBuffer,
           assetType,
           metadata,
-          input.origin,
+          toLegacyOrigin(origin),
           project.id,
           fileName
         );
 
-        // Update the audioInputStore with the assetId
-        updateInputAssetId(inputId, assetId);
+        // Update the stream's AudioReference with the assetId
+        updateStreamAssetId(inputId, assetId);
 
         return assetId;
       } catch (error) {
@@ -134,14 +144,14 @@ export function useAssetRegistration() {
   );
 
   /**
-   * Check if an audio input has been registered with the asset registry.
+   * Check if an audio stream has been registered with the asset registry.
    *
-   * @param inputId - The audio input ID
-   * @returns true if the input has an assetId
+   * @param inputId - The stream ID
+   * @returns true if the stream's AudioReference has an assetId
    */
   const isRegistered = useCallback((inputId: string): boolean => {
-    const input = useAudioInputStore.getState().getInputById(inputId);
-    return Boolean(input?.assetId);
+    const stream = useStreamStore.getState().getStream(inputId);
+    return Boolean(stream && isAudioStream(stream) && stream.audio.assetId);
   }, []);
 
   return {
@@ -152,32 +162,31 @@ export function useAssetRegistration() {
 }
 
 /**
- * Update an audio input's assetId in the store.
+ * Update a stream's assetId in the stream store.
  * This is called after successful asset registration.
  */
-function updateInputAssetId(inputId: string, assetId: string): void {
-  const store = useAudioInputStore.getState();
-  const collection = store.collection;
-  if (!collection) return;
+function updateStreamAssetId(streamId: string, assetId: string): void {
+  const streamStore = useStreamStore.getState();
+  const stream = streamStore.getStream(streamId);
+  if (!stream || !isAudioStream(stream)) return;
 
-  const input = collection.inputs[inputId];
-  if (!input) return;
+  // Update the AudioReference with the assetId and clear the raw bytes
+  streamStore.updateAudio(streamId, { ...stream.audio, assetId });
+  rawFileCache.delete(streamId); // Clear raw bytes after registration
+}
 
-  // Update the input with the assetId and clear the rawBuffer
-  const updatedInput: AudioInput = {
-    ...input,
-    assetId,
-    rawBuffer: undefined, // Clear rawBuffer after registration
-  };
-
-  // Update the collection immutably
-  useAudioInputStore.setState({
-    collection: {
-      ...collection,
-      inputs: {
-        ...collection.inputs,
-        [inputId]: updatedInput,
-      },
-    },
-  });
+/**
+ * Map the unified AudioOrigin onto the legacy origin shape still used by the
+ * persisted asset registry records.
+ */
+function toLegacyOrigin(origin: AudioOrigin): AudioInputOrigin {
+  switch (origin.kind) {
+    case "file":
+    case "url":
+      return origin;
+    case "separated":
+      return { kind: "stem", sourceId: origin.parentStreamId, method: origin.method };
+    case "generated":
+      return { kind: "synthetic", generatedFrom: origin.generatedFrom };
+  }
 }

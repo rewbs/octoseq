@@ -64,12 +64,16 @@ export interface CloudUploadResult {
  *   type: 'AUDIO',
  *   metadata: { fileName: file.name, fileSize: file.size },
  *   onComplete: (cloudAssetId) => {
- *     audioInputStore.setCloudAssetId(inputId, cloudAssetId);
+ *     const stream = useStreamStore.getState().getStream(streamId);
+ *     if (stream && isAudioStream(stream)) {
+ *       useStreamStore.getState().updateAudio(streamId, { ...stream.audio, cloudAssetId });
+ *     }
  *   },
  * });
  *
- * // Store the contentHash and mimeType immediately
- * audioInputStore.setAssetMetadata(inputId, {
+ * // Store the contentHash and mimeType immediately on the stream's AudioReference
+ * useStreamStore.getState().updateAudio(streamId, {
+ *   ...stream.audio,
  *   contentHash: result.contentHash,
  *   mimeType: result.mimeType,
  * });
@@ -166,7 +170,7 @@ export function useCloudAssetUploader() {
 
   /**
    * Upload raw bytes to cloud storage.
-   * Use this when you already have the ArrayBuffer (e.g., from rawBuffer).
+   * Use this when you already have the ArrayBuffer (e.g., from rawFileCache).
    */
   const uploadBytesToCloud = useCallback(
     async (

@@ -1,9 +1,9 @@
 "use client";
 
+import { useMemo } from "react";
 import { Input } from "@/components/ui/input";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useStreamStore, isBandStream, type AudioStream } from "@/lib/streams";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import {
   REDUCER_EVENT_LABELS,
   REDUCER_EVENT_DESCRIPTIONS,
@@ -24,11 +24,19 @@ interface SourceEventSelectorProps {
  * Source selector for event streams.
  */
 export function SourceEventSelector({ source, onChange }: SourceEventSelectorProps) {
-  const audioCollection = useAudioInputStore((s) => s.collection);
-  const stemOrder = audioCollection?.stemOrder ?? [];
+  const streams = useStreamStore((s) => s.streams);
+  const stems = useMemo(
+    () =>
+      [...streams.values()]
+        .filter((st): st is AudioStream => st.kind === "stem")
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
+  );
   const authoredStreams = useAuthoredEventStore((s) => s.streams);
-  const bandStructure = useFrequencyBandStore((s) => s.structure);
-  const bands = bandStructure?.bands ?? [];
+  const bands = useMemo(
+    () => [...streams.values()].filter(isBandStream).sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
+  );
 
   const handleStreamTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const type = e.target.value as EventStreamRef["type"];
@@ -194,14 +202,11 @@ export function SourceEventSelector({ source, onChange }: SourceEventSelectorPro
             className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
           >
             <option value="mixdown">Mixdown</option>
-            {stemOrder.map((stemId) => {
-              const stem = audioCollection?.inputs[stemId];
-              return (
-                <option key={stemId} value={stemId}>
-                  {stem?.label ?? stemId}
-                </option>
-              );
-            })}
+            {stems.map((stem) => (
+              <option key={stem.id} value={stem.id}>
+                {stem.label}
+              </option>
+            ))}
           </select>
         </div>
       )}

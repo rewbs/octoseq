@@ -6,12 +6,16 @@ import { Plus, Sparkles, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { pickPeaks, pickPeaksAdaptive, DEFAULT_PEAK_PICKING_PARAMS, type PeakPickingParams } from "@octoseq/mir";
 import { useDerivedSignalStore } from "@/lib/stores/derivedSignalStore";
-import { useBandMirStore } from "@/lib/stores/bandMirStore";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useAuthoredEventActions } from "@/lib/stores/hooks/useAuthoredEventActions";
 import { usePlaybackStore } from "@/lib/stores/playbackStore";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import {
+  analysisKey,
+  isBandStream,
+  toDisplaySignal,
+  useAnalysisStore,
+  useStreamStore,
+} from "@/lib/streams";
 import { useBeatGridStore } from "@/lib/stores/beatGridStore";
 import { useMirroredCursorTime } from "@/lib/stores/hooks/useDerivedState";
 import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
@@ -70,7 +74,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
 
   // Playback state for preview
   const viewport = usePlaybackStore((s) => s.viewport);
-  const audioDuration = useAudioInputStore((s) => s.getAudioDuration());
+  const audioDuration = useStreamStore((s) => s.getMixdown()?.audio.durationSec ?? 0);
   const setCursorTimeSec = usePlaybackStore((s) => s.setCursorTimeSec);
   const cursorTimeSec = useMirroredCursorTime();
   const beatGridState = useBeatGridStore(
@@ -85,10 +89,12 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
   );
   const derivedSignalResults = useDerivedSignalStore((s) => s.resultCache);
 
-  const bands = useFrequencyBandStore(
-    useShallow((s) => s.structure?.bands ?? [])
+  const streams = useStreamStore((s) => s.streams);
+  const bands = useMemo(
+    () => [...streams.values()].filter(isBandStream).sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
   );
-  const bandMirCache = useBandMirStore((s) => s.cache);
+  const analysisResults = useAnalysisStore((s) => s.results);
 
   const { createManualStream } = useAuthoredEventActions();
 
@@ -109,8 +115,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
 
     // Add band envelopes (amplitude)
     for (const band of bands) {
-      const cacheKey = `${band.id}:bandAmplitudeEnvelope` as const;
-      if (bandMirCache.has(cacheKey)) {
+      if (analysisResults.has(analysisKey(band.id, "amplitudeEnvelope"))) {
         sources.push({
           kind: "bandEnvelope",
           bandId: band.id,
@@ -120,7 +125,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
     }
 
     return sources;
-  }, [derivedSignals, derivedSignalResults, bands, bandMirCache]);
+  }, [derivedSignals, derivedSignalResults, bands, analysisResults]);
 
   // Find selected source
   const selectedSource = useMemo(() => {
@@ -140,15 +145,11 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
       if (!result) return null;
       return { times: result.times, values: result.values };
     } else {
-      const cacheKey = `${selectedSource.bandId}:bandAmplitudeEnvelope` as const;
-      const result = bandMirCache.get(cacheKey);
+      const result = analysisResults.get(analysisKey(selectedSource.bandId, "amplitudeEnvelope"));
       if (!result) return null;
-      return {
-        times: result.times,
-        values: result.values,
-      };
+      return toDisplaySignal(result, "amplitudeEnvelope");
     }
-  }, [selectedSource, derivedSignalResults, bandMirCache]);
+  }, [selectedSource, derivedSignalResults, analysisResults]);
 
   // Compute peaks from signal (debounced via auto-detect)
   const detectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

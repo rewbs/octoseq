@@ -5,10 +5,40 @@ import { FileAudio, Check, X, RefreshCw, AlertCircle } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/lib/stores/projectStore";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
-import { useMirActions } from "@/lib/stores/hooks/useMirActions";
+import {
+  MIXDOWN_STREAM_ID,
+  isAudioStream,
+  loadMixdown,
+  replaceStreamAudio,
+  runStreamAnalyses,
+  useStreamStore,
+  type AnalysisId,
+} from "@/lib/streams";
 import type { ProjectAudioReference } from "@/lib/stores/types/project";
 import type { AudioBufferLike } from "@octoseq/mir";
+
+// All analyses to run after re-attaching audio
+const ALL_ANALYSES: AnalysisId[] = [
+  "amplitudeEnvelope",
+  "spectralCentroid",
+  "spectralFlux",
+  "melSpectrogram",
+  "onsetEnvelope",
+  "onsetPeaks",
+  "beatCandidates",
+  "tempoHypotheses",
+  "hpssHarmonic",
+  "hpssPercussive",
+  "mfcc",
+  "mfccDelta",
+  "mfccDeltaDelta",
+  "cqtHarmonicEnergy",
+  "cqtBassPitchMotion",
+  "cqtTonalStability",
+  "pitchF0",
+  "pitchConfidence",
+  "activity",
+];
 
 interface AudioReattachModalProps {
   open: boolean;
@@ -24,7 +54,6 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
   const audioLoadStatus = useProjectStore((s) => s.audioLoadStatus);
   const audioLoadErrors = useProjectStore((s) => s.audioLoadErrors);
   const setAudioLoadStatus = useProjectStore((s) => s.setAudioLoadStatus);
-  const { runAllAnalysesForInput } = useMirActions();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeRefId, setActiveRefId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -66,39 +95,46 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
           getChannelData: (channel: number) => audioBuffer.getChannelData(channel),
         };
 
-        const metadata = {
-          sampleRate: audioBuffer.sampleRate,
-          totalSamples: audioBuffer.length,
-          duration: audioBuffer.duration,
-        };
-
-        // Update the appropriate store
-        const audioInputStore = useAudioInputStore.getState();
-
-        if (activeRefId === "mixdown") {
-          audioInputStore.updateMixdown({
-            audioBuffer: bufferLike,
-            metadata,
-            audioUrl,
-            origin: { kind: "file", fileName: file.name },
+        if (activeRefId === MIXDOWN_STREAM_ID) {
+          loadMixdown({
+            audio: {
+              origin: { kind: "file", fileName: file.name },
+              url: audioUrl,
+              fileName: file.name,
+              durationSec: audioBuffer.duration,
+              sampleRate: audioBuffer.sampleRate,
+              channels: audioBuffer.numberOfChannels,
+            },
+            buffer: bufferLike,
             label: file.name,
           });
         } else {
-          // For stems, replace the existing stem
-          const existingStem = audioInputStore.getInputById(activeRefId);
-          if (existingStem) {
-            audioInputStore.replaceStem(activeRefId, {
-              audioBuffer: bufferLike,
-              metadata,
-              audioUrl,
-            });
+          // For stems, replace the existing stream's audio
+          const existingStem = useStreamStore.getState().getStream(activeRefId);
+          if (existingStem && isAudioStream(existingStem)) {
+            if (existingStem.audio.url) {
+              URL.revokeObjectURL(existingStem.audio.url);
+            }
+            replaceStreamAudio(
+              activeRefId,
+              {
+                ...existingStem.audio,
+                origin: { kind: "file", fileName: file.name },
+                url: audioUrl,
+                fileName: file.name,
+                durationSec: audioBuffer.duration,
+                sampleRate: audioBuffer.sampleRate,
+                channels: audioBuffer.numberOfChannels,
+              },
+              bufferLike
+            );
           }
         }
 
         setAudioLoadStatus(activeRefId, "loaded");
 
         // Trigger MIR analyses for the re-attached audio
-        runAllAnalysesForInput(activeRefId);
+        runStreamAnalyses([activeRefId], ALL_ANALYSES);
       } catch (error) {
         console.error("Failed to load audio:", error);
         setAudioLoadStatus(
@@ -114,7 +150,7 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
         }
       }
     },
-    [activeRefId, setAudioLoadStatus, runAllAnalysesForInput]
+    [activeRefId, setAudioLoadStatus]
   );
 
   const getStatusIcon = (refId: string) => {

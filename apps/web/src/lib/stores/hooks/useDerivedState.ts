@@ -3,7 +3,7 @@ import { useSearchStore } from "../searchStore";
 import { useMirStore, mirTabDefinitions } from "../mirStore";
 import { useDebugSignalStore } from "../debugSignalStore";
 import { useConfigStore } from "../configStore";
-import { useAudioInputStore } from "../audioInputStore";
+import { useStreamStore } from "@/lib/streams";
 import { usePlaybackStore, getMirroredCursorTime } from "../playbackStore";
 import { normaliseForWaveform } from "@octoseq/mir";
 import { prepareHpssSpectrogramForHeatmap, prepareMfccForHeatmap } from "@/lib/mirDisplayTransforms";
@@ -227,7 +227,7 @@ export function useHeatmapYAxisLabel(): string {
  */
 export function useVisibleRange() {
   const viewport = usePlaybackStore((s) => s.viewport);
-  const audioDuration = useAudioInputStore((s) => s.getAudioDuration());
+  const audioDuration = useStreamStore((s) => s.getMixdown()?.audio.durationSec ?? 0);
 
   return useMemo(() => {
     // If we don't have a viewport yet, fall back to the full audio duration.
@@ -244,7 +244,7 @@ export function useVisibleRange() {
 export function useMirroredCursorTime(): number {
   const cursorTimeSec = usePlaybackStore((s) => s.cursorTimeSec);
   const playheadTimeSec = usePlaybackStore((s) => s.playheadTimeSec);
-  const audioDuration = useAudioInputStore((s) => s.getAudioDuration());
+  const audioDuration = useStreamStore((s) => s.getMixdown()?.audio.durationSec ?? 0);
 
   return useMemo(
     () => getMirroredCursorTime(cursorTimeSec, playheadTimeSec, audioDuration),

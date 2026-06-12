@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   DndContext,
@@ -18,14 +18,25 @@ import {
 } from "@dnd-kit/sortable";
 import { Upload, Info, X, Combine, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
-import { useMirStore } from "@/lib/stores/mirStore";
 import { useCandidateEventStore } from "@/lib/stores/candidateEventStore";
 import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
-import { useMirActions } from "@/lib/stores/hooks/useMirActions";
+import {
+  MIXDOWN_STREAM_ID,
+  addStemWithAudio,
+  audioCache,
+  isAudioStream,
+  loadMixdown,
+  rawFileCache,
+  removeStreamCascade,
+  runStreamAnalysis,
+  useAudioSourceStore,
+  useStreamStore,
+  type AudioStream,
+  type GeneratedAudioSource,
+  type Stream,
+} from "@/lib/streams";
+import type { AudioBufferLike } from "@octoseq/mir";
 import { generateMixdownFromStems, createBlobUrlFromBuffer } from "@/lib/audio/mixdownGenerator";
-import type { AudioInput, AudioInputOrigin, GeneratedAudioSource } from "@/lib/stores/types/audioInput";
-import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
 import { StemListItem } from "./StemListItem";
 import { useCloudAssetUploader } from "@/lib/hooks/useCloudAssetUploader";
 import { computeContentHash } from "@/lib/persistence/assetHashing";
@@ -38,53 +49,42 @@ export function StemManagementContent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletedStem, setDeletedStem] = useState<{
-    stem: AudioInput;
-    index: number;
+    removed: Stream[];
+    buffer: AudioBufferLike | null;
+    label: string;
     timeoutId: ReturnType<typeof setTimeout>;
   } | null>(null);
   const [isGeneratingMixdown, setIsGeneratingMixdown] = useState(false);
 
-  // MIR actions for auto-running analysis on stem load
-  const { runAnalysis } = useMirActions();
-
   const {
-    collection,
-    selectedInputId,
-    addStem,
-    renameInput,
-    reorderStems,
-    removeStem,
-    restoreStem,
-    selectInput,
-    updateMixdown,
-    getStems,
-    setCloudAssetId,
-    setAssetMetadata,
-    clearRawBuffer,
-    setCurrentAudioSource,
-  } = useAudioInputStore(
+    streams,
+    selectedStreamId,
+    renameStream,
+    reorderStreams,
+    restoreStreams,
+    selectStream,
+  } = useStreamStore(
     useShallow((s) => ({
-      collection: s.collection,
-      selectedInputId: s.selectedInputId,
-      addStem: s.addStem,
-      renameInput: s.renameInput,
-      reorderStems: s.reorderStems,
-      removeStem: s.removeStem,
-      restoreStem: s.restoreStem,
-      selectInput: s.selectInput,
-      updateMixdown: s.updateMixdown,
-      getStems: s.getStems,
-      setCloudAssetId: s.setCloudAssetId,
-      setAssetMetadata: s.setAssetMetadata,
-      clearRawBuffer: s.clearRawBuffer,
-      setCurrentAudioSource: s.setCurrentAudioSource,
+      streams: s.streams,
+      selectedStreamId: s.selectedStreamId,
+      renameStream: s.renameStream,
+      reorderStreams: s.reorderStreams,
+      restoreStreams: s.restoreStreams,
+      selectStream: s.selectStream,
     }))
   );
+  const setCurrentSource = useAudioSourceStore((s) => s.setCurrentSource);
 
   // Cloud upload
   const { uploadToCloud, isSignedIn } = useCloudAssetUploader();
 
-  const stems = collection?.stemOrder.map((id) => collection.inputs[id]).filter(Boolean) ?? [];
+  const stems = useMemo(
+    () =>
+      [...streams.values()]
+        .filter((s): s is AudioStream => s.kind === "stem")
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
+  );
 
   // DnD sensors
   const sensors = useSensors(
@@ -102,21 +102,22 @@ export function StemManagementContent() {
     (event: DragEndEvent) => {
       const { active, over } = event;
 
-      if (over && active.id !== over.id && collection) {
-        const oldIndex = collection.stemOrder.indexOf(active.id as string);
-        const newIndex = collection.stemOrder.indexOf(over.id as string);
+      if (over && active.id !== over.id) {
+        const stemOrder = stems.map((s) => s.id);
+        const oldIndex = stemOrder.indexOf(active.id as string);
+        const newIndex = stemOrder.indexOf(over.id as string);
 
         if (oldIndex !== -1 && newIndex !== -1) {
-          const newOrder = [...collection.stemOrder];
+          const newOrder = [...stemOrder];
           const [removed] = newOrder.splice(oldIndex, 1);
           if (removed) {
             newOrder.splice(newIndex, 0, removed);
-            reorderStems(newOrder);
+            reorderStreams(newOrder);
           }
         }
       }
     },
-    [collection, reorderStems]
+    [stems, reorderStreams]
   );
 
   const handleFileSelect = useCallback(
@@ -145,31 +146,23 @@ export function StemManagementContent() {
           // Extract file name without extension as label
           const label = file.name.replace(/\.[^/.]+$/, "");
 
-          const origin: AudioInputOrigin = {
-            kind: "file",
-            fileName: file.name,
-          };
-
-          const stemId = addStem({
-            audioBuffer: {
+          const stemId = addStemWithAudio({
+            label,
+            audio: {
+              origin: { kind: "file", fileName: file.name },
+              url: audioUrl,
+              fileName: file.name,
+              contentHash,
+              mimeType: file.type || "audio/mpeg",
+              durationSec: audioBuffer.duration,
+              sampleRate: audioBuffer.sampleRate,
+              channels: audioBuffer.numberOfChannels,
+            },
+            buffer: {
               sampleRate: audioBuffer.sampleRate,
               numberOfChannels: audioBuffer.numberOfChannels,
               getChannelData: (channel: number) => audioBuffer.getChannelData(channel),
             },
-            metadata: {
-              sampleRate: audioBuffer.sampleRate,
-              totalSamples: audioBuffer.length,
-              duration: audioBuffer.duration,
-            },
-            audioUrl,
-            origin,
-            label,
-          });
-
-          // Store asset metadata for cloud upload
-          setAssetMetadata(stemId, {
-            contentHash,
-            mimeType: file.type || "audio/mpeg",
           });
 
           // Start cloud upload if signed in
@@ -187,8 +180,11 @@ export function StemManagementContent() {
               },
               onComplete: (cloudAssetId) => {
                 console.log("[StemUpload] Upload complete:", cloudAssetId);
-                setCloudAssetId(stemId, cloudAssetId);
-                clearRawBuffer(stemId);
+                const stream = useStreamStore.getState().getStream(stemId);
+                if (stream && isAudioStream(stream)) {
+                  useStreamStore.getState().updateAudio(stemId, { ...stream.audio, cloudAssetId });
+                }
+                rawFileCache.delete(stemId);
               },
               onError: (error) => {
                 console.error("[StemUpload] Upload failed:", error);
@@ -198,8 +194,8 @@ export function StemManagementContent() {
 
           // Auto-run key MIR analyses on the new stem
           // Wait for analyses to complete before processing next file to avoid cancellation
-          await runAnalysis("onsetEnvelope", stemId);
-          await runAnalysis("spectralFlux", stemId);
+          await runStreamAnalysis(stemId, "onsetEnvelope");
+          await runStreamAnalysis(stemId, "spectralFlux");
         } catch (error) {
           console.error(`Failed to import stem "${file.name}":`, error);
         }
@@ -210,26 +206,22 @@ export function StemManagementContent() {
         fileInputRef.current.value = "";
       }
     },
-    [addStem, runAnalysis, isSignedIn, uploadToCloud, setAssetMetadata, setCloudAssetId, clearRawBuffer]
+    [isSignedIn, uploadToCloud]
   );
 
   const handleDeleteStem = useCallback(
     (stemId: string) => {
-      if (!collection) return;
-
       if (deleteConfirmId === stemId) {
-        // Get the index before removing
-        const index = collection.stemOrder.indexOf(stemId);
-        const stem = removeStem(stemId);
+        // Capture the PCM before removal so undo can restore it (removeStreamCascade
+        // drops the cached buffer along with analyses)
+        const buffer = audioCache.get(stemId);
+        const removed = removeStreamCascade(stemId);
 
-        if (stem) {
+        if (removed.length > 0) {
           // Clear any pending undo
           if (deletedStem) {
             clearTimeout(deletedStem.timeoutId);
           }
-
-          // Invalidate MIR cache for this stem
-          useMirStore.getState().invalidateInputMir(stemId);
 
           // Clear candidate events for this stem
           useCandidateEventStore.getState().clearForSource(stemId);
@@ -242,7 +234,7 @@ export function StemManagementContent() {
             setDeletedStem(null);
           }, 5000); // 5 seconds to undo
 
-          setDeletedStem({ stem, index, timeoutId });
+          setDeletedStem({ removed, buffer, label: removed[0]!.label, timeoutId });
         }
 
         setDeleteConfirmId(null);
@@ -252,16 +244,19 @@ export function StemManagementContent() {
         setTimeout(() => setDeleteConfirmId(null), 3000);
       }
     },
-    [collection, deleteConfirmId, deletedStem, removeStem]
+    [deleteConfirmId, deletedStem]
   );
 
   const handleUndoDelete = useCallback(() => {
     if (deletedStem) {
       clearTimeout(deletedStem.timeoutId);
-      restoreStem(deletedStem.stem, deletedStem.index);
+      if (deletedStem.buffer) {
+        audioCache.set(deletedStem.removed[0]!.id, deletedStem.buffer);
+      }
+      restoreStreams(deletedStem.removed);
       setDeletedStem(null);
     }
-  }, [deletedStem, restoreStem]);
+  }, [deletedStem, restoreStreams]);
 
   const handleDismissUndo = useCallback(() => {
     if (deletedStem) {
@@ -271,7 +266,7 @@ export function StemManagementContent() {
   }, [deletedStem]);
 
   const handleGenerateMixdown = useCallback(async () => {
-    const allStems = getStems();
+    const allStems = useStreamStore.getState().getStems();
     if (allStems.length === 0) return;
 
     setIsGeneratingMixdown(true);
@@ -279,7 +274,7 @@ export function StemManagementContent() {
     try {
       // Get audio buffers from all stems
       const stemBuffers = allStems
-        .map((stem) => stem.audioBuffer)
+        .map((stem) => audioCache.get(stem.id))
         .filter((buffer): buffer is NonNullable<typeof buffer> => buffer != null);
 
       if (stemBuffers.length === 0) {
@@ -295,21 +290,16 @@ export function StemManagementContent() {
       const samples = mixedBuffer.getChannelData(0).length;
       const duration = samples / mixedBuffer.sampleRate;
 
-      // Update the mixdown in the store
-      const origin: AudioInputOrigin = {
-        kind: "synthetic",
-        generatedFrom: allStems.map((s) => s.id),
-      };
-
-      updateMixdown({
-        audioBuffer: mixedBuffer,
-        metadata: {
+      // Update the mixdown stream (caches the PCM and invalidates analyses)
+      loadMixdown({
+        audio: {
+          origin: { kind: "generated", generatedFrom: allStems.map((s) => s.id) },
+          url: audioUrl,
+          durationSec: duration,
           sampleRate: mixedBuffer.sampleRate,
-          totalSamples: samples,
-          duration,
+          channels: mixedBuffer.numberOfChannels,
         },
-        audioUrl,
-        origin,
+        buffer: mixedBuffer,
         label: "Generated Mixdown",
       });
 
@@ -320,22 +310,22 @@ export function StemManagementContent() {
       // =======================================================================
       const generatedSource: GeneratedAudioSource = {
         type: "generated",
-        id: MIXDOWN_ID,
+        id: MIXDOWN_STREAM_ID,
         generatedFrom: allStems.map((s) => s.id),
         status: "ready",
         url: audioUrl,
       };
-      setCurrentAudioSource(generatedSource);
+      setCurrentSource(generatedSource);
 
       // Run MIR analysis on the new mixdown
-      await runAnalysis("onsetEnvelope", MIXDOWN_ID);
-      await runAnalysis("spectralFlux", MIXDOWN_ID);
+      await runStreamAnalysis(MIXDOWN_STREAM_ID, "onsetEnvelope");
+      await runStreamAnalysis(MIXDOWN_STREAM_ID, "spectralFlux");
     } catch (error) {
       console.error("Failed to generate mixdown:", error);
     } finally {
       setIsGeneratingMixdown(false);
     }
-  }, [getStems, updateMixdown, setCurrentAudioSource, runAnalysis]);
+  }, [setCurrentSource]);
 
   return (
     <div className="flex flex-col">
@@ -393,25 +383,22 @@ export function StemManagementContent() {
             onDragEnd={handleDragEnd}
           >
             <SortableContext
-              items={stems.map((s) => s!.id)}
+              items={stems.map((s) => s.id)}
               strategy={verticalListSortingStrategy}
             >
-              {stems.map((stem, index) => {
-                if (!stem) return null;
-                return (
-                  <StemListItem
-                    key={stem.id}
-                    stemId={stem.id}
-                    label={stem.label}
-                    colorIndex={index}
-                    isSelected={stem.id === selectedInputId}
-                    isDeleting={stem.id === deleteConfirmId}
-                    onSelect={() => selectInput(stem.id)}
-                    onRename={(newLabel) => renameInput(stem.id, newLabel)}
-                    onDelete={() => handleDeleteStem(stem.id)}
-                  />
-                );
-              })}
+              {stems.map((stem, index) => (
+                <StemListItem
+                  key={stem.id}
+                  stemId={stem.id}
+                  label={stem.label}
+                  colorIndex={index}
+                  isSelected={stem.id === selectedStreamId}
+                  isDeleting={stem.id === deleteConfirmId}
+                  onSelect={() => selectStream(stem.id)}
+                  onRename={(newLabel) => renameStream(stem.id, newLabel)}
+                  onDelete={() => handleDeleteStem(stem.id)}
+                />
+              ))}
             </SortableContext>
           </DndContext>
         )}
@@ -422,7 +409,7 @@ export function StemManagementContent() {
         <div className="p-2 border-t border-zinc-200 dark:border-zinc-800">
           <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md bg-zinc-100 dark:bg-zinc-800">
             <span className="text-xs text-zinc-600 dark:text-zinc-400">
-              Deleted &quot;{deletedStem.stem.label}&quot;
+              Deleted &quot;{deletedStem.label}&quot;
             </span>
             <div className="flex items-center gap-1">
               <Button

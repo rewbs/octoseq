@@ -2,10 +2,16 @@
 
 import { useMemo } from "react";
 import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
-import type { BandEventsResult, BandEventFunctionId } from "@octoseq/mir";
+import type { BandEventsResult } from "@octoseq/mir";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
 import { getBandColorHex } from "@/lib/bandColors";
-import { useBandMirStore, useFrequencyBandStore } from "@/lib/stores";
+import {
+  analysisKey,
+  useAnalysisStore,
+  useBandEditingStore,
+  useStreamStore,
+  type AnalysisId,
+} from "@/lib/streams";
 import { GenericBeatGridOverlay } from "@/components/beatGrid/GenericBeatGridOverlay";
 
 // ----------------------------
@@ -13,8 +19,8 @@ import { GenericBeatGridOverlay } from "@/components/beatGrid/GenericBeatGridOve
 // ----------------------------
 
 export type BandEventViewerProps = {
-    /** The band event function to show results for */
-    fn: BandEventFunctionId;
+    /** The unified event analysis to show per-band results for ("onsetPeaks" | "beatCandidates") */
+    fn: AnalysisId;
     /** Viewport from the main WaveSurfer instance */
     viewport: WaveSurferViewport | null;
     /** Shared mirrored cursor (hover or playhead) to display */
@@ -170,11 +176,11 @@ function BandEventRow({
 // Function Label Helper
 // ----------------------------
 
-function getFunctionLabel(fn: BandEventFunctionId): string {
+function getFunctionLabel(fn: AnalysisId): string {
     switch (fn) {
-        case "bandOnsetPeaks":
+        case "onsetPeaks":
             return "Onset Peaks";
-        case "bandBeatCandidates":
+        case "beatCandidates":
             return "Beat Candidates";
         default:
             return fn;
@@ -193,35 +199,34 @@ export function BandEventViewer({
     showBeatGrid = false,
     audioDuration = 0,
 }: BandEventViewerProps) {
-    const typedEventExpanded = useBandMirStore((s) => s.typedEventsExpanded);
-    const setTypedEventExpanded = useBandMirStore((s) => s.setTypedEventsExpanded);
-    const typedEventCache = useBandMirStore((s) => s.typedEventCache);
+    const typedEventExpanded = useBandEditingStore((s) => s.eventViewerExpanded);
+    const setTypedEventExpanded = useBandEditingStore((s) => s.setEventViewerExpanded);
+    const allResults = useAnalysisStore((s) => s.results);
+    const streams = useStreamStore((s) => s.streams);
 
-    const structure = useFrequencyBandStore((s) => s.structure);
+    const bands = useMemo(
+        () =>
+            [...streams.values()]
+                .filter((s) => s.kind === "band")
+                .sort((a, b) => a.sortOrder - b.sortOrder),
+        [streams]
+    );
 
-    // Get results for this function
-    const results = useMemo(() => {
+    // Get per-band results for this analysis, in band sortOrder
+    const sortedResults = useMemo(() => {
         const entries: BandEventsResult[] = [];
-        for (const [key, result] of typedEventCache.entries()) {
-            if (key.endsWith(`:${fn}`)) {
+        for (const band of bands) {
+            const result = allResults.get(analysisKey(band.id, fn));
+            if (result && result.kind === "bandEvents") {
                 entries.push(result);
             }
         }
         return entries;
-    }, [typedEventCache, fn]);
-
-    // Sort by band sortOrder
-    const sortedResults = useMemo(() => {
-        return [...results].sort((a, b) => {
-            const bandA = structure?.bands.find((band) => band.id === a.bandId);
-            const bandB = structure?.bands.find((band) => band.id === b.bandId);
-            return (bandA?.sortOrder ?? 0) - (bandB?.sortOrder ?? 0);
-        });
-    }, [results, structure]);
+    }, [bands, allResults, fn]);
 
     // Get band indices for coloring
     const bandIndexMap = new Map<string, number>();
-    structure?.bands.forEach((band, index) => {
+    bands.forEach((band, index) => {
         bandIndexMap.set(band.id, index);
     });
 

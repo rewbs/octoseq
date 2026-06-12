@@ -46,11 +46,13 @@ import { useAudioSourceResolver } from "@/lib/hooks/useAudioSourceResolver";
 import {
   ALL_STREAM_ANALYSES,
   MIXDOWN_STREAM_ID,
+  analysisKey,
   audioCache,
   isAudioStream,
   rawFileCache,
   removeStreamCascade,
   runStreamAnalyses,
+  useAnalysisStore,
   useAudioSourceStore,
   useStreamStore,
   type LocalAudioSource,
@@ -626,11 +628,13 @@ export default function Home() {
       });
     }
 
-    // Band amplitude signals (if available)
+    // Band onset signals (if available)
     const bands = bandStructure?.bands ?? [];
     for (const band of bands) {
-      const bandResult = useBandMirStore.getState().cache.get(`${band.id}:bandOnsetStrength`);
-      if (bandResult) {
+      const bandResult = useAnalysisStore
+        .getState()
+        .getResult(analysisKey(band.id, "onsetEnvelope"));
+      if (bandResult && bandResult.kind === "bandMir1d") {
         options.push({
           id: `band:${band.id}:onsetStrength`,
           label: `${band.label} Onset`,
@@ -1227,7 +1231,7 @@ export default function Home() {
                           {hasBands && (visualTab === "amplitudeEnvelope" || visualTab === "onsetEnvelope" || visualTab === "spectralFlux" || visualTab === "spectralCentroid") && (
                             <div className="mt-2">
                               <BandMirSignalViewer
-                                fn={visualTab === "amplitudeEnvelope" ? "bandAmplitudeEnvelope" : visualTab === "onsetEnvelope" ? "bandOnsetStrength" : visualTab === "spectralCentroid" ? "bandSpectralCentroid" : "bandSpectralFlux"}
+                                fn={visualTab}
                                 viewport={viewport}
                                 cursorTimeSec={mirroredCursorTimeSec}
                                 onCursorTimeChange={setCursorTimeSec}
@@ -1236,7 +1240,7 @@ export default function Home() {
                                 audioDuration={audioDuration ?? 0}
                               />
                               <BandEventViewer
-                                fn="bandOnsetPeaks"
+                                fn="onsetPeaks"
                                 viewport={viewport}
                                 cursorTimeSec={mirroredCursorTimeSec}
                                 onCursorTimeChange={setCursorTimeSec}
@@ -1249,7 +1253,7 @@ export default function Home() {
                           {hasBands && (visualTab === "cqtHarmonicEnergy" || visualTab === "cqtBassPitchMotion" || visualTab === "cqtTonalStability") && (
                             <div className="mt-2">
                               <BandMirSignalViewer
-                                fn={visualTab === "cqtHarmonicEnergy" ? "bandCqtHarmonicEnergy" : visualTab === "cqtBassPitchMotion" ? "bandCqtBassPitchMotion" : "bandCqtTonalStability"}
+                                fn={visualTab}
                                 viewport={viewport}
                                 cursorTimeSec={mirroredCursorTimeSec}
                                 onCursorTimeChange={setCursorTimeSec}
@@ -1281,7 +1285,7 @@ export default function Home() {
                           {hasBands && (
                             <div className="mt-2">
                               <BandEventViewer
-                                fn="bandOnsetPeaks"
+                                fn="onsetPeaks"
                                 viewport={viewport}
                                 cursorTimeSec={mirroredCursorTimeSec}
                                 onCursorTimeChange={setCursorTimeSec}
@@ -1322,7 +1326,7 @@ export default function Home() {
                           {hasBands && (
                             <div className="mt-2">
                               <BandEventViewer
-                                fn="bandBeatCandidates"
+                                fn="beatCandidates"
                                 viewport={viewport}
                                 cursorTimeSec={mirroredCursorTimeSec}
                                 onCursorTimeChange={setCursorTimeSec}

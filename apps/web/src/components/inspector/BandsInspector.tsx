@@ -1,13 +1,17 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getAudioSourceId } from "@/lib/nodeTypes";
 import { FrequencyBandContent } from "@/components/frequencyBand/FrequencyBandContent";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
-import { useBandMirActions } from "@/lib/stores/hooks/useBandMirActions";
+import {
+  isAudioStream,
+  isBandStream,
+  runStreamAnalyses,
+  useStreamStore,
+  type BandStream,
+} from "@/lib/streams";
 
 interface BandsInspectorProps {
   nodeId: string;
@@ -21,20 +25,23 @@ export function BandsInspector({ nodeId }: BandsInspectorProps) {
   const sourceId = getAudioSourceId(nodeId) ?? "mixdown";
 
   // Get the audio duration for this specific source
-  const audioInput = useAudioInputStore((s) => s.collection?.inputs[sourceId]);
-  const audioDuration = audioInput?.metadata?.duration ?? 0;
-  const getBandsForSource = useFrequencyBandStore((s) => s.getBandsForSource);
-  const {
-    runBandAnalysis,
-    runBandCqtAnalysis,
-    runTypedEventExtraction,
-  } = useBandMirActions();
+  const streams = useStreamStore((s) => s.streams);
+  const audioDuration = useMemo(() => {
+    const stream = streams.get(sourceId);
+    return stream && isAudioStream(stream) ? stream.audio.durationSec : 0;
+  }, [streams, sourceId]);
 
   const [isRunningAll, setIsRunningAll] = useState(false);
 
   // Get all bands for this audio source
-  const bands = getBandsForSource(sourceId);
-  const bandIds = bands.map((b) => b.id);
+  const bands = useMemo(
+    () =>
+      [...streams.values()]
+        .filter((s): s is BandStream => isBandStream(s) && s.parentId === sourceId)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams, sourceId]
+  );
+  const bandIds = useMemo(() => bands.map((b) => b.id), [bands]);
 
   // Run all analyses for all bands under this source
   const handleRunAllBandAnalyses = useCallback(async () => {
@@ -42,32 +49,24 @@ export function BandsInspector({ nodeId }: BandsInspectorProps) {
 
     setIsRunningAll(true);
     try {
-      // Run STFT-based band MIR analyses for all bands
-      await runBandAnalysis(bandIds, [
-        "bandAmplitudeEnvelope",
-        "bandOnsetStrength",
-        "bandSpectralFlux",
-        "bandSpectralCentroid",
-      ], sourceId);
-
-      // Run CQT-based band analyses for all bands
-      await runBandCqtAnalysis(bandIds, [
-        "bandCqtHarmonicEnergy",
-        "bandCqtBassPitchMotion",
-        "bandCqtTonalStability",
-      ], sourceId);
-
-      // Extract events from the band signals
-      await runTypedEventExtraction(bandIds, [
-        "bandOnsetPeaks",
-        "bandBeatCandidates",
+      // Run all band analyses (STFT, CQT, then event extraction — grouped by family)
+      await runStreamAnalyses(bandIds, [
+        "amplitudeEnvelope",
+        "onsetEnvelope",
+        "spectralFlux",
+        "spectralCentroid",
+        "cqtHarmonicEnergy",
+        "cqtBassPitchMotion",
+        "cqtTonalStability",
+        "onsetPeaks",
+        "beatCandidates",
       ]);
     } catch (error) {
       console.error("Failed to run band analyses:", error);
     } finally {
       setIsRunningAll(false);
     }
-  }, [bandIds, sourceId, runBandAnalysis, runBandCqtAnalysis, runTypedEventExtraction]);
+  }, [bandIds]);
 
   return (
     <div className="p-2 space-y-4">

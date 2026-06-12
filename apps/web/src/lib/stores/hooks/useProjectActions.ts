@@ -7,7 +7,6 @@ import { useMusicalTimeStore } from "../musicalTimeStore";
 import { useAuthoredEventStore } from "../authoredEventStore";
 import { useBeatGridStore } from "../beatGridStore";
 import { useInterpretationTreeStore } from "../interpretationTreeStore";
-import { useAudioInputStore } from "../audioInputStore";
 import { useDerivedSignalStore } from "../derivedSignalStore";
 import { useComposedSignalStore } from "../composedSignalStore";
 import { useMeshAssetStore } from "../meshAssetStore";
@@ -18,8 +17,15 @@ import { clearAutosave } from "../../persistence/autosave";
 import type { ProjectAudioCollection, ProjectAudioReference, ProjectBeatGridState } from "../types/project";
 import type { AuthoredEventStream } from "../types/authoredEvent";
 import type { AutosaveRecord } from "../../persistence/types";
-import type { AudioInput, AudioInputCollection } from "../types/audioInput";
-import { MIXDOWN_ID } from "../types/audioInput";
+import type { AudioInputOrigin } from "../types/audioInput";
+import {
+  removeStreamCascade,
+  resetAllStreams,
+  useStreamStore,
+  type AudioOrigin,
+  type AudioReference,
+  type AudioStream,
+} from "@/lib/streams";
 
 /**
  * Hook that provides project lifecycle actions and sets up store synchronization.
@@ -151,43 +157,20 @@ export function useProjectActions() {
       }
     });
 
-    // Subscribe to audio input changes
-    const unsubAudio = useAudioInputStore.subscribe((state, prevState) => {
-      if (state.collection !== prevState.collection && useProjectStore.getState().activeProject) {
-        const collection = state.collection;
-        if (collection) {
-          const mixdownInput = collection.inputs.mixdown;
-          const audioCollection: ProjectAudioCollection = {
-            mixdown: mixdownInput
-              ? {
-                  id: mixdownInput.id,
-                  label: mixdownInput.label,
-                  role: mixdownInput.role,
-                  metadata: mixdownInput.metadata!,
-                  origin: mixdownInput.origin,
-                  // Use cloudAssetId for persistent storage references
-                  assetId: mixdownInput.cloudAssetId ?? mixdownInput.assetId,
-                }
-              : null,
-            stems: collection.stemOrder
-              .map((stemId, index) => {
-                const stem = collection.inputs[stemId];
-                if (!stem || !stem.metadata) return null;
-                return {
-                  id: stem.id,
-                  label: stem.label,
-                  role: stem.role,
-                  metadata: stem.metadata,
-                  origin: stem.origin,
-                  orderIndex: index,
-                  // Use cloudAssetId for persistent storage references
-                  assetId: stem.cloudAssetId ?? stem.assetId,
-                } as ProjectAudioReference;
-              })
-              .filter((s): s is ProjectAudioReference => s !== null),
-          };
-          useProjectStore.getState().syncAudioReferences(audioCollection);
-        }
+    // Subscribe to audio stream changes
+    const unsubAudio = useStreamStore.subscribe((state, prevState) => {
+      if (state.streams !== prevState.streams && useProjectStore.getState().activeProject) {
+        const mixdown = state.getMixdown();
+        const audioCollection: ProjectAudioCollection = {
+          mixdown: mixdown ? toProjectAudioReference(mixdown) : null,
+          stems: state.getStems().map(
+            (stem, index): ProjectAudioReference => ({
+              ...toProjectAudioReference(stem),
+              orderIndex: index,
+            })
+          ),
+        };
+        useProjectStore.getState().syncAudioReferences(audioCollection);
       }
     });
 
@@ -293,56 +276,46 @@ export function useProjectActions() {
         useMeshAssetStore.getState().loadFromProject(project.meshAssets);
       }
 
-      // Hydrate audio inputs (create stub entries for cloud loading)
-      // This creates the collection structure so cloud loader can fill in audio data
+      // Hydrate audio streams (create stub entries for cloud loading)
+      // This creates the stream structure so cloud loader can fill in audio data
       if (project.audio) {
-        const audioInputStore = useAudioInputStore.getState();
-        const inputs: Record<string, AudioInput> = {};
-        const stemOrder: string[] = [];
+        const streamStore = useStreamStore.getState();
+
+        // The legacy store replaced the whole collection here: drop any stems
+        // that are not part of the loaded project (cascades to their bands).
+        for (const stem of streamStore.getStems()) {
+          removeStreamCascade(stem.id);
+        }
 
         // Create mixdown stub if present
         if (project.audio.mixdown) {
           const mix = project.audio.mixdown;
-          inputs[MIXDOWN_ID] = {
-            id: MIXDOWN_ID,
+          streamStore.initializeMixdown({
+            audio: toStubAudioReference(mix),
             label: mix.label,
-            role: "mixdown",
-            audioBuffer: null, // Will be loaded by cloud loader
-            metadata: mix.metadata,
-            audioUrl: null,
-            origin: mix.origin,
-            createdAt: new Date().toISOString(),
-            cloudAssetId: mix.assetId,
-          };
+          });
         }
 
-        // Create stem stubs
+        // Create stem stubs, preserving ids and order
         // Sort by orderIndex to preserve order
         const sortedStems = [...project.audio.stems].sort(
           (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
         );
-        for (const stem of sortedStems) {
-          inputs[stem.id] = {
-            id: stem.id,
-            label: stem.label,
-            role: "stem",
-            audioBuffer: null, // Will be loaded by cloud loader
-            metadata: stem.metadata,
-            audioUrl: null,
-            origin: stem.origin,
-            createdAt: new Date().toISOString(),
-            cloudAssetId: stem.assetId,
-          };
-          stemOrder.push(stem.id);
-        }
-
-        // Set the collection directly
-        const collection: AudioInputCollection = {
-          version: 1,
-          inputs,
-          stemOrder,
-        };
-        audioInputStore.setCollection(collection);
+        const now = new Date().toISOString();
+        streamStore.restoreStreams(
+          sortedStems.map(
+            (stem, index): AudioStream => ({
+              id: stem.id,
+              kind: "stem",
+              label: stem.label,
+              enabled: true,
+              sortOrder: index + 1,
+              createdAt: now,
+              modifiedAt: now,
+              audio: toStubAudioReference(stem),
+            })
+          )
+        );
       }
 
       // Hydrate tree state
@@ -391,7 +364,7 @@ export function useProjectActions() {
         useBeatGridStore.getState().clear();
         useDerivedSignalStore.getState().reset();
         useMeshAssetStore.getState().reset();
-        useAudioInputStore.getState().reset();
+        resetAllStreams();
         usePlaybackStore.getState().setPlayheadTimeSec(0);
         usePlaybackStore.getState().setCursorTimeSec(0);
       }
@@ -663,5 +636,68 @@ export function useProjectActions() {
     acceptRecovery: handleAcceptRecovery,
     dismissRecovery: handleDismissRecovery,
     formatAutosaveTimestamp: formatTimestamp,
+  };
+}
+
+// ----------------------------
+// Stream <-> Project mapping
+// ----------------------------
+// The persisted project shape keeps the legacy field names (role, metadata,
+// origin with "stem"/"synthetic" kinds); these helpers convert to/from the
+// unified stream model at the sync/hydration boundary.
+
+/** Map the unified AudioOrigin onto the persisted project origin shape. */
+function toProjectOrigin(origin: AudioOrigin): AudioInputOrigin {
+  switch (origin.kind) {
+    case "file":
+    case "url":
+      return origin;
+    case "separated":
+      return { kind: "stem", sourceId: origin.parentStreamId, method: origin.method };
+    case "generated":
+      return { kind: "synthetic", generatedFrom: origin.generatedFrom };
+  }
+}
+
+/** Map a persisted project origin onto the unified AudioOrigin shape. */
+function toAudioOrigin(origin: AudioInputOrigin): AudioOrigin {
+  switch (origin.kind) {
+    case "file":
+    case "url":
+      return origin;
+    case "stem":
+      return { kind: "separated", parentStreamId: origin.sourceId, method: origin.method };
+    case "synthetic":
+      return { kind: "generated", generatedFrom: origin.generatedFrom ?? [] };
+  }
+}
+
+/** Build a persisted project reference from an AudioStream. */
+function toProjectAudioReference(stream: AudioStream): ProjectAudioReference {
+  return {
+    id: stream.id,
+    label: stream.label,
+    role: stream.kind,
+    metadata: {
+      sampleRate: stream.audio.sampleRate,
+      totalSamples: Math.round(stream.audio.durationSec * stream.audio.sampleRate),
+      duration: stream.audio.durationSec,
+    },
+    origin: toProjectOrigin(stream.audio.origin),
+    // Use cloudAssetId for persistent storage references
+    assetId: stream.audio.cloudAssetId ?? stream.audio.assetId,
+  };
+}
+
+/** Build a stub AudioReference from a persisted project reference (audio loads later). */
+function toStubAudioReference(ref: ProjectAudioReference): AudioReference {
+  return {
+    origin: toAudioOrigin(ref.origin),
+    url: null, // Will be loaded by cloud loader
+    cloudAssetId: ref.assetId,
+    durationSec: ref.metadata.duration,
+    sampleRate: ref.metadata.sampleRate,
+    // Channel count is not persisted; corrected when the audio is decoded.
+    channels: 2,
   };
 }

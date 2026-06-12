@@ -104,7 +104,7 @@ interface ProjectActions {
   // These are called by other stores when their data changes.
   // ----------------------------
 
-  /** Sync audio references from audioInputStore. */
+  /** Sync audio references from streamStore. */
   syncAudioReferences: (collection: ProjectAudioCollection) => void;
 
   /** Sync frequency bands from frequencyBandStore. */

@@ -19,7 +19,6 @@ export {
   type InspectionViewMode,
 } from "./inspectionStore";
 export { useInterpretationTreeStore } from "./interpretationTreeStore";
-export { useAudioInputStore, type AudioInputStore } from "./audioInputStore";
 export { makeInputMirCacheKey, type InputMirCacheKey } from "./mirStore";
 export {
   useCandidateEventStore,

@@ -18,6 +18,8 @@ export type {
 } from "./audioSourceStore";
 export { toDisplaySignal, toDisplayEvents } from "./display";
 export type { DisplaySignal, DisplayEvent } from "./display";
+export { useBandEditingStore } from "./bandEditingStore";
+export type { BandSnapMode, BandDragState } from "./bandEditingStore";
 export {
   loadMixdown,
   addStemWithAudio,

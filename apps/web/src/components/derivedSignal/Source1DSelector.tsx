@@ -1,8 +1,8 @@
 "use client";
 
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useMemo } from "react";
+import { useStreamStore, isBandStream, type AudioStream } from "@/lib/streams";
 import { useDerivedSignals } from "@/lib/stores/derivedSignalStore";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import type { BandMirFunctionId, BandCqtFunctionId } from "@octoseq/mir";
 import {
   type Source1D,
@@ -42,11 +42,19 @@ const BAND_MIR_LABELS: Record<BandMirFunctionId | BandCqtFunctionId, string> = {
  * Source selector for 1D signals.
  */
 export function Source1DSelector({ source, onChange }: Source1DSelectorProps) {
-  const audioCollection = useAudioInputStore((s) => s.collection);
-  const stemOrder = audioCollection?.stemOrder ?? [];
+  const streams = useStreamStore((s) => s.streams);
+  const stems = useMemo(
+    () =>
+      [...streams.values()]
+        .filter((st): st is AudioStream => st.kind === "stem")
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
+  );
   const derivedSignals = useDerivedSignals();
-  const bandStructure = useFrequencyBandStore((s) => s.structure);
-  const bands = bandStructure?.bands ?? [];
+  const bands = useMemo(
+    () => [...streams.values()].filter(isBandStream).sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
+  );
 
   const handleRefTypeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const type = e.target.value as Signal1DRef["type"];
@@ -174,14 +182,11 @@ export function Source1DSelector({ source, onChange }: Source1DSelectorProps) {
               className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
             >
               <option value="mixdown">Mixdown</option>
-              {stemOrder.map((stemId) => {
-                const stem = audioCollection?.inputs[stemId];
-                return (
-                  <option key={stemId} value={stemId}>
-                    {stem?.label ?? stemId}
-                  </option>
-                );
-              })}
+              {stems.map((stem) => (
+                <option key={stem.id} value={stem.id}>
+                  {stem.label}
+                </option>
+              ))}
             </select>
           </div>
 

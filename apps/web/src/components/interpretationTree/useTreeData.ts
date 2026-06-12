@@ -1,18 +1,29 @@
 "use client";
 
 import { useMemo } from "react";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { useCandidateEventStore } from "@/lib/stores/candidateEventStore";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { TREE_NODE_IDS } from "@/lib/stores/interpretationTreeStore";
-import { useMirStore, mirTabDefinitions, makeInputMirCacheKey } from "@/lib/stores/mirStore";
-import { useBandMirStore } from "@/lib/stores/bandMirStore";
+import { mirTabDefinitions } from "@/lib/stores/mirStore";
 import { useDerivedSignalStore } from "@/lib/stores/derivedSignalStore";
 import { useComposedSignalStore } from "@/lib/stores/composedSignalStore";
-import type { MirFunctionId } from "@/components/mir/MirControlPanel";
+import {
+  useStreamStore,
+  useAnalysisStore,
+  analysisKey,
+  isBandStream,
+  BAND_ANALYSIS_IMPL,
+  MIXDOWN_STREAM_ID,
+  type AnalysisId,
+  type AudioStream,
+} from "@/lib/streams";
 import type { BandMirFunctionId, BandCqtFunctionId, BandEventFunctionId } from "@octoseq/mir";
+
+/** Reverse of BAND_ANALYSIS_IMPL: band implementation id → unified analysis id. */
+const UNIFIED_ID_FOR_BAND_FN = new Map<string, AnalysisId>(
+  Object.entries(BAND_ANALYSIS_IMPL).map(([unified, bandFn]) => [bandFn, unified as AnalysisId])
+);
 
 /**
  * Tree node data structure for rendering.
@@ -82,16 +93,15 @@ const bandEventFunctionDefs: Array<{
  * Build MIR analysis children for a given parent node ID prefix.
  * @param nodeIdPrefix - The prefix for child node IDs (e.g., "audio:mixdown:mir")
  * @param sourceId - The audio source ID to check for cached results
- * @param inputMirCache - The MIR cache to check for available results
+ * @param analysisResults - The unified analysis result cache to check for available results
  */
 function buildMirAnalysisChildren(
   nodeIdPrefix: string,
   sourceId: string,
-  inputMirCache: Map<string, unknown>
+  analysisResults: Map<string, unknown>
 ): TreeNodeData[] {
   const analysisNodes = mirTabDefinitions.map((def) => {
-    const cacheKey = makeInputMirCacheKey(sourceId, def.id as MirFunctionId);
-    const hasResult = inputMirCache.has(cacheKey);
+    const hasResult = analysisResults.has(analysisKey(sourceId, def.id));
     return {
       id: `${nodeIdPrefix}:${def.id}`,
       label: def.label.replace(/ \([^)]+\)$/, ""), // Remove kind suffix like "(1D)"
@@ -115,26 +125,21 @@ function buildMirAnalysisChildren(
 
 /**
  * Build band MIR analysis children for a given band.
- * Uses band-specific MIR functions (bandAmplitudeEnvelope, etc.) instead of standard MIR.
+ * Node IDs keep the band-specific function ids (bandAmplitudeEnvelope, etc.) for
+ * selection/persistence compatibility; cache lookups use the unified analysis ids.
  * @param nodeIdPrefix - The prefix for child node IDs (e.g., "audio:mixdown:bands:bandId:mir")
  * @param bandId - The band ID to check for cached results
- * @param bandMirCache - The band MIR cache to check for available results
- * @param bandCqtCache - The band CQT cache to check for available results
- * @param bandEventCache - The band event cache to check for available results
+ * @param analysisResults - The unified analysis result cache to check for available results
  */
 function buildBandMirAnalysisChildren(
   nodeIdPrefix: string,
   bandId: string,
-  bandMirCache: Map<string, unknown>,
-  bandCqtCache: Map<string, unknown>,
-  bandEventCache: Map<string, unknown>
+  analysisResults: Map<string, unknown>
 ): TreeNodeData[] {
   // Build 1D signal nodes
   const signalNodes = bandMirFunctionDefs.map((def) => {
-    // Check appropriate cache based on function type
-    const isCqt = def.id.startsWith("bandCqt");
-    const cacheKey = `${bandId}:${def.id}`;
-    const hasResult = isCqt ? bandCqtCache.has(cacheKey) : bandMirCache.has(cacheKey);
+    const unifiedId = UNIFIED_ID_FOR_BAND_FN.get(def.id);
+    const hasResult = unifiedId ? analysisResults.has(analysisKey(bandId, unifiedId)) : false;
     return {
       id: `${nodeIdPrefix}:${def.id}`,
       label: def.label,
@@ -146,8 +151,8 @@ function buildBandMirAnalysisChildren(
 
   // Build event nodes
   const eventNodes = bandEventFunctionDefs.map((def) => {
-    const cacheKey = `${bandId}:${def.id}`;
-    const hasResult = bandEventCache.has(cacheKey);
+    const unifiedId = UNIFIED_ID_FOR_BAND_FN.get(def.id);
+    const hasResult = unifiedId ? analysisResults.has(analysisKey(bandId, unifiedId)) : false;
     return {
       id: `${nodeIdPrefix}:${def.id}`,
       label: def.label,
@@ -161,22 +166,23 @@ function buildBandMirAnalysisChildren(
 }
 
 export function useTreeData(): TreeNodeData[] {
-  const audioCollection = useAudioInputStore((s) => s.collection);
-  const frequencyBandStructure = useFrequencyBandStore((s) => s.structure);
+  const streams = useStreamStore((s) => s.streams);
   const candidateStreams = useCandidateEventStore((s) => s.streams);
   const authoredStreams = useAuthoredEventStore((s) => s.streams);
   const activeProject = useProjectStore((s) => s.activeProject);
   const isDirty = useProjectStore((s) => s.isDirty);
-  const inputMirCache = useMirStore((s) => s.inputMirCache);
-  const bandMirCache = useBandMirStore((s) => s.cache);
-  const bandCqtCache = useBandMirStore((s) => s.cqtCache);
-  const bandEventCache = useBandMirStore((s) => s.typedEventCache);
+  const analysisResults = useAnalysisStore((s) => s.results);
   const derivedSignalStructure = useDerivedSignalStore((s) => s.structure);
   const derivedSignalResultCache = useDerivedSignalStore((s) => s.resultCache);
   const composedSignalStructure = useComposedSignalStore((s) => s.structure);
 
   return useMemo(() => {
-    const stemCount = audioCollection?.stemOrder.length ?? 0;
+    const streamList = [...streams.values()];
+    const stems = streamList
+      .filter((st): st is AudioStream => st.kind === "stem")
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    const allBands = streamList.filter(isBandStream).sort((a, b) => a.sortOrder - b.sortOrder);
+    const stemCount = stems.length;
 
     // Count total candidate events
     let totalCandidateEvents = 0;
@@ -194,9 +200,7 @@ export function useTreeData(): TreeNodeData[] {
 
     // Helper to build individual band nodes for a specific source
     const buildBandNodes = (sourceId: string, bandNodePrefix: string): TreeNodeData[] => {
-      const sourceBands = frequencyBandStructure?.bands.filter(
-        (b) => b.sourceId === sourceId
-      ) ?? [];
+      const sourceBands = allBands.filter((b) => b.parentId === sourceId);
 
       return sourceBands.map((band) => {
         const bandNodeId = `${bandNodePrefix}:${band.id}`;
@@ -212,7 +216,7 @@ export function useTreeData(): TreeNodeData[] {
               label: "MIR",
               iconName: "activity",
               hasChildren: true,
-              children: buildBandMirAnalysisChildren(bandMirNodeId, band.id, bandMirCache, bandCqtCache, bandEventCache),
+              children: buildBandMirAnalysisChildren(bandMirNodeId, band.id, analysisResults),
             },
           ],
         };
@@ -236,32 +240,31 @@ export function useTreeData(): TreeNodeData[] {
     };
 
     // Build stem children with MIR and Bands sections
-    const stemChildren: TreeNodeData[] =
-      audioCollection?.stemOrder.map((stemId) => {
-        const stem = audioCollection.inputs[stemId];
-        const stemNodeId = `audio:stem:${stemId}`;
-        const stemMirNodeId = `${stemNodeId}:mir`;
-        const stemBandsNodeId = `${stemNodeId}:bands`;
+    const stemChildren: TreeNodeData[] = stems.map((stem) => {
+      const stemId = stem.id;
+      const stemNodeId = `audio:stem:${stemId}`;
+      const stemMirNodeId = `${stemNodeId}:mir`;
+      const stemBandsNodeId = `${stemNodeId}:bands`;
 
-        const stemChildNodes: TreeNodeData[] = [
-          {
-            id: stemMirNodeId,
-            label: "MIR",
-            iconName: "activity",
-            hasChildren: true,
-            children: buildMirAnalysisChildren(stemMirNodeId, stemId, inputMirCache),
-          },
-          buildBandsSection(stemId, stemBandsNodeId),
-        ];
-
-        return {
-          id: stemNodeId,
-          label: stem?.label ?? stemId,
-          iconName: "audio-lines",
+      const stemChildNodes: TreeNodeData[] = [
+        {
+          id: stemMirNodeId,
+          label: "MIR",
+          iconName: "activity",
           hasChildren: true,
-          children: stemChildNodes,
-        };
-      }) ?? [];
+          children: buildMirAnalysisChildren(stemMirNodeId, stemId, analysisResults),
+        },
+        buildBandsSection(stemId, stemBandsNodeId),
+      ];
+
+      return {
+        id: stemNodeId,
+        label: stem.label,
+        iconName: "audio-lines",
+        hasChildren: true,
+        children: stemChildNodes,
+      };
+    });
 
     // Build candidate stream children
     const candidateChildren: TreeNodeData[] = candidateStreamArray.map((stream) => ({
@@ -290,16 +293,16 @@ export function useTreeData(): TreeNodeData[] {
         label: "MIR",
         iconName: "activity",
         hasChildren: true,
-        children: buildMirAnalysisChildren(mixdownMirNodeId, "mixdown", inputMirCache),
+        children: buildMirAnalysisChildren(mixdownMirNodeId, MIXDOWN_STREAM_ID, analysisResults),
       },
-      buildBandsSection("mixdown", mixdownBandsNodeId),
+      buildBandsSection(MIXDOWN_STREAM_ID, mixdownBandsNodeId),
     ];
 
     // Build audio section
     const audioChildren: TreeNodeData[] = [
       {
         id: TREE_NODE_IDS.MIXDOWN,
-        label: audioCollection?.inputs.mixdown?.label ?? "Mixdown",
+        label: streams.get(MIXDOWN_STREAM_ID)?.label ?? "Mixdown",
         iconName: "audio-lines",
         hasChildren: true,
         children: mixdownChildren,
@@ -456,7 +459,7 @@ export function useTreeData(): TreeNodeData[] {
     ];
 
     return tree;
-  }, [audioCollection, frequencyBandStructure, candidateStreams, authoredStreams, activeProject, isDirty, inputMirCache, bandMirCache, bandCqtCache, bandEventCache, derivedSignalStructure, derivedSignalResultCache, composedSignalStructure]);
+  }, [streams, candidateStreams, authoredStreams, activeProject, isDirty, analysisResults, derivedSignalStructure, derivedSignalResultCache, composedSignalStructure]);
 }
 
 /**
