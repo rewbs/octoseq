@@ -3,7 +3,7 @@
 import { memo, useMemo } from "react";
 import { ChevronDown, ChevronRight, Activity, Loader2, ZoomIn, ZoomOut } from "lucide-react";
 import { useSignalExplorerStore } from "@/lib/stores/signalExplorerStore";
-import { useBeatGridStore } from "@/lib/stores/beatGridStore";
+import { useTimingStore } from "@/lib/stores/timingStore";
 import { TransformStepCard } from "./TransformStepCard";
 import { generateBeatTimes } from "@octoseq/mir";
 
@@ -43,12 +43,12 @@ export const SignalExplorerPanel = memo(function SignalExplorerPanel({
   } = useSignalExplorerStore();
 
   // Get beat grid data for overlay
-  const activeBeatGrid = useBeatGridStore((s) => s.activeBeatGrid);
-  const selectedHypothesis = useBeatGridStore((s) => s.selectedHypothesis);
-  const phaseHypotheses = useBeatGridStore((s) => s.phaseHypotheses);
-  const activePhaseIndex = useBeatGridStore((s) => s.activePhaseIndex);
-  const userNudge = useBeatGridStore((s) => s.userNudge);
-  const subBeatDivision = useBeatGridStore((s) => s.subBeatDivision);
+  const activeBeatGrid = useTimingStore((s) => s.activeBeatGrid);
+  const selectedHypothesis = useTimingStore((s) => s.selectedHypothesis);
+  const phaseHypotheses = useTimingStore((s) => s.phaseHypotheses);
+  const activePhaseIndex = useTimingStore((s) => s.activePhaseIndex);
+  const userNudge = useTimingStore((s) => s.userNudge);
+  const subBeatDivision = useTimingStore((s) => s.subBeatDivision);
 
   const hasValidData = lastValidAnalysis !== null;
 

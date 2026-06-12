@@ -8,7 +8,7 @@
 import { useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useComposedSignalStore } from "../composedSignalStore";
-import { useBeatGridStore } from "../beatGridStore";
+import { useTimingStore } from "../timingStore";
 import { useStreamStore } from "@/lib/streams";
 import {
   sampleComposedSignal,
@@ -42,7 +42,7 @@ export function useComposedSignalActions() {
   );
 
   // BPM from beat grid
-  const bpm = useBeatGridStore((s) => s.selectedHypothesis?.bpm ?? null);
+  const bpm = useTimingStore((s) => s.selectedHypothesis?.bpm ?? null);
 
   // Audio duration
   const audioDuration = useStreamStore((s) => s.getMixdown()?.audio.durationSec ?? 0);

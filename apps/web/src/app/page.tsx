@@ -67,9 +67,7 @@ import {
   useConfigStore,
   useMirStore,
   useSearchStore,
-  useBeatGridStore,
-  useMusicalTimeStore,
-  useManualTempoStore,
+  useTimingStore,
   useNavigationActions,
   useAudioActions,
   useProjectActions,
@@ -194,8 +192,8 @@ export default function Home() {
     }))
   );
 
-  // Beat grid store
-  const beatGridState = useBeatGridStore(
+  // Beat grid section of the timing store
+  const beatGridState = useTimingStore(
     useShallow((s) => ({
       selectedHypothesis: s.selectedHypothesis,
       phaseHypotheses: s.phaseHypotheses,
@@ -221,7 +219,7 @@ export default function Home() {
     clear: clearBeatGrid,
     canPromote: canPromoteBeatGrid,
     getPromotableGrid,
-  } = useBeatGridStore(
+  } = useTimingStore(
     useShallow((s) => ({
       selectHypothesis: s.selectHypothesis,
       updateSelectedBpm: s.updateSelectedBpm,
@@ -232,15 +230,15 @@ export default function Home() {
       setLocked: s.setLocked,
       toggleVisibility: s.toggleVisibility,
       toggleMetronome: s.toggleMetronome,
-      clear: s.clear,
+      clear: s.clearBeatGrid,
       canPromote: s.canPromote,
       getPromotableGrid: s.getPromotableGrid,
     }))
   );
 
-  // Musical time store (B4)
-  const musicalTimeStructure = useMusicalTimeStore((s) => s.structure);
-  const musicalTimeSelectedSegmentId = useMusicalTimeStore((s) => s.selectedSegmentId);
+  // Musical time section of the timing store (B4)
+  const musicalTimeStructure = useTimingStore((s) => s.structure);
+  const musicalTimeSelectedSegmentId = useTimingStore((s) => s.selectedSegmentId);
   const {
     promoteGrid,
     selectSegment: selectMusicalTimeSegment,
@@ -249,7 +247,7 @@ export default function Home() {
     updateBoundary: updateMusicalTimeBoundary,
     clearStructure: clearMusicalTime,
     reset: resetMusicalTime,
-  } = useMusicalTimeStore(
+  } = useTimingStore(
     useShallow((s) => ({
       promoteGrid: s.promoteGrid,
       selectSegment: s.selectSegment,
@@ -291,11 +289,11 @@ export default function Home() {
     };
   }, [musicalTimeStructure, beatGridState, audioDuration]);
 
-  // Manual tempo store
-  const manualHypotheses = useManualTempoStore((s) => s.hypotheses);
-  const beatMarkingActive = useManualTempoStore((s) => s.beatMarkingActive);
-  const beatMark1 = useManualTempoStore((s) => s.beatMark1);
-  const beatMark2 = useManualTempoStore((s) => s.beatMark2);
+  // Manual tempo section of the timing store
+  const manualHypotheses = useTimingStore((s) => s.hypotheses);
+  const beatMarkingActive = useTimingStore((s) => s.beatMarkingActive);
+  const beatMark1 = useTimingStore((s) => s.beatMark1);
+  const beatMark2 = useTimingStore((s) => s.beatMark2);
   const {
     createManualHypothesis,
     duplicateHypothesis,
@@ -309,14 +307,14 @@ export default function Home() {
     updateBeatMark,
     resetBeatMarks,
     getMarkedBpm,
-  } = useManualTempoStore(
+  } = useTimingStore(
     useShallow((s) => ({
       createManualHypothesis: s.createManualHypothesis,
       duplicateHypothesis: s.duplicateHypothesis,
       updateHypothesisBpm: s.updateHypothesisBpm,
       deleteHypothesis: s.deleteHypothesis,
       recordTap: s.recordTap,
-      clear: s.clear,
+      clear: s.clearManualTempo,
       startBeatMarking: s.startBeatMarking,
       stopBeatMarking: s.stopBeatMarking,
       placeBeatMark: s.placeBeatMark,

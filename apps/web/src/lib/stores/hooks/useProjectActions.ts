@@ -3,9 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useProjectStore } from "../projectStore";
 import { useFrequencyBandStore } from "../frequencyBandStore";
-import { useMusicalTimeStore } from "../musicalTimeStore";
 import { useAuthoredEventStore } from "../authoredEventStore";
-import { useBeatGridStore } from "../beatGridStore";
+import { useTimingStore } from "../timingStore";
 import { useInterpretationTreeStore } from "../interpretationTreeStore";
 import { useDerivedSignalStore } from "../derivedSignalStore";
 import { useComposedSignalStore } from "../composedSignalStore";
@@ -74,8 +73,8 @@ export function useProjectActions() {
       }
     });
 
-    // Subscribe to musical time changes
-    const unsubMusicalTime = useMusicalTimeStore.subscribe((state, prevState) => {
+    // Subscribe to musical time changes (musical-time section of the timing store)
+    const unsubMusicalTime = useTimingStore.subscribe((state, prevState) => {
       if (state.structure !== prevState.structure && useProjectStore.getState().activeProject) {
         useProjectStore.getState().syncMusicalTime(state.structure);
       }
@@ -89,8 +88,8 @@ export function useProjectActions() {
       }
     });
 
-    // Subscribe to beat grid changes
-    const unsubBeatGrid = useBeatGridStore.subscribe((state, prevState) => {
+    // Subscribe to beat grid changes (beat-grid section of the timing store)
+    const unsubBeatGrid = useTimingStore.subscribe((state, prevState) => {
       const relevantChange =
         state.activeBeatGrid !== prevState.activeBeatGrid ||
         state.selectedHypothesis !== prevState.selectedHypothesis ||
@@ -213,7 +212,7 @@ export function useProjectActions() {
 
       // Hydrate musical time
       if (project.interpretation.musicalTime) {
-        useMusicalTimeStore.getState().importFromJSON(
+        useTimingStore.getState().importFromJSON(
           JSON.stringify(project.interpretation.musicalTime)
         );
       }
@@ -246,7 +245,7 @@ export function useProjectActions() {
       // Hydrate beat grid
       if (project.interpretation.beatGrid) {
         const bg = project.interpretation.beatGrid;
-        const beatGridStore = useBeatGridStore.getState();
+        const beatGridStore = useTimingStore.getState();
 
         if (bg.selectedHypothesis) {
           beatGridStore.selectHypothesis(bg.selectedHypothesis);
@@ -359,9 +358,9 @@ export function useProjectActions() {
       // clear all stores to ensure a completely clean slate
       if (!importCurrentState) {
         useFrequencyBandStore.getState().clearStructure();
-        useMusicalTimeStore.getState().reset();
+        useTimingStore.getState().reset();
         useAuthoredEventStore.getState().reset();
-        useBeatGridStore.getState().clear();
+        useTimingStore.getState().clearBeatGrid();
         useDerivedSignalStore.getState().reset();
         useMeshAssetStore.getState().reset();
         resetAllStreams();
@@ -382,7 +381,7 @@ export function useProjectActions() {
             useProjectStore.getState().syncFrequencyBands(bandStructure);
           }
 
-          const musicalTimeStructure = useMusicalTimeStore.getState().structure;
+          const musicalTimeStructure = useTimingStore.getState().structure;
           if (musicalTimeStructure) {
             useProjectStore.getState().syncMusicalTime(musicalTimeStructure);
           }
@@ -392,7 +391,7 @@ export function useProjectActions() {
             useProjectStore.getState().syncAuthoredEvents(authoredStreams);
           }
 
-          const beatGridState = useBeatGridStore.getState();
+          const beatGridState = useTimingStore.getState();
           if (beatGridState.selectedHypothesis) {
             useProjectStore.getState().syncBeatGrid({
               selectedHypothesis: beatGridState.selectedHypothesis,
@@ -527,9 +526,9 @@ export function useProjectActions() {
 
     // Clear all relevant stores
     useFrequencyBandStore.getState().clearStructure();
-    useMusicalTimeStore.getState().reset();
+    useTimingStore.getState().reset();
     useAuthoredEventStore.getState().reset();
-    useBeatGridStore.getState().clear();
+    useTimingStore.getState().clearBeatGrid();
     useDerivedSignalStore.getState().reset();
     useMeshAssetStore.getState().reset();
     usePlaybackStore.getState().setPlayheadTimeSec(0);

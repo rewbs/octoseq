@@ -17,7 +17,7 @@ import type { WaveSurferViewport } from "@/components/wavesurfer/types";
 import type { AuthoredEvent } from "@/lib/stores/types/authoredEvent";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useAuthoredEventActions } from "@/lib/stores/hooks/useAuthoredEventActions";
-import { useBeatGridStore } from "@/lib/stores/beatGridStore";
+import { useTimingStore } from "@/lib/stores/timingStore";
 
 const MIN_HEIGHT = 60;
 const MAX_HEIGHT = 300;
@@ -104,8 +104,8 @@ export function EventStreamEditor({
   const clearSelection = useAuthoredEventStore((s) => s.clearSelection);
 
   // Beat grid for snapping
-  const activeBeatGrid = useBeatGridStore((s) => s.activeBeatGrid);
-  const beatGridVisible = useBeatGridStore((s) => s.isVisible);
+  const activeBeatGrid = useTimingStore((s) => s.activeBeatGrid);
+  const beatGridVisible = useTimingStore((s) => s.isVisible);
 
   // Compute beat times from the active beat grid
   const beatTimes = useMemo(() => {

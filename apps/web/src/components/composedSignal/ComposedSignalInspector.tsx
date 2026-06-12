@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useComposedSignalStore } from "@/lib/stores/composedSignalStore";
-import { useBeatGridStore } from "@/lib/stores/beatGridStore";
+import { useTimingStore } from "@/lib/stores/timingStore";
 import { getComposedSignalId } from "@/lib/nodeTypes";
 import { TREE_NODE_IDS } from "@/lib/stores/interpretationTreeStore";
 
@@ -27,7 +27,7 @@ interface ComposedSignalInspectorProps {
  * Shows list view when at section level, detail view when signal selected.
  */
 export function ComposedSignalInspector({ nodeId }: ComposedSignalInspectorProps) {
-  const bpm = useBeatGridStore((s) => s.selectedHypothesis?.bpm ?? null);
+  const bpm = useTimingStore((s) => s.selectedHypothesis?.bpm ?? null);
 
   const {
     structure,

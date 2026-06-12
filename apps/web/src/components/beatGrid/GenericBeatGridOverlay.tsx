@@ -4,7 +4,7 @@ import { useEffect, useRef, useMemo, useState } from "react";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
 import { generateBeatTimes } from "@octoseq/mir";
 import type { TempoHypothesis, PhaseHypothesis } from "@octoseq/mir";
-import { useBeatGridStore } from "@/lib/stores/beatGridStore";
+import { useTimingStore } from "@/lib/stores/timingStore";
 
 /** Threshold for switching between notch and full line rendering */
 const NOTCH_THRESHOLD = 16;
@@ -28,7 +28,7 @@ export type GenericBeatGridOverlayProps = {
  * Generic beat grid overlay that can be used in any viewport-synchronized viewer.
  *
  * Renders:
- * - Active beat grid from beatGridStore (green if locked, orange if provisional)
+ * - Active beat grid from timingStore (green if locked, orange if provisional)
  * - Optional candidate hypothesis grids with custom colors
  *
  * Designed to be positioned absolutely over any visualization container.
@@ -43,15 +43,15 @@ export function GenericBeatGridOverlay({
     const [containerWidth, setContainerWidth] = useState(0);
 
     // Get active beat grid from store
-    const activeBeatGrid = useBeatGridStore((s) => s.activeBeatGrid);
-    const isVisible = useBeatGridStore((s) => s.isVisible);
+    const activeBeatGrid = useTimingStore((s) => s.activeBeatGrid);
+    const isVisible = useTimingStore((s) => s.isVisible);
 
     // Get selected hypothesis for provisional grid when no locked grid
-    const selectedHypothesis = useBeatGridStore((s) => s.selectedHypothesis);
-    const phaseHypotheses = useBeatGridStore((s) => s.phaseHypotheses);
-    const activePhaseIndex = useBeatGridStore((s) => s.activePhaseIndex);
-    const userNudge = useBeatGridStore((s) => s.userNudge);
-    const subBeatDivision = useBeatGridStore((s) => s.subBeatDivision);
+    const selectedHypothesis = useTimingStore((s) => s.selectedHypothesis);
+    const phaseHypotheses = useTimingStore((s) => s.phaseHypotheses);
+    const activePhaseIndex = useTimingStore((s) => s.activePhaseIndex);
+    const userNudge = useTimingStore((s) => s.userNudge);
+    const subBeatDivision = useTimingStore((s) => s.subBeatDivision);
 
     // Measure actual container width
     useEffect(() => {

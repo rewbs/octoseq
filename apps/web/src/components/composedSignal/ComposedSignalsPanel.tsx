@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useComposedSignalStore } from "@/lib/stores/composedSignalStore";
 import { useComposedSignalActions } from "@/lib/stores/hooks/useComposedSignalActions";
-import { useBeatGridStore, SUB_BEAT_DIVISIONS } from "@/lib/stores/beatGridStore";
+import { useTimingStore, SUB_BEAT_DIVISIONS } from "@/lib/stores/timingStore";
 import { useInterpretationTreeStore } from "@/lib/stores/interpretationTreeStore";
 import { getInspectorNodeType } from "@/lib/nodeTypes";
 import { NodeGridEditor } from "./NodeGridEditor";
@@ -38,7 +38,7 @@ export function ComposedSignalsPanel() {
     selectedNodeType === "composed-signals-section" ||
     selectedNodeType === "composed-signal";
 
-  const bpm = useBeatGridStore((s) => s.selectedHypothesis?.bpm ?? null);
+  const bpm = useTimingStore((s) => s.selectedHypothesis?.bpm ?? null);
 
   const {
     structure,

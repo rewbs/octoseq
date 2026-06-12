@@ -4,7 +4,7 @@ import { useEffect, useRef, useMemo, useState } from "react";
 import type { WaveSurferViewport } from "./types";
 import { generateBeatTimes, generateSegmentBeatTimes } from "@octoseq/mir";
 import type { BeatGrid, MusicalTimeSegment } from "@octoseq/mir";
-import { useBeatGridStore } from "@/lib/stores/beatGridStore";
+import { useTimingStore } from "@/lib/stores/timingStore";
 
 /** Threshold for switching between notch and full line rendering */
 const NOTCH_THRESHOLD = 16;
@@ -44,7 +44,7 @@ export function BeatGridOverlay({
     const [containerWidth, setContainerWidth] = useState(0);
 
     // Get sub-beat division from store
-    const subBeatDivision = useBeatGridStore((s) => s.subBeatDivision);
+    const subBeatDivision = useTimingStore((s) => s.subBeatDivision);
 
     // Measure actual container width
     useEffect(() => {

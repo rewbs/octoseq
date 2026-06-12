@@ -15,7 +15,7 @@ import type {
 } from "@octoseq/mir";
 import type { AudioInputMetadata, AudioInputOrigin } from "./audioInput";
 import type { AuthoredEventStream } from "./authoredEvent";
-import type { SubBeatDivision } from "../beatGridStore";
+import type { SubBeatDivision } from "../timingStore";
 import type { DerivedSignalStructure } from "./derivedSignal";
 import type { ComposedSignalStructure } from "./composedSignal";
 import type { MeshAssetStructure } from "./meshAsset";
@@ -98,7 +98,7 @@ export interface ProjectScripts {
 // ----------------------------
 
 /**
- * Serializable beat grid state from beatGridStore.
+ * Serializable beat grid state from the timing store (beat-grid section).
  * Saved even if not yet promoted to Musical Time.
  */
 export interface ProjectBeatGridState {

@@ -16,7 +16,7 @@ import {
   useAnalysisStore,
   useStreamStore,
 } from "@/lib/streams";
-import { useBeatGridStore } from "@/lib/stores/beatGridStore";
+import { useTimingStore } from "@/lib/stores/timingStore";
 import { useMirroredCursorTime } from "@/lib/stores/hooks/useDerivedState";
 import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
 import type { AuthoredEventProvenance } from "@/lib/stores/types/authoredEvent";
@@ -77,7 +77,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
   const audioDuration = useStreamStore((s) => s.getMixdown()?.audio.durationSec ?? 0);
   const setCursorTimeSec = usePlaybackStore((s) => s.setCursorTimeSec);
   const cursorTimeSec = useMirroredCursorTime();
-  const beatGridState = useBeatGridStore(
+  const beatGridState = useTimingStore(
     useShallow((s) => ({
       isVisible: s.isVisible,
     }))

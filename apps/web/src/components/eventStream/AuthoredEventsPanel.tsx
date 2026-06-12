@@ -16,7 +16,7 @@ import { useInterpretationTreeStore } from "@/lib/stores/interpretationTreeStore
 import { usePlaybackStore } from "@/lib/stores/playbackStore";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useAuthoredEventActions } from "@/lib/stores/hooks/useAuthoredEventActions";
-import { useBeatGridStore } from "@/lib/stores/beatGridStore";
+import { useTimingStore } from "@/lib/stores/timingStore";
 import { useMirroredCursorTime } from "@/lib/stores/hooks/useDerivedState";
 import { useDerivedSignalStore } from "@/lib/stores/derivedSignalStore";
 import {
@@ -106,8 +106,8 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
   const audioDuration = useStreamStore((s) => s.getMixdown()?.audio.durationSec ?? 0);
   const setCursorTimeSec = usePlaybackStore((s) => s.setCursorTimeSec);
   const cursorTimeSec = useMirroredCursorTime();
-  const beatGridVisible = useBeatGridStore((s) => s.isVisible);
-  const bpm = useBeatGridStore((s) => s.selectedHypothesis?.bpm ?? null);
+  const beatGridVisible = useTimingStore((s) => s.isVisible);
+  const bpm = useTimingStore((s) => s.selectedHypothesis?.bpm ?? null);
 
   // Get available signals from various sources (now called derived signals)
   const derivedSignals = useDerivedSignalStore(
@@ -891,7 +891,7 @@ export function AuthoredEventsPanel() {
   const viewport = usePlaybackStore((s) => s.viewport);
   const setCursorTimeSec = usePlaybackStore((s) => s.setCursorTimeSec);
   const audioDuration = useStreamStore((s) => s.getMixdown()?.audio.durationSec ?? 0);
-  const beatGridVisible = useBeatGridStore((s) => s.isVisible);
+  const beatGridVisible = useTimingStore((s) => s.isVisible);
   const mirroredCursorTimeSec = useMirroredCursorTime();
 
   const streams = useAuthoredEventStore(
