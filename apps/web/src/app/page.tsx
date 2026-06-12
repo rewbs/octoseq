@@ -52,8 +52,10 @@ import {
   rawFileCache,
   removeStreamCascade,
   runStreamAnalyses,
+  toFrequencyBand,
   useAnalysisStore,
   useAudioSourceStore,
+  useBandEditingStore,
   useStreamStore,
   type LocalAudioSource,
 } from "@/lib/streams";
@@ -68,9 +70,6 @@ import {
   useBeatGridStore,
   useMusicalTimeStore,
   useManualTempoStore,
-  useFrequencyBandStore,
-  useBandMirStore,
-  setupBandMirInvalidation,
   useNavigationActions,
   useAudioActions,
   useProjectActions,
@@ -327,17 +326,20 @@ export default function Home() {
     }))
   );
 
-  // Frequency band store
-  const hasBands = useFrequencyBandStore((s) => (s.structure?.bands.length ?? 0) > 0);
-  const { structure: bandStructure, soloedBandId, mutedBandIds } = useFrequencyBandStore(
-    useShallow((s) => ({
-      structure: s.structure,
-      soloedBandId: s.soloedBandId,
-      mutedBandIds: s.mutedBandIds,
-    }))
+  // Band streams (unified model)
+  const bandStreams = useMemo(
+    () =>
+      [...streams.values()]
+        .filter((s) => s.kind === "band")
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
   );
-  // Subscribe to band MIR cache for tempo signal options refresh
-  const bandMirCacheSize = useBandMirStore((s) => s.cache.size);
+  const hasBands = bandStreams.length > 0;
+  const legacyBands = useMemo(() => bandStreams.map(toFrequencyBand), [bandStreams]);
+  const soloedBandId = useBandEditingStore((s) => s.soloedBandId);
+  const mutedBandIds = useBandEditingStore((s) => s.mutedBandIds);
+  // Subscribe to the analysis cache for tempo signal options refresh
+  const analysisResults = useAnalysisStore((s) => s.results);
   // No-op callback - components report progress but we don't display it
   const handleBandWaveformsReadyChange = useCallback(
     () => { },
@@ -439,7 +441,7 @@ export default function Home() {
     enabled: true,
     soloedBandId,
     mutedBandIds,
-    structure: bandStructure,
+    bands: legacyBands,
     playheadTimeSec,
     isMainPlaying: isAudioPlaying,
     mainVolume: 1,
@@ -629,11 +631,8 @@ export default function Home() {
     }
 
     // Band onset signals (if available)
-    const bands = bandStructure?.bands ?? [];
-    for (const band of bands) {
-      const bandResult = useAnalysisStore
-        .getState()
-        .getResult(analysisKey(band.id, "onsetEnvelope"));
+    for (const band of bandStreams) {
+      const bandResult = analysisResults.get(analysisKey(band.id, "onsetEnvelope"));
       if (bandResult && bandResult.kind === "bandMir1d") {
         options.push({
           id: `band:${band.id}:onsetStrength`,
@@ -645,8 +644,7 @@ export default function Home() {
     }
 
     return options;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bandMirCacheSize triggers refresh when band analysis completes
-  }, [mirResults, bandStructure, bandMirCacheSize]);
+  }, [mirResults, bandStreams, analysisResults]);
 
   // Auto-compute amplitude envelope when band is selected but data missing
   useEffect(() => {
@@ -735,11 +733,6 @@ export default function Home() {
       clearBeatGrid();
     }
   }, [audio, clearBeatGrid]);
-
-  // Invalidate band MIR cache when bands change
-  useEffect(() => {
-    return setupBandMirInvalidation();
-  }, []);
 
   // Reset musical time when audio is cleared
   useEffect(() => {

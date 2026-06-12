@@ -58,7 +58,6 @@ export type {
 } from "./types/composedSignal";
 
 // Action hooks
-export { useMirActions } from "./hooks/useMirActions";
 export { useSearchActions } from "./hooks/useSearchActions";
 export { useNavigationActions } from "./hooks/useNavigationActions";
 export { useAudioActions } from "./hooks/useAudioActions";
