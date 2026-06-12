@@ -20,6 +20,7 @@ import type {
   BandEventsResult,
   BandMir1DResult,
   BandMirFunctionId,
+  FrequencyBand,
   FrequencyBandProvenance,
   FrequencyBandTimeScope,
   FrequencySegment,
@@ -181,6 +182,23 @@ export const BAND_ANALYSIS_IMPL: Partial<
 export function supportsAnalysis(stream: Stream, analysisId: AnalysisId): boolean {
   if (isAudioStream(stream)) return true;
   return analysisId in BAND_ANALYSIS_IMPL;
+}
+
+/**
+ * Adapter for @octoseq/mir's band-scoped functions, which still speak FrequencyBand.
+ * The stream's parentId maps onto the legacy sourceId field.
+ */
+export function toFrequencyBand(band: BandStream): FrequencyBand {
+  return {
+    id: band.id,
+    label: band.label,
+    sourceId: band.parentId,
+    enabled: band.enabled,
+    timeScope: band.timeScope,
+    frequencyShape: band.frequencyShape,
+    sortOrder: band.sortOrder,
+    provenance: band.provenance,
+  };
 }
 
 // ----------------------------

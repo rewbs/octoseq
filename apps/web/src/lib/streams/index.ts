@@ -18,3 +18,11 @@ export {
   resetAllStreams,
   toFrequencyBand,
 } from "./streamActions";
+export {
+  runStreamAnalysis,
+  runStreamAnalyses,
+  cancelAnalysis,
+  cancelAllAnalyses,
+  clearAnalysisMemos,
+  type RunAnalysisOptions,
+} from "./analysisRunner";
