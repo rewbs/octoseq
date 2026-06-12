@@ -3,7 +3,7 @@ import { useSearchStore } from "../searchStore";
 import { useMirStore, mirTabDefinitions } from "../mirStore";
 import { useDebugSignalStore } from "../debugSignalStore";
 import { useConfigStore } from "../configStore";
-import { useStreamStore } from "@/lib/streams";
+import { analysisKey, toUiResult, useAnalysisStore, useStreamStore } from "@/lib/streams";
 import { usePlaybackStore, getMirroredCursorTime } from "../playbackStore";
 import { normaliseForWaveform } from "@octoseq/mir";
 import { prepareHpssSpectrogramForHeatmap, prepareMfccForHeatmap } from "@/lib/mirDisplayTransforms";
@@ -119,29 +119,23 @@ export function useDebugSignals() {
  * Uses displayContextInputId to check availability for the current audio source.
  */
 export function useTabDefs() {
-  const mirResults = useMirStore((s) => s.mirResults);
   const displayContextInputId = useMirStore((s) => s.displayContextInputId);
-  const getInputMirResult = useMirStore((s) => s.getInputMirResult);
+  const analysisResults = useAnalysisStore((s) => s.results);
   const hasSearchResult = useHasSearchResult();
   const hasDebugSignals = useHasDebugSignals();
 
   return useMemo(() => {
-    const mirTabsWithAvailability = mirTabDefinitions.map((t) => {
-      // Check per-input cache first, then fall back to legacy mirResults
-      const hasInputData = !!getInputMirResult(displayContextInputId, t.id);
-      const hasLegacyData = !!mirResults[t.id];
-      return {
-        ...t,
-        hasData: hasInputData || hasLegacyData,
-      };
-    });
+    const mirTabsWithAvailability = mirTabDefinitions.map((t) => ({
+      ...t,
+      hasData: analysisResults.has(analysisKey(displayContextInputId, t.id)),
+    }));
 
     return [
       { id: "search" as const, label: "Similarity", hasData: hasSearchResult },
       { id: "debug" as const, label: "Debug Signals", hasData: hasDebugSignals },
       ...mirTabsWithAvailability,
     ];
-  }, [hasSearchResult, hasDebugSignals, mirResults, displayContextInputId, getInputMirResult]);
+  }, [hasSearchResult, hasDebugSignals, analysisResults, displayContextInputId]);
 }
 
 /**
@@ -151,18 +145,16 @@ export function useTabDefs() {
 export function useTabResult() {
   const visualTab = useMirStore((s) => s.visualTab);
   const displayContextInputId = useMirStore((s) => s.displayContextInputId);
-  const getInputMirResult = useMirStore((s) => s.getInputMirResult);
-  const mirResults = useMirStore((s) => s.mirResults);
+  const rawResult = useAnalysisStore((s) =>
+    visualTab === "search" || visualTab === "debug"
+      ? undefined
+      : s.results.get(analysisKey(displayContextInputId, visualTab))
+  );
 
   // Don't return MIR results for non-MIR tabs
   if (visualTab === "search" || visualTab === "debug") return undefined;
 
-  // Try to get result from per-input cache first (for stems or mixdown)
-  const inputResult = getInputMirResult(displayContextInputId, visualTab);
-  if (inputResult) return inputResult;
-
-  // Fall back to legacy mirResults for backward compatibility (mixdown only)
-  return mirResults[visualTab];
+  return rawResult ? (toUiResult(rawResult, visualTab) ?? undefined) : undefined;
 }
 
 /**

@@ -1454,8 +1454,6 @@ export default function Home() {
               audio={audio}
               playbackTime={playheadTimeSec}
               audioDuration={audioDuration ?? undefined}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              mirResults={mirResults as any}
               searchSignal={searchSignal}
               isPlaying={isAudioPlaying}
               musicalTimeStructure={effectiveMusicalTimeStructure}

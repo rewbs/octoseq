@@ -8,10 +8,13 @@ import Editor, { type Monaco } from "@monaco-editor/react";
 import { useHotkeysContext } from "react-hotkeys-hook";
 import { useConfigStore, useDebugSignalStore, type RawAnalysisResult, type DebugSignal } from "@/lib/stores";
 import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
-import { useBandMirStore } from "@/lib/stores/bandMirStore";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
-import { useMirStore } from "@/lib/stores/mirStore";
-import { useStreamStore } from "@/lib/streams";
+import {
+  MIXDOWN_STREAM_ID,
+  analysisKey,
+  useAnalysisStore,
+  useStreamStore,
+  type AnalysisId,
+} from "@/lib/streams";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useMeshAssets } from "@/lib/stores/meshAssetStore";
@@ -60,7 +63,6 @@ interface VisualiserPanelProps {
   audio: AudioBufferLike | null;
   playbackTime: number;
   audioDuration?: number; // Optional explicitly passed duration
-  mirResults: Record<string, number[]> | null; // Keys are feature names
   searchSignal?: Float32Array | null; // Search similarity curve
   className?: string;
   isPlaying?: boolean;
@@ -115,7 +117,7 @@ function normalizeSignal(data: number[] | Float32Array, customRange?: [number, n
   return out;
 }
 
-export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTime, audioDuration, mirResults, searchSignal, className, isPlaying = true, musicalTimeStructure }: VisualiserPanelProps) {
+export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTime, audioDuration, searchSignal, className, isPlaying = true, musicalTimeStructure }: VisualiserPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const visRef = useRef<WasmVisualiser | null>(null);
   const rafRef = useRef<number>(0);
@@ -689,6 +691,11 @@ fn update(dt, frame) {
   }, []);
 
   // Push all available 1D signals to WASM for scripting access
+  // Unified analysis cache + stream collection feed the signal pushes
+  const analysisResults = useAnalysisStore((state) => state.results);
+  // Note: We select the raw streams Map to avoid creating new arrays on every render
+  const streamsMap = useStreamStore((state) => state.streams);
+
   useEffect(() => {
     if (!visRef.current || !isReady) return;
     // Cast to allow new methods (types will be updated after WASM rebuild)
@@ -736,12 +743,12 @@ fn update(dt, frame) {
       }
     }
 
-    // Push available MIR signals
-    if (mirResults && typeof vis.push_signal === "function") {
-      // Map signal names from metadata to MIR result keys
+    // Push available MIR signals from the unified analysis cache
+    if (typeof vis.push_signal === "function") {
+      // Map script-facing signal names to unified analysis ids.
       // Note: "flux" is an alias for "spectralFlux", "energy" is an alias for "onsetEnvelope"
       // CQT signal aliases: "harmonic", "bassMotion", "tonal"
-      const signalMappings: Record<string, string> = {
+      const signalMappings: Record<string, AnalysisId> = {
         spectralCentroid: "spectralCentroid",
         spectralFlux: "spectralFlux",
         flux: "spectralFlux",
@@ -758,25 +765,22 @@ fn update(dt, frame) {
         pitchConfidence: "pitchConfidence",
       };
 
-      for (const [signalName, mirKey] of Object.entries(signalMappings)) {
-        const mirResult = mirResults[mirKey];
-        if (mirResult) {
-          // Get raw data from MIR result
-          let data: Float32Array | null = null;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const val = mirResult as any;
-          if (val.values) {
-            data = new Float32Array(val.values);
-          } else if (val.length !== undefined) {
-            data = new Float32Array(val);
-          }
+      for (const [signalName, analysisId] of Object.entries(signalMappings)) {
+        const result = analysisResults.get(analysisKey(MIXDOWN_STREAM_ID, analysisId));
+        if (!result) continue;
 
-          if (data && data.length > 0) {
-            // Normalize to 0-1
-            const norm = normalizeSignal(data);
-            const rate = duration > 0 ? norm.length / duration : 0;
-            vis.push_signal(signalName, norm, rate);
-          }
+        let data: Float32Array | null = null;
+        if (result.kind === "1d") {
+          data = result.values;
+        } else if (result.kind === "activity") {
+          data = result.activityLevel;
+        }
+
+        if (data && data.length > 0) {
+          // Normalize to 0-1
+          const norm = normalizeSignal(data);
+          const rate = duration > 0 ? norm.length / duration : 0;
+          vis.push_signal(signalName, norm, rate);
         }
       }
     }
@@ -795,14 +799,14 @@ fn update(dt, frame) {
         vis.clear_event_streams();
       }
 
-      const mirStoreResults = useMirStore.getState().mirResults;
-
-      // Push beatCandidates as an event stream
-      const beatCandidatesResult = mirStoreResults.beatCandidates;
-      if (beatCandidatesResult && beatCandidatesResult.kind === "events") {
-        const events = beatCandidatesResult.events.map((e) => ({
-          time: e.time,
-          weight: e.strength,
+      // Push beatCandidates as an event stream (raw kind is "beatCandidates")
+      const beatCandidatesResult = analysisResults.get(
+        analysisKey(MIXDOWN_STREAM_ID, "beatCandidates")
+      );
+      if (beatCandidatesResult && beatCandidatesResult.kind === "beatCandidates") {
+        const events = beatCandidatesResult.candidates.map((c) => ({
+          time: c.time,
+          weight: c.strength,
           beat_position: null,
           beat_phase: null,
           cluster_id: null,
@@ -811,7 +815,7 @@ fn update(dt, frame) {
       }
 
       // Push onsetPeaks as an event stream
-      const onsetPeaksResult = mirStoreResults.onsetPeaks;
+      const onsetPeaksResult = analysisResults.get(analysisKey(MIXDOWN_STREAM_ID, "onsetPeaks"));
       if (onsetPeaksResult && onsetPeaksResult.kind === "events") {
         const events = onsetPeaksResult.events.map((e) => ({
           time: e.time,
@@ -900,7 +904,7 @@ fn update(dt, frame) {
 
     // Request render when signals change (even when paused)
     requestRender();
-  }, [mirResults, isReady, audio, audioDuration, searchSignal, musicalTimeStructure, requestRender]);
+  }, [analysisResults, isReady, audio, audioDuration, searchSignal, musicalTimeStructure, requestRender]);
 
   // Update Signal Explorer BPM from musical time structure
   useEffect(() => {
@@ -913,21 +917,18 @@ fn update(dt, frame) {
     }
   }, [musicalTimeStructure]);
 
-  // Get band MIR results and frequency bands for the band signals effect
-  const bandMirResults = useBandMirStore((state) => state.cache);
-  const getAllBandMirResults = useBandMirStore((state) => state.getAllResults);
-  const bandEventCache = useBandMirStore((state) => state.eventCache);
-  const getAllEventResults = useBandMirStore((state) => state.getAllEventResults);
-  const frequencyBands = useFrequencyBandStore((state) => state.structure?.bands);
-  const getBandById = useFrequencyBandStore((state) => state.getBandById);
   const meshAssets = useMeshAssets();
 
   // Keep available bands for editor completions in a ref (avoids stale closures)
   useEffect(() => {
-    const bands = frequencyBands ?? [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    availableBandsRef.current = bands.map((b: any) => ({ id: b.id, label: b.label }));
-  }, [frequencyBands]);
+    const updateBands = () => {
+      const bands = useStreamStore.getState().getBands();
+      availableBandsRef.current = bands.map((b) => ({ id: b.id, label: b.label }));
+    };
+    updateBands();
+    const unsubscribe = useStreamStore.subscribe(updateBands);
+    return () => unsubscribe();
+  }, []);
 
   // Keep available custom events for editor completions in a ref
   useEffect(() => {
@@ -963,36 +964,42 @@ fn update(dt, frame) {
     const vis = visRef.current as any;
     const duration = audioDuration ?? 0;
 
-    // Get all band MIR results
-    const allResults = getAllBandMirResults();
-    if (allResults.length === 0) return;
+    const bands = [...streamsMap.values()]
+      .filter((s) => s.kind === "band")
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+
+    // Map unified analysis ids to script feature names
+    const featureMap: Partial<Record<AnalysisId, string>> = {
+      amplitudeEnvelope: "energy",
+      onsetEnvelope: "onset",
+      spectralFlux: "flux",
+      spectralCentroid: "centroid",
+    };
+
+    const hasAnyBandResult = bands.some((band) =>
+      Object.keys(featureMap).some((analysisId) =>
+        analysisResults.has(analysisKey(band.id, analysisId as AnalysisId))
+      )
+    );
+    if (!hasAnyBandResult) return;
 
     // Clear previous band signals only if we have new ones to push
     if (typeof vis.clear_band_signals === "function") {
       vis.clear_band_signals();
     }
 
-    // Map function IDs to script feature names
-    const featureMap: Record<BandMirFunctionId, string> = {
-      bandAmplitudeEnvelope: "energy",
-      bandOnsetStrength: "onset",
-      bandSpectralFlux: "flux",
-      bandSpectralCentroid: "centroid",
-    };
-
     // Push each band signal
-    for (const result of allResults) {
-      const band = getBandById(result.bandId);
-      if (!band) continue;
+    for (const band of bands) {
+      for (const [analysisId, feature] of Object.entries(featureMap)) {
+        const result = analysisResults.get(analysisKey(band.id, analysisId as AnalysisId));
+        if (!result || result.kind !== "bandMir1d") continue;
 
-      const feature = featureMap[result.fn];
-      if (!feature) continue;
-
-      if (typeof vis.push_band_signal === "function" && result.values.length > 0) {
-        // Normalize to 0-1
-        const norm = normalizeSignal(result.values);
-        const rate = duration > 0 ? result.times.length / duration : 0;
-        vis.push_band_signal(result.bandId, band.label, feature, norm, rate);
+        if (typeof vis.push_band_signal === "function" && result.values.length > 0) {
+          // Normalize to 0-1
+          const norm = normalizeSignal(result.values);
+          const rate = duration > 0 ? result.times.length / duration : 0;
+          vis.push_band_signal(band.id, band.label, feature, norm, rate);
+        }
       }
     }
 
@@ -1001,23 +1008,21 @@ fn update(dt, frame) {
       vis.clear_band_events();
     }
 
-    const allEventResults = getAllEventResults();
-    for (const eventData of allEventResults) {
-      if (typeof vis.push_band_events === "function" && eventData.events.length > 0) {
-        // Convert to JSON format expected by WASM
-        const eventsJson = JSON.stringify(eventData.events);
-        vis.push_band_events(eventData.bandId, eventsJson);
+    for (const band of bands) {
+      const eventResult = analysisResults.get(analysisKey(band.id, "onsetPeaks"));
+      if (!eventResult || eventResult.kind !== "bandEvents") continue;
+      if (typeof vis.push_band_events === "function" && eventResult.events.length > 0) {
+        const eventsJson = JSON.stringify(
+          eventResult.events.map((e) => ({ time: e.time, weight: e.weight }))
+        );
+        vis.push_band_events(band.id, eventsJson);
       }
     }
 
     // Request render when band signals change (even when paused)
     requestRender();
-  }, [bandMirResults, bandEventCache, frequencyBands, isReady, audioDuration, getAllBandMirResults, getAllEventResults, getBandById, requestRender]);
+  }, [analysisResults, streamsMap, isReady, audioDuration, requestRender]);
 
-  // Get stem information for the stem signals effect
-  // Note: We select the raw streams Map to avoid creating new arrays on every render
-  const streamsMap = useStreamStore((state) => state.streams);
-  const inputMirCache = useMirStore((state) => state.inputMirCache);
 
   // Compute stems from the stream collection (memoized to avoid infinite loops)
   const stems = useMemo(
@@ -1049,25 +1054,20 @@ fn update(dt, frame) {
     // Skip if no stems
     if (stems.length === 0) return;
 
-    // Map MIR function IDs to stem signal feature names
-    const featureMap: Record<string, string> = {
+    // Map unified analysis ids to stem signal feature names
+    const featureMap: Partial<Record<AnalysisId, string>> = {
       spectralCentroid: "centroid",
       spectralFlux: "flux",
       onsetEnvelope: "energy",
-      onsetPeaks: "onset",
     };
 
     // Push signals for each stem
     for (const stem of stems) {
-      // Get all MIR results for this stem from the cache
-      const prefix = `${stem.id}:`;
-      for (const [cacheKey, result] of inputMirCache) {
-        if (!cacheKey.startsWith(prefix)) continue;
-        const fnId = cacheKey.slice(prefix.length);
-        const feature = featureMap[fnId];
-        if (!feature) continue;
+      for (const [analysisId, feature] of Object.entries(featureMap)) {
+        const result = analysisResults.get(analysisKey(stem.id, analysisId as AnalysisId));
+        if (!result || result.kind !== "1d") continue;
 
-        if (result.kind === "1d" && typeof vis.push_stem_signal === "function") {
+        if (typeof vis.push_stem_signal === "function") {
           // Normalize to 0-1
           const norm = normalizeSignal(result.values);
           const rate = duration > 0 ? result.times.length / duration : 0;
@@ -1078,7 +1078,7 @@ fn update(dt, frame) {
 
     // Request render when stem signals change (even when paused)
     requestRender();
-  }, [stems, inputMirCache, isReady, audioDuration, requestRender]);
+  }, [stems, analysisResults, isReady, audioDuration, requestRender]);
 
   // Track registered mesh asset IDs to detect changes
   const registeredMeshAssetsRef = useRef<Set<string>>(new Set());
@@ -1244,7 +1244,7 @@ fn update(dt, frame) {
         requestRender();
       }
     }
-  }, [script, isReady, applyDiagnosticsToEditor, bandMirResults, frequencyBands, requestRender, setCurrentDiagnostics, addToHistory]);
+  }, [script, isReady, applyDiagnosticsToEditor, analysisResults, streamsMap, requestRender, setCurrentDiagnostics, addToHistory]);
 
   // Render Loop
   useEffect(() => {
