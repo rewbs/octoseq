@@ -9,6 +9,7 @@
  */
 
 import { normaliseForWaveform } from "@octoseq/mir";
+import type { TempoHypothesis } from "@octoseq/mir";
 import type { AnalysisId, AnalysisResult } from "./types";
 
 export interface DisplaySignal {
@@ -82,7 +83,7 @@ export type UiDisplayResult =
   | {
       kind: "tempoHypotheses";
       fn: AnalysisId;
-      hypotheses: unknown[];
+      hypotheses: TempoHypothesis[];
       inputCandidateCount: number;
     };
 
