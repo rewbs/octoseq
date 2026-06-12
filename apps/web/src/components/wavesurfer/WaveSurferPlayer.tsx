@@ -10,7 +10,7 @@ import Regions from "wavesurfer.js/dist/plugins/regions.esm.js";
 import { GripHorizontal, Play, Pause, X, Loader2, AlertCircle, Info, Headphones, Music, Clock, Film } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { isAudioStream, MIXDOWN_STREAM_ID, useAudioSourceStore, useStreamStore } from "@/lib/streams";
 import { useBeatGridStore, SUB_BEAT_DIVISIONS } from "@/lib/stores/beatGridStore";
 import { useConfigStore } from "@/lib/stores/configStore";
 import { useMusicalTimeStore } from "@/lib/stores/musicalTimeStore";
@@ -287,7 +287,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
         const ws = wsRef.current;
         if (!ws) return;
 
-        // Note: This method is deprecated. Use setCurrentAudioSource instead.
+        // Note: This method is deprecated. Use setCurrentSource instead.
         // For URL loading, create a RemoteAudioSource or fetch the file first.
 
         // Clear existing refs (similar to onPickFile)
@@ -391,7 +391,10 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   const subBeatDivision = useBeatGridStore((s) => s.subBeatDivision);
   const setSubBeatDivision = useBeatGridStore((s) => s.setSubBeatDivision);
   const hopSize = useConfigStore((s) => s.hopSize);
-  const sampleRate = useAudioInputStore((s) => s.getAudioSampleRate());
+  const sampleRate = useStreamStore((s) => {
+    const mixdown = s.streams.get(MIXDOWN_STREAM_ID);
+    return mixdown && isAudioStream(mixdown) ? mixdown.audio.sampleRate : null;
+  });
   const getBeatPositionAt = useMusicalTimeStore((s) => s.getBeatPositionAt);
   const musicalTimeStructure = useMusicalTimeStore((s) => s.structure);
 
@@ -401,7 +404,7 @@ export const WaveSurferPlayer = forwardRef<WaveSurferPlayerHandle, WaveSurferPla
   // WaveSurfer loads audio by URL only. currentAudioSource is the single
   // authority on what audio is playing.
   // ==========================================================================
-  const currentAudioSource = useAudioInputStore((s) => s.currentAudioSource);
+  const currentAudioSource = useAudioSourceStore((s) => s.currentSource);
   const currentAudioSourceRef = useRef(currentAudioSource);
   const lastLoadedSourceIdRef = useRef<string | null>(null);
 

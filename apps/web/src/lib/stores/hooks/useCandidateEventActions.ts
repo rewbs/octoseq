@@ -1,8 +1,14 @@
 import { useCallback } from "react";
 import { nanoid } from "nanoid";
 import { peakPick } from "@octoseq/mir";
-import { useAudioInputStore } from "../audioInputStore";
-import { useMirStore } from "../mirStore";
+import {
+  analysisKey,
+  isAudioStream,
+  toDisplayEvents,
+  toDisplaySignal,
+  useAnalysisStore,
+  useStreamStore,
+} from "@/lib/streams";
 import {
   useCandidateEventStore,
   type CandidateEvent,
@@ -11,7 +17,6 @@ import {
   getSourceColor,
   makeStreamId,
 } from "../candidateEventStore";
-import { MIXDOWN_ID } from "../types/audioInput";
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 
 /**
@@ -42,24 +47,23 @@ export function useCandidateEventActions() {
    */
   const generateForSource = useCallback(
     (sourceId: string, eventType: CandidateEventType): boolean => {
-      const mirStore = useMirStore.getState();
-      const audioInputStore = useAudioInputStore.getState();
+      const streamStore = useStreamStore.getState();
       const candidateStore = useCandidateEventStore.getState();
 
       // Get source info
-      const input = audioInputStore.getInputById(sourceId);
-      if (!input) {
+      const stream = streamStore.getStream(sourceId);
+      if (!stream || !isAudioStream(stream)) {
         console.warn(`[CandidateEvents] Source not found: ${sourceId}`);
         return false;
       }
 
       // Determine source index for color assignment
-      const allInputs = audioInputStore.getAllInputsOrdered();
-      const sourceIndex = allInputs.findIndex((i) => i.id === sourceId);
+      const allStreams = streamStore.getAudioStreams();
+      const sourceIndex = allStreams.findIndex((s) => s.id === sourceId);
 
       // Get MIR result for this source and event type
       const mirFn = EVENT_TYPE_TO_MIR_FN[eventType];
-      const mirResult = mirStore.getInputMirResult(sourceId, mirFn);
+      const mirResult = useAnalysisStore.getState().getResult(analysisKey(sourceId, mirFn));
 
       if (!mirResult) {
         console.warn(
@@ -70,19 +74,22 @@ export function useCandidateEventActions() {
 
       let events: CandidateEvent[] = [];
 
-      if (mirResult.kind === "events") {
+      const directEvents = toDisplayEvents(mirResult);
+      if (directEvents) {
         // Direct event extraction (onsetPeaks, beatCandidates)
-        events = mirResult.events.map((e) => ({
+        events = directEvents.map((e) => ({
           id: nanoid(),
           time: e.time,
           strength: e.strength,
           sourceId,
-          sourceLabel: input.label,
+          sourceLabel: stream.label,
           eventType,
         }));
       } else if (mirResult.kind === "1d" && eventType === "flux") {
-        // For spectral flux, do peak picking on the 1D signal
-        const peaks = peakPick(mirResult.times, mirResult.values, {
+        // For spectral flux, do peak picking on the display-normalized 1D signal
+        const display = toDisplaySignal(mirResult, mirFn);
+        if (!display) return false;
+        const peaks = peakPick(display.times, display.values, {
           adaptive: { method: "meanStd", factor: 1.0 },
           minIntervalSec: 0.05, // 50ms minimum between peaks
           strict: true,
@@ -93,7 +100,7 @@ export function useCandidateEventActions() {
           time: p.time,
           strength: p.strength,
           sourceId,
-          sourceLabel: input.label,
+          sourceLabel: stream.label,
           eventType,
         }));
       } else {
@@ -105,10 +112,10 @@ export function useCandidateEventActions() {
 
       // Create the stream
       const streamId = makeStreamId(sourceId, eventType);
-      const stream: CandidateStream = {
+      const candidateStream: CandidateStream = {
         id: streamId,
         sourceId,
-        sourceLabel: input.label,
+        sourceLabel: stream.label,
         eventType,
         events,
         generatedAt: new Date().toISOString(),
@@ -116,7 +123,7 @@ export function useCandidateEventActions() {
         color: getSourceColor(sourceIndex),
       };
 
-      candidateStore.setStream(stream);
+      candidateStore.setStream(candidateStream);
       return true;
     },
     []
@@ -140,15 +147,14 @@ export function useCandidateEventActions() {
    */
   const generateAll = useCallback((): void => {
     const candidateStore = useCandidateEventStore.getState();
-    const audioInputStore = useAudioInputStore.getState();
 
     candidateStore.setGenerating(true);
 
     try {
-      const allInputs = audioInputStore.getAllInputsOrdered();
+      const allStreams = useStreamStore.getState().getAudioStreams();
 
-      for (const input of allInputs) {
-        generateAllTypesForSource(input.id);
+      for (const stream of allStreams) {
+        generateAllTypesForSource(stream.id);
       }
 
       candidateStore.setError(null);
@@ -168,15 +174,14 @@ export function useCandidateEventActions() {
   const generateAllSourcesForType = useCallback(
     (eventType: CandidateEventType): void => {
       const candidateStore = useCandidateEventStore.getState();
-      const audioInputStore = useAudioInputStore.getState();
 
       candidateStore.setGenerating(true);
 
       try {
-        const allInputs = audioInputStore.getAllInputsOrdered();
+        const allStreams = useStreamStore.getState().getAudioStreams();
 
-        for (const input of allInputs) {
-          generateForSource(input.id, eventType);
+        for (const stream of allStreams) {
+          generateForSource(stream.id, eventType);
         }
 
         candidateStore.setError(null);
@@ -235,9 +240,8 @@ export function useCandidateEventActions() {
    */
   const hasAnalysisFor = useCallback(
     (sourceId: string, eventType: CandidateEventType): boolean => {
-      const mirStore = useMirStore.getState();
       const mirFn = EVENT_TYPE_TO_MIR_FN[eventType];
-      return mirStore.getInputMirResult(sourceId, mirFn) !== null;
+      return useAnalysisStore.getState().getResult(analysisKey(sourceId, mirFn)) !== null;
     },
     []
   );
@@ -246,15 +250,14 @@ export function useCandidateEventActions() {
    * Get list of sources that have analysis available for all event types.
    */
   const getSourcesWithFullAnalysis = useCallback((): string[] => {
-    const audioInputStore = useAudioInputStore.getState();
-    const allInputs = audioInputStore.getAllInputsOrdered();
+    const allStreams = useStreamStore.getState().getAudioStreams();
     const eventTypes: CandidateEventType[] = ["onset", "beat", "flux"];
 
-    return allInputs
-      .filter((input) =>
-        eventTypes.every((eventType) => hasAnalysisFor(input.id, eventType))
+    return allStreams
+      .filter((stream) =>
+        eventTypes.every((eventType) => hasAnalysisFor(stream.id, eventType))
       )
-      .map((input) => input.id);
+      .map((stream) => stream.id);
   }, [hasAnalysisFor]);
 
   /**

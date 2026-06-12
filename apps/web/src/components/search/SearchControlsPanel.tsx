@@ -3,7 +3,7 @@
 import { useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useSearchStore, useRefinementLabelsAvailable } from "@/lib/stores";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { audioCache, MIXDOWN_STREAM_ID, useStreamStore } from "@/lib/streams";
 
 export type SearchPrecision = "coarse" | "medium" | "fine";
 
@@ -31,8 +31,12 @@ export function SearchControlsPanel() {
   // Track whether user has manually set refinement
   const userSetUseRefinementRef = useRef(false);
 
-  // Audio store
-  const audio = useAudioInputStore((s) => s.getAudio());
+  // Stream store (mixdown audio)
+  const streams = useStreamStore((s) => s.streams);
+  const audio = useMemo(
+    () => (streams.has(MIXDOWN_STREAM_ID) ? audioCache.get(MIXDOWN_STREAM_ID) : null),
+    [streams]
+  );
 
   // Search store state
   const { searchControls, useRefinementSearch, refinement } = useSearchStore(

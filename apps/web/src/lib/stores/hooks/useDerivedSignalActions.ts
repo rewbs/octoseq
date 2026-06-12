@@ -16,12 +16,11 @@ import {
   type EventWindowSpec,
   type EnvelopeShape,
 } from "@octoseq/mir";
-import { useMirStore } from "../mirStore";
+import { analysisKey, useAnalysisStore, useStreamStore } from "@/lib/streams";
 import { useDerivedSignalStore } from "../derivedSignalStore";
 import { useConfigStore } from "../configStore";
 import { useProjectStore } from "../projectStore";
 import { useAuthoredEventStore } from "../authoredEventStore";
-import { useAudioInputStore } from "../audioInputStore";
 import type {
   DerivedSignalDefinition,
   DerivedSignalResult,
@@ -189,12 +188,13 @@ export function useDerivedSignalActions() {
       definition: DerivedSignalDefinition,
       source: Source2D
     ): Promise<DerivedSignalResult | null> => {
-      const mirStore = useMirStore.getState();
       const configStore = useConfigStore.getState();
 
       // Get the 2D MIR result
       const mirFunctionId = source2DToMirFunction(source.functionId);
-      const mirResult = mirStore.getInputMirResult(source.audioSourceId, mirFunctionId);
+      const mirResult = useAnalysisStore
+        .getState()
+        .getResult(analysisKey(source.audioSourceId, mirFunctionId));
 
       if (!mirResult || mirResult.kind !== "2d") {
         console.warn(
@@ -203,7 +203,10 @@ export function useDerivedSignalActions() {
         return null;
       }
 
-      const heatmapData: TimeAlignedHeatmapData = mirResult.raw;
+      const heatmapData: TimeAlignedHeatmapData = {
+        data: mirResult.data,
+        times: mirResult.times,
+      };
 
       // Get mel config for frequency conversion (only for mel-based sources)
       let melConfig: MelConversionConfig | null = null;
@@ -327,7 +330,6 @@ export function useDerivedSignalActions() {
       definition: DerivedSignalDefinition,
       source: Source1D
     ): Promise<DerivedSignalResult | null> => {
-      const mirStore = useMirStore.getState();
       const derivedSignalStore = useDerivedSignalStore.getState();
 
       let sourceValues: Float32Array;
@@ -337,10 +339,9 @@ export function useDerivedSignalActions() {
       switch (source.signalRef.type) {
         case "mir": {
           const mirFunctionId = source1DToMirFunction(source.signalRef.functionId);
-          const mirResult = mirStore.getInputMirResult(
-            source.signalRef.audioSourceId,
-            mirFunctionId
-          );
+          const mirResult = useAnalysisStore
+            .getState()
+            .getResult(analysisKey(source.signalRef.audioSourceId, mirFunctionId));
           if (!mirResult || mirResult.kind !== "1d") {
             console.warn(
               `No 1D MIR result available for ${source.signalRef.audioSourceId}:${mirFunctionId}`
@@ -456,12 +457,10 @@ export function useDerivedSignalActions() {
       definition: DerivedSignalDefinition,
       source: SourceEvents
     ): Promise<DerivedSignalResult | null> => {
-      const mirStore = useMirStore.getState();
       const authoredEventStore = useAuthoredEventStore.getState();
-      const audioInputStore = useAudioInputStore.getState();
 
       // Get audio duration for signal generation
-      const audioDuration = audioInputStore.getAudioDuration();
+      const audioDuration = useStreamStore.getState().getMixdown()?.audio.durationSec ?? 0;
       if (audioDuration <= 0) {
         console.warn("No audio duration available for event signal");
         return null;
@@ -477,10 +476,9 @@ export function useDerivedSignalActions() {
       switch (source.streamRef.type) {
         case "candidateOnsets": {
           // Get onset peaks from MIR results
-          const onsetResult = mirStore.getInputMirResult(
-            source.streamRef.audioSourceId,
-            "onsetPeaks"
-          );
+          const onsetResult = useAnalysisStore
+            .getState()
+            .getResult(analysisKey(source.streamRef.audioSourceId, "onsetPeaks"));
           if (onsetResult && onsetResult.kind === "events") {
             events = onsetResult.events.map((e: { time: number; strength: number }) => ({
               time: e.time,
@@ -492,14 +490,13 @@ export function useDerivedSignalActions() {
 
         case "candidateBeats": {
           // Get beat candidates from MIR results
-          const beatResult = mirStore.getInputMirResult(
-            source.streamRef.audioSourceId,
-            "beatCandidates"
-          );
-          if (beatResult && beatResult.kind === "events") {
-            events = beatResult.events.map((e: { time: number; strength: number }) => ({
-              time: e.time,
-              weight: e.strength,
+          const beatResult = useAnalysisStore
+            .getState()
+            .getResult(analysisKey(source.streamRef.audioSourceId, "beatCandidates"));
+          if (beatResult && beatResult.kind === "beatCandidates") {
+            events = beatResult.candidates.map((c: { time: number; strength: number }) => ({
+              time: c.time,
+              weight: c.strength,
             }));
           }
           break;
@@ -811,9 +808,10 @@ export function useDerivedSignalActions() {
    */
   const isSourceDataAvailable = useCallback(
     (sourceAudioId: string, source2D: Source2DFunctionId): boolean => {
-      const mirStore = useMirStore.getState();
       const mirFunctionId = source2DToMirFunction(source2D);
-      const result = mirStore.getInputMirResult(sourceAudioId, mirFunctionId);
+      const result = useAnalysisStore
+        .getState()
+        .getResult(analysisKey(sourceAudioId, mirFunctionId));
       return result !== null && result.kind === "2d";
     },
     []
@@ -827,12 +825,13 @@ export function useDerivedSignalActions() {
       sourceAudioId: string,
       source2D: Source2DFunctionId
     ): TimeAlignedHeatmapData | null => {
-      const mirStore = useMirStore.getState();
       const mirFunctionId = source2DToMirFunction(source2D);
-      const result = mirStore.getInputMirResult(sourceAudioId, mirFunctionId);
+      const result = useAnalysisStore
+        .getState()
+        .getResult(analysisKey(sourceAudioId, mirFunctionId));
 
       if (result && result.kind === "2d") {
-        return result.raw;
+        return { data: result.data, times: result.times };
       }
 
       return null;

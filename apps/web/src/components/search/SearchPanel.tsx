@@ -12,7 +12,7 @@ import {
   useActiveFilteredIndex,
   useNavigationActions,
 } from "@/lib/stores";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { audioCache, isAudioStream, MIXDOWN_STREAM_ID, useStreamStore } from "@/lib/streams";
 import type { CandidateFilter } from "@/lib/searchRefinement";
 import type { WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
 
@@ -44,10 +44,23 @@ export type SearchPanelProps = {
 export function SearchPanel({ playerRef }: SearchPanelProps) {
   const userSetUseRefinementRef = useRef(false);
 
-  // Audio store
-  const audio = useAudioInputStore((s) => s.getAudio());
-  const audioFileName = useAudioInputStore((s) => s.getAudioFileName());
-  const audioSampleRate = useAudioInputStore((s) => s.getAudioSampleRate());
+  // Stream store (mixdown audio)
+  const streams = useStreamStore((s) => s.streams);
+  const mixdown = useMemo(() => {
+    const stream = streams.get(MIXDOWN_STREAM_ID);
+    return stream && isAudioStream(stream) ? stream : null;
+  }, [streams]);
+  const audio = useMemo(() => (mixdown ? audioCache.get(MIXDOWN_STREAM_ID) : null), [mixdown]);
+  const audioFileName = useMemo(() => {
+    if (!mixdown) return null;
+    // Prefer label, fall back to origin fileName
+    if (mixdown.label && mixdown.label !== "Mixdown") return mixdown.label;
+    const origin = mixdown.audio.origin;
+    if (origin.kind === "file") return origin.fileName;
+    if (origin.kind === "url") return origin.fileName ?? null;
+    return mixdown.label;
+  }, [mixdown]);
+  const audioSampleRate = mixdown?.audio.sampleRate ?? null;
 
   // Search store state
   const {

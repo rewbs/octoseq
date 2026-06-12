@@ -4,8 +4,7 @@ import {
     type BandProposalConfig,
     type FrequencyBand,
 } from "@octoseq/mir";
-import { useAudioInputStore } from "../audioInputStore";
-import { MIXDOWN_ID } from "../types/audioInput";
+import { MIXDOWN_STREAM_ID, audioCache, useStreamStore } from "@/lib/streams";
 import { useFrequencyBandStore } from "../frequencyBandStore";
 import { useBandProposalStore } from "../bandProposalStore";
 
@@ -20,13 +19,12 @@ export function useBandProposalActions() {
      * @param sourceId - The audio source ID ("mixdown" or a stem ID). Defaults to "mixdown".
      * @param config - Optional configuration for proposal generation.
      */
-    const computeProposals = useCallback(async (sourceId: string = MIXDOWN_ID, config?: BandProposalConfig) => {
+    const computeProposals = useCallback(async (sourceId: string = MIXDOWN_STREAM_ID, config?: BandProposalConfig) => {
         // Get the correct audio buffer based on sourceId
-        const audioInputStore = useAudioInputStore.getState();
-        const audioDuration = audioInputStore.getAudioDuration();
-        const audioInput = audioInputStore.getInputById(sourceId);
+        const audioDuration = useStreamStore.getState().getMixdown()?.audio.durationSec ?? 0;
+        const audioBuffer = audioCache.get(sourceId);
 
-        if (!audioInput?.audioBuffer) {
+        if (!audioBuffer) {
             useBandProposalStore.getState().setError(`No audio loaded for source: ${sourceId}`);
             return;
         }
@@ -40,7 +38,6 @@ export function useBandProposalActions() {
 
         try {
             // Use the audio buffer from the specified source
-            const audioBuffer = audioInput.audioBuffer;
             const ch0 = audioBuffer.getChannelData(0);
             const mono = new Float32Array(ch0);
             const audioLike = {
@@ -70,7 +67,7 @@ export function useBandProposalActions() {
      * @param proposalId - The ID of the proposal to promote.
      * @param sourceId - The audio source ID to assign to the band. Defaults to "mixdown".
      */
-    const promoteProposal = useCallback((proposalId: string, sourceId: string = MIXDOWN_ID) => {
+    const promoteProposal = useCallback((proposalId: string, sourceId: string = MIXDOWN_STREAM_ID) => {
         const proposalStore = useBandProposalStore.getState();
         const frequencyBandStore = useFrequencyBandStore.getState();
 
@@ -102,7 +99,7 @@ export function useBandProposalActions() {
      * Promote all proposals to real FrequencyBands.
      * @param sourceId - The audio source ID to assign to all promoted bands. Defaults to "mixdown".
      */
-    const promoteAllProposals = useCallback((sourceId: string = MIXDOWN_ID) => {
+    const promoteAllProposals = useCallback((sourceId: string = MIXDOWN_STREAM_ID) => {
         const proposalStore = useBandProposalStore.getState();
         const proposals = [...proposalStore.proposals];
 

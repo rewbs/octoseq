@@ -190,6 +190,29 @@ export const BAND_ANALYSIS_IMPL: Partial<
   beatCandidates: "bandBeatCandidates",
 };
 
+/** Every analysis, in the canonical "run everything" order (from legacy useMirActions). */
+export const ALL_STREAM_ANALYSES: AnalysisId[] = [
+  "amplitudeEnvelope",
+  "spectralCentroid",
+  "spectralFlux",
+  "melSpectrogram",
+  "onsetEnvelope",
+  "onsetPeaks",
+  "beatCandidates",
+  "tempoHypotheses",
+  "hpssHarmonic",
+  "hpssPercussive",
+  "mfcc",
+  "mfccDelta",
+  "mfccDeltaDelta",
+  "cqtHarmonicEnergy",
+  "cqtBassPitchMotion",
+  "cqtTonalStability",
+  "pitchF0",
+  "pitchConfidence",
+  "activity",
+];
+
 /** Whether the given analysis can run on the given stream. */
 export function supportsAnalysis(stream: Stream, analysisId: AnalysisId): boolean {
   if (isAudioStream(stream)) return true;

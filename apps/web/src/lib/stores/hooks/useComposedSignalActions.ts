@@ -9,7 +9,7 @@ import { useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useComposedSignalStore } from "../composedSignalStore";
 import { useBeatGridStore } from "../beatGridStore";
-import { useAudioInputStore } from "../audioInputStore";
+import { useStreamStore } from "@/lib/streams";
 import {
   sampleComposedSignal,
   sampleToArray,
@@ -45,7 +45,7 @@ export function useComposedSignalActions() {
   const bpm = useBeatGridStore((s) => s.selectedHypothesis?.bpm ?? null);
 
   // Audio duration
-  const audioDuration = useAudioInputStore((s) => s.getAudioDuration());
+  const audioDuration = useStreamStore((s) => s.getMixdown()?.audio.durationSec ?? 0);
 
   /**
    * Sample a signal at a specific beat position.

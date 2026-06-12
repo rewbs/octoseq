@@ -11,7 +11,7 @@ import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
 import { useBandMirStore } from "@/lib/stores/bandMirStore";
 import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { useMirStore } from "@/lib/stores/mirStore";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useStreamStore } from "@/lib/streams";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useMeshAssets } from "@/lib/stores/meshAssetStore";
@@ -945,14 +945,13 @@ fn update(dt, frame) {
   // Keep available stems for editor completions in a ref
   useEffect(() => {
     const updateStems = () => {
-      const inputs = useAudioInputStore.getState().getAllInputsOrdered();
-      const stems = inputs.filter((i) => i.role === "stem");
+      const stems = useStreamStore.getState().getStems();
       availableStemsRef.current = stems.map((s) => ({ id: s.id, label: s.label }));
     };
     // Initial sync
     updateStems();
     // Subscribe to store changes
-    const unsubscribe = useAudioInputStore.subscribe(updateStems);
+    const unsubscribe = useStreamStore.subscribe(updateStems);
     return () => unsubscribe();
   }, []);
 
@@ -1016,17 +1015,18 @@ fn update(dt, frame) {
   }, [bandMirResults, bandEventCache, frequencyBands, isReady, audioDuration, getAllBandMirResults, getAllEventResults, getBandById, requestRender]);
 
   // Get stem information for the stem signals effect
-  // Note: We select the raw collection and stemOrder to avoid creating new arrays on every render
-  const audioInputCollection = useAudioInputStore((state) => state.collection);
+  // Note: We select the raw streams Map to avoid creating new arrays on every render
+  const streamsMap = useStreamStore((state) => state.streams);
   const inputMirCache = useMirStore((state) => state.inputMirCache);
 
-  // Compute stems from collection (memoized to avoid infinite loops)
-  const stems = useMemo(() => {
-    if (!audioInputCollection) return [];
-    return audioInputCollection.stemOrder
-      .map((id) => audioInputCollection.inputs[id])
-      .filter((input): input is NonNullable<typeof input> => input !== undefined);
-  }, [audioInputCollection]);
+  // Compute stems from the stream collection (memoized to avoid infinite loops)
+  const stems = useMemo(
+    () =>
+      [...streamsMap.values()]
+        .filter((s) => s.kind === "stem")
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [streamsMap]
+  );
 
   // Push stem MIR signals to WASM (S2 integration)
   useEffect(() => {
