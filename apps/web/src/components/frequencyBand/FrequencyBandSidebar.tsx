@@ -1,3 +1,8 @@
+// PHASE1-TODO: this entire file is commented-out legacy code (it references
+// useFrequencyBandStore / useBandProposalStore and exports nothing). There is no
+// active code to port to the unified stream model; FrequencyBandContent.tsx is the
+// live equivalent. Delete or resurrect against @/lib/streams if it is ever needed.
+
 // "use client";
 
 // import { useCallback, useState } from "react";

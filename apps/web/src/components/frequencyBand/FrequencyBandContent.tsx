@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import {
   ChevronDown,
@@ -21,10 +21,23 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
+import {
+  addBand,
+  removeStreamCascade,
+  toFrequencyBand,
+  updateBandShape,
+  useBandEditingStore,
+  useStreamStore,
+  type BandStream,
+} from "@/lib/streams";
 import { useBandProposalStore } from "@/lib/stores/bandProposalStore";
 import { useBandProposalActions } from "@/lib/stores/hooks/useBandProposalActions";
-import { createConstantBand, type FrequencyBand, type BandProposal } from "@octoseq/mir";
+import {
+  createConstantBand,
+  createStandardBands,
+  type FrequencyBand,
+  type BandProposal,
+} from "@octoseq/mir";
 import { KeyframeTable } from "./KeyframeTable";
 import { useBandKeyboardShortcuts } from "@/lib/hooks/useBandKeyboardShortcuts";
 
@@ -342,43 +355,37 @@ export type FrequencyBandContentProps = {
  * Can be embedded in the interpretation tree or used standalone.
  */
 export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: FrequencyBandContentProps) {
+  // Band definitions and selection live in the unified stream store
+  const { streams, selectedBandId, selectBand, renameStream, setStreamEnabled } = useStreamStore(
+    useShallow((s) => ({
+      streams: s.streams,
+      selectedBandId: s.selectedStreamId,
+      selectBand: s.selectStream,
+      renameStream: s.renameStream,
+      setStreamEnabled: s.setStreamEnabled,
+    }))
+  );
+
+  // Ephemeral band-editing UI state
   const {
-    structure,
-    selectedBandId,
     soloedBandId,
     mutedBandIds,
     hoveredKeyframeTime,
     snapMode,
-    selectBand,
-    addBand,
-    updateBand,
-    removeBand,
-    setBandEnabled,
-    setSoloedBandId,
-    toggleMuted,
+    setSoloedBand,
+    toggleMutedBand,
     setHoveredKeyframeTime,
     setSnapMode,
-    getBandById,
-    initializeWithStandardBands,
-  } = useFrequencyBandStore(
+  } = useBandEditingStore(
     useShallow((s) => ({
-      structure: s.structure,
-      selectedBandId: s.selectedBandId,
       soloedBandId: s.soloedBandId,
       mutedBandIds: s.mutedBandIds,
       hoveredKeyframeTime: s.hoveredKeyframeTime,
       snapMode: s.snapMode,
-      selectBand: s.selectBand,
-      addBand: s.addBand,
-      updateBand: s.updateBand,
-      removeBand: s.removeBand,
-      setBandEnabled: s.setBandEnabled,
-      setSoloedBandId: s.setSoloedBandId,
-      toggleMuted: s.toggleMuted,
+      setSoloedBand: s.setSoloedBand,
+      toggleMutedBand: s.toggleMutedBand,
       setHoveredKeyframeTime: s.setHoveredKeyframeTime,
       setSnapMode: s.setSnapMode,
-      getBandById: s.getBandById,
-      initializeWithStandardBands: s.initializeWithStandardBands,
     }))
   );
 
@@ -408,11 +415,19 @@ export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: Fr
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [discoverExpanded, setDiscoverExpanded] = useState(true);
 
+  // Bands for this source, in sortOrder
+  const bands = useMemo(
+    () =>
+      [...streams.values()]
+        .filter((s): s is BandStream => s.kind === "band" && s.parentId === sourceId)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams, sourceId]
+  );
+
   const handleAddBand = useCallback(() => {
     // Count only bands for this source
-    const sourceBands = structure?.bands.filter((b) => b.sourceId === sourceId) ?? [];
-    const bandCount = sourceBands.length;
-    const newBand = createConstantBand(
+    const bandCount = bands.length;
+    const template = createConstantBand(
       `Band ${bandCount + 1}`,
       200, // Default low Hz
       2000, // Default high Hz
@@ -422,51 +437,68 @@ export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: Fr
         sourceId,
       }
     );
-    const newId = addBand(newBand);
+    const newId = addBand({
+      parentId: sourceId,
+      label: template.label,
+      frequencyShape: template.frequencyShape,
+      timeScope: template.timeScope,
+      provenance: template.provenance,
+    });
     selectBand(newId);
-  }, [structure, sourceId, audioDuration, addBand, selectBand]);
+  }, [bands, sourceId, audioDuration, selectBand]);
 
   const handleAddStandardBands = useCallback(() => {
     if (audioDuration > 0) {
-      initializeWithStandardBands(audioDuration, sourceId);
+      for (const band of createStandardBands(audioDuration, sourceId)) {
+        addBand({
+          parentId: sourceId,
+          label: band.label,
+          frequencyShape: band.frequencyShape,
+          timeScope: band.timeScope,
+          provenance: band.provenance,
+          enabled: band.enabled,
+        });
+      }
     }
-  }, [audioDuration, sourceId, initializeWithStandardBands]);
+  }, [audioDuration, sourceId]);
 
   const handleDeleteBand = useCallback(
     (bandId: string) => {
       if (deleteConfirmId === bandId) {
-        removeBand(bandId);
+        // Cascade removal also clears selection and invalidates analyses
+        removeStreamCascade(bandId);
         setDeleteConfirmId(null);
-        if (selectedBandId === bandId) {
-          selectBand(null);
-        }
       } else {
         setDeleteConfirmId(bandId);
         // Clear confirmation after 3 seconds
         setTimeout(() => setDeleteConfirmId(null), 3000);
       }
     },
-    [deleteConfirmId, removeBand, selectedBandId, selectBand]
+    [deleteConfirmId]
   );
 
   const handleToggleSolo = useCallback(
     (bandId: string) => {
       if (soloedBandId === bandId) {
-        setSoloedBandId(null);
+        setSoloedBand(null);
       } else {
-        setSoloedBandId(bandId);
+        setSoloedBand(bandId);
       }
     },
-    [soloedBandId, setSoloedBandId]
+    [soloedBandId, setSoloedBand]
   );
 
   const handleBandUpdate = useCallback(
     (updates: Partial<FrequencyBand>) => {
       if (selectedBandId) {
-        updateBand(selectedBandId, updates);
+        // KeyframeTable only edits shape/timeScope; updateBandShape invalidates analyses
+        updateBandShape(selectedBandId, {
+          frequencyShape: updates.frequencyShape,
+          timeScope: updates.timeScope,
+        });
       }
     },
-    [selectedBandId, updateBand]
+    [selectedBandId]
   );
 
   const handleCycleSnapMode = useCallback(() => {
@@ -490,9 +522,12 @@ export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: Fr
   };
   const snapModeLabel = snapModeLabels[snapMode] ?? "Off";
 
-  // Filter bands to only show those for this source
-  const bands = structure?.bands.filter((b) => b.sourceId === sourceId) ?? [];
-  const selectedBand = selectedBandId ? getBandById(selectedBandId) : null;
+  // Selected band adapted to the mir FrequencyBand shape that KeyframeTable consumes
+  const selectedBand = useMemo(() => {
+    if (!selectedBandId) return null;
+    const stream = streams.get(selectedBandId);
+    return stream && stream.kind === "band" ? toFrequencyBand(stream) : null;
+  }, [selectedBandId, streams]);
 
   // Enable keyboard shortcuts
   useBandKeyboardShortcuts({ audioDuration });
@@ -559,10 +594,10 @@ export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: Fr
               isMuted={mutedBandIds.has(band.id)}
               colorIndex={index}
               onSelect={() => selectBand(band.id)}
-              onRename={(newLabel) => updateBand(band.id, { label: newLabel })}
-              onToggleEnabled={() => setBandEnabled(band.id, !band.enabled)}
+              onRename={(newLabel) => renameStream(band.id, newLabel)}
+              onToggleEnabled={() => setStreamEnabled(band.id, !band.enabled)}
               onToggleSolo={() => handleToggleSolo(band.id)}
-              onToggleMute={() => toggleMuted(band.id)}
+              onToggleMute={() => toggleMutedBand(band.id)}
               onDelete={() => handleDeleteBand(band.id)}
             />
           ))

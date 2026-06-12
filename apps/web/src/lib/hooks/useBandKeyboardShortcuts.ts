@@ -4,7 +4,15 @@ import { useCallback } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useShallow } from "zustand/react/shallow";
 import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
-import { useFrequencyBandStore, type BandSnapMode } from "@/lib/stores/frequencyBandStore";
+import {
+    MIXDOWN_STREAM_ID,
+    addBand,
+    toFrequencyBand,
+    updateBandShape,
+    useBandEditingStore,
+    useStreamStore,
+    type BandSnapMode,
+} from "@/lib/streams";
 import { createConstantBand, removeKeyframe } from "@octoseq/mir";
 
 // ----------------------------
@@ -27,52 +35,51 @@ export function useBandKeyboardShortcuts({
     enabled = true,
     audioDuration,
 }: UseBandKeyboardShortcutsOptions) {
-    const {
-        structure,
-        selectedBandId,
-        hoveredKeyframeTime,
-        snapMode,
-        toggleSidebar,
-        selectBand,
-        addBand,
-        updateBand,
-        setSnapMode,
-        getBandById,
-    } = useFrequencyBandStore(useShallow((s) => ({
-        structure: s.structure,
-        selectedBandId: s.selectedBandId,
-        hoveredKeyframeTime: s.hoveredKeyframeTime,
-        snapMode: s.snapMode,
-        toggleSidebar: s.toggleSidebar,
-        selectBand: s.selectBand,
-        addBand: s.addBand,
-        updateBand: s.updateBand,
-        setSnapMode: s.setSnapMode,
-        getBandById: s.getBandById,
+    const { selectedBandId, selectBand } = useStreamStore(useShallow((s) => ({
+        selectedBandId: s.selectedStreamId,
+        selectBand: s.selectStream,
     })));
+    const { hoveredKeyframeTime, snapMode, setSnapMode } = useBandEditingStore(
+        useShallow((s) => ({
+            hoveredKeyframeTime: s.hoveredKeyframeTime,
+            snapMode: s.snapMode,
+            setSnapMode: s.setSnapMode,
+        }))
+    );
 
     // B: Toggle band sidebar
+    const toggleSidebar = useCallback(() => {
+        const editing = useBandEditingStore.getState();
+        editing.setSidebarOpen(!editing.sidebarOpen);
+    }, []);
+
     useHotkeys("b", toggleSidebar, {
         enabled,
         scopes: [HOTKEY_SCOPE_APP],
         preventDefault: true,
     }, [toggleSidebar, enabled]);
 
-    // N: Add new band
+    // N: Add new band (under the mixdown, matching the legacy default source)
     const canAddBand = enabled && audioDuration > 0;
     const onAddBand = useCallback(() => {
         if (audioDuration <= 0) return;
-        const bandCount = structure?.bands.length ?? 0;
-        const newBand = createConstantBand(
+        const bandCount = useStreamStore.getState().getBands().length;
+        const template = createConstantBand(
             `Band ${bandCount + 1}`,
             200,
             2000,
             audioDuration,
             { sortOrder: bandCount }
         );
-        const newId = addBand(newBand);
+        const newId = addBand({
+            parentId: MIXDOWN_STREAM_ID,
+            label: template.label,
+            frequencyShape: template.frequencyShape,
+            timeScope: template.timeScope,
+            provenance: template.provenance,
+        });
         selectBand(newId);
-    }, [audioDuration, structure, addBand, selectBand]);
+    }, [audioDuration, selectBand]);
 
     useHotkeys("n", onAddBand, {
         enabled: canAddBand,
@@ -84,11 +91,11 @@ export function useBandKeyboardShortcuts({
     const canDeleteKeyframe = enabled && !!selectedBandId && hoveredKeyframeTime !== null;
     const onDeleteKeyframe = useCallback(() => {
         if (!selectedBandId || hoveredKeyframeTime === null) return;
-        const band = getBandById(selectedBandId);
-        if (!band) return;
-        const updatedBand = removeKeyframe(band, hoveredKeyframeTime);
-        updateBand(selectedBandId, { frequencyShape: updatedBand.frequencyShape });
-    }, [selectedBandId, hoveredKeyframeTime, getBandById, updateBand]);
+        const stream = useStreamStore.getState().getStream(selectedBandId);
+        if (!stream || stream.kind !== "band") return;
+        const updatedBand = removeKeyframe(toFrequencyBand(stream), hoveredKeyframeTime);
+        updateBandShape(selectedBandId, { frequencyShape: updatedBand.frequencyShape });
+    }, [selectedBandId, hoveredKeyframeTime]);
 
     useHotkeys("d", onDeleteKeyframe, {
         enabled: canDeleteKeyframe,

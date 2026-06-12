@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
-import { keyframesFromBand, type FrequencyBandStructure } from "@octoseq/mir";
-import { type BandSnapMode } from "@/lib/stores/frequencyBandStore";
+import { keyframesFromBand } from "@octoseq/mir";
+import { toFrequencyBand, type BandSnapMode, type BandStream } from "@/lib/streams";
 
 // ----------------------------
 // Beat Time Type (local definition)
@@ -28,8 +28,8 @@ export type UseSnapTargetsOptions = {
     /** Current snap mode. */
     snapMode: BandSnapMode;
 
-    /** Frequency band structure for keyframe snap targets. */
-    structure: FrequencyBandStructure | null;
+    /** Band streams for keyframe snap targets. */
+    bands: BandStream[];
 
     /** Beat grid for beat snap targets. */
     beats: BeatTimeInfo[] | null;
@@ -59,7 +59,7 @@ export type UseSnapTargetsResult = {
 
 export function useSnapTargets({
     snapMode,
-    structure,
+    bands,
     beats,
     frameTimes,
     startTime,
@@ -95,10 +95,10 @@ export function useSnapTargets({
             }
         }
 
-        if (snapMode === "keyframes" && structure) {
-            for (const band of structure.bands) {
+        if (snapMode === "keyframes") {
+            for (const band of bands) {
                 if (!band.enabled) continue;
-                const keyframes = keyframesFromBand(band);
+                const keyframes = keyframesFromBand(toFrequencyBand(band));
                 for (const kf of keyframes) {
                     if (kf.time >= startTime - margin && kf.time <= endTime + margin) {
                         // Avoid duplicate times
@@ -118,7 +118,7 @@ export function useSnapTargets({
         result.sort((a, b) => a.time - b.time);
 
         return result;
-    }, [snapMode, structure, beats, frameTimes, startTime, endTime]);
+    }, [snapMode, bands, beats, frameTimes, startTime, endTime]);
 
     // Find the nearest snap target within tolerance
     const findSnapTarget = useMemo(() => {
