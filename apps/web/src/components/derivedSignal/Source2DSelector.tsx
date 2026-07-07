@@ -34,8 +34,8 @@ export function Source2DSelector({ source, onChange }: Source2DSelectorProps) {
     [streams]
   );
 
-  const handleAudioSourceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    onChange({ ...source, audioSourceId: e.target.value });
+  const handleStreamChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    onChange({ ...source, streamId: e.target.value });
   };
 
   const handleFunctionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -106,8 +106,8 @@ export function Source2DSelector({ source, onChange }: Source2DSelectorProps) {
       <div className="space-y-2">
         <label className="text-sm font-medium">Audio Source</label>
         <select
-          value={source.audioSourceId}
-          onChange={handleAudioSourceChange}
+          value={source.streamId}
+          onChange={handleStreamChange}
           className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
         >
           <option value="mixdown">Mixdown</option>

@@ -8,17 +8,14 @@
  *
  * Design Principles:
  * - Definitions are persisted, not computed samples
- * - All inputs reference existing MIR/event data by ID
+ * - All inputs address existing analysis/event data uniformly by (streamId, analysisId);
+ *   band-ness is a property of the stream, never of the reference shape
  * - Transform chains are declarative, not imperative
  * - No oscillators, time modulation, or feedback (explicitly disallowed)
  * - Derived signals can reference other derived signals (with cycle detection)
  */
 
-import type {
-  BandMirFunctionId,
-  BandCqtFunctionId,
-  BandEventFunctionId,
-} from "@octoseq/mir";
+import type { AnalysisId, StreamId } from "@/lib/streams";
 
 // ============================================================================
 // SCHEMA VERSION
@@ -27,8 +24,29 @@ import type {
 /**
  * Current schema version for DerivedSignalStructure.
  * Increment when making breaking changes to the structure.
+ *
+ * v2: provenance-shaped source references (mir vs band signals, candidate vs
+ * band vs authored events, per-source audioSourceId/bandId fields) collapsed
+ * into uniform stream addressing ({ streamId, analysisId }). No migration from v1.
  */
-export const DERIVED_SIGNAL_SCHEMA_VERSION = 1;
+export const DERIVED_SIGNAL_SCHEMA_VERSION = 2;
+
+/**
+ * Reject derived signal structures from any other schema version.
+ * Version 1 structures used provenance-shaped source references and are
+ * intentionally NOT migrated — they fail loudly here.
+ */
+export function assertDerivedSignalStructureVersion(
+  structure: DerivedSignalStructure
+): void {
+  if (structure.version !== DERIVED_SIGNAL_SCHEMA_VERSION) {
+    throw new Error(
+      `Unsupported derived signal schema version ${structure.version} ` +
+        `(expected ${DERIVED_SIGNAL_SCHEMA_VERSION}). Legacy structures are not ` +
+        `migrated; recreate the derived signals.`
+    );
+  }
+}
 
 // ============================================================================
 // SOURCE TYPES - 2D Spectral Data
@@ -85,8 +103,8 @@ export interface Reducer2DParams {
  */
 export interface Source2D {
   kind: "2d";
-  /** Audio source ID ("mixdown" or stem ID). */
-  audioSourceId: string;
+  /** Stream to read the 2D analysis from. Must be an AudioStream id (mixdown or stem). */
+  streamId: StreamId;
   /** The 2D MIR function to extract from. */
   functionId: Source2DFunctionId;
   /** Range of bins/frequencies to include. */
@@ -102,25 +120,15 @@ export interface Source2D {
 // ============================================================================
 
 /**
- * Available 1D MIR signals (global scope).
- */
-export type Source1DGlobalFunctionId =
-  | "amplitudeEnvelope"
-  | "spectralCentroid"
-  | "spectralFlux"
-  | "onsetEnvelope"
-  | "cqtHarmonicEnergy"
-  | "cqtBassPitchMotion"
-  | "cqtTonalStability";
-
-/**
  * Reference to a 1D signal source.
- * Can be a MIR output, band signal, or another derived signal.
+ *
+ * "analysis" addresses any stream's analysis result uniformly — mixdown, stem,
+ * or band stream — using unified analysis ids (amplitudeEnvelope, onsetEnvelope,
+ * cqt*, …). "derived" chains another derived signal (cycle detection applies).
  */
 export type Signal1DRef =
-  | { type: "mir"; audioSourceId: string; functionId: Source1DGlobalFunctionId }
-  | { type: "band"; bandId: string; functionId: BandMirFunctionId | BandCqtFunctionId }
-  | { type: "derived"; signalId: string }; // Chaining - requires cycle detection
+  | { type: "analysis"; streamId: StreamId; analysisId: AnalysisId }
+  | { type: "derived"; signalId: string };
 
 /**
  * 1D source specification.
@@ -137,15 +145,19 @@ export interface Source1D {
 // SOURCE TYPES - Event Streams
 // ============================================================================
 
+/** Event-producing analyses usable as derived-signal event sources. */
+export type EventAnalysisId = "onsetPeaks" | "beatCandidates";
+
 /**
  * Reference to an event stream.
+ *
+ * "analysis" addresses detected events on any stream (mixdown, stem, or band)
+ * uniformly. "authored" references a user-authored event stream by its
+ * authoredEventStore id (not a StreamId).
  */
 export type EventStreamRef =
-  | { type: "candidateOnsets"; audioSourceId: string }
-  | { type: "candidateBeats"; audioSourceId: string }
-  | { type: "bandOnsetPeaks"; bandId: string }
-  | { type: "bandBeatCandidates"; bandId: string }
-  | { type: "authoredEvents"; streamId: string };
+  | { type: "analysis"; streamId: StreamId; analysisId: EventAnalysisId }
+  | { type: "authored"; streamId: string };
 
 /**
  * Event reducer algorithm identifiers.
@@ -541,13 +553,13 @@ export function getDefaultReducerEventParams(
  * Create a default 2D-sourced derived signal definition.
  */
 export function createDefault2DSignal(
-  audioSourceId: string = "mixdown"
+  streamId: StreamId = "mixdown"
 ): Omit<DerivedSignalDefinition, "id" | "createdAt" | "modifiedAt"> {
   return {
     name: "New Signal",
     source: {
       kind: "2d",
-      audioSourceId,
+      streamId,
       functionId: "melSpectrogram",
       range: { kind: "fullSpectrum" },
       reducer: "mean",
@@ -565,16 +577,16 @@ export function createDefault2DSignal(
  * Create a default 1D-sourced derived signal definition.
  */
 export function createDefault1DSignal(
-  audioSourceId: string = "mixdown"
+  streamId: StreamId = "mixdown"
 ): Omit<DerivedSignalDefinition, "id" | "createdAt" | "modifiedAt"> {
   return {
     name: "New Signal",
     source: {
       kind: "1d",
       signalRef: {
-        type: "mir",
-        audioSourceId,
-        functionId: "amplitudeEnvelope",
+        type: "analysis",
+        streamId,
+        analysisId: "amplitudeEnvelope",
       },
     },
     transforms: [],
@@ -589,15 +601,16 @@ export function createDefault1DSignal(
  * Create a default event-sourced derived signal definition.
  */
 export function createDefaultEventSignal(
-  audioSourceId: string = "mixdown"
+  streamId: StreamId = "mixdown"
 ): Omit<DerivedSignalDefinition, "id" | "createdAt" | "modifiedAt"> {
   return {
     name: "New Signal",
     source: {
       kind: "events",
       streamRef: {
-        type: "candidateOnsets",
-        audioSourceId,
+        type: "analysis",
+        streamId,
+        analysisId: "onsetPeaks",
       },
       reducer: "envelope",
       reducerParams: getDefaultReducerEventParams("envelope"),
@@ -762,10 +775,8 @@ export function getSourceDescription(source: DerivedSignalSource): string {
     }
     case "1d": {
       const ref = source.signalRef;
-      if (ref.type === "mir") {
-        return `MIR: ${ref.functionId}`;
-      } else if (ref.type === "band") {
-        return `Band: ${ref.functionId}`;
+      if (ref.type === "analysis") {
+        return `Analysis: ${ref.analysisId}`;
       } else {
         return `Derived: ${ref.signalId}`;
       }
@@ -773,10 +784,10 @@ export function getSourceDescription(source: DerivedSignalSource): string {
     case "events": {
       const ref = source.streamRef;
       const reducer = REDUCER_EVENT_LABELS[source.reducer];
-      if (ref.type === "authoredEvents") {
+      if (ref.type === "authored") {
         return `Authored events → ${reducer}`;
       } else {
-        return `${ref.type} → ${reducer}`;
+        return `${ref.analysisId} → ${reducer}`;
       }
     }
   }
