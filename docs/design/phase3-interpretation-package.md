@@ -1,7 +1,9 @@
 # Phase 3: Interpretation Package v1
 
-Status: in progress (June 2026). Milestones P1/P4: the bridge between the web "lab"
-and headless rendering becomes a real, versioned artifact.
+Status: **complete** (June 2026). Milestones P1/P4 delivered: the web app exports a
+versioned package that the native CLI renders end to end (validated on GPU against a
+golden fixture). Known gap: composed signals are parsed but not routed to scripts —
+the engine-side push was never implemented (pre-existing; tracked separately).
 
 ## Problem
 
