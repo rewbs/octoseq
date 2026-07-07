@@ -1,7 +1,9 @@
 # Phase 1: Unified Stream Model
 
-Status: in progress (June 2026). Backwards compatibility with existing saved projects is
-explicitly **not** a goal — old projects fail loudly on load.
+Status: **complete** (June 2026). All eight tasks landed: core model, unified runner,
+audio/stem flows, band authoring, signal/event addressing, timing consolidation,
+project schema v2, WASM feed rewire + legacy deletion. Backwards compatibility with
+existing saved projects was explicitly **not** a goal — old projects fail loudly on load.
 
 ## Problem
 
