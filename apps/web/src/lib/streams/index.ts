@@ -20,6 +20,7 @@ export { toDisplaySignal, toDisplayEvents, toUiResult } from "./display";
 export type { DisplaySignal, DisplayEvent, UiDisplayResult } from "./display";
 export { useBandEditingStore } from "./bandEditingStore";
 export type { BandSnapMode, BandDragState } from "./bandEditingStore";
+export { useViewStore } from "./viewStore";
 export {
   loadMixdown,
   addStemWithAudio,

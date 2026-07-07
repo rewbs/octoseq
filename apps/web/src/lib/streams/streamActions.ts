@@ -21,6 +21,7 @@ import type { AudioBufferLike } from "@octoseq/mir";
 import { audioCache } from "./audioCache";
 import { useAnalysisStore } from "./analysisStore";
 import { clearAnalysisMemos } from "./analysisRunner";
+import { useViewStore } from "./viewStore";
 import { useStreamStore, type AddBandParams, type BandShapePatch } from "./streamStore";
 import {
   MIXDOWN_STREAM_ID,
@@ -96,10 +97,12 @@ export function updateBandShape(id: StreamId, patch: BandShapePatch): void {
 export function removeStreamCascade(id: StreamId): Stream[] {
   const removed = useStreamStore.getState().removeStream(id);
   const analysis = useAnalysisStore.getState();
+  const view = useViewStore.getState();
   for (const stream of removed) {
     analysis.invalidateStream(stream.id);
     audioCache.delete(stream.id);
     clearAnalysisMemos(stream.id);
+    view.removeCompared(stream.id);
   }
   return removed;
 }
@@ -110,4 +113,5 @@ export function resetAllStreams(): void {
   useAnalysisStore.getState().reset();
   audioCache.clear();
   clearAnalysisMemos();
+  useViewStore.getState().clearCompared();
 }
