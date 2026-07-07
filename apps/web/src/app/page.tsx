@@ -159,9 +159,16 @@ export default function Home() {
   const setIsDebugOpen = useConfigStore((s) => s.setIsDebugOpen);
 
   // MIR store
-  const isRunning = useMirStore((s) => s.isRunning);
-  const runningAnalysis = useMirStore((s) => s.runningAnalysis);
-  const lastTimings = useMirStore((s) => s.lastTimings);
+  const isRunning = useAnalysisStore((s) => s.pending.size > 0);
+  const runningAnalysisKey = useAnalysisStore((s) => {
+    const first = s.pending.values().next();
+    return first.done ? null : first.value;
+  });
+  const runningAnalysis = useMemo(
+    () => (runningAnalysisKey ? (runningAnalysisKey.split("::")[1] ?? null) : null),
+    [runningAnalysisKey]
+  );
+  const lastTimings = useAnalysisStore((s) => s.lastRun);
   const visualTab = useMirStore((s) => s.visualTab);
   const setVisualTab = useMirStore((s) => s.setVisualTab);
 

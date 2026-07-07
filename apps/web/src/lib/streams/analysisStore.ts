@@ -18,10 +18,21 @@ import {
   type StreamId,
 } from "./types";
 
+/** Timing/backend info from the most recent completed analysis run. */
+export interface LastRunInfo {
+  key: AnalysisKey;
+  totalMs?: number;
+  cpuMs?: number;
+  gpuMs?: number;
+  backend?: string;
+}
+
 interface AnalysisState {
   results: Map<AnalysisKey, AnalysisResult>;
   pending: Set<AnalysisKey>;
   errors: Map<AnalysisKey, string>;
+  /** Observability: last completed run's timings (null until a run completes). */
+  lastRun: LastRunInfo | null;
 }
 
 interface AnalysisActions {
@@ -33,6 +44,9 @@ interface AnalysisActions {
 
   /** Record a failure. Clears pending state for the key. */
   setError: (key: AnalysisKey, message: string) => void;
+
+  /** Record timings of the most recent completed run. */
+  setLastRun: (info: LastRunInfo | null) => void;
 
   getResult: (key: AnalysisKey) => AnalysisResult | null;
   isPending: (key: AnalysisKey) => boolean;
@@ -56,6 +70,7 @@ const initialState: AnalysisState = {
   results: new Map(),
   pending: new Set(),
   errors: new Map(),
+  lastRun: null,
 };
 
 function deleteByPrefix<V>(map: Map<string, V>, prefix: string): number {
@@ -114,6 +129,8 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>()(
           false,
           "setError"
         ),
+
+      setLastRun: (info) => set({ lastRun: info }, false, "setLastRun"),
 
       getResult: (key) => get().results.get(key) ?? null,
 

@@ -288,7 +288,18 @@ async function runAudioStreamAnalysis(
 
   try {
     const result = await resultPromise;
-    useAnalysisStore.getState().setResult(key, result);
+    const analysesNow = useAnalysisStore.getState();
+    analysesNow.setResult(key, result);
+    const meta = (result as { meta?: { timings?: { totalMs?: number; cpuMs?: number; gpuMs?: number }; backend?: string } }).meta;
+    if (meta?.timings) {
+      analysesNow.setLastRun({
+        key,
+        totalMs: meta.timings.totalMs,
+        cpuMs: meta.timings.cpuMs,
+        gpuMs: meta.timings.gpuMs,
+        backend: meta.backend,
+      });
+    }
     return result;
   } catch (e) {
     if (isCancellationError(e)) return null;
