@@ -21,7 +21,7 @@ import { useMeshAssets } from "@/lib/stores/meshAssetStore";
 import { useDerivedSignalStore, useDerivedSignals } from "@/lib/stores/derivedSignalStore";
 import { useComposedSignalStore } from "@/lib/stores/composedSignalStore";
 import { useComposedSignalActions } from "@/lib/stores/hooks/useComposedSignalActions";
-import type { BandMirFunctionId } from "@octoseq/mir";
+import { normalizeSignal } from "@/lib/package/normalizeSignal";
 
 // We import the mock type if the real package isn't built yet, preventing TS errors.
 // In a real build, this would import from @octoseq/visualiser.
@@ -91,31 +91,9 @@ const SCRIPT_MIN_WIDTH_PERCENT = 15;
 const SCRIPT_MAX_WIDTH_PERCENT = 70;
 const SCRIPT_DEFAULT_WIDTH_PERCENT = 30;
 
-// Helper to normalize array to [0, 1]
-function normalizeSignal(data: number[] | Float32Array, customRange?: [number, number]): Float32Array {
-  let min = Infinity;
-  let max = -Infinity;
-
-  if (customRange) {
-    min = customRange[0];
-    max = customRange[1];
-  } else {
-    for (let i = 0; i < data.length; i++) {
-      const v = data[i] as number;
-      if (v < min) min = v;
-      if (v > max) max = v;
-    }
-  }
-
-  const range = max - min;
-  const out = new Float32Array(data.length);
-  if (range === 0) return out; // All zeros
-
-  for (let i = 0; i < data.length; i++) {
-    out[i] = ((data[i] as number) - min) / range;
-  }
-  return out;
-}
+// normalizeSignal (shared with the Interpretation Package export) is imported
+// from @/lib/package/normalizeSignal so browser pushes and offline packages
+// normalize identically.
 
 export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTime, audioDuration, searchSignal, className, isPlaying = true, musicalTimeStructure }: VisualiserPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
