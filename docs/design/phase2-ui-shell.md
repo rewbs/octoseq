@@ -1,6 +1,8 @@
 # Phase 2: UI Shell on the Unified Stream Model
 
-Status: in progress (June 2026). Builds directly on
+Status: **complete** (June 2026) — Stream Manager, Comparison Panel, view presets,
+and shell integration all landed; validated via typecheck, vitest, production build,
+and headless-Chrome render. Builds directly on
 [phase1-unified-streams.md](phase1-unified-streams.md) — the data model is done;
 this phase makes the UI generic over it.
 
