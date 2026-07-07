@@ -1,0 +1,2830 @@
+{
+  "api_version": "0.1.0",
+  "globals": [
+    {
+      "description": "Mesh factory namespace. Create mesh entities (cube, plane).",
+      "kind": "object",
+      "name": "mesh",
+      "type_name": "Mesh"
+    },
+    {
+      "description": "Line factory namespace. Create line strips (manual push) or traces (Signal-driven).",
+      "kind": "object",
+      "name": "line",
+      "type_name": "Line"
+    },
+    {
+      "description": "Scene management namespace. Add/remove entities for rendering.",
+      "kind": "object",
+      "name": "scene",
+      "type_name": "Scene"
+    },
+    {
+      "description": "Logging namespace. Use for non-fatal debugging output.",
+      "kind": "object",
+      "name": "log",
+      "type_name": "Log"
+    },
+    {
+      "description": "Debug namespace. Emit debug signals in analysis mode.",
+      "kind": "object",
+      "name": "dbg",
+      "type_name": "Dbg"
+    },
+    {
+      "description": "Signal generator namespace (beat-synced oscillators and noise).",
+      "kind": "object",
+      "name": "gen",
+      "type_name": "Gen"
+    },
+    {
+      "description": "Signal accessors namespace (Signal graphs). Available in both `init()` and `update()`.",
+      "kind": "object",
+      "name": "inputs",
+      "type_name": "InputsSignals"
+    },
+    {
+      "description": "Host-assisted introspection. `describe(x)` returns a structured description of a value/type.",
+      "kind": "function",
+      "name": "describe",
+      "type_name": "function"
+    },
+    {
+      "description": "Human-readable help. `help(x)` returns a short formatted summary.",
+      "kind": "function",
+      "name": "help",
+      "type_name": "function"
+    },
+    {
+      "description": "Targeted documentation lookup. `doc(\"Type.member\")` returns structured docs.",
+      "kind": "function",
+      "name": "doc",
+      "type_name": "function"
+    },
+    {
+      "description": "Frame feedback namespace. Create Milkdrop-style temporal visual effects (trails, warping).",
+      "kind": "object",
+      "name": "feedback",
+      "type_name": "Feedback"
+    },
+    {
+      "description": "Post-processing effect factory. Create composable visual effects (bloom, color grading, vignette, distortion).",
+      "kind": "object",
+      "name": "fx",
+      "type_name": "Fx"
+    },
+    {
+      "description": "Post-processing chain management. Add/remove/reorder effects in the render pipeline.",
+      "kind": "object",
+      "name": "post",
+      "type_name": "Post"
+    },
+    {
+      "description": "Scene camera controls. Position, rotation, projection with signal support for audio-reactive camera motion.",
+      "kind": "object",
+      "name": "camera",
+      "type_name": "Camera"
+    }
+  ],
+  "schema_version": 1,
+  "types": [
+    {
+      "description": "3D vector (x, y, z).",
+      "kind": "struct",
+      "methods": [],
+      "name": "Vec3",
+      "properties": [
+        {
+          "description": "X component.",
+          "name": "x",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Y component.",
+          "name": "y",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Z component.",
+          "name": "z",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float"
+        }
+      ]
+    },
+    {
+      "description": "RGBA color (0.0–1.0).",
+      "kind": "struct",
+      "methods": [],
+      "name": "Color",
+      "properties": [
+        {
+          "description": "Red (0.0–1.0).",
+          "name": "r",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Green (0.0–1.0).",
+          "name": "g",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Blue (0.0–1.0).",
+          "name": "b",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Alpha (0.0–1.0).",
+          "name": "a",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float"
+        }
+      ]
+    },
+    {
+      "description": "A mesh entity created by `mesh.cube()` or `mesh.plane()`.",
+      "kind": "opaque",
+      "methods": [],
+      "name": "MeshEntity",
+      "properties": [
+        {
+          "description": "Position in 3D space.",
+          "name": "position",
+          "optional": false,
+          "readonly": false,
+          "type_name": "Vec3"
+        },
+        {
+          "description": "Euler rotation in radians.",
+          "name": "rotation",
+          "optional": false,
+          "readonly": false,
+          "type_name": "Vec3"
+        },
+        {
+          "description": "Uniform scale factor.",
+          "name": "scale",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Visibility flag.",
+          "name": "visible",
+          "optional": false,
+          "readonly": false,
+          "type_name": "bool"
+        },
+        {
+          "description": "Material ID (e.g., \"default\", \"emissive\", \"wire_glow\", \"soft_additive\", \"gradient\").",
+          "name": "material",
+          "optional": true,
+          "readonly": false,
+          "type_name": "string"
+        },
+        {
+          "description": "Material parameters map. Keys depend on the selected material.",
+          "name": "params",
+          "optional": true,
+          "readonly": false,
+          "type_name": "MaterialParams"
+        }
+      ]
+    },
+    {
+      "description": "A procedural line strip created by `line.strip(options)`.",
+      "kind": "opaque",
+      "methods": [
+        {
+          "description": "Add a 2D point to the strip.",
+          "example": "spark.push(inputs.time, inputs.amplitude);",
+          "name": "push",
+          "notes": "Points are stored in a ring buffer (oldest points are overwritten when full).",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "X coordinate.",
+              "name": "x",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Y coordinate.",
+              "name": "y",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "void"
+        },
+        {
+          "description": "Clear all points from the strip.",
+          "example": "spark.clear();",
+          "name": "clear",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "void"
+        }
+      ],
+      "name": "LineStripEntity",
+      "properties": [
+        {
+          "description": "Position in 3D space.",
+          "name": "position",
+          "optional": false,
+          "readonly": false,
+          "type_name": "Vec3"
+        },
+        {
+          "description": "Euler rotation in radians.",
+          "name": "rotation",
+          "optional": false,
+          "readonly": false,
+          "type_name": "Vec3"
+        },
+        {
+          "description": "Uniform scale factor.",
+          "name": "scale",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Visibility flag.",
+          "name": "visible",
+          "optional": false,
+          "readonly": false,
+          "type_name": "bool"
+        },
+        {
+          "description": "Line color.",
+          "name": "color",
+          "optional": false,
+          "readonly": false,
+          "type_name": "Color"
+        }
+      ]
+    },
+    {
+      "description": "Options map for `line.strip(#{ ... })`.",
+      "kind": "struct",
+      "methods": [],
+      "name": "LineStripOptions",
+      "properties": [
+        {
+          "description": "Ring buffer size.",
+          "name": "max_points",
+          "optional": true,
+          "readonly": false,
+          "type_name": "int"
+        },
+        {
+          "description": "Render mode.",
+          "name": "mode",
+          "optional": true,
+          "readonly": false,
+          "type_name": "\"line\" | \"points\""
+        }
+      ]
+    },
+    {
+      "description": "Mesh factory namespace.",
+      "kind": "namespace",
+      "methods": [
+        {
+          "description": "Create a cube mesh entity.",
+          "example": "let cube = mesh.cube();",
+          "name": "cube",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "MeshEntity"
+        },
+        {
+          "description": "Create a plane mesh entity.",
+          "example": "let ground = mesh.plane();",
+          "name": "plane",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "MeshEntity"
+        }
+      ],
+      "name": "Mesh",
+      "properties": []
+    },
+    {
+      "description": "Line factory namespace. Create procedural line strips and Signal-driven traces.",
+      "kind": "namespace",
+      "methods": [
+        {
+          "description": "Create a procedural line strip with manual push() control.",
+          "example": "let spark = line.strip(#{ max_points: 256, mode: \"line\" });",
+          "name": "strip",
+          "notes": "Defaults: max_points=256, mode=\"line\".",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Options map (optional keys: max_points, mode).",
+              "name": "options",
+              "optional": false,
+              "type_name": "LineStripOptions"
+            }
+          ],
+          "returns": "LineStripEntity"
+        },
+        {
+          "description": "Create a Signal-driven line that automatically plots values over time.",
+          "example": "let trace = line.trace(inputs.amplitude, #{ max_points: 256 });",
+          "name": "trace",
+          "notes": "Plots (time * x_scale, (value + y_offset) * y_scale) each frame. No update() code needed.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "The Signal to trace. Evaluated each frame.",
+              "name": "signal",
+              "optional": false,
+              "type_name": "Signal"
+            },
+            {
+              "default": null,
+              "description": "Options map (max_points, mode, x_scale, y_scale, y_offset).",
+              "name": "options",
+              "optional": false,
+              "type_name": "LineTraceOptions"
+            }
+          ],
+          "returns": "LineTraceEntity"
+        }
+      ],
+      "name": "Line",
+      "properties": []
+    },
+    {
+      "description": "Options map for `line.trace(signal, #{ ... })`.",
+      "kind": "struct",
+      "methods": [],
+      "name": "LineTraceOptions",
+      "properties": [
+        {
+          "description": "Ring buffer size (default: 256).",
+          "name": "max_points",
+          "optional": true,
+          "readonly": false,
+          "type_name": "int"
+        },
+        {
+          "description": "Render mode (default: \"line\").",
+          "name": "mode",
+          "optional": true,
+          "readonly": false,
+          "type_name": "\"line\" | \"points\""
+        },
+        {
+          "description": "Scale factor for time axis (default: 1.0).",
+          "name": "x_scale",
+          "optional": true,
+          "readonly": false,
+          "type_name": "f32 | Signal"
+        },
+        {
+          "description": "Scale factor for signal value (default: 1.0).",
+          "name": "y_scale",
+          "optional": true,
+          "readonly": false,
+          "type_name": "f32 | Signal"
+        },
+        {
+          "description": "Offset added to value before scaling (default: 0.0).",
+          "name": "y_offset",
+          "optional": true,
+          "readonly": false,
+          "type_name": "f32 | Signal"
+        }
+      ]
+    },
+    {
+      "description": "A Signal-driven line created by `line.trace(signal, options)`.",
+      "kind": "opaque",
+      "methods": [
+        {
+          "description": "Clear all points from the trace.",
+          "example": "trace.clear();",
+          "name": "clear",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "void"
+        }
+      ],
+      "name": "LineTraceEntity",
+      "properties": [
+        {
+          "description": "Position in 3D space.",
+          "name": "position",
+          "optional": false,
+          "readonly": false,
+          "type_name": "Vec3"
+        },
+        {
+          "description": "Euler angles in radians.",
+          "name": "rotation",
+          "optional": false,
+          "readonly": false,
+          "type_name": "Vec3"
+        },
+        {
+          "description": "Uniform scale factor.",
+          "name": "scale",
+          "optional": false,
+          "readonly": false,
+          "type_name": "f32 | Signal"
+        },
+        {
+          "description": "Visibility flag.",
+          "name": "visible",
+          "optional": false,
+          "readonly": false,
+          "type_name": "bool"
+        },
+        {
+          "description": "RGBA color (0.0-1.0 range). Channels can be Signals.",
+          "name": "color",
+          "optional": false,
+          "readonly": false,
+          "type_name": "Color"
+        }
+      ]
+    },
+    {
+      "description": "Scene management namespace.",
+      "kind": "namespace",
+      "methods": [
+        {
+          "description": "Add an entity to the render list.",
+          "example": "scene.add(cube);",
+          "name": "add",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Entity to render.",
+              "name": "entity",
+              "optional": false,
+              "type_name": "MeshEntity | LineStripEntity | LineTraceEntity"
+            }
+          ],
+          "returns": "void"
+        },
+        {
+          "description": "Remove an entity from the render list.",
+          "example": "scene.remove(cube);",
+          "name": "remove",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Entity to stop rendering.",
+              "name": "entity",
+              "optional": false,
+              "type_name": "MeshEntity | LineStripEntity | LineTraceEntity"
+            }
+          ],
+          "returns": "void"
+        }
+      ],
+      "name": "Scene",
+      "properties": []
+    },
+    {
+      "description": "Script logging namespace.",
+      "kind": "namespace",
+      "methods": [
+        {
+          "description": "Log an info message.",
+          "example": "log.info(\"hello\");",
+          "name": "info",
+          "notes": "Log volume is limited per frame.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Value to log.",
+              "name": "value",
+              "optional": false,
+              "type_name": "any"
+            }
+          ],
+          "returns": "void"
+        },
+        {
+          "description": "Log a warning message.",
+          "example": "log.warn(\"careful\");",
+          "name": "warn",
+          "notes": "Log volume is limited per frame.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Value to log.",
+              "name": "value",
+              "optional": false,
+              "type_name": "any"
+            }
+          ],
+          "returns": "void"
+        },
+        {
+          "description": "Log an error message.",
+          "example": "log.error(\"oops\");",
+          "name": "error",
+          "notes": "Log volume is limited per frame.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Value to log.",
+              "name": "value",
+              "optional": false,
+              "type_name": "any"
+            }
+          ],
+          "returns": "void"
+        }
+      ],
+      "name": "Log",
+      "properties": []
+    },
+    {
+      "description": "Debug and inspection namespace.",
+      "kind": "namespace",
+      "methods": [
+        {
+          "description": "Emit a named debug signal value (analysis mode only).",
+          "example": "dbg.emit(\"energy\", 0.5);",
+          "name": "emit",
+          "notes": "In playback mode this is a no-op.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Signal name to record.",
+              "name": "name",
+              "optional": false,
+              "type_name": "string"
+            },
+            {
+              "default": null,
+              "description": "Numeric value to record.",
+              "name": "value",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "void"
+        },
+        {
+          "description": "List all available material IDs.",
+          "example": "log.info(dbg.listMaterials());",
+          "name": "listMaterials",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "array<string>"
+        },
+        {
+          "description": "Get detailed information about a material.",
+          "example": "log.info(dbg.describeMaterial(\"emissive\"));",
+          "name": "describeMaterial",
+          "notes": "Returns {name, blend_mode, params: [{name, type}]}.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Material ID.",
+              "name": "id",
+              "optional": false,
+              "type_name": "string"
+            }
+          ],
+          "returns": "Map"
+        },
+        {
+          "description": "List all available post-processing effect IDs.",
+          "example": "log.info(dbg.listEffects());",
+          "name": "listEffects",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "array<string>"
+        },
+        {
+          "description": "Get detailed information about a post-processing effect.",
+          "example": "log.info(dbg.describeEffect(\"bloom\"));",
+          "name": "describeEffect",
+          "notes": "Returns {name, description, params: [{name, type, description}]}.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Effect ID.",
+              "name": "id",
+              "optional": false,
+              "type_name": "string"
+            }
+          ],
+          "returns": "Map"
+        }
+      ],
+      "name": "Dbg",
+      "properties": []
+    },
+    {
+      "description": "Declarative signal computation graph (host-evaluated).",
+      "kind": "opaque",
+      "methods": [
+        {
+          "description": "Add another signal.",
+          "example": "inputs.spectralFlux.add(inputs.onsetEnvelope)",
+          "name": "add",
+          "notes": null,
+          "overload_id": "signal",
+          "params": [
+            {
+              "default": null,
+              "description": "Signal to add.",
+              "name": "other",
+              "optional": false,
+              "type_name": "Signal"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Add a constant value.",
+          "example": "inputs.amplitude.add(0.5)",
+          "name": "add",
+          "notes": null,
+          "overload_id": "scalar",
+          "params": [
+            {
+              "default": null,
+              "description": "Constant to add.",
+              "name": "value",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Multiply by another signal.",
+          "example": "inputs.amplitude.mul(inputs.onsetEnvelope)",
+          "name": "mul",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Signal to multiply by.",
+              "name": "other",
+              "optional": false,
+              "type_name": "Signal"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Multiply by a constant factor.",
+          "example": "inputs.amplitude.scale(2.0)",
+          "name": "scale",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Scale factor.",
+              "name": "factor",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Linear blend between this signal and another.",
+          "example": "inputs.amplitude.mix(inputs.spectralFlux, 0.5)",
+          "name": "mix",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Other signal.",
+              "name": "other",
+              "optional": false,
+              "type_name": "Signal"
+            },
+            {
+              "default": 0.5,
+              "description": "0.0 = this, 1.0 = other.",
+              "name": "weight",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Attach a debug probe to emit values during host evaluation.",
+          "example": "inputs.onsetEnvelope.probe(\"onset\")",
+          "name": "probe",
+          "notes": "Use with analysis mode / host evaluation; this does not print.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Probe name.",
+              "name": "name",
+              "optional": false,
+              "type_name": "string"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Clamp signal to [min, max].",
+          "example": "inputs.amplitude.clamp(0.0, 1.0)",
+          "name": "clamp",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Lower bound.",
+              "name": "min",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Upper bound.",
+              "name": "max",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Round down.",
+          "example": "inputs.beatPosition.floor()",
+          "name": "floor",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "Signal"
+        },
+        {
+          "description": "Round up.",
+          "example": "inputs.beatPosition.ceil()",
+          "name": "ceil",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "Signal"
+        },
+        {
+          "description": "Absolute value.",
+          "example": "inputs.diff().abs()",
+          "name": "abs",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "Signal"
+        },
+        {
+          "description": "Apply a logistic sigmoid curve (centered at 0.5).",
+          "example": "inputs.amplitude.normalise.robust().sigmoid(10.0)",
+          "name": "sigmoid",
+          "notes": "Normalize or clamp to 0-1 first for predictable results.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Steepness (0.0 = no-op).",
+              "name": "k",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Approximate derivative (rate of change).",
+          "example": "inputs.amplitude.diff()",
+          "name": "diff",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "Signal"
+        },
+        {
+          "description": "Cumulative sum with optional decay (in beats).",
+          "example": "inputs.onsetEnvelope.integrate(0.5)",
+          "name": "integrate",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": 0.0,
+              "description": "0 = no decay.",
+              "name": "decay_beats",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Delay the signal by N beats.",
+          "example": "inputs.onsetEnvelope.delay(0.25)",
+          "name": "delay",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Delay amount in beats.",
+              "name": "beats",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Look ahead by N beats (input signals only).",
+          "example": "inputs.onsetEnvelope.anticipate(0.1)",
+          "name": "anticipate",
+          "notes": "For derived signals this may be a no-op.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Lookahead in beats.",
+              "name": "beats",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Use linear interpolation sampling.",
+          "example": "inputs.spectralCentroid.interpolate()",
+          "name": "interpolate",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "Signal"
+        },
+        {
+          "description": "Use peak-preserving sampling (default).",
+          "example": "inputs.onsetEnvelope.peak()",
+          "name": "peak",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "Signal"
+        },
+        {
+          "description": "Peak-preserving sampling with custom window (beats).",
+          "example": "inputs.energy.peak_window(0.25)",
+          "name": "peak_window",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Window size in beats.",
+              "name": "beats",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Peak-preserving sampling with custom window (seconds).",
+          "example": "inputs.energy.peak_window_sec(0.05)",
+          "name": "peak_window_sec",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Window size in seconds.",
+              "name": "seconds",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        }
+      ],
+      "name": "Signal",
+      "properties": [
+        {
+          "description": "Smoothing operations namespace.",
+          "name": "smooth",
+          "optional": false,
+          "readonly": true,
+          "type_name": "SmoothBuilder"
+        },
+        {
+          "description": "Normalisation operations namespace.",
+          "name": "normalise",
+          "optional": false,
+          "readonly": true,
+          "type_name": "NormaliseBuilder"
+        },
+        {
+          "description": "Gating operations namespace.",
+          "name": "gate",
+          "optional": false,
+          "readonly": true,
+          "type_name": "GateBuilder"
+        },
+        {
+          "description": "Event extraction namespace.",
+          "name": "pick",
+          "optional": false,
+          "readonly": true,
+          "type_name": "PickBuilder"
+        }
+      ]
+    },
+    {
+      "description": "Smoothing operations (returned by `signal.smooth`).",
+      "kind": "opaque",
+      "methods": [
+        {
+          "description": "Moving average over a window of N beats.",
+          "example": "inputs.onsetEnvelope.smooth.moving_average(0.5)",
+          "name": "moving_average",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Window size in beats.",
+              "name": "beats",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Asymmetric exponential smoothing in beats.",
+          "example": "inputs.amplitude.smooth.exponential(0.1, 0.5)",
+          "name": "exponential",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Attack time in beats (rising).",
+              "name": "attack_beats",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Release time in beats (falling).",
+              "name": "release_beats",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Gaussian blur with sigma in beats.",
+          "example": "inputs.spectralCentroid.smooth.gaussian(0.25)",
+          "name": "gaussian",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Sigma in beats.",
+              "name": "sigma_beats",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        }
+      ],
+      "name": "SmoothBuilder",
+      "properties": []
+    },
+    {
+      "description": "Normalisation operations (returned by `signal.normalise`).",
+      "kind": "opaque",
+      "methods": [
+        {
+          "description": "Min-max normalisation using whole-track statistics.",
+          "example": "inputs.amplitude.normalise.global()",
+          "name": "global",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "Signal"
+        },
+        {
+          "description": "Percentile-based normalisation (5th–95th).",
+          "example": "inputs.spectralFlux.normalise.robust()",
+          "name": "robust",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "Signal"
+        },
+        {
+          "description": "Map to a custom output range.",
+          "example": "inputs.amplitude.normalise.to_range(0.0, 1.0)",
+          "name": "to_range",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Output min.",
+              "name": "min",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Output max.",
+              "name": "max",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        }
+      ],
+      "name": "NormaliseBuilder",
+      "properties": []
+    },
+    {
+      "description": "Gating operations (returned by `signal.gate`).",
+      "kind": "opaque",
+      "methods": [
+        {
+          "description": "Binary gate: 1.0 if >= threshold else 0.0.",
+          "example": "inputs.onsetEnvelope.gate.threshold(0.7)",
+          "name": "threshold",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Threshold value.",
+              "name": "threshold",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Schmitt trigger gate (on/off thresholds).",
+          "example": "inputs.amplitude.gate.hysteresis(0.6, 0.4)",
+          "name": "hysteresis",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Must exceed to turn on.",
+              "name": "on_threshold",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Must drop below to turn off.",
+              "name": "off_threshold",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        }
+      ],
+      "name": "GateBuilder",
+      "properties": []
+    },
+    {
+      "description": "Options map for `signal.pick.events(#{ ... })`.",
+      "kind": "struct",
+      "methods": [],
+      "name": "PickEventsOptions",
+      "properties": [
+        {
+          "description": "Minimum time between events in beats. Default: 0.25.",
+          "name": "hysteresis_beats",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Target events per beat. Default: 1.0.",
+          "name": "target_density",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Similarity clustering tolerance (0.0–1.0). Default: 0.15.",
+          "name": "similarity_tolerance",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Prefer on-beat events (0.0–1.0). Default: 0.0.",
+          "name": "phase_bias",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Minimum absolute threshold. Default: 0.1.",
+          "name": "min_threshold",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Adaptive threshold factor. Default: 0.5.",
+          "name": "adaptive_factor",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "How to assign event weights. Default: peak_height.",
+          "name": "weight_mode",
+          "optional": true,
+          "readonly": false,
+          "type_name": "\"peak_height\" | \"integrated_energy\""
+        },
+        {
+          "description": "If weight_mode is integrated_energy, integration window in beats. Default: 0.25.",
+          "name": "energy_window_beats",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        }
+      ]
+    },
+    {
+      "description": "Event extraction operations (returned by `signal.pick`).",
+      "kind": "opaque",
+      "methods": [
+        {
+          "description": "Extract an EventStream from a Signal using peak-picking.",
+          "example": "let events = inputs.onsetEnvelope.pick.events(#{ target_density: 2.0 });",
+          "name": "events",
+          "notes": "In playback mode, this may return an empty stream.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Options map.",
+              "name": "options",
+              "optional": false,
+              "type_name": "PickEventsOptions"
+            }
+          ],
+          "returns": "EventStream"
+        }
+      ],
+      "name": "PickBuilder",
+      "properties": []
+    },
+    {
+      "description": "A single extracted event.",
+      "kind": "opaque",
+      "methods": [],
+      "name": "Event",
+      "properties": [
+        {
+          "description": "Event time in seconds.",
+          "name": "time",
+          "optional": false,
+          "readonly": true,
+          "type_name": "float"
+        },
+        {
+          "description": "Event weight (meaning depends on weight_mode).",
+          "name": "weight",
+          "optional": false,
+          "readonly": true,
+          "type_name": "float"
+        },
+        {
+          "description": "Beat position if available, else 0.0.",
+          "name": "beat_position",
+          "optional": false,
+          "readonly": true,
+          "type_name": "float"
+        },
+        {
+          "description": "Phase within beat if available, else 0.0.",
+          "name": "beat_phase",
+          "optional": false,
+          "readonly": true,
+          "type_name": "float"
+        },
+        {
+          "description": "Cluster ID if available, else -1.",
+          "name": "cluster_id",
+          "optional": false,
+          "readonly": true,
+          "type_name": "int"
+        }
+      ]
+    },
+    {
+      "description": "Options map for `event_stream.to_signal(#{ ... })`.",
+      "kind": "struct",
+      "methods": [],
+      "name": "ToSignalOptions",
+      "properties": [
+        {
+          "description": "Envelope shape. Default: \"impulse\".",
+          "name": "envelope",
+          "optional": true,
+          "readonly": false,
+          "type_name": "string"
+        },
+        {
+          "description": "Attack in beats. Default: 0.1.",
+          "name": "attack_beats",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Decay in beats. Default: 0.5.",
+          "name": "decay_beats",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "ADSR sustain level. Default: 0.7.",
+          "name": "sustain_level",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "ADSR sustain time in beats. Default: 0.5.",
+          "name": "sustain_beats",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "ADSR release in beats. Default: 0.3.",
+          "name": "release_beats",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Gaussian width in beats. Default: 0.25.",
+          "name": "width_beats",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Easing function. Default: \"linear\".",
+          "name": "easing",
+          "optional": true,
+          "readonly": false,
+          "type_name": "string"
+        },
+        {
+          "description": "How to combine overlapping envelopes. Default: \"sum\".",
+          "name": "overlap_mode",
+          "optional": true,
+          "readonly": false,
+          "type_name": "string"
+        },
+        {
+          "description": "Group nearby events before shaping. Default: null.",
+          "name": "group_within_beats",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "How to merge grouped events. Default: \"sum\".",
+          "name": "merge_mode",
+          "optional": true,
+          "readonly": false,
+          "type_name": "string"
+        }
+      ]
+    },
+    {
+      "description": "An immutable, time-ordered stream of events.",
+      "kind": "opaque",
+      "methods": [
+        {
+          "description": "Number of events.",
+          "example": "let n = events.len();",
+          "name": "len",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "int"
+        },
+        {
+          "description": "True if there are no events.",
+          "example": "if events.is_empty() { ... }",
+          "name": "is_empty",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "bool"
+        },
+        {
+          "description": "Get an event by index (or () if out of range).",
+          "example": "let e = events.get(0);",
+          "name": "get",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "0-based index.",
+              "name": "index",
+              "optional": false,
+              "type_name": "int"
+            }
+          ],
+          "returns": "Event | void"
+        },
+        {
+          "description": "Convert to an array for iteration.",
+          "example": "for e in events.to_array() { ... }",
+          "name": "to_array",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "array<Event>"
+        },
+        {
+          "description": "Return [start, end] times (or [] if empty).",
+          "example": "let span = events.time_span();",
+          "name": "time_span",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "array<float>"
+        },
+        {
+          "description": "Maximum event weight (or 0.0 if empty).",
+          "example": "let w = events.max_weight();",
+          "name": "max_weight",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "float"
+        },
+        {
+          "description": "Minimum event weight (or 0.0 if empty).",
+          "example": "let w = events.min_weight();",
+          "name": "min_weight",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "float"
+        },
+        {
+          "description": "Convert events to an impulse Signal.",
+          "example": "let impulses = events.to_signal();",
+          "name": "to_signal",
+          "notes": null,
+          "overload_id": "impulse",
+          "params": [],
+          "returns": "Signal"
+        },
+        {
+          "description": "Convert events to a shaped Signal.",
+          "example": "let env = events.to_signal(#{ envelope: \"attack_decay\", attack_beats: 0.05, decay_beats: 0.5 });",
+          "name": "to_signal",
+          "notes": null,
+          "overload_id": "options",
+          "params": [
+            {
+              "default": null,
+              "description": "Envelope shaping options.",
+              "name": "options",
+              "optional": false,
+              "type_name": "ToSignalOptions"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Filter events to a time range [start, end).",
+          "example": "let later = events.filter_time(30.0, 45.0);",
+          "name": "filter_time",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Start time (seconds).",
+              "name": "start",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "End time (seconds).",
+              "name": "end",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "EventStream"
+        },
+        {
+          "description": "Filter events by minimum weight.",
+          "example": "let strong = events.filter_weight(0.5);",
+          "name": "filter_weight",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Minimum weight.",
+              "name": "min_weight",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "EventStream"
+        },
+        {
+          "description": "Limit to the first N events.",
+          "example": "let first = events.limit(10);",
+          "name": "limit",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Maximum number of events.",
+              "name": "max_events",
+              "optional": false,
+              "type_name": "int"
+            }
+          ],
+          "returns": "EventStream"
+        },
+        {
+          "description": "Convert to signal and attach a debug probe for analysis visualization.",
+          "example": "let probed = events.probe(\"onsets\");",
+          "name": "probe",
+          "notes": "Returns a Signal, not EventStream. Use to visualize events in the debug UI.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Probe name shown in debug UI.",
+              "name": "name",
+              "optional": false,
+              "type_name": "string"
+            }
+          ],
+          "returns": "Signal"
+        }
+      ],
+      "name": "EventStream",
+      "properties": []
+    },
+    {
+      "description": "Signal generator namespace.",
+      "kind": "namespace",
+      "methods": [
+        {
+          "description": "Sine wave oscillator synced to beats.",
+          "example": "let s = gen.sin(1.0, 0.0);",
+          "name": "sin",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Frequency in cycles per beat.",
+              "name": "freq_beats",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": 0.0,
+              "description": "Phase offset.",
+              "name": "phase",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Square wave oscillator.",
+          "example": "let s = gen.square(1.0, 0.0, 0.5);",
+          "name": "square",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Frequency in cycles per beat.",
+              "name": "freq_beats",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": 0.0,
+              "description": "Phase offset.",
+              "name": "phase",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": 0.5,
+              "description": "Duty cycle (0.0–1.0).",
+              "name": "duty",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Triangle wave oscillator synced to beats.",
+          "example": "let s = gen.triangle(1.0, 0.0);",
+          "name": "triangle",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Frequency in cycles per beat.",
+              "name": "freq_beats",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": 0.0,
+              "description": "Phase offset.",
+              "name": "phase",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Sawtooth oscillator synced to beats.",
+          "example": "let s = gen.saw(1.0, 0.0);",
+          "name": "saw",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Frequency in cycles per beat.",
+              "name": "freq_beats",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": 0.0,
+              "description": "Phase offset.",
+              "name": "phase",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Noise generator (white or pink).",
+          "example": "let n = gen.noise(\"pink\", 42);",
+          "name": "noise",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": "white",
+              "description": "Noise type.",
+              "name": "noise_type",
+              "optional": false,
+              "type_name": "\"white\" | \"pink\""
+            },
+            {
+              "default": 0,
+              "description": "Deterministic seed.",
+              "name": "seed",
+              "optional": false,
+              "type_name": "int"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "1D Perlin noise synced to beats.",
+          "example": "let n = gen.perlin(1.0, 42);",
+          "name": "perlin",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Scale in beats.",
+              "name": "scale_beats",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": 0,
+              "description": "Deterministic seed.",
+              "name": "seed",
+              "optional": false,
+              "type_name": "int"
+            }
+          ],
+          "returns": "Signal"
+        },
+        {
+          "description": "Constant-valued signal.",
+          "example": "let one = gen.constant(1.0);",
+          "name": "constant",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Constant value.",
+              "name": "value",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "Signal"
+        }
+      ],
+      "name": "Gen",
+      "properties": []
+    },
+    {
+      "description": "Global signal accessors namespace. Properties return `Signal` objects.",
+      "kind": "namespace",
+      "methods": [],
+      "name": "InputsSignals",
+      "properties": [
+        {
+          "description": "Playback time in seconds.",
+          "name": "time",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Delta time in seconds.",
+          "name": "dt",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Audio amplitude (normalized).",
+          "name": "amplitude",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Spectral flux (alias for `spectralFlux` when provided).",
+          "name": "flux",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Spectral centroid (brightness).",
+          "name": "spectralCentroid",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Spectral flux (rate of spectral change).",
+          "name": "spectralFlux",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Onset detection envelope.",
+          "name": "onsetEnvelope",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Search similarity curve (0–1).",
+          "name": "searchSimilarity",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Continuous beat position (beatIndex + beatPhase).",
+          "name": "beatPosition",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Current beat index (integer-valued).",
+          "name": "beatIndex",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Phase within current beat (0–1).",
+          "name": "beatPhase",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Tempo in beats per minute.",
+          "name": "bpm",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Band-scoped signal accessors: `inputs.bands[\"Bass\"].energy`.",
+          "name": "bands",
+          "optional": true,
+          "readonly": true,
+          "type_name": "Bands"
+        }
+      ]
+    },
+    {
+      "description": "Band-scoped signal accessors (string-keyed map).",
+      "kind": "opaque",
+      "methods": [],
+      "name": "Bands",
+      "properties": []
+    },
+    {
+      "description": "Signals available for a specific band key.",
+      "kind": "opaque",
+      "methods": [],
+      "name": "BandSignals",
+      "properties": [
+        {
+          "description": "Band amplitude envelope (0–1).",
+          "name": "energy",
+          "optional": false,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Band onset strength (0–1).",
+          "name": "onset",
+          "optional": false,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Band spectral flux (0–1).",
+          "name": "flux",
+          "optional": false,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Alias for energy.",
+          "name": "amplitude",
+          "optional": false,
+          "readonly": true,
+          "type_name": "Signal"
+        },
+        {
+          "description": "Band-scoped events (may be empty).",
+          "name": "events",
+          "optional": false,
+          "readonly": true,
+          "type_name": "EventStream"
+        }
+      ]
+    },
+    {
+      "description": "Frame feedback namespace for Milkdrop-style temporal visual effects.",
+      "kind": "namespace",
+      "methods": [
+        {
+          "description": "Create a new feedback configuration builder.",
+          "example": "let fb = feedback.builder().warp.spiral(0.5, 0.02).build();",
+          "name": "builder",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Enable feedback with a configuration.",
+          "example": "feedback.enable(fb);",
+          "name": "enable",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Feedback configuration from builder.build().",
+              "name": "config",
+              "optional": false,
+              "type_name": "FeedbackConfig"
+            }
+          ],
+          "returns": "void"
+        },
+        {
+          "description": "Disable feedback effects.",
+          "example": "feedback.disable();",
+          "name": "disable",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "void"
+        },
+        {
+          "description": "Check if feedback is currently enabled.",
+          "example": "if feedback.is_enabled() { ... }",
+          "name": "is_enabled",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "bool"
+        }
+      ],
+      "name": "Feedback",
+      "properties": []
+    },
+    {
+      "description": "Scene camera with signal-bindable properties. Position, rotation, projection parameters can all be driven by Signals for audio-reactive camera motion.",
+      "kind": "struct",
+      "methods": [
+        {
+          "description": "Set the camera to look at a target position. Enables LookAt mode.",
+          "example": "camera.lookAt(#{ x: 0.0, y: 0.0, z: 0.0 });",
+          "name": "lookAt",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "World-space position to look at.",
+              "name": "target",
+              "optional": false,
+              "type_name": "Vec3"
+            }
+          ],
+          "returns": "void"
+        },
+        {
+          "description": "Position camera on circular orbit around a center point. Sets both position and target.",
+          "example": "camera.orbit(#{ x: 0.0, y: 0.0, z: 0.0 }, 5.0, time.seconds * 0.5);",
+          "name": "orbit",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "World-space position to orbit around.",
+              "name": "center",
+              "optional": false,
+              "type_name": "Vec3"
+            },
+            {
+              "default": null,
+              "description": "Distance from center.",
+              "name": "radius",
+              "optional": false,
+              "type_name": "float | Signal"
+            },
+            {
+              "default": null,
+              "description": "Angle in radians around Y-axis.",
+              "name": "angle",
+              "optional": false,
+              "type_name": "float | Signal"
+            }
+          ],
+          "returns": "void"
+        },
+        {
+          "description": "Move camera forward/backward along view direction.",
+          "example": "camera.dolly(inputs.energy.scale(2.0));",
+          "name": "dolly",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Distance to move (positive = forward).",
+              "name": "distance",
+              "optional": false,
+              "type_name": "float | Signal"
+            }
+          ],
+          "returns": "void"
+        },
+        {
+          "description": "Move camera laterally (left/right, up/down).",
+          "example": "camera.pan(0.5, 0.0);",
+          "name": "pan",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Horizontal movement (positive = right).",
+              "name": "dx",
+              "optional": false,
+              "type_name": "float | Signal"
+            },
+            {
+              "default": null,
+              "description": "Vertical movement (positive = up).",
+              "name": "dy",
+              "optional": false,
+              "type_name": "float | Signal"
+            }
+          ],
+          "returns": "void"
+        }
+      ],
+      "name": "Camera",
+      "properties": [
+        {
+          "description": "Camera position in world space. Each component (x, y, z) accepts numbers or Signals.",
+          "name": "position",
+          "optional": false,
+          "readonly": false,
+          "type_name": "Vec3"
+        },
+        {
+          "description": "Camera rotation in Euler angles (pitch, yaw, roll) in radians. Used in Euler mode (when target is not set).",
+          "name": "rotation",
+          "optional": false,
+          "readonly": false,
+          "type_name": "Vec3"
+        },
+        {
+          "description": "Look-at target position. Set to enable LookAt mode (camera orientation derived automatically). Set to () for Euler mode.",
+          "name": "target",
+          "optional": true,
+          "readonly": false,
+          "type_name": "Vec3 | unit"
+        },
+        {
+          "description": "Up vector for LookAt mode. Defaults to Y-up (0, 1, 0).",
+          "name": "up",
+          "optional": false,
+          "readonly": false,
+          "type_name": "Vec3"
+        },
+        {
+          "description": "Field of view in degrees. Default: 45.",
+          "name": "fov",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float | Signal"
+        },
+        {
+          "description": "Near clip plane distance. Default: 0.1.",
+          "name": "near",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float | Signal"
+        },
+        {
+          "description": "Far clip plane distance. Default: 100.",
+          "name": "far",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float | Signal"
+        }
+      ]
+    },
+    {
+      "description": "Fluent builder for feedback configurations.",
+      "kind": "opaque",
+      "methods": [
+        {
+          "description": "Set the feedback opacity (0-1).",
+          "example": ".opacity(0.9)",
+          "name": "opacity",
+          "notes": "Default is 0.8.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Opacity (0 = invisible, 1 = full).",
+              "name": "value",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Build the final feedback configuration.",
+          "example": "let config = builder.build();",
+          "name": "build",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "FeedbackConfig"
+        }
+      ],
+      "name": "FeedbackBuilder",
+      "properties": [
+        {
+          "description": "Warp operations namespace.",
+          "name": "warp",
+          "optional": false,
+          "readonly": true,
+          "type_name": "WarpBuilder"
+        },
+        {
+          "description": "Color operations namespace.",
+          "name": "color",
+          "optional": false,
+          "readonly": true,
+          "type_name": "ColorBuilder"
+        },
+        {
+          "description": "Blend mode selection namespace.",
+          "name": "blend",
+          "optional": false,
+          "readonly": true,
+          "type_name": "BlendBuilder"
+        }
+      ]
+    },
+    {
+      "description": "Warp operations (returned by `builder.warp`).",
+      "kind": "opaque",
+      "methods": [
+        {
+          "description": "Add a spiral warp (rotation + radial scaling).",
+          "example": ".warp.spiral(0.5, 0.02)",
+          "name": "spiral",
+          "notes": "Scale defaults to 1.0.",
+          "overload_id": "2-arg",
+          "params": [
+            {
+              "default": null,
+              "description": "Warp intensity (0-1).",
+              "name": "strength",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Rotation per frame (radians).",
+              "name": "rotation",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Add a spiral warp with custom scale.",
+          "example": ".warp.spiral(0.5, 0.02, 1.01)",
+          "name": "spiral",
+          "notes": null,
+          "overload_id": "3-arg",
+          "params": [
+            {
+              "default": null,
+              "description": "Warp intensity.",
+              "name": "strength",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Rotation per frame.",
+              "name": "rotation",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Scale factor.",
+              "name": "scale",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Add a radial warp (expand/contract from center).",
+          "example": ".warp.radial(0.3)",
+          "name": "radial",
+          "notes": null,
+          "overload_id": "1-arg",
+          "params": [
+            {
+              "default": null,
+              "description": "Warp intensity.",
+              "name": "strength",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Add a radial warp with custom scale.",
+          "example": ".warp.radial(0.3, 1.01)",
+          "name": "radial",
+          "notes": null,
+          "overload_id": "2-arg",
+          "params": [
+            {
+              "default": null,
+              "description": "Warp intensity.",
+              "name": "strength",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Scale factor.",
+              "name": "scale",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Add an affine warp (scale + rotation).",
+          "example": ".warp.affine(1.01, 0.02)",
+          "name": "affine",
+          "notes": null,
+          "overload_id": "2-arg",
+          "params": [
+            {
+              "default": null,
+              "description": "Scale factor.",
+              "name": "scale",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Rotation (radians).",
+              "name": "rotation",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Add an affine warp with translation.",
+          "example": ".warp.affine(1.0, 0.0, 0.01, 0.0)",
+          "name": "affine",
+          "notes": null,
+          "overload_id": "4-arg",
+          "params": [
+            {
+              "default": null,
+              "description": "Scale factor.",
+              "name": "scale",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Rotation (radians).",
+              "name": "rotation",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "X translation.",
+              "name": "tx",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Y translation.",
+              "name": "ty",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Add a noise displacement warp.",
+          "example": ".warp.noise(0.5, 2.0)",
+          "name": "noise",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Noise intensity.",
+              "name": "strength",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Noise frequency.",
+              "name": "frequency",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Add a shear warp.",
+          "example": ".warp.shear(0.3)",
+          "name": "shear",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Shear intensity.",
+              "name": "strength",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        }
+      ],
+      "name": "WarpBuilder",
+      "properties": []
+    },
+    {
+      "description": "Color operations (returned by `builder.color`).",
+      "kind": "opaque",
+      "methods": [
+        {
+          "description": "Add a decay effect (fade to black).",
+          "example": ".color.decay(0.95)",
+          "name": "decay",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Decay rate (0.9=fast, 0.99=slow).",
+              "name": "rate",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Add an HSV shift effect.",
+          "example": ".color.hsv(0.01, 0.0, -0.02)",
+          "name": "hsv",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Hue shift (0-1 = full rotation).",
+              "name": "h",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Saturation shift.",
+              "name": "s",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Value shift.",
+              "name": "v",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Add a posterize effect (reduce color levels).",
+          "example": ".color.posterize(8.0)",
+          "name": "posterize",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Number of levels (2-16 typical).",
+              "name": "levels",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Add a channel offset effect (RGB split).",
+          "example": ".color.channel_offset(0.5, 0.0)",
+          "name": "channel_offset",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "X offset amount.",
+              "name": "x",
+              "optional": false,
+              "type_name": "float"
+            },
+            {
+              "default": null,
+              "description": "Y offset amount.",
+              "name": "y",
+              "optional": false,
+              "type_name": "float"
+            }
+          ],
+          "returns": "FeedbackBuilder"
+        }
+      ],
+      "name": "ColorBuilder",
+      "properties": []
+    },
+    {
+      "description": "Blend mode selection (returned by `builder.blend`).",
+      "kind": "opaque",
+      "methods": [
+        {
+          "description": "Linear interpolation blend (default).",
+          "example": ".blend.alpha()",
+          "name": "alpha",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Additive blend (good for trails).",
+          "example": ".blend.add()",
+          "name": "add",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Multiplicative blend (darkens).",
+          "example": ".blend.multiply()",
+          "name": "multiply",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Screen blend (brightens).",
+          "example": ".blend.screen()",
+          "name": "screen",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Overlay blend (contrast enhancement).",
+          "example": ".blend.overlay()",
+          "name": "overlay",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Difference blend (psychedelic effects).",
+          "example": ".blend.difference()",
+          "name": "difference",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "FeedbackBuilder"
+        },
+        {
+          "description": "Maximum blend (brightest wins).",
+          "example": ".blend.max()",
+          "name": "max",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "FeedbackBuilder"
+        }
+      ],
+      "name": "BlendBuilder",
+      "properties": []
+    },
+    {
+      "description": "Feedback configuration (result of builder.build()).",
+      "kind": "opaque",
+      "methods": [],
+      "name": "FeedbackConfig",
+      "properties": []
+    },
+    {
+      "description": "Material parameters map. Keys and types depend on the selected material.",
+      "kind": "struct",
+      "methods": [],
+      "name": "MaterialParams",
+      "properties": []
+    },
+    {
+      "description": "Post-processing effect factory namespace.",
+      "kind": "namespace",
+      "methods": [
+        {
+          "description": "Create a bloom effect (glow on bright areas).",
+          "example": "let bloom = fx.bloom(#{ threshold: 0.7, intensity: 0.5 });",
+          "name": "bloom",
+          "notes": "Parameters: threshold (0-1), intensity (0-1), radius (px).",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Bloom parameters.",
+              "name": "options",
+              "optional": false,
+              "type_name": "BloomOptions"
+            }
+          ],
+          "returns": "PostEffect"
+        },
+        {
+          "description": "Create a color grading effect.",
+          "example": "let grade = fx.colorGrade(#{ contrast: 1.1, saturation: 1.2 });",
+          "name": "colorGrade",
+          "notes": "Parameters: brightness, contrast, saturation, gamma, tint.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Color grading parameters.",
+              "name": "options",
+              "optional": false,
+              "type_name": "ColorGradeOptions"
+            }
+          ],
+          "returns": "PostEffect"
+        },
+        {
+          "description": "Create a vignette effect (darkened edges).",
+          "example": "let vig = fx.vignette(#{ intensity: 0.3, smoothness: 0.5 });",
+          "name": "vignette",
+          "notes": "Parameters: intensity (0-1), smoothness (0-1), color.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Vignette parameters.",
+              "name": "options",
+              "optional": false,
+              "type_name": "VignetteOptions"
+            }
+          ],
+          "returns": "PostEffect"
+        },
+        {
+          "description": "Create a distortion effect (barrel/pincushion).",
+          "example": "let dist = fx.distortion(#{ amount: 0.1 });",
+          "name": "distortion",
+          "notes": "Parameters: amount (-1 to 1), center {x, y}.",
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Distortion parameters.",
+              "name": "options",
+              "optional": false,
+              "type_name": "DistortionOptions"
+            }
+          ],
+          "returns": "PostEffect"
+        }
+      ],
+      "name": "Fx",
+      "properties": []
+    },
+    {
+      "description": "Post-processing chain management namespace.",
+      "kind": "namespace",
+      "methods": [
+        {
+          "description": "Add an effect to the post-processing chain.",
+          "example": "post.add(bloom);",
+          "name": "add",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Effect to add.",
+              "name": "effect",
+              "optional": false,
+              "type_name": "PostEffect"
+            }
+          ],
+          "returns": "void"
+        },
+        {
+          "description": "Remove an effect from the post-processing chain.",
+          "example": "post.remove(bloom);",
+          "name": "remove",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Effect to remove.",
+              "name": "effect",
+              "optional": false,
+              "type_name": "PostEffect"
+            }
+          ],
+          "returns": "void"
+        },
+        {
+          "description": "Clear all effects from the chain.",
+          "example": "post.clear();",
+          "name": "clear",
+          "notes": null,
+          "overload_id": null,
+          "params": [],
+          "returns": "void"
+        },
+        {
+          "description": "Reorder effects in the chain.",
+          "example": "post.setOrder([bloom.__id, grade.__id]);",
+          "name": "setOrder",
+          "notes": null,
+          "overload_id": null,
+          "params": [
+            {
+              "default": null,
+              "description": "Effect IDs in desired order.",
+              "name": "order",
+              "optional": false,
+              "type_name": "array<int>"
+            }
+          ],
+          "returns": "void"
+        }
+      ],
+      "name": "Post",
+      "properties": []
+    },
+    {
+      "description": "A post-processing effect instance. Properties can be modified dynamically.",
+      "kind": "opaque",
+      "methods": [],
+      "name": "PostEffect",
+      "properties": [
+        {
+          "description": "Enable/disable the effect.",
+          "name": "enabled",
+          "optional": false,
+          "readonly": false,
+          "type_name": "bool"
+        },
+        {
+          "description": "Internal effect ID (for ordering).",
+          "name": "__id",
+          "optional": false,
+          "readonly": true,
+          "type_name": "int"
+        }
+      ]
+    },
+    {
+      "description": "Options for fx.bloom().",
+      "kind": "struct",
+      "methods": [],
+      "name": "BloomOptions",
+      "properties": [
+        {
+          "description": "Brightness threshold (0-1). Default: 0.8.",
+          "name": "threshold",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float | Signal"
+        },
+        {
+          "description": "Bloom intensity (0-1). Default: 0.5.",
+          "name": "intensity",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float | Signal"
+        },
+        {
+          "description": "Blur radius in pixels. Default: 4.0.",
+          "name": "radius",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float | Signal"
+        }
+      ]
+    },
+    {
+      "description": "Options for fx.colorGrade().",
+      "kind": "struct",
+      "methods": [],
+      "name": "ColorGradeOptions",
+      "properties": [
+        {
+          "description": "Brightness adjustment (-1 to 1). Default: 0.0.",
+          "name": "brightness",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float | Signal"
+        },
+        {
+          "description": "Contrast multiplier. Default: 1.0.",
+          "name": "contrast",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float | Signal"
+        },
+        {
+          "description": "Saturation multiplier. Default: 1.0.",
+          "name": "saturation",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float | Signal"
+        },
+        {
+          "description": "Gamma correction. Default: 1.0.",
+          "name": "gamma",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float | Signal"
+        },
+        {
+          "description": "Color tint. Default: white.",
+          "name": "tint",
+          "optional": true,
+          "readonly": false,
+          "type_name": "Color"
+        }
+      ]
+    },
+    {
+      "description": "Options for fx.vignette().",
+      "kind": "struct",
+      "methods": [],
+      "name": "VignetteOptions",
+      "properties": [
+        {
+          "description": "Vignette intensity (0-1). Default: 0.3.",
+          "name": "intensity",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float | Signal"
+        },
+        {
+          "description": "Edge smoothness (0-1). Default: 0.5.",
+          "name": "smoothness",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float | Signal"
+        },
+        {
+          "description": "Vignette color. Default: black.",
+          "name": "color",
+          "optional": true,
+          "readonly": false,
+          "type_name": "Color"
+        }
+      ]
+    },
+    {
+      "description": "Options for fx.distortion().",
+      "kind": "struct",
+      "methods": [],
+      "name": "DistortionOptions",
+      "properties": [
+        {
+          "description": "Distortion amount (-1 to 1). Default: 0.0.",
+          "name": "amount",
+          "optional": true,
+          "readonly": false,
+          "type_name": "float | Signal"
+        },
+        {
+          "description": "Distortion center (0-1). Default: {x: 0.5, y: 0.5}.",
+          "name": "center",
+          "optional": true,
+          "readonly": false,
+          "type_name": "Vec2"
+        }
+      ]
+    },
+    {
+      "description": "2D vector (x, y).",
+      "kind": "struct",
+      "methods": [],
+      "name": "Vec2",
+      "properties": [
+        {
+          "description": "X component.",
+          "name": "x",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float"
+        },
+        {
+          "description": "Y component.",
+          "name": "y",
+          "optional": false,
+          "readonly": false,
+          "type_name": "float"
+        }
+      ]
+    }
+  ]
+}
