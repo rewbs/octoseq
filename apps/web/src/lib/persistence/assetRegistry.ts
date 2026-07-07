@@ -13,7 +13,7 @@ import type {
   AssetType,
   AssetAudioMetadata,
 } from "./types";
-import type { AudioInputOrigin } from "../stores/types/audioInput";
+import type { AudioInputOrigin } from "./types";
 
 // ----------------------------
 // Asset Registration

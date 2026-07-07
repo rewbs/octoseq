@@ -5,7 +5,7 @@ import { useProjectStore } from "../projectStore";
 import { registerAsset, getAsset } from "../../persistence/assetRegistry";
 import { isIndexedDBAvailable } from "../../persistence/db";
 import type { AssetType, AssetAudioMetadata } from "../../persistence/types";
-import type { AudioInputMetadata, AudioInputOrigin } from "../types/audioInput";
+import type { AudioInputMetadata, AudioInputOrigin } from "@/lib/persistence/types";
 import {
   audioCache,
   isAudioStream,

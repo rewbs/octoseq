@@ -52,6 +52,7 @@ import {
   rawFileCache,
   removeStreamCascade,
   runStreamAnalyses,
+  toDisplaySignal,
   toFrequencyBand,
   useAnalysisStore,
   useAudioSourceStore,
@@ -158,7 +159,6 @@ export default function Home() {
   const setIsDebugOpen = useConfigStore((s) => s.setIsDebugOpen);
 
   // MIR store
-  const mirResults = useMirStore((s) => s.mirResults);
   const isRunning = useMirStore((s) => s.isRunning);
   const runningAnalysis = useMirStore((s) => s.runningAnalysis);
   const lastTimings = useMirStore((s) => s.lastTimings);
@@ -619,12 +619,13 @@ export default function Home() {
     ];
 
     for (const sig of mir1dSignals) {
-      const result = mirResults[sig.id];
+      const result = analysisResults.get(analysisKey(MIXDOWN_STREAM_ID, sig.id));
+      const display = result ? toDisplaySignal(result, sig.id) : null;
       options.push({
         id: sig.id,
         label: sig.label,
         group: "mir",
-        data: result?.kind === "1d" ? { times: result.times, values: result.values } : null,
+        data: display,
       });
     }
 
@@ -642,7 +643,7 @@ export default function Home() {
     }
 
     return options;
-  }, [mirResults, bandStreams, analysisResults]);
+  }, [bandStreams, analysisResults]);
 
   // Auto-compute amplitude envelope when band is selected but data missing
   useEffect(() => {
@@ -670,14 +671,14 @@ export default function Home() {
 
   // Extract beat candidates from MIR results for phase alignment
   const beatCandidates = useMemo((): BeatCandidate[] => {
-    const result = mirResults?.beatCandidates;
-    if (!result || result.kind !== "events") return [];
-    return result.events.map((e) => ({
-      time: e.time,
-      strength: e.strength,
+    const result = analysisResults.get(analysisKey(MIXDOWN_STREAM_ID, "beatCandidates"));
+    if (!result || result.kind !== "beatCandidates") return [];
+    return result.candidates.map((c) => ({
+      time: c.time,
+      strength: c.strength,
       source: "combined" as const,
     }));
-  }, [mirResults]);
+  }, [analysisResults]);
 
   // ===== KEYBOARD SHORTCUTS =====
   useKeyboardShortcuts({

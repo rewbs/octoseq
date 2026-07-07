@@ -17,7 +17,6 @@ export {
   type InspectionViewMode,
 } from "./inspectionStore";
 export { useInterpretationTreeStore } from "./interpretationTreeStore";
-export { makeInputMirCacheKey, type InputMirCacheKey } from "./mirStore";
 export {
   useCandidateEventStore,
   type CandidateEventStore,

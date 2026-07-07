@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import type { AudioBufferLike } from "@octoseq/mir";
 import { usePlaybackStore } from "../playbackStore";
-import { useMirStore } from "../mirStore";
 import { useSearchStore } from "../searchStore";
 import { useBandProposalStore } from "../bandProposalStore";
 import { useCandidateEventStore } from "../candidateEventStore";
@@ -58,8 +57,7 @@ export function useAudioActions({ fileInputRef, onAudioLoaded }: AudioActionsOpt
         label: fileName ?? "Mixdown",
       });
 
-      // Reset legacy stores still in use (deleted in later Phase 1 tasks)
-      useMirStore.getState().clearMirResults();
+      // Reset stores scoped to the previous audio
       searchStore.resetSearch();
       useBandProposalStore.getState().reset();
       useCandidateEventStore.getState().reset();

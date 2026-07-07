@@ -4,8 +4,7 @@ import {
     type BandProposalConfig,
     type FrequencyBand,
 } from "@octoseq/mir";
-import { MIXDOWN_STREAM_ID, audioCache, useStreamStore } from "@/lib/streams";
-import { useFrequencyBandStore } from "../frequencyBandStore";
+import { MIXDOWN_STREAM_ID, audioCache, useStreamStore, addBand } from "@/lib/streams";
 import { useBandProposalStore } from "../bandProposalStore";
 
 /**
@@ -69,27 +68,22 @@ export function useBandProposalActions() {
      */
     const promoteProposal = useCallback((proposalId: string, sourceId: string = MIXDOWN_STREAM_ID) => {
         const proposalStore = useBandProposalStore.getState();
-        const frequencyBandStore = useFrequencyBandStore.getState();
 
         const proposal = proposalStore.getProposalById(proposalId);
         if (!proposal) return;
 
-        // Ensure band structure exists
-        frequencyBandStore.ensureStructure();
-
-        // Add the band with updated provenance and correct sourceId
-        const bandToAdd: Omit<FrequencyBand, "id"> = {
-            ...proposal.band,
-            // Override sourceId with the correct audio source
-            sourceId,
-            // Update provenance to indicate it was imported from a proposal
+        // Add the band stream with updated provenance under the correct parent
+        addBand({
+            parentId: sourceId,
+            label: proposal.band.label,
+            frequencyShape: proposal.band.frequencyShape,
+            timeScope: proposal.band.timeScope,
+            enabled: proposal.band.enabled,
             provenance: {
                 source: "imported",
                 createdAt: new Date().toISOString(),
             },
-        };
-
-        frequencyBandStore.addBand(bandToAdd);
+        });
 
         // Remove from proposals
         proposalStore.dismissProposal(proposalId);

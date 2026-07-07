@@ -51,12 +51,12 @@ import {
   audioCache,
   isAudioStream,
   MIXDOWN_STREAM_ID,
+  useBandEditingStore,
 } from "@/lib/streams";
 import type { AudioSource, RemoteAudioSource, GeneratedAudioSource } from "@/lib/streams";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useMirStore } from "@/lib/stores/mirStore";
 import { getMirAnalysisId, getAudioSourceId, getBandId } from "@/lib/nodeTypes";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { TreeNode } from "./TreeNode";
 import { useTreeData, type TreeNodeData } from "./useTreeData";
 
@@ -467,8 +467,8 @@ export function InterpretationTreePanel() {
   const isDirty = useProjectStore((s) => s.isDirty);
   const setVisualTab = useMirStore((s) => s.setVisualTab);
   const setDisplayContextInputId = useMirStore((s) => s.setDisplayContextInputId);
-  const soloedBandId = useFrequencyBandStore((s) => s.soloedBandId);
-  const setSoloedBandId = useFrequencyBandStore((s) => s.setSoloedBandId);
+  const soloedBandId = useBandEditingStore((s) => s.soloedBandId);
+  const setSoloedBandId = useBandEditingStore((s) => s.setSoloedBand);
 
   // Ref for tracking container height for ratio calculations
   const containerRef = useRef<HTMLDivElement>(null);

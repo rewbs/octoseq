@@ -19,7 +19,6 @@ import {
 import { Upload, Info, X, Combine, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCandidateEventStore } from "@/lib/stores/candidateEventStore";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import {
   MIXDOWN_STREAM_ID,
   addStemWithAudio,
@@ -224,10 +223,8 @@ export function StemManagementContent() {
           }
 
           // Clear candidate events for this stem
+          // (band streams of this stem were already removed by removeStreamCascade)
           useCandidateEventStore.getState().clearForSource(stemId);
-
-          // Clear frequency bands for this stem
-          useFrequencyBandStore.getState().clearBandsForSource(stemId);
 
           // Set up undo with timeout
           const timeoutId = setTimeout(() => {
