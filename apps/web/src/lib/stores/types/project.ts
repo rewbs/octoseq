@@ -12,7 +12,7 @@ import type {
   PhaseHypothesis,
   PhaseAlignmentConfig,
 } from "@octoseq/mir";
-import type { Stream } from "@/lib/streams";
+import type { Stream, ViewPreset } from "@/lib/streams";
 import type { AuthoredEventStream } from "./authoredEvent";
 import type { SubBeatDivision } from "../timingStore";
 import type { DerivedSignalStructure } from "./derivedSignal";
@@ -123,6 +123,8 @@ export interface ProjectUIState {
   inspectorHeight: number;
   /** Last playhead position in seconds (for restoring on reload). */
   lastPlayheadPosition: number;
+  /** Named view presets (compared streams + analysis + panel visibility). */
+  viewPresets?: ViewPreset[];
 }
 
 // ----------------------------

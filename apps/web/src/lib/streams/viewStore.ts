@@ -8,7 +8,18 @@
 
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
+import { nanoid } from "nanoid";
 import type { AnalysisId, StreamId } from "./types";
+
+/** Persisted snapshot of the view (see ProjectUIState.viewPresets). */
+export interface ViewPreset {
+  id: string;
+  name: string;
+  comparedStreamIds: StreamId[];
+  comparisonAnalysisId: AnalysisId;
+  streamManagerOpen: boolean;
+  comparisonOpen: boolean;
+}
 
 interface ViewState {
   /** Streams currently shown in the comparison panel, in insertion order. */
@@ -18,6 +29,8 @@ interface ViewState {
   /** Panel visibility. */
   streamManagerOpen: boolean;
   comparisonOpen: boolean;
+  /** Named presets (persisted via project uiState). */
+  presets: ViewPreset[];
 }
 
 interface ViewActions {
@@ -29,6 +42,13 @@ interface ViewActions {
   setComparisonAnalysis: (id: AnalysisId) => void;
   setStreamManagerOpen: (open: boolean) => void;
   setComparisonOpen: (open: boolean) => void;
+  /** Snapshot the current view as a named preset. Returns its id. */
+  savePreset: (name: string) => string;
+  /** Apply a preset to the current view. No-op for unknown ids. */
+  applyPreset: (id: string) => void;
+  deletePreset: (id: string) => void;
+  /** Replace all presets (project hydration). */
+  setPresets: (presets: ViewPreset[]) => void;
   reset: () => void;
 }
 
@@ -37,6 +57,7 @@ const initialState: ViewState = {
   comparisonAnalysisId: "onsetEnvelope",
   streamManagerOpen: true,
   comparisonOpen: true,
+  presets: [],
 };
 
 export const useViewStore = create<ViewState & ViewActions>()(
@@ -84,7 +105,55 @@ export const useViewStore = create<ViewState & ViewActions>()(
       setComparisonOpen: (comparisonOpen) =>
         set({ comparisonOpen }, false, "setComparisonOpen"),
 
-      reset: () => set({ ...initialState, comparedStreamIds: new Set() }, false, "reset"),
+      savePreset: (name) => {
+        const id = nanoid();
+        set(
+          (state) => ({
+            presets: [
+              ...state.presets,
+              {
+                id,
+                name,
+                comparedStreamIds: [...state.comparedStreamIds],
+                comparisonAnalysisId: state.comparisonAnalysisId,
+                streamManagerOpen: state.streamManagerOpen,
+                comparisonOpen: state.comparisonOpen,
+              },
+            ],
+          }),
+          false,
+          "savePreset"
+        );
+        return id;
+      },
+
+      applyPreset: (id) =>
+        set(
+          (state) => {
+            const preset = state.presets.find((p) => p.id === id);
+            if (!preset) return state;
+            return {
+              comparedStreamIds: new Set(preset.comparedStreamIds),
+              comparisonAnalysisId: preset.comparisonAnalysisId,
+              streamManagerOpen: preset.streamManagerOpen,
+              comparisonOpen: preset.comparisonOpen,
+            };
+          },
+          false,
+          "applyPreset"
+        ),
+
+      deletePreset: (id) =>
+        set(
+          (state) => ({ presets: state.presets.filter((p) => p.id !== id) }),
+          false,
+          "deletePreset"
+        ),
+
+      setPresets: (presets) => set({ presets }, false, "setPresets"),
+
+      reset: () =>
+        set({ ...initialState, comparedStreamIds: new Set(), presets: [] }, false, "reset"),
     }),
     { name: "ViewStore" }
   )

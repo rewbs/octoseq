@@ -20,6 +20,7 @@ import {
   resetAllStreams,
   useStreamStore,
   type Stream,
+  useViewStore,
 } from "@/lib/streams";
 
 /**
@@ -131,6 +132,14 @@ export function useProjectActions() {
       }
     });
 
+    // Subscribe to view preset changes
+    const unsubViewPresets = useViewStore.subscribe((state, prevState) => {
+      if (skipUiSyncRef.current) return;
+      if (state.presets !== prevState.presets && useProjectStore.getState().activeProject) {
+        useProjectStore.getState().syncUIState({ viewPresets: state.presets });
+      }
+    });
+
     // Subscribe to derived signal changes
     const unsubDerivedSignals = useDerivedSignalStore.subscribe((state, prevState) => {
       if (state.structure !== prevState.structure && useProjectStore.getState().activeProject) {
@@ -158,6 +167,7 @@ export function useProjectActions() {
       unsubAuthored();
       unsubBeatGrid();
       unsubTree();
+      unsubViewPresets();
       unsubDerivedSignals();
       unsubComposedSignals();
       unsubMeshAssets();
@@ -267,6 +277,8 @@ export function useProjectActions() {
           treeStore.setInspectorHeight(project.uiState.inspectorHeight);
         }
         // Restore playhead position
+        useViewStore.getState().setPresets(project.uiState.viewPresets ?? []);
+
         if (project.uiState.lastPlayheadPosition && project.uiState.lastPlayheadPosition > 0) {
           usePlaybackStore.getState().setPlayheadTimeSec(project.uiState.lastPlayheadPosition);
           // Also set cursor time to match
