@@ -6,8 +6,6 @@ export { useSearchStore, type SearchStore } from "./searchStore";
 export { useDebugSignalStore, type DebugSignalStore } from "./debugSignalStore";
 export { useScriptErrorStore, type ScriptErrorStore, type HistoricalScriptError } from "./scriptErrorStore";
 export { useTimingStore, SUB_BEAT_DIVISIONS, type TimingStore, type SubBeatDivision, type ExtendedTempoHypothesis, type TempoHypothesisSource, type BeatMark } from "./timingStore";
-export { useFrequencyBandStore, type FrequencyBandStore, type BandInvalidationEvent, type BandInvalidationCallback } from "./frequencyBandStore";
-export { useBandMirStore, setupBandMirInvalidation, type BandMirStore } from "./bandMirStore";
 export { useBandProposalStore, type BandProposalStore } from "./bandProposalStore";
 export { useProjectStore, type ProjectStore } from "./projectStore";
 export { useAutosaveStore, type AutosaveStore } from "./autosaveStore";
@@ -56,7 +54,6 @@ export type {
 export { useSearchActions } from "./hooks/useSearchActions";
 export { useNavigationActions } from "./hooks/useNavigationActions";
 export { useAudioActions } from "./hooks/useAudioActions";
-export { useBandMirActions } from "./hooks/useBandMirActions";
 export { useBandProposalActions } from "./hooks/useBandProposalActions";
 export { useCandidateEventActions } from "./hooks/useCandidateEventActions";
 export { useAuthoredEventActions } from "./hooks/useAuthoredEventActions";

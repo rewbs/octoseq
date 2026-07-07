@@ -55,7 +55,6 @@ import {
   type AnalysisResult,
   type AudioStream,
   type BandStream,
-  type Stream,
   type StreamId,
 } from "./types";
 
