@@ -1509,7 +1509,7 @@ mod tests {
         let mut inputs = HashMap::new();
         inputs.insert(
             "energy".to_string(),
-            InputSignal::new(vec![0.5; 100], 100.0),
+            std::rc::Rc::new(InputSignal::new(vec![0.5; 100], 100.0)),
         );
 
         let band_signals = HashMap::new();
@@ -1536,7 +1536,7 @@ mod tests {
         let mut bass_features = HashMap::new();
         bass_features.insert(
             "energy".to_string(),
-            InputSignal::new(vec![0.75; 100], 100.0),
+            std::rc::Rc::new(InputSignal::new(vec![0.75; 100], 100.0)),
         );
         band_signals.insert("Bass".to_string(), bass_features);
 
@@ -1691,10 +1691,11 @@ mod tests {
         let mut drums_features = HashMap::new();
         drums_features.insert(
             "energy".to_string(),
-            InputSignal::new(vec![0.9; 100], 100.0),
+            std::rc::Rc::new(InputSignal::new(vec![0.9; 100], 100.0)),
         );
         stem_signals.insert("drums".to_string(), drums_features);
 
+        let custom_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
         let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &stats, &mut state);

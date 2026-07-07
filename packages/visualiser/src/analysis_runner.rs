@@ -372,9 +372,10 @@ pub fn run_analysis_with_events_and_bands(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::input::{InputSignal, SharedSignal};
 
-    fn make_test_signal(values: Vec<f32>, sample_rate: f32) -> InputSignal {
-        InputSignal::new(values, sample_rate)
+    fn make_test_signal(values: Vec<f32>, sample_rate: f32) -> SharedSignal {
+        std::rc::Rc::new(InputSignal::new(values, sample_rate))
     }
 
     #[test]

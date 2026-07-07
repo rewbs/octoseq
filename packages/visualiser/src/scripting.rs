@@ -3682,10 +3682,20 @@ mod tests {
     fn run_update(engine: &mut ScriptEngine, frame_inputs: &HashMap<String, f32>) {
         let time = frame_inputs.get("time").copied().unwrap_or(0.0);
         let dt = frame_inputs.get("dt").copied().unwrap_or(0.0);
-        let input_signals: HashMap<String, InputSignal> = HashMap::new();
-        let band_signals: HashMap<String, HashMap<String, InputSignal>> = HashMap::new();
-        let stem_signals: HashMap<String, HashMap<String, InputSignal>> = HashMap::new();
-        engine.update(time, dt, frame_inputs, &input_signals, &band_signals, &stem_signals, None);
+        let input_signals: SignalMap = HashMap::new();
+        let band_signals: BandSignalMap = HashMap::new();
+        let stem_signals: BandSignalMap = HashMap::new();
+        let custom_signals: SignalMap = HashMap::new();
+        engine.update(
+            time,
+            dt,
+            frame_inputs,
+            &input_signals,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            None,
+        );
     }
 
     #[test]

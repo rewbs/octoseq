@@ -15,6 +15,7 @@ use std::path::PathBuf;
 
 use crate::gpu::renderer::Renderer;
 use crate::input::{BandSignalMap, InputSignal, SharedSignal, SignalMap};
+use crate::interpretation_package::{apply_to_state, load_package, LoadedPackage};
 use crate::render_job::{BatchJobSpec, RenderJobSpec, RenderMetadata, RenderPhase};
 use crate::video_encode::{check_ffmpeg, encode_video_with_ffmpeg, FfmpegStatus};
 use crate::visualiser::VisualiserState;
@@ -30,23 +31,29 @@ struct Cli {
 enum Commands {
     /// Render frames to disk (single job)
     Render {
-        /// Input JSON file (array of floats) based input signal
+        /// Input JSON file (array of floats) based input signal (legacy single-signal path)
+        #[arg(long, conflicts_with = "package", required_unless_present = "package")]
+        input: Option<PathBuf>,
+
+        /// Interpretation Package v1 JSON file, supplying the script, duration,
+        /// and all signal/event inputs authored in the web lab
         #[arg(long)]
-        input: PathBuf,
+        package: Option<PathBuf>,
 
         /// Output directory for frames
         #[arg(long)]
         out: PathBuf,
 
         /// Rhai script file for controlling the visualiser
-        #[arg(long)]
-        script: PathBuf,
+        /// (optional with --package: overrides the package's embedded script)
+        #[arg(long, required_unless_present = "package")]
+        script: Option<PathBuf>,
 
         /// Frames per second
         #[arg(long, default_value_t = 60.0)]
         fps: f32,
 
-        /// Duration in seconds (overrides input duration if shorter)
+        /// Duration in seconds (defaults to the package's durationSec, or the input signal duration)
         #[arg(long)]
         duration: Option<f32>,
 
@@ -119,6 +126,7 @@ pub fn run() -> Result<()> {
     match cli.command {
         Commands::Render {
             input,
+            package,
             out,
             script,
             fps,
@@ -135,6 +143,7 @@ pub fn run() -> Result<()> {
         } => {
             let job = RenderJobSpec {
                 input_path: input,
+                package_path: package,
                 script_path: script,
                 output_dir: out,
                 fps,
@@ -166,7 +175,10 @@ pub fn run() -> Result<()> {
 }
 
 /// Execute a single render job.
-async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet: bool) -> Result<()> {
+///
+/// Public so integration tests (e.g. `tests/package_render.rs`) can drive the
+/// exact same render path as the CLI.
+pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet: bool) -> Result<()> {
     let start_time = Utc::now();
     let render_start = std::time::Instant::now();
     let mut warnings: Vec<String> = Vec::new();
@@ -174,43 +186,74 @@ async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet: boo
     // Validate job
     job.validate().map_err(|e| anyhow::anyhow!("[{}] {}", RenderPhase::Initialization, e))?;
 
-    // Load script
-    let script_content = {
-        let mut script_file = File::open(&job.script_path)
-            .map_err(|e| anyhow::anyhow!("[{}] Failed to open script {:?}: {}", RenderPhase::ScriptLoading, job.script_path, e))?;
+    // Load interpretation package, if given. It supplies the script (unless an
+    // explicit --script overrides it), the default duration, and all signal
+    // maps / event streams / state configuration.
+    let package: Option<LoadedPackage> = match &job.package_path {
+        Some(package_path) => {
+            let json = std::fs::read_to_string(package_path)
+                .map_err(|e| anyhow::anyhow!("[{}] Failed to read package {:?}: {}", RenderPhase::InputLoading, package_path, e))?;
+            let pkg = load_package(&json)
+                .map_err(|e| anyhow::anyhow!("[{}] Failed to load package {:?}: {:#}", RenderPhase::InputLoading, package_path, e))?;
+            Some(pkg)
+        }
+        None => None,
+    };
+
+    // Load script: an explicit --script wins; otherwise the package supplies it.
+    let script_content = if let Some(script_path) = &job.script_path {
+        let mut script_file = File::open(script_path)
+            .map_err(|e| anyhow::anyhow!("[{}] Failed to open script {:?}: {}", RenderPhase::ScriptLoading, script_path, e))?;
         let mut content = String::new();
         script_file.read_to_string(&mut content)
             .map_err(|e| anyhow::anyhow!("[{}] Failed to read script: {}", RenderPhase::ScriptLoading, e))?;
         content
+    } else if let Some(script) = package.as_ref().and_then(|pkg| pkg.script.clone()) {
+        script
+    } else {
+        return Err(anyhow::anyhow!(
+            "[{}] No script: the package does not embed one; pass --script",
+            RenderPhase::ScriptLoading
+        ));
     };
 
-    // Load input signal
-    let signal = {
-        let mut file = File::open(&job.input_path)
-            .map_err(|e| anyhow::anyhow!("[{}] Failed to open input {:?}: {}", RenderPhase::InputLoading, job.input_path, e))?;
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)
-            .map_err(|e| anyhow::anyhow!("[{}] Failed to read input: {}", RenderPhase::InputLoading, e))?;
+    // Load input signal (legacy single-signal path only)
+    let legacy_signal: Option<SharedSignal> = match &job.input_path {
+        Some(input_path) => {
+            let mut file = File::open(input_path)
+                .map_err(|e| anyhow::anyhow!("[{}] Failed to open input {:?}: {}", RenderPhase::InputLoading, input_path, e))?;
+            let mut contents = String::new();
+            file.read_to_string(&mut contents)
+                .map_err(|e| anyhow::anyhow!("[{}] Failed to read input: {}", RenderPhase::InputLoading, e))?;
 
-        let samples: Vec<f32> = serde_json::from_str(&contents)
-            .or_else(|_| {
-                contents
-                    .split_whitespace()
-                    .map(|s| s.parse::<f32>())
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .map_err(|_| {
-                anyhow::anyhow!(
-                    "[{}] Failed to parse input file as JSON list of floats or whitespace separated floats",
-                    RenderPhase::InputLoading
-                )
-            })?;
+            let samples: Vec<f32> = serde_json::from_str(&contents)
+                .or_else(|_| {
+                    contents
+                        .split_whitespace()
+                        .map(|s| s.parse::<f32>())
+                        .collect::<Result<Vec<_>, _>>()
+                })
+                .map_err(|_| {
+                    anyhow::anyhow!(
+                        "[{}] Failed to parse input file as JSON list of floats or whitespace separated floats",
+                        RenderPhase::InputLoading
+                    )
+                })?;
 
-        InputSignal::new(samples, job.input_sample_rate)
+            Some(std::rc::Rc::new(InputSignal::new(samples, job.input_sample_rate)))
+        }
+        None => None,
     };
 
-    // Calculate frame count
-    let render_duration = job.duration.unwrap_or(signal.get_duration());
+    // Calculate frame count: explicit --duration wins, then the package's
+    // durationSec, then the legacy input signal duration.
+    let render_duration = job
+        .duration
+        .or_else(|| package.as_ref().map(|pkg| pkg.duration_sec))
+        .or_else(|| legacy_signal.as_ref().map(|sig| sig.get_duration()))
+        .ok_or_else(|| {
+            anyhow::anyhow!("[{}] No duration available from --duration, package, or input signal", RenderPhase::Initialization)
+        })?;
     let total_frames = (render_duration * job.fps).ceil() as usize;
     let dt = 1.0 / job.fps;
 
@@ -280,6 +323,13 @@ async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet: boo
         state.set_global_seed(job.seed);
     }
 
+    // Apply package inputs that live on the state (stem signals, event streams,
+    // available stems, and the script namespace configuration), mirroring the
+    // wasm push layer. Must happen before load_script.
+    if let Some(pkg) = package.as_ref() {
+        apply_to_state(pkg, &mut state);
+    }
+
     // Load script
     if !state.load_script(&script_content) {
         let error_msg = state
@@ -294,16 +344,61 @@ async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet: boo
         if job.seed != 0 {
             println!("  Seed: {}", job.seed);
         }
+        if let Some(pkg) = package.as_ref() {
+            println!(
+                "  Package: {} signals, {} band keys, {} custom, {} stem signals, {}/{}/{} event streams (named/authored/band){}",
+                pkg.named_signals.len(),
+                pkg.band_signals.len(),
+                pkg.custom_signals.len(),
+                pkg.stem_signals.len(),
+                pkg.event_streams.len(),
+                pkg.authored_event_streams.len(),
+                pkg.band_event_streams.len(),
+                if pkg.musical_time.is_some() { ", musical time" } else { "" },
+            );
+        }
         println!("  Output: {:?}", job.output_dir);
     }
 
+    // Per-frame signal inputs: from the package when given, otherwise empty
+    // (the legacy path feeds everything through rotation_signal).
+    let empty_signals: SignalMap = HashMap::new();
+    let empty_band_signals: BandSignalMap = HashMap::new();
+    let empty_custom_signals: SignalMap = HashMap::new();
+    let (named_signals, band_signals, custom_signals, musical_time) = match package.as_ref() {
+        Some(pkg) => (
+            &pkg.named_signals,
+            &pkg.band_signals,
+            &pkg.custom_signals,
+            pkg.musical_time.as_ref(),
+        ),
+        None => (&empty_signals, &empty_band_signals, &empty_custom_signals, None),
+    };
+
+    // Rotation/amplitude signal:
+    // - Legacy path: the single --input signal (unchanged behavior).
+    // - Package path: the package's "amplitude" named signal, if present. In the
+    //   browser, rotation_signal is only set by the legacy push_rotation_data /
+    //   push_data calls (which VisualiserPanel no longer makes); "amplitude"
+    //   arrives as a named signal instead and takes precedence inside
+    //   VisualiserState::update. Passing it here too keeps parity with the
+    //   legacy CLI path while sampling identically to the browser.
+    let rotation_signal: Option<SharedSignal> = match package.as_ref() {
+        Some(pkg) => pkg.rotation_signal(),
+        None => legacy_signal.clone(),
+    };
+
     // Render frames
     for i in 0..total_frames {
-        let empty_signals: SignalMap = HashMap::new();
-        let empty_band_signals: BandSignalMap = HashMap::new();
-        let empty_custom_signals: SignalMap = HashMap::new();
-        let signal_rc: SharedSignal = std::rc::Rc::new(signal.clone());
-        state.update(dt, Some(&signal_rc), None, &empty_signals, &empty_band_signals, &empty_custom_signals, None);
+        state.update(
+            dt,
+            rotation_signal.as_ref(),
+            None,
+            named_signals,
+            band_signals,
+            custom_signals,
+            musical_time,
+        );
 
         // Render to texture
         renderer.render(&texture_view, &state);
@@ -462,10 +557,21 @@ async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet: boo
     if save_metadata {
         let end_time = Utc::now();
 
-        let script_hash = RenderMetadata::hash_file(&job.script_path)
-            .unwrap_or_else(|_| "unknown".to_string());
-        let input_hash = RenderMetadata::hash_file(&job.input_path)
-            .unwrap_or_else(|_| "unknown".to_string());
+        // Hash the script file when one was given; otherwise the script came
+        // from the package, so hash its content directly.
+        let script_hash = match &job.script_path {
+            Some(script_path) => RenderMetadata::hash_file(script_path)
+                .unwrap_or_else(|_| "unknown".to_string()),
+            None => RenderMetadata::hash_bytes(script_content.as_bytes()),
+        };
+        // The "input" is whichever source fed the render: the legacy signal
+        // file or the interpretation package.
+        let input_hash = job
+            .input_path
+            .as_ref()
+            .or(job.package_path.as_ref())
+            .and_then(|path| RenderMetadata::hash_file(path).ok())
+            .unwrap_or_else(|| "unknown".to_string());
 
         let metadata = RenderMetadata {
             job: job.clone(),
@@ -590,8 +696,15 @@ fn validate_config(config_path: &PathBuf) -> Result<()> {
     // Try parsing as single job
     if let Ok(job) = serde_json::from_str::<RenderJobSpec>(&content) {
         println!("Detected: Single job config");
-        println!("  Input: {:?}", job.input_path);
-        println!("  Script: {:?}", job.script_path);
+        if let Some(input) = &job.input_path {
+            println!("  Input: {:?}", input);
+        }
+        if let Some(package) = &job.package_path {
+            println!("  Package: {:?}", package);
+        }
+        if let Some(script) = &job.script_path {
+            println!("  Script: {:?}", script);
+        }
         println!("  Resolution: {}x{}", job.width, job.height);
         println!("  FPS: {}", job.fps);
 
