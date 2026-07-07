@@ -301,21 +301,12 @@ export function useCloudAssetLoader(): CloudAssetLoaderReturn {
     const audioAssets: Array<{ assetId: string; inputId: string }> = [];
     const meshAssets: Array<{ assetId: string; meshId: string }> = [];
 
-    // Check mixdown
-    if (project.audio.mixdown?.assetId) {
-      audioAssets.push({
-        assetId: project.audio.mixdown.assetId,
-        inputId: project.audio.mixdown.id,
-      });
-    }
-
-    // Check stems
-    for (const stem of project.audio.stems) {
-      if (stem.assetId) {
-        audioAssets.push({
-          assetId: stem.assetId,
-          inputId: stem.id,
-        });
+    // Check audio streams (mixdown + stems)
+    for (const stream of project.streams) {
+      if (!isAudioStream(stream)) continue;
+      const assetId = stream.audio.cloudAssetId ?? stream.audio.assetId;
+      if (assetId) {
+        audioAssets.push({ assetId, inputId: stream.id });
       }
     }
 

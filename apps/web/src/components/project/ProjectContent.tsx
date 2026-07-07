@@ -22,6 +22,7 @@ import { AutosaveIndicator } from "@/components/project";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useProjectActions } from "@/lib/stores/hooks/useProjectActions";
 import { useConfirmDiscard } from "@/lib/hooks/useConfirmDiscard";
+import { isBandStream } from "@/lib/streams";
 
 /**
  * Content panel displayed when the Project node is selected.
@@ -52,7 +53,7 @@ export function ProjectContent() {
     );
 
     return {
-      bandCount: activeProject.interpretation.frequencyBands?.bands.length ?? 0,
+      bandCount: activeProject.streams.filter(isBandStream).length,
       eventStreamCount: activeProject.interpretation.authoredEvents.length,
       eventCount,
       scriptCount: activeProject.scripts.scripts.length,

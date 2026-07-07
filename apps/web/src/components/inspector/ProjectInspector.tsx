@@ -20,6 +20,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useProjectActions } from "@/lib/stores/hooks/useProjectActions";
 import { useConfirmDiscard } from "@/lib/hooks/useConfirmDiscard";
+import { isBandStream } from "@/lib/streams";
 
 /**
  * Inspector view for the Project node.
@@ -45,7 +46,7 @@ export function ProjectInspector() {
     );
 
     return {
-      bandCount: activeProject.interpretation.frequencyBands?.bands.length ?? 0,
+      bandCount: activeProject.streams.filter(isBandStream).length,
       eventStreamCount: activeProject.interpretation.authoredEvents.length,
       eventCount,
       scriptCount: activeProject.scripts.scripts.length,

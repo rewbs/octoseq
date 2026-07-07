@@ -91,7 +91,7 @@ export function useServerAutosave({
     const currentPlayhead = usePlaybackStore.getState().playheadTimeSec;
 
     const serialized: ProjectSerialized = {
-      version: 1,
+      version: 2,
       project: {
         ...activeProject,
         uiState: {

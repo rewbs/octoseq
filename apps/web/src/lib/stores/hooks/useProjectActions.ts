@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useProjectStore } from "../projectStore";
-import { useFrequencyBandStore } from "../frequencyBandStore";
 import { useAuthoredEventStore } from "../authoredEventStore";
 import { useTimingStore } from "../timingStore";
 import { useInterpretationTreeStore } from "../interpretationTreeStore";
@@ -13,17 +12,14 @@ import { usePlaybackStore } from "../playbackStore";
 import { useAutosaveStore } from "../autosaveStore";
 import { useAutosave } from "./useAutosave";
 import { clearAutosave } from "../../persistence/autosave";
-import type { ProjectAudioCollection, ProjectAudioReference, ProjectBeatGridState } from "../types/project";
-import type { AuthoredEventStream } from "../types/authoredEvent";
+import type { ProjectBeatGridState } from "../types/project";
 import type { AutosaveRecord } from "../../persistence/types";
-import type { AudioInputOrigin } from "../types/audioInput";
 import {
+  isAudioStream,
   removeStreamCascade,
   resetAllStreams,
   useStreamStore,
-  type AudioOrigin,
-  type AudioReference,
-  type AudioStream,
+  type Stream,
 } from "@/lib/streams";
 
 /**
@@ -66,10 +62,10 @@ export function useProjectActions() {
   // ----------------------------
 
   useEffect(() => {
-    // Subscribe to frequency band changes
-    const unsubBands = useFrequencyBandStore.subscribe((state, prevState) => {
-      if (state.structure !== prevState.structure && useProjectStore.getState().activeProject) {
-        useProjectStore.getState().syncFrequencyBands(state.structure);
+    // Subscribe to stream collection changes (mixdown/stems/bands)
+    const unsubStreams = useStreamStore.subscribe((state, prevState) => {
+      if (state.streams !== prevState.streams && useProjectStore.getState().activeProject) {
+        useProjectStore.getState().syncStreams(serializeStreams([...state.streams.values()]));
       }
     });
 
@@ -156,25 +152,8 @@ export function useProjectActions() {
       }
     });
 
-    // Subscribe to audio stream changes
-    const unsubAudio = useStreamStore.subscribe((state, prevState) => {
-      if (state.streams !== prevState.streams && useProjectStore.getState().activeProject) {
-        const mixdown = state.getMixdown();
-        const audioCollection: ProjectAudioCollection = {
-          mixdown: mixdown ? toProjectAudioReference(mixdown) : null,
-          stems: state.getStems().map(
-            (stem, index): ProjectAudioReference => ({
-              ...toProjectAudioReference(stem),
-              orderIndex: index,
-            })
-          ),
-        };
-        useProjectStore.getState().syncAudioReferences(audioCollection);
-      }
-    });
-
     return () => {
-      unsubBands();
+      unsubStreams();
       unsubMusicalTime();
       unsubAuthored();
       unsubBeatGrid();
@@ -182,7 +161,6 @@ export function useProjectActions() {
       unsubDerivedSignals();
       unsubComposedSignals();
       unsubMeshAssets();
-      unsubAudio();
     };
   }, []);
 
@@ -203,13 +181,6 @@ export function useProjectActions() {
     setSuppressDirty(true);
 
     try {
-      // Hydrate frequency bands
-      if (project.interpretation.frequencyBands) {
-        useFrequencyBandStore.getState().importFromJSON(
-          JSON.stringify(project.interpretation.frequencyBands)
-        );
-      }
-
       // Hydrate musical time
       if (project.interpretation.musicalTime) {
         useTimingStore.getState().importFromJSON(
@@ -275,47 +246,10 @@ export function useProjectActions() {
         useMeshAssetStore.getState().loadFromProject(project.meshAssets);
       }
 
-      // Hydrate audio streams (create stub entries for cloud loading)
-      // This creates the stream structure so cloud loader can fill in audio data
-      if (project.audio) {
-        const streamStore = useStreamStore.getState();
-
-        // The legacy store replaced the whole collection here: drop any stems
-        // that are not part of the loaded project (cascades to their bands).
-        for (const stem of streamStore.getStems()) {
-          removeStreamCascade(stem.id);
-        }
-
-        // Create mixdown stub if present
-        if (project.audio.mixdown) {
-          const mix = project.audio.mixdown;
-          streamStore.initializeMixdown({
-            audio: toStubAudioReference(mix),
-            label: mix.label,
-          });
-        }
-
-        // Create stem stubs, preserving ids and order
-        // Sort by orderIndex to preserve order
-        const sortedStems = [...project.audio.stems].sort(
-          (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
-        );
-        const now = new Date().toISOString();
-        streamStore.restoreStreams(
-          sortedStems.map(
-            (stem, index): AudioStream => ({
-              id: stem.id,
-              kind: "stem",
-              label: stem.label,
-              enabled: true,
-              sortOrder: index + 1,
-              createdAt: now,
-              modifiedAt: now,
-              audio: toStubAudioReference(stem),
-            })
-          )
-        );
-      }
+      // Hydrate streams (mixdown/stems/bands). Persisted audio URLs are null;
+      // decoded PCM is absent until the cloud loader (or re-attach) supplies it.
+      resetAllStreams();
+      useStreamStore.getState().restoreStreams(project.streams);
 
       // Hydrate tree state
       if (project.uiState) {
@@ -357,7 +291,6 @@ export function useProjectActions() {
       // When creating a fresh new project (not importing current state),
       // clear all stores to ensure a completely clean slate
       if (!importCurrentState) {
-        useFrequencyBandStore.getState().clearStructure();
         useTimingStore.getState().reset();
         useAuthoredEventStore.getState().reset();
         useTimingStore.getState().clearBeatGrid();
@@ -376,9 +309,9 @@ export function useProjectActions() {
 
         try {
           // Sync current state from all stores
-          const bandStructure = useFrequencyBandStore.getState().structure;
-          if (bandStructure) {
-            useProjectStore.getState().syncFrequencyBands(bandStructure);
+          const streams = [...useStreamStore.getState().streams.values()];
+          if (streams.length > 0) {
+            useProjectStore.getState().syncStreams(serializeStreams(streams));
           }
 
           const musicalTimeStructure = useTimingStore.getState().structure;
@@ -488,13 +421,12 @@ export function useProjectActions() {
       setActiveProject(project);
       hydrateStoresFromProject();
 
-      // Mark all audio references as pending (they need to be re-attached)
+      // Mark all audio streams as pending (they need to be re-attached)
       const setAudioLoadStatus = useProjectStore.getState().setAudioLoadStatus;
-      if (project.audio.mixdown) {
-        setAudioLoadStatus(project.audio.mixdown.id, "pending");
-      }
-      for (const stem of project.audio.stems) {
-        setAudioLoadStatus(stem.id, "pending");
+      for (const stream of project.streams) {
+        if (isAudioStream(stream)) {
+          setAudioLoadStatus(stream.id, "pending");
+        }
       }
 
       return true;
@@ -524,8 +456,11 @@ export function useProjectActions() {
   const handleResetProject = useCallback(() => {
     resetProject();
 
-    // Clear all relevant stores
-    useFrequencyBandStore.getState().clearStructure();
+    // Clear all relevant stores. Bands are streams now: remove band streams
+    // (audio streams are left in place, matching the legacy reset behavior).
+    for (const band of useStreamStore.getState().getBands()) {
+      removeStreamCascade(band.id);
+    }
     useTimingStore.getState().reset();
     useAuthoredEventStore.getState().reset();
     useTimingStore.getState().clearBeatGrid();
@@ -639,64 +574,15 @@ export function useProjectActions() {
 }
 
 // ----------------------------
-// Stream <-> Project mapping
+// Stream serialization
 // ----------------------------
-// The persisted project shape keeps the legacy field names (role, metadata,
-// origin with "stem"/"synthetic" kinds); these helpers convert to/from the
-// unified stream model at the sync/hydration boundary.
 
-/** Map the unified AudioOrigin onto the persisted project origin shape. */
-function toProjectOrigin(origin: AudioOrigin): AudioInputOrigin {
-  switch (origin.kind) {
-    case "file":
-    case "url":
-      return origin;
-    case "separated":
-      return { kind: "stem", sourceId: origin.parentStreamId, method: origin.method };
-    case "generated":
-      return { kind: "synthetic", generatedFrom: origin.generatedFrom };
-  }
-}
-
-/** Map a persisted project origin onto the unified AudioOrigin shape. */
-function toAudioOrigin(origin: AudioInputOrigin): AudioOrigin {
-  switch (origin.kind) {
-    case "file":
-    case "url":
-      return origin;
-    case "stem":
-      return { kind: "separated", parentStreamId: origin.sourceId, method: origin.method };
-    case "synthetic":
-      return { kind: "generated", generatedFrom: origin.generatedFrom ?? [] };
-  }
-}
-
-/** Build a persisted project reference from an AudioStream. */
-function toProjectAudioReference(stream: AudioStream): ProjectAudioReference {
-  return {
-    id: stream.id,
-    label: stream.label,
-    role: stream.kind,
-    metadata: {
-      sampleRate: stream.audio.sampleRate,
-      totalSamples: Math.round(stream.audio.durationSec * stream.audio.sampleRate),
-      duration: stream.audio.durationSec,
-    },
-    origin: toProjectOrigin(stream.audio.origin),
-    // Use cloudAssetId for persistent storage references
-    assetId: stream.audio.cloudAssetId ?? stream.audio.assetId,
-  };
-}
-
-/** Build a stub AudioReference from a persisted project reference (audio loads later). */
-function toStubAudioReference(ref: ProjectAudioReference): AudioReference {
-  return {
-    origin: toAudioOrigin(ref.origin),
-    url: null, // Will be loaded by cloud loader
-    cloudAssetId: ref.assetId,
-    durationSec: ref.metadata.duration,
-    sampleRate: ref.metadata.sampleRate,
-    // Channel count is not persisted; corrected when the audio is decoded.
-    channels: 2,
-  };
+/**
+ * Prepare streams for persistence. Blob URLs are runtime-only, so AudioStreams
+ * persist with audio.url null; everything else is stored verbatim.
+ */
+export function serializeStreams(streams: Stream[]): Stream[] {
+  return streams.map((stream) =>
+    isAudioStream(stream) ? { ...stream, audio: { ...stream.audio, url: null } } : stream
+  );
 }

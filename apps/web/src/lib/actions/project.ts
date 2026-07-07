@@ -251,7 +251,7 @@ export const getProjectMetadata = publicAction
 
 /**
  * Extracts all asset IDs referenced in the project working state.
- * Supports audio assets (mixdown, stems) and mesh assets.
+ * Supports audio assets (audio streams in project.streams) and mesh assets.
  */
 function extractAssetIds(workingJson: Record<string, unknown>): string[] {
   const assetIds: string[] = [];
@@ -260,20 +260,16 @@ function extractAssetIds(workingJson: Record<string, unknown>): string[] {
     const project = workingJson.project as Record<string, unknown> | undefined;
     if (!project) return assetIds;
 
-    // Audio assets: project.audio.mixdown.assetId, project.audio.stems[].assetId
-    const audio = project.audio as Record<string, unknown> | undefined;
-    if (audio) {
-      const mixdown = audio.mixdown as Record<string, unknown> | undefined;
-      if (mixdown?.assetId && typeof mixdown.assetId === 'string') {
-        assetIds.push(mixdown.assetId);
-      }
-
-      const stems = audio.stems as Array<Record<string, unknown>> | undefined;
-      if (Array.isArray(stems)) {
-        for (const stem of stems) {
-          if (stem?.assetId && typeof stem.assetId === 'string') {
-            assetIds.push(stem.assetId);
-          }
+    // Audio assets: project.streams[] (kind "mixdown" | "stem"),
+    // referenced via audio.cloudAssetId (falling back to audio.assetId)
+    const streams = project.streams as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(streams)) {
+      for (const stream of streams) {
+        if (stream?.kind !== 'mixdown' && stream?.kind !== 'stem') continue;
+        const audio = stream.audio as Record<string, unknown> | undefined;
+        const assetId = audio?.cloudAssetId ?? audio?.assetId;
+        if (assetId && typeof assetId === 'string') {
+          assetIds.push(assetId);
         }
       }
     }

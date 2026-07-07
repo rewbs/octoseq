@@ -38,8 +38,6 @@ export type { UiMirResult, SearchResult, MirTimings, DebugSignal, AnalysisResult
 export type {
   Project,
   ProjectSerialized,
-  ProjectAudioReference,
-  ProjectAudioCollection,
   ProjectScript,
   ProjectScripts,
   ProjectInterpretation,

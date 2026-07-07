@@ -10,7 +10,7 @@ import {
 import { computeContentHash } from "../../persistence/assetHashing";
 import { isIndexedDBAvailable } from "../../persistence/db";
 import type { UnresolvedAssetInfo } from "../../persistence/types";
-import type { ProjectAudioReference } from "../types/project";
+import { isAudioStream, type AudioStream } from "@/lib/streams";
 
 /**
  * Hook for detecting and recovering missing audio assets.
@@ -42,19 +42,16 @@ export function useAssetRecovery() {
     setIsValidating(true);
 
     try {
-      // Collect all asset IDs from the project
+      // Collect all asset IDs from the project's audio streams
       const assetIds: string[] = [];
-      const assetRefMap = new Map<string, ProjectAudioReference>();
+      const assetRefMap = new Map<string, AudioStream>();
 
-      if (activeProject.audio.mixdown?.assetId) {
-        assetIds.push(activeProject.audio.mixdown.assetId);
-        assetRefMap.set(activeProject.audio.mixdown.assetId, activeProject.audio.mixdown);
-      }
-
-      for (const stem of activeProject.audio.stems) {
-        if (stem.assetId) {
-          assetIds.push(stem.assetId);
-          assetRefMap.set(stem.assetId, stem);
+      for (const stream of activeProject.streams) {
+        if (!isAudioStream(stream)) continue;
+        const assetId = stream.audio.cloudAssetId ?? stream.audio.assetId;
+        if (assetId) {
+          assetIds.push(assetId);
+          assetRefMap.set(assetId, stream);
         }
       }
 
@@ -67,18 +64,18 @@ export function useAssetRecovery() {
         return {
           assetId,
           expectedMetadata: {
-            sampleRate: ref.metadata.sampleRate,
-            channels: 2, // Default assumption
-            duration: ref.metadata.duration,
-            totalSamples: ref.metadata.totalSamples,
+            sampleRate: ref.audio.sampleRate,
+            channels: ref.audio.channels,
+            duration: ref.audio.durationSec,
+            totalSamples: Math.round(ref.audio.durationSec * ref.audio.sampleRate),
           },
           fileName:
-            ref.origin.kind === "file"
-              ? ref.origin.fileName
-              : ref.origin.kind === "url"
-                ? ref.origin.fileName
+            ref.audio.origin.kind === "file"
+              ? ref.audio.origin.fileName
+              : ref.audio.origin.kind === "url"
+                ? ref.audio.origin.fileName
                 : undefined,
-          role: ref.role,
+          role: ref.kind,
           label: ref.label,
         };
       });
@@ -150,9 +147,9 @@ export function useAssetRecovery() {
   useEffect(() => {
     if (activeProject) {
       // Only validate if project has asset references
-      const hasAssetRefs =
-        activeProject.audio.mixdown?.assetId ||
-        activeProject.audio.stems.some((s) => s.assetId);
+      const hasAssetRefs = activeProject.streams.some(
+        (s) => isAudioStream(s) && (s.audio.cloudAssetId ?? s.audio.assetId)
+      );
 
       if (hasAssetRefs) {
         validateProjectAssets();

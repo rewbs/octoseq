@@ -13,8 +13,8 @@ import {
   runStreamAnalyses,
   useStreamStore,
   type AnalysisId,
+  type AudioStream,
 } from "@/lib/streams";
-import type { ProjectAudioReference } from "@/lib/stores/types/project";
 import type { AudioBufferLike } from "@octoseq/mir";
 
 // All analyses to run after re-attaching audio
@@ -58,12 +58,12 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
   const [activeRefId, setActiveRefId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Get all audio references
-  const audioRefs: ProjectAudioReference[] = [];
-  if (project?.audio.mixdown) audioRefs.push(project.audio.mixdown);
-  audioRefs.push(...(project?.audio.stems ?? []));
+  // Get all audio streams (mixdown first, then stems in order)
+  const audioRefs: AudioStream[] = (project?.streams ?? [])
+    .filter(isAudioStream)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 
-  const handleSelectFile = useCallback((ref: ProjectAudioReference) => {
+  const handleSelectFile = useCallback((ref: AudioStream) => {
     setActiveRefId(ref.id);
     fileInputRef.current?.click();
   }, []);
@@ -212,14 +212,14 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
                     <FileAudio className="h-4 w-4 text-zinc-400 shrink-0" />
                     <span className="text-sm font-medium truncate">{ref.label}</span>
                     <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 shrink-0">
-                      {ref.role}
+                      {ref.kind}
                     </span>
                   </div>
                   <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
-                    {ref.origin.kind === "file"
-                      ? ref.origin.fileName
-                      : ref.origin.kind === "url"
-                        ? ref.origin.fileName ?? ref.origin.url
+                    {ref.audio.origin.kind === "file"
+                      ? ref.audio.origin.fileName
+                      : ref.audio.origin.kind === "url"
+                        ? ref.audio.origin.fileName ?? ref.audio.origin.url
                         : "Unknown source"}
                   </div>
                   <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">

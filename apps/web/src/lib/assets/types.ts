@@ -20,26 +20,9 @@ export interface AssetReference {
   assetId: string;
 }
 
-/**
- * Extended asset reference with metadata for audio.
- * Stored in project.audio.mixdown and project.audio.stems[]
- */
-export interface AudioAssetReference extends AssetReference {
-  /** Original input ID for linking */
-  id: string;
-  /** User-facing label */
-  label: string;
-  /** Role in the collection */
-  role: 'mixdown' | 'stem';
-  /** Audio metadata */
-  metadata: {
-    sampleRate: number;
-    totalSamples: number;
-    duration: number;
-  };
-  /** Order index for stems */
-  orderIndex?: number;
-}
+// Audio asset references are no longer a bespoke shape: audio streams persist
+// verbatim in project.streams[] (see Stream in @/lib/streams), with cloud asset
+// linkage at stream.audio.cloudAssetId / stream.audio.assetId.
 
 /**
  * Extended asset reference with metadata for meshes.
