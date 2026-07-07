@@ -9,6 +9,7 @@
  */
 
 import type { AudioBufferLike, FrequencyBandStructure } from "@octoseq/mir";
+import { computeBeatPosition } from "@octoseq/mir";
 import {
   MIXDOWN_STREAM_ID,
   analysisKey,
@@ -162,10 +163,6 @@ export function exportInterpretationPackage(
   // ----------------------------
   // Mixdown signals (push_signal)
   // ----------------------------
-  // NOTE: the panel additionally pushes beatPosition/beatIndex/beatPhase/bpm
-  // signals precomputed from the musical time structure. The package instead
-  // carries `musicalTime` itself; the CLI loader derives those signals from it
-  // (same computeBeatPosition semantics) rather than shipping redundant arrays.
   const signals: PackageSignal[] = [];
 
   if (pcm && pcm.length > 0) {
@@ -365,6 +362,44 @@ export function exportInterpretationPackage(
   const timingStructure = useTimingStore.getState().structure;
   const musicalTime =
     timingStructure && timingStructure.segments.length > 0 ? timingStructure : null;
+
+  // Beat signals, baked exactly as the panel pushes them (100 Hz dense arrays
+  // with freeze-outside-segments behavior) so scripts see identical inputs.
+  if (musicalTime) {
+    const beatRate = 100;
+    const numSamples = Math.ceil(durationSec * beatRate);
+    const beatPosition = new Array<number>(numSamples);
+    const beatIndex = new Array<number>(numSamples);
+    const beatPhase = new Array<number>(numSamples);
+    const bpm = new Array<number>(numSamples);
+
+    let lastBeatPosition = 0;
+    let lastBeatIndex = 0;
+    let lastBeatPhase = 0;
+    let lastBpm = 120;
+
+    for (let i = 0; i < numSamples; i++) {
+      const time = i / beatRate;
+      const beatPos = computeBeatPosition(time, musicalTime.segments);
+      if (beatPos) {
+        lastBeatPosition = beatPos.beatPosition;
+        lastBeatIndex = beatPos.beatIndex;
+        lastBeatPhase = beatPos.beatPhase;
+        lastBpm = beatPos.bpm;
+      }
+      beatPosition[i] = lastBeatPosition;
+      beatIndex[i] = lastBeatIndex;
+      beatPhase[i] = lastBeatPhase;
+      bpm[i] = lastBpm;
+    }
+
+    signals.push(
+      { name: "beatPosition", rate: beatRate, values: beatPosition },
+      { name: "beatIndex", rate: beatRate, values: beatIndex },
+      { name: "beatPhase", rate: beatRate, values: beatPhase },
+      { name: "bpm", rate: beatRate, values: bpm }
+    );
+  }
 
   // ----------------------------
   // Frequency bands (as set_frequency_bands expects)

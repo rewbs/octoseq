@@ -736,6 +736,10 @@ describe("golden fixture", () => {
       "flux",
       "onsetEnvelope",
       "energy",
+      "beatPosition",
+      "beatIndex",
+      "beatPhase",
+      "bpm",
     ]);
     expect(parsed.bandSignals.map((s) => `${s.bandId}:${s.feature}`)).toEqual(["band-bass:energy"]);
     expect(parsed.stemSignals.map((s) => `${s.stemId}:${s.feature}`)).toEqual(["stem-drums:energy"]);
