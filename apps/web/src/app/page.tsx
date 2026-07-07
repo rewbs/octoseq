@@ -23,6 +23,9 @@ import { TempoHypothesesViewer, type SignalOption } from "@/components/tempo/Tem
 import { MusicalTimePanel } from "@/components/tempo/MusicalTimePanel";
 import { WaveSurferPlayer, type WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
 import { VisualiserPanel } from "@/components/visualiser/VisualiserPanel";
+import { StreamManagerPanel } from "@/components/streams/StreamManagerPanel";
+import { ComparisonPanel } from "@/components/comparison/ComparisonPanel";
+import { PresetControls } from "@/components/view/PresetControls";
 import { DerivedSignalsPanel } from "@/components/derivedSignal/DerivedSignalsPanel";
 import { ComposedSignalsPanel } from "@/components/composedSignal/ComposedSignalsPanel";
 import { MeshAssetsPanel } from "@/components/meshAssets";
@@ -1452,6 +1455,17 @@ export default function Home() {
               </div>}
             </div>
             {visualTab === "search" && <SearchPanel playerRef={playerRef} />}
+            <div className="mt-2 flex justify-end">
+              <PresetControls />
+            </div>
+            <StreamManagerPanel />
+            <ComparisonPanel
+              viewport={viewport}
+              cursorTimeSec={mirroredCursorTimeSec}
+              onCursorTimeChange={setCursorTimeSec}
+              showBeatGrid={beatGridState.isVisible}
+              audioDuration={audioDuration ?? 0}
+            />
             <DerivedSignalsPanel />
             <ComposedSignalsPanel />
             <MeshAssetsPanel />
