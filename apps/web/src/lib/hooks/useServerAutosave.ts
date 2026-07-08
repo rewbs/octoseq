@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { useProjectStore } from '@/lib/stores/projectStore';
 import { usePlaybackStore } from '@/lib/stores/playbackStore';
@@ -59,29 +59,24 @@ export function useServerAutosave({
   onSaved,
   onError,
 }: UseServerAutosaveOptions): UseServerAutosaveReturn {
-  const { isSignedIn, userId } = useAuth();
+  const { isSignedIn } = useAuth();
 
   // Local state
-  const statusRef = useRef<ServerAutosaveStatus>('idle');
-  const lastSavedAtRef = useRef<string | null>(null);
-  const errorRef = useRef<string | null>(null);
-  const isOwnerRef = useRef<boolean>(true); // Assume owner until proven otherwise
+  const [serverState, setServerState] = useState<ServerAutosaveState>({
+    status: 'idle',
+    lastSavedAt: null,
+    error: null,
+  });
+  const [isOwner, setIsOwner] = useState<boolean>(true); // Assume owner until proven otherwise
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pendingSaveRef = useRef<boolean>(false);
 
-  // Force re-render when state changes
-  const forceUpdateRef = useRef(0);
-  const forceUpdate = useCallback(() => {
-    forceUpdateRef.current += 1;
-  }, []);
-
   // Store selectors
   const activeProject = useProjectStore((s) => s.activeProject);
-  const isDirty = useProjectStore((s) => s.isDirty);
   const markClean = useProjectStore((s) => s.markClean);
 
   // Check if server autosave should be active
-  const isEnabled = Boolean(isSignedIn && backendProjectId && isOwnerRef.current);
+  const isEnabled = Boolean(isSignedIn && backendProjectId && isOwner);
 
   // Build the working state JSON
   const buildWorkingJson = useCallback((): Record<string, unknown> | null => {
@@ -112,9 +107,7 @@ export function useServerAutosave({
     const workingJson = buildWorkingJson();
     if (!workingJson) return;
 
-    statusRef.current = 'saving';
-    errorRef.current = null;
-    forceUpdate();
+    setServerState((prev) => ({ ...prev, status: 'saving', error: null }));
 
     try {
       const result = await autosaveProjectWorkingState({
@@ -124,29 +117,38 @@ export function useServerAutosave({
 
       if (result?.data) {
         const timestamp = result.data.updatedAt.toISOString();
-        statusRef.current = 'saved';
-        lastSavedAtRef.current = timestamp;
-        isOwnerRef.current = true;
+        setServerState({
+          status: 'saved',
+          lastSavedAt: timestamp,
+          error: null,
+        });
+        setIsOwner(true);
         markClean();
         onSaved?.(timestamp);
       } else if (result?.serverError) {
         // Check if it's a permission error
-        if (result.serverError.includes('permission') || result.serverError.includes('owner')) {
-          isOwnerRef.current = false;
+        const serverError = result.serverError;
+        const errorLower = serverError.toLowerCase();
+        if (errorLower.includes('permission') || errorLower.includes('owner')) {
+          setIsOwner(false);
         }
-        statusRef.current = 'error';
-        errorRef.current = result.serverError;
-        onError?.(result.serverError);
+        setServerState((prev) => ({
+          ...prev,
+          status: 'error',
+          error: serverError,
+        }));
+        onError?.(serverError);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to save';
-      statusRef.current = 'error';
-      errorRef.current = errorMessage;
+      setServerState((prev) => ({
+        ...prev,
+        status: 'error',
+        error: errorMessage,
+      }));
       onError?.(errorMessage);
     }
-
-    forceUpdate();
-  }, [backendProjectId, isSignedIn, buildWorkingJson, markClean, onSaved, onError, forceUpdate]);
+  }, [backendProjectId, isSignedIn, buildWorkingJson, markClean, onSaved, onError]);
 
   // Debounced save trigger
   const triggerSave = useCallback(() => {
@@ -199,6 +201,7 @@ export function useServerAutosave({
       // Clean up debounce timeout
       if (debounceTimeoutRef.current) {
         clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
       }
     };
   }, [isEnabled, triggerSave]);
@@ -214,11 +217,11 @@ export function useServerAutosave({
   }, [isEnabled, performSave]);
 
   return {
-    status: statusRef.current,
-    lastSavedAt: lastSavedAtRef.current,
-    error: errorRef.current,
+    status: serverState.status,
+    lastSavedAt: serverState.lastSavedAt,
+    error: serverState.error,
     saveNow,
-    isOwner: isOwnerRef.current,
+    isOwner,
     isEnabled,
   };
 }

@@ -15,6 +15,35 @@ const nextConfig: NextConfig = {
   // So validation:
   turbopack: {},
 
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          {
+            key: 'Content-Security-Policy',
+            value: [
+              "default-src 'self'",
+              // Monaco Editor requires unsafe-eval and (by default) loads from jsdelivr
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net https://*.clerk.accounts.dev https://clerk.octoseq.xyz",
+              "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net", // Tailwind requires unsafe-inline
+              "img-src 'self' data: blob: https:",
+              "font-src 'self' data: https://cdn.jsdelivr.net",
+              "connect-src 'self' https://*.clerk.accounts.dev https://clerk.octoseq.xyz https://*.r2.cloudflarestorage.com https://cdn.jsdelivr.net",
+              "media-src 'self' blob:",
+              "worker-src 'self' blob:",
+              "frame-ancestors 'none'",
+            ].join('; '),
+          },
+        ],
+      },
+    ];
+  },
+
   webpack: (config) => {
     config.experiments = {
       ...config.experiments,

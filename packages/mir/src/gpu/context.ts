@@ -1,20 +1,22 @@
+import { BufferPool, type BufferPoolOptions, type BufferPoolStats } from "./bufferPool";
+
 /**
  * WebGPU context wrapper for MIR computations.
  *
- * v0.1 scope:
- * - Provide a safe, explicit way for callers to opt into GPU usage.
- * - Throw a clear error when called outside the browser or when WebGPU is unavailable.
+ * Includes buffer pooling for efficient GPU memory reuse across operations.
  */
 export class MirGPU {
     public readonly device: GPUDevice;
     public readonly queue: GPUQueue;
+    public readonly bufferPool: BufferPool;
 
-    private constructor(device: GPUDevice) {
+    private constructor(device: GPUDevice, bufferPoolOptions?: BufferPoolOptions) {
         this.device = device;
         this.queue = device.queue;
+        this.bufferPool = new BufferPool(device, bufferPoolOptions);
     }
 
-    static async create(): Promise<MirGPU> {
+    static async create(bufferPoolOptions?: BufferPoolOptions): Promise<MirGPU> {
         // Next.js note: callers must create MirGPU from a client component.
         if (typeof navigator === "undefined") {
             throw new Error(
@@ -39,6 +41,28 @@ export class MirGPU {
         // We keep this minimal: no required features for v0.1.
         const device = await adapter.requestDevice();
 
-        return new MirGPU(device);
+        return new MirGPU(device, bufferPoolOptions);
+    }
+
+    /**
+     * Get statistics about buffer pool usage.
+     */
+    getBufferPoolStats(): BufferPoolStats {
+        return this.bufferPool.getStats();
+    }
+
+    /**
+     * Manually trigger buffer pool cleanup (normally runs automatically).
+     */
+    cleanupBufferPool(): void {
+        this.bufferPool.cleanup();
+    }
+
+    /**
+     * Dispose of the GPU context and clean up all resources.
+     */
+    dispose(): void {
+        this.bufferPool.dispose();
+        // Note: GPUDevice doesn't have a dispose method, but we clean up our resources
     }
 }

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Eye, Copy, Cloud, CloudOff, Check, Loader2, AlertCircle, Upload, FolderOpen } from 'lucide-react';
 import Link from 'next/link';
-import { SignedOut, SignInButton, SignedIn, UserButton } from '@clerk/nextjs';
+import { SignedOut, SignInButton, SignedIn, UserButton, ClerkLoading, ClerkLoaded } from '@clerk/nextjs';
 import { Button } from '@/components/ui/button';
 import { cloneProject, createProject } from '@/lib/actions/project';
 import { MyProjectsModal } from './MyProjectsModal';
@@ -309,14 +309,19 @@ export function ProjectHeader({
               About
             </Button>
           </Link>
-          <SignedOut>
-            <SignInButton>
-              <Button size="sm" className="bg-blue-400 dark:bg-blue-700">Sign In</Button>
-            </SignInButton>
-          </SignedOut>
-          <SignedIn>
-            <UserButton />
-          </SignedIn>
+          <ClerkLoading>
+            <Button size="sm" variant="outline" disabled>Sign In</Button>
+          </ClerkLoading>
+          <ClerkLoaded>
+            <SignedOut>
+              <SignInButton>
+                <Button size="sm" className="bg-blue-400 dark:bg-blue-700">Sign In</Button>
+              </SignInButton>
+            </SignedOut>
+            <SignedIn>
+              <UserButton />
+            </SignedIn>
+          </ClerkLoaded>
         </div>
       </div>
 

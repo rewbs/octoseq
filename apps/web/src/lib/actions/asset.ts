@@ -2,7 +2,7 @@
 
 import { z } from 'zod';
 import { prisma, AssetType, AssetStatus } from '@/lib/db';
-import { authAction } from '@/lib/safe-action';
+import { authActionLenient, authActionModerate } from '@/lib/safe-action';
 import { generateR2Key, generateUploadUrl, generateDownloadUrl } from '@/lib/r2';
 
 // -----------------------------------------------------------------------------
@@ -34,7 +34,7 @@ const registerAssetSchema = z.object({
 // This is the authoritative entry point for asset uploads
 // -----------------------------------------------------------------------------
 
-export const registerAsset = authAction
+export const registerAsset = authActionModerate
   .schema(registerAssetSchema)
   .action(async ({ parsedInput, ctx }) => {
     const { contentHash, type, contentType, metadata } = parsedInput;
@@ -123,7 +123,7 @@ const assetIdSchema = z.object({
   assetId: z.string().min(1),
 });
 
-export const confirmAssetUpload = authAction
+export const confirmAssetUpload = authActionModerate
   .schema(assetIdSchema)
   .action(async ({ parsedInput, ctx }) => {
     const { assetId } = parsedInput;
@@ -171,7 +171,7 @@ const markAssetFailedSchema = z.object({
   error: z.string().optional(),
 });
 
-export const markAssetFailed = authAction
+export const markAssetFailed = authActionModerate
   .schema(markAssetFailedSchema)
   .action(async ({ parsedInput, ctx }) => {
     const { assetId, error } = parsedInput;
@@ -224,7 +224,7 @@ const getUploadUrlSchema = z.object({
   contentType: z.string().min(1),
 });
 
-export const getAssetUploadUrl = authAction
+export const getAssetUploadUrl = authActionModerate
   .schema(getUploadUrlSchema)
   .action(async ({ parsedInput, ctx }) => {
     const { assetId, contentType } = parsedInput;
@@ -258,7 +258,7 @@ const getDownloadUrlSchema = z.object({
   assetId: z.string().min(1),
 });
 
-export const getAssetDownloadUrl = authAction
+export const getAssetDownloadUrl = authActionLenient
   .schema(getDownloadUrlSchema)
   .action(async ({ parsedInput, ctx }) => {
     const { assetId } = parsedInput;
@@ -310,11 +310,10 @@ const getDownloadUrlsSchema = z.object({
   assetIds: z.array(z.string().min(1)),
 });
 
-export const getAssetDownloadUrls = authAction
+export const getAssetDownloadUrls = authActionLenient
   .schema(getDownloadUrlsSchema)
-  .action(async ({ parsedInput, ctx }) => {
+  .action(async ({ parsedInput }) => {
     const { assetIds } = parsedInput;
-    const { user } = ctx;
 
     if (assetIds.length === 0) {
       return { assets: [] };

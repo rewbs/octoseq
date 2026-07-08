@@ -62,6 +62,12 @@ interface BandEditingActions {
   setEventViewerExpanded: (expanded: boolean) => void;
   toggleEventVisibility: (id: StreamId) => void;
   isEventVisible: (id: StreamId) => boolean;
+  /**
+   * Drop references to removed streams (or ALL stream references when ids is
+   * omitted): soloed band, muted bands, hidden event overlays. Prevents stale
+   * solo/mute state pointing at streams that no longer exist.
+   */
+  pruneStreams: (ids?: StreamId[]) => void;
   reset: () => void;
 }
 
@@ -119,6 +125,35 @@ export const useBandEditingStore = create<BandEditingState & BandEditingActions>
           "toggleEventVisibility"
         ),
       isEventVisible: (id) => !get().hiddenEventBandIds.has(id),
+      pruneStreams: (ids) =>
+        set(
+          (state) => {
+            if (ids === undefined) {
+              return {
+                soloedBandId: null,
+                mutedBandIds: new Set<StreamId>(),
+                hiddenEventBandIds: new Set<StreamId>(),
+              };
+            }
+            const removed = new Set(ids);
+            const mutedBandIds = new Set(
+              [...state.mutedBandIds].filter((id) => !removed.has(id))
+            );
+            const hiddenEventBandIds = new Set(
+              [...state.hiddenEventBandIds].filter((id) => !removed.has(id))
+            );
+            return {
+              soloedBandId:
+                state.soloedBandId && removed.has(state.soloedBandId)
+                  ? null
+                  : state.soloedBandId,
+              mutedBandIds,
+              hiddenEventBandIds,
+            };
+          },
+          false,
+          "pruneStreams"
+        ),
       reset: () =>
         set(
           { ...initialState, mutedBandIds: new Set(), hiddenEventBandIds: new Set() },

@@ -22,6 +22,7 @@ import { audioCache } from "./audioCache";
 import { useAnalysisStore } from "./analysisStore";
 import { clearAnalysisMemos } from "./analysisRunner";
 import { useViewStore } from "./viewStore";
+import { useBandEditingStore } from "./bandEditingStore";
 import { useStreamStore, type AddBandParams, type BandShapePatch } from "./streamStore";
 import {
   MIXDOWN_STREAM_ID,
@@ -104,6 +105,7 @@ export function removeStreamCascade(id: StreamId): Stream[] {
     clearAnalysisMemos(stream.id);
     view.removeCompared(stream.id);
   }
+  useBandEditingStore.getState().pruneStreams(removed.map((s) => s.id));
   return removed;
 }
 
@@ -114,4 +116,5 @@ export function resetAllStreams(): void {
   audioCache.clear();
   clearAnalysisMemos();
   useViewStore.getState().clearCompared();
+  useBandEditingStore.getState().pruneStreams();
 }

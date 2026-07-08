@@ -18,18 +18,14 @@ import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useAuthoredEventActions } from "@/lib/stores/hooks/useAuthoredEventActions";
 import { useTimingStore } from "@/lib/stores/timingStore";
 import { useMirroredCursorTime } from "@/lib/stores/hooks/useDerivedState";
-import { useDerivedSignalStore } from "@/lib/stores/derivedSignalStore";
+import { useStreamStore } from "@/lib/streams";
 import {
-  MIXDOWN_STREAM_ID,
-  analysisKey,
-  isBandStream,
-  toDisplaySignal,
-  useAnalysisStore,
-  useStreamStore,
-  type AnalysisId,
-  type AudioStream,
-} from "@/lib/streams";
-import { mirTabDefinitions } from "@/lib/stores/mirStore";
+  SignalSourceSelector,
+  useSignalSourceData,
+  useSignalSourceGroups,
+  useSignalSourceLabel,
+  type SignalSourceRef,
+} from "@/components/signals/SignalSourceSelector";
 import { getAuthoredStreamId, getInspectorNodeType } from "@/lib/nodeTypes";
 import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
 import { EventStreamEditor } from "./EventStreamEditor";
@@ -39,14 +35,6 @@ import { cn } from "@/lib/utils";
 // ============================================================================
 // Types
 // ============================================================================
-
-/**
- * Available signal source types for event extraction.
- */
-type SignalSource =
-  | { kind: "customSignal"; id: string; name: string; groupLabel: string }
-  | { kind: "bandMir"; bandId: string; functionId: AnalysisId; name: string; groupLabel: string }
-  | { kind: "mir1d"; inputId: string; functionId: AnalysisId; name: string; groupLabel: string };
 
 /**
  * Peak picking algorithm choices.
@@ -81,7 +69,7 @@ type GatingMode = "simple" | "hysteresis";
 
 function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProps) {
   // Source selection
-  const [selectedSourceKey, setSelectedSourceKey] = useState<string>("");
+  const [selectedSourceRef, setSelectedSourceRef] = useState<SignalSourceRef | null>(null);
 
   // Peak picking parameters
   const [algorithm, setAlgorithm] = useState<PeakAlgorithm>("threshold");
@@ -109,165 +97,11 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
   const beatGridVisible = useTimingStore((s) => s.isVisible);
   const bpm = useTimingStore((s) => s.selectedHypothesis?.bpm ?? null);
 
-  // Get available signals from various sources (now called derived signals)
-  const derivedSignals = useDerivedSignalStore(
-    useShallow((s) => s.structure?.signals ?? [])
-  );
-  const derivedSignalResults = useDerivedSignalStore((s) => s.resultCache);
-
-  const streams = useStreamStore((s) => s.streams);
-  const bands = useMemo(
-    () => [...streams.values()].filter(isBandStream).sort((a, b) => a.sortOrder - b.sortOrder),
-    [streams]
-  );
-  const stems = useMemo(
-    () =>
-      [...streams.values()]
-        .filter((s): s is AudioStream => s.kind === "stem")
-        .sort((a, b) => a.sortOrder - b.sortOrder),
-    [streams]
-  );
-  const analysisResults = useAnalysisStore((s) => s.results);
-
-  // Build available sources list - comprehensive list of all 1D signals
-  const availableSources = useMemo(() => {
-    const sources: SignalSource[] = [];
-
-    // Custom Signals
-    for (const signal of derivedSignals) {
-      if (derivedSignalResults.has(signal.id)) {
-        sources.push({
-          kind: "customSignal",
-          id: signal.id,
-          name: signal.name,
-          groupLabel: "Custom Signals",
-        });
-      }
-    }
-
-    // Band MIR signals (STFT-based)
-    const bandMirFunctions = [
-      { id: "amplitudeEnvelope", label: "Amplitude" },
-      { id: "onsetEnvelope", label: "Onset Strength" },
-      { id: "spectralFlux", label: "Spectral Flux" },
-      { id: "spectralCentroid", label: "Spectral Centroid" },
-    ] as const;
-
-    for (const band of bands) {
-      for (const fn of bandMirFunctions) {
-        if (analysisResults.has(analysisKey(band.id, fn.id))) {
-          sources.push({
-            kind: "bandMir",
-            bandId: band.id,
-            functionId: fn.id,
-            name: `${band.label} ${fn.label}`,
-            groupLabel: "Band Signals (STFT)",
-          });
-        }
-      }
-    }
-
-    // Band CQT signals
-    const bandCqtFunctions = [
-      { id: "cqtHarmonicEnergy", label: "Harmonic Energy" },
-      { id: "cqtBassPitchMotion", label: "Bass Pitch Motion" },
-      { id: "cqtTonalStability", label: "Tonal Stability" },
-    ] as const;
-
-    for (const band of bands) {
-      for (const fn of bandCqtFunctions) {
-        if (analysisResults.has(analysisKey(band.id, fn.id))) {
-          sources.push({
-            kind: "bandMir",
-            bandId: band.id,
-            functionId: fn.id,
-            name: `${band.label} ${fn.label}`,
-            groupLabel: "Band Signals (CQT)",
-          });
-        }
-      }
-    }
-
-    // Global MIR 1D outputs
-    const mir1dFunctions = mirTabDefinitions.filter((t) => t.kind === "1d");
-    for (const fn of mir1dFunctions) {
-      const result = analysisResults.get(analysisKey(MIXDOWN_STREAM_ID, fn.id));
-      if (result && toDisplaySignal(result, fn.id)) {
-        sources.push({
-          kind: "mir1d",
-          inputId: MIXDOWN_STREAM_ID,
-          functionId: fn.id,
-          name: fn.label.replace(" (1D)", ""),
-          groupLabel: "MIR Analysis (Mixdown)",
-        });
-      }
-    }
-
-    // Per-stem MIR results
-    for (const stem of stems) {
-      for (const fn of mir1dFunctions) {
-        const result = analysisResults.get(analysisKey(stem.id, fn.id));
-        if (result && toDisplaySignal(result, fn.id)) {
-          sources.push({
-            kind: "mir1d",
-            inputId: stem.id,
-            functionId: fn.id,
-            name: `${stem.id} ${fn.label.replace(" (1D)", "")}`,
-            groupLabel: "MIR Analysis (Stems)",
-          });
-        }
-      }
-    }
-
-    return sources;
-  }, [derivedSignals, derivedSignalResults, bands, stems, analysisResults]);
-
-  // Group sources by groupLabel
-  const groupedSources = useMemo(() => {
-    const groups = new Map<string, SignalSource[]>();
-    for (const source of availableSources) {
-      const existing = groups.get(source.groupLabel) ?? [];
-      existing.push(source);
-      groups.set(source.groupLabel, existing);
-    }
-    return groups;
-  }, [availableSources]);
-
-  // Find selected source
-  const selectedSource = useMemo(() => {
-    if (!selectedSourceKey) return null;
-    return availableSources.find((s) => {
-      if (s.kind === "customSignal") return s.id === selectedSourceKey;
-      if (s.kind === "bandMir") return `${s.bandId}:${s.functionId}` === selectedSourceKey;
-      if (s.kind === "mir1d") return `${s.inputId}:${s.functionId}` === selectedSourceKey;
-      return false;
-    }) ?? null;
-  }, [selectedSourceKey, availableSources]);
-
-  // Get signal data for selected source
-  const signalData = useMemo(() => {
-    if (!selectedSource) return null;
-
-    if (selectedSource.kind === "customSignal") {
-      const result = derivedSignalResults.get(selectedSource.id);
-      if (!result) return null;
-      return { times: result.times, values: result.values };
-    }
-
-    if (selectedSource.kind === "bandMir") {
-      const result = analysisResults.get(analysisKey(selectedSource.bandId, selectedSource.functionId));
-      if (!result) return null;
-      return toDisplaySignal(result, selectedSource.functionId);
-    }
-
-    if (selectedSource.kind === "mir1d") {
-      const result = analysisResults.get(analysisKey(selectedSource.inputId, selectedSource.functionId));
-      if (!result) return null;
-      return toDisplaySignal(result, selectedSource.functionId);
-    }
-
-    return null;
-  }, [selectedSource, derivedSignalResults, analysisResults]);
+  // Signal sources come from the shared selector (unified streams + analyses);
+  // the groups are only read here for the empty state.
+  const sourceGroups = useSignalSourceGroups({ includeDerived: true });
+  const signalData = useSignalSourceData(selectedSourceRef);
+  const selectedSourceName = useSignalSourceLabel(selectedSourceRef);
 
   // Peak detection state
   const detectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -354,9 +188,8 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
   }, [autoDetect, signalData, algorithm, threshold, minDistance, adaptiveWindow, gatingMode, hysteresisOffThreshold, runDetection]);
 
   // Handle source selection
-  const handleSourceChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value;
-    setSelectedSourceKey(value);
+  const handleSourceChange = useCallback((ref: SignalSourceRef | null) => {
+    setSelectedSourceRef(ref);
     setPeakResult(null);
   }, []);
 
@@ -404,7 +237,7 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
     }
 
     // Reset source selection
-    setSelectedSourceKey("");
+    setSelectedSourceRef(null);
     setPeakResult(null);
   }, [peakResult, streamId, stream.events, importMode, dedupeThresholdMs]);
 
@@ -479,31 +312,14 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
       {/* Pipeline row: Source → Algorithm */}
       <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 text-xs">
         <span className="text-zinc-400">From</span>
-        <select
-          value={selectedSourceKey}
+        <SignalSourceSelector
+          value={selectedSourceRef}
           onChange={handleSourceChange}
-          className="h-7 px-2 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 dark:text-zinc-100 max-w-50"
-        >
-          <option value="">Select signal...</option>
-          {Array.from(groupedSources.entries()).map(([groupLabel, sources]) => (
-            <optgroup key={groupLabel} label={groupLabel}>
-              {sources.map((source) => {
-                const key = source.kind === "customSignal"
-                  ? source.id
-                  : source.kind === "bandMir"
-                    ? `${source.bandId}:${source.functionId}`
-                    : `${source.inputId}:${source.functionId}`;
-                return (
-                  <option key={key} value={key}>
-                    {source.name}
-                  </option>
-                );
-              })}
-            </optgroup>
-          ))}
-        </select>
+          includeDerived
+          className="max-w-50"
+        />
 
-        {selectedSource && (
+        {selectedSourceRef && (
           <>
             <span className="text-zinc-400">→</span>
             <div className="relative group">
@@ -543,7 +359,7 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
       </div>
 
       {/* Parameters row */}
-      {selectedSource && (
+      {selectedSourceRef && (
         <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 flex flex-wrap items-center gap-4 text-xs">
           {/* Threshold (on-threshold for hysteresis) */}
           <div className="flex items-center gap-2">
@@ -679,7 +495,7 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
         <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
           <div className="flex items-center justify-between mb-1 text-xs">
             <span className="text-zinc-600 dark:text-zinc-300 font-medium">
-              {selectedSource?.name}
+              {selectedSourceName}
             </span>
             {peakResult && (
               <span className="text-amber-600 dark:text-amber-400">
@@ -868,7 +684,7 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
       )}
 
       {/* Empty state */}
-      {availableSources.length === 0 && (
+      {sourceGroups.length === 0 && (
         <div className="px-3 py-3 text-xs text-zinc-500 italic">
           No 1D signals available. Run MIR analysis or create custom signals first.
         </div>

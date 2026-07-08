@@ -3,10 +3,12 @@
 import { z } from 'zod';
 import { prisma, AssetStatus } from '@/lib/db';
 import {
-  authAction,
-  publicAction,
-  assertOwnership,
   assertCanRead,
+  assertOwnership,
+  authActionLenient,
+  authActionModerate,
+  authActionStrict,
+  publicAction,
 } from '@/lib/safe-action';
 import { getDbUser } from '@/lib/auth/syncUser';
 
@@ -46,7 +48,7 @@ const autosaveSchema = z.object({
 // Creates a new project for the authenticated user
 // -----------------------------------------------------------------------------
 
-export const createProject = authAction
+export const createProject = authActionStrict
   .schema(createProjectSchema)
   .action(async ({ parsedInput, ctx }) => {
     const { name } = parsedInput;
@@ -108,7 +110,7 @@ export const loadProjectWorkingState = publicAction
 // Saves the working state for a project (owner only)
 // -----------------------------------------------------------------------------
 
-export const autosaveProjectWorkingState = authAction
+export const autosaveProjectWorkingState = authActionLenient
   .schema(autosaveSchema)
   .action(async ({ parsedInput, ctx }) => {
     const { projectId, workingJson } = parsedInput;
@@ -179,7 +181,7 @@ export const listPublicProjects = publicAction.action(async () => {
 // Lists all projects owned by the authenticated user
 // -----------------------------------------------------------------------------
 
-export const listMyProjects = authAction.action(async ({ ctx }) => {
+export const listMyProjects = authActionLenient.action(async ({ ctx }) => {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { user } = ctx;
 
@@ -293,7 +295,7 @@ function extractAssetIds(workingJson: Record<string, unknown>): string[] {
   return assetIds;
 }
 
-export const createProjectSnapshot = authAction
+export const createProjectSnapshot = authActionModerate
   .schema(projectIdSchema)
   .action(async ({ parsedInput, ctx }) => {
     const { projectId } = parsedInput;
@@ -385,7 +387,7 @@ const cloneProjectSchema = z.object({
   name: z.string().min(1).max(255).optional(),
 });
 
-export const cloneProject = authAction
+export const cloneProject = authActionStrict
   .schema(cloneProjectSchema)
   .action(async ({ parsedInput, ctx }) => {
     const { sourceProjectId, name } = parsedInput;

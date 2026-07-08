@@ -965,10 +965,14 @@ impl Renderer {
 
         let mut values = Vec::new();
         for param_def in &material.params {
-            // Check if mesh provides an override
+            // Check if mesh provides an override, otherwise use the default
             let value = mesh_params.values.get(&param_def.name)
                 .cloned()
-                .unwrap_or_else(|| param_def.default_value.clone());
+                .unwrap_or_else(|| {
+                    // Default values in built-in materials are always static
+                    param_def.default_value.as_static()
+                        .expect("Built-in material defaults must be static")
+                });
             values.push(value);
         }
         values
