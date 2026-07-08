@@ -2,8 +2,9 @@
 
 Status: **complete** (June 2026). Milestones P1/P4 delivered: the web app exports a
 versioned package that the native CLI renders end to end (validated on GPU against a
-golden fixture). Known gap: composed signals are parsed but not routed to scripts —
-the engine-side push was never implemented (pre-existing; tracked separately).
+golden fixture). The one known gap — composed signals parsed but not routed — was
+closed in a follow-up: `inputs.composedSignals` is now implemented engine-side
+(wasm pushes, package routing, isolated eval map) and covered by the drift gate.
 
 ## Problem
 

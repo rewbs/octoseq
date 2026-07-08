@@ -482,6 +482,25 @@ fn update(dt, frame) {
 
 Derived Signals are pre-computed and cached, making them efficient for complex derivations that would be expensive to compute per-frame.
 
+### Composed Signals
+
+Composed Signals are human-authored interpretation curves (keyframe envelopes drawn
+over the beat grid in the lab). They are accessible via
+`inputs.composedSignals["signal_name"]` and behave like any other Signal:
+
+```rhai
+let cube = mesh.cube();
+
+fn update(dt, frame) {
+    // A hand-drawn intensity curve driving scale
+    let intensity = inputs.composedSignals["intensity"];
+    cube.scale = intensity.smooth.exponential(0.05, 0.2).add(1.0);
+}
+```
+
+Composed signals are name-keyed and fully isolated from `inputs.customSignals` —
+a composed signal and a derived signal may share a name without shadowing each other.
+
 ### Time Signals
 
 The `timing` namespace provides canonical time signals for declarative time-based animation:
