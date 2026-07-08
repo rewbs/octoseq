@@ -362,10 +362,14 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
             },
 
             removeBand: (id) => {
-                const { structure, selectedBandId } = get();
+                const { structure, selectedBandId, soloedBandId, mutedBandIds } = get();
                 if (!structure) return;
 
                 const now = new Date().toISOString();
+
+                // Clean up muted bands set
+                const newMutedBandIds = new Set(mutedBandIds);
+                newMutedBandIds.delete(id);
 
                 set(
                     {
@@ -375,6 +379,10 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                             modifiedAt: now,
                         },
                         selectedBandId: selectedBandId === id ? null : selectedBandId,
+                        // Clear solo if the removed band was soloed
+                        soloedBandId: soloedBandId === id ? null : soloedBandId,
+                        // Remove from muted bands
+                        mutedBandIds: newMutedBandIds,
                     },
                     false,
                     "removeBand"
@@ -505,7 +513,7 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
             },
 
             clearBandsForSource: (sourceId) => {
-                const { structure, selectedBandId } = get();
+                const { structure, selectedBandId, soloedBandId, mutedBandIds } = get();
                 if (!structure) return;
 
                 const now = new Date().toISOString();
@@ -514,6 +522,12 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                     .map((b) => b.id);
 
                 if (removedBandIds.length === 0) return;
+
+                // Clean up muted bands set
+                const newMutedBandIds = new Set(mutedBandIds);
+                for (const bandId of removedBandIds) {
+                    newMutedBandIds.delete(bandId);
+                }
 
                 set(
                     {
@@ -526,6 +540,12 @@ export const useFrequencyBandStore = create<FrequencyBandStore>()(
                         selectedBandId: removedBandIds.includes(selectedBandId ?? "")
                             ? null
                             : selectedBandId,
+                        // Clear solo if any removed band was soloed
+                        soloedBandId: removedBandIds.includes(soloedBandId ?? "")
+                            ? null
+                            : soloedBandId,
+                        // Remove all removed bands from muted set
+                        mutedBandIds: newMutedBandIds,
                     },
                     false,
                     "clearBandsForSource"

@@ -1,9 +1,11 @@
 "use client";
 
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useCallback } from "react";
 import { useDerivedSignalStore, useDerivedSignals } from "@/lib/stores/derivedSignalStore";
 import { useDerivedSignalActions } from "@/lib/stores/hooks/useDerivedSignalActions";
 import { useInterpretationTreeStore } from "@/lib/stores/interpretationTreeStore";
+import { usePlaybackStore } from "@/lib/stores/playbackStore";
+import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import { getInspectorNodeType } from "@/lib/nodeTypes";
 import { Button } from "@/components/ui/button";
 import { Plus, Activity, RefreshCw, Trash2, Grid3X3, TrendingUp, Zap } from "lucide-react";
@@ -11,6 +13,7 @@ import { Source2DSelector } from "./Source2DSelector";
 import { Source1DSelector } from "./Source1DSelector";
 import { SourceEventSelector } from "./SourceEventSelector";
 import { TransformChainEditor } from "./TransformChainEditor";
+import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
 import {
   SOURCE_KIND_LABELS,
   STABILIZATION_MODE_LABELS,
@@ -42,26 +45,35 @@ export function DerivedSignalsPanel() {
   const signals = useDerivedSignals();
   const selectedSignalId = useDerivedSignalStore((s) => s.selectedSignalId);
   const selectSignal = useDerivedSignalStore((s) => s.selectSignal);
-  const getSignalById = useDerivedSignalStore((s) => s.getSignalById);
-  const getSignalResult = useDerivedSignalStore((s) => s.getSignalResult);
+  const resultCache = useDerivedSignalStore((s) => s.resultCache);
   const computingSignalId = useDerivedSignalStore((s) => s.computingSignalId);
   const { addSignal, updateSignal, removeSignal, recomputeSignal } = useDerivedSignalActions();
 
-  const selectedSignal = selectedSignalId ? getSignalById(selectedSignalId) : null;
-  const selectedResult = selectedSignalId ? getSignalResult(selectedSignalId) : null;
+  // Use signals array for proper subscription to data changes
+  const selectedSignal = useMemo(
+    () => signals.find((s) => s.id === selectedSignalId) ?? null,
+    [signals, selectedSignalId]
+  );
+  // Subscribe to resultCache directly for proper reactivity
+  const selectedResult = useMemo(
+    () => (selectedSignalId ? resultCache.get(selectedSignalId) ?? null : null),
+    [resultCache, selectedSignalId]
+  );
   const isComputing = selectedSignalId === computingSignalId;
 
-  // Tab state for source type
-  const [activeTab, setActiveTab] = useState<"2d" | "1d" | "events">(
-    selectedSignal?.source.kind ?? "2d"
-  );
+  // Viewport and audio for signal viewer
+  const viewport = usePlaybackStore((s) => s.viewport);
+  const audioDuration = useAudioInputStore((s) => s.getAudioDuration()) ?? 0;
 
-  // Sync tab with selected signal source type
-  useEffect(() => {
-    if (selectedSignal) {
-      setActiveTab(selectedSignal.source.kind);
-    }
-  }, [selectedSignal]);
+  // Convert result to SignalData for viewer
+  const signalData = useMemo(() => {
+    if (!selectedResult || selectedResult.status !== "computed") return null;
+    if (!selectedResult.times || !selectedResult.values) return null;
+    return createContinuousSignal(selectedResult.times, selectedResult.values);
+  }, [selectedResult]);
+
+  // Derive active tab from signal's source kind - single source of truth
+  const activeTab = selectedSignal?.source.kind ?? "2d";
 
   const handleAddSignal = (kind: "2d" | "1d" | "events") => {
     let defaults;
@@ -79,7 +91,6 @@ export function DerivedSignalsPanel() {
     const newId = addSignal(defaults);
     if (newId) {
       selectSignal(newId);
-      setActiveTab(kind);
     }
   };
 
@@ -124,8 +135,7 @@ export function DerivedSignalsPanel() {
   );
 
   const handleTabChange = (kind: "2d" | "1d" | "events") => {
-    setActiveTab(kind);
-    // Create new source when switching types - use updateSignal directly to avoid stale callback
+    // Update source type when switching tabs
     if (selectedSignal && selectedSignal.source.kind !== kind) {
       let newSource: DerivedSignalSource;
       switch (kind) {
@@ -139,7 +149,6 @@ export function DerivedSignalsPanel() {
           newSource = createDefaultEventSignal().source;
           break;
       }
-      // Use updateSignal directly with the ID to ensure synchronous update
       updateSignal(selectedSignal.id, { source: newSource });
     }
   };
@@ -199,7 +208,7 @@ export function DerivedSignalsPanel() {
             ) : (
               <div className="space-y-1">
                 {signals.map((signal) => {
-                  const result = getSignalResult(signal.id);
+                  const result = resultCache.get(signal.id);
                   const isSelected = selectedSignalId === signal.id;
                   const isSignalComputing = computingSignalId === signal.id;
 
@@ -252,12 +261,7 @@ export function DerivedSignalsPanel() {
             <div className="space-y-4">
               {/* Signal header with actions */}
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold">{selectedSignal.name}</h3>
-                  <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                    {SOURCE_KIND_LABELS[selectedSignal.source.kind]}
-                  </span>
-                </div>
+                <h3 className="font-semibold">{selectedSignal.name}</h3>
                 <div className="flex gap-1">
                   <Button
                     size="icon"
@@ -283,6 +287,7 @@ export function DerivedSignalsPanel() {
 
               {/* Source Type Tabs */}
               <div className="space-y-3">
+                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Source Type</label>
                 <div className="grid grid-cols-3 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
                   <button
                     className={`flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors ${activeTab === "2d"
@@ -390,6 +395,51 @@ export function DerivedSignalsPanel() {
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Signal Viewer */}
+              <div className="rounded-md border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                {signalData ? (
+                  <SignalViewer
+                    signal={signalData}
+                    viewport={viewport}
+                    label={selectedSignal.name}
+                    initialHeight={80}
+                    showBeatGrid
+                    audioDuration={audioDuration}
+                  />
+                ) : (
+                  <div className="flex h-20 flex-col items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-900 px-4">
+                    {isComputing ? (
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400">Computing...</p>
+                    ) : selectedResult?.status === "error" ? (
+                      <>
+                        <p className="text-sm text-red-600 dark:text-red-400 text-center">
+                          {selectedResult.errorMessage ?? "Computation failed"}
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => recomputeSignal(selectedSignal.id)}
+                        >
+                          <RefreshCw className="mr-1 h-3 w-3" />
+                          Retry
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400">No signal computed yet</p>
+                        <Button
+                          size="sm"
+                          onClick={() => recomputeSignal(selectedSignal.id)}
+                        >
+                          <RefreshCw className="mr-1 h-3 w-3" />
+                          Compute
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Status */}

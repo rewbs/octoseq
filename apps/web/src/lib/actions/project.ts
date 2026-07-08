@@ -180,11 +180,10 @@ export const listPublicProjects = publicAction.action(async () => {
 // -----------------------------------------------------------------------------
 
 export const listMyProjects = authAction.action(async ({ ctx }) => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { user } = ctx;
 
   const projects = await prisma.project.findMany({
-    //where: { ownerId: user.id },
+    where: { ownerId: user.id },
     orderBy: { updatedAt: 'desc' },
     select: {
       id: true,

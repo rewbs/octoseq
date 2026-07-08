@@ -1,8 +1,10 @@
 "use client";
 
+import { useMemo, useCallback } from "react";
 import { useAudioInputStore } from "@/lib/stores/audioInputStore";
 import { useDerivedSignals } from "@/lib/stores/derivedSignalStore";
 import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
+import { useBandMirStore } from "@/lib/stores/bandMirStore";
 import type { BandMirFunctionId, BandCqtFunctionId } from "@octoseq/mir";
 import {
   type Source1D,
@@ -10,6 +12,21 @@ import {
   type Signal1DRef,
   type DerivedSignalSource,
 } from "@/lib/stores/types/derivedSignal";
+
+// Band STFT function IDs
+const BAND_STFT_FUNCTION_IDS: BandMirFunctionId[] = [
+  "bandAmplitudeEnvelope",
+  "bandOnsetStrength",
+  "bandSpectralFlux",
+  "bandSpectralCentroid",
+];
+
+// Band CQT function IDs
+const BAND_CQT_FUNCTION_IDS: BandCqtFunctionId[] = [
+  "bandCqtHarmonicEnergy",
+  "bandCqtBassPitchMotion",
+  "bandCqtTonalStability",
+];
 
 interface Source1DSelectorProps {
   source: Source1D;
@@ -48,6 +65,45 @@ export function Source1DSelector({ source, onChange }: Source1DSelectorProps) {
   const bandStructure = useFrequencyBandStore((s) => s.structure);
   const bands = bandStructure?.bands ?? [];
 
+  // Get band MIR caches for filtering
+  const bandMirCache = useBandMirStore((s) => s.cache);
+  const bandCqtCache = useBandMirStore((s) => s.cqtCache);
+
+  // Get available functions for a band (only those with cached data)
+  const getAvailableBandFunctions = useCallback(
+    (bandId: string): (BandMirFunctionId | BandCqtFunctionId)[] => {
+      const available: (BandMirFunctionId | BandCqtFunctionId)[] = [];
+      for (const fn of BAND_STFT_FUNCTION_IDS) {
+        const key = `${bandId}:${fn}` as `${string}:${typeof fn}`;
+        if (bandMirCache.has(key)) {
+          available.push(fn);
+        }
+      }
+      for (const fn of BAND_CQT_FUNCTION_IDS) {
+        const key = `${bandId}:${fn}` as `${string}:${typeof fn}`;
+        if (bandCqtCache.has(key)) {
+          available.push(fn);
+        }
+      }
+      return available;
+    },
+    [bandMirCache, bandCqtCache]
+  );
+
+  // Filter bands to only those with available data
+  const bandsWithData = useMemo(
+    () => bands.filter((band) => getAvailableBandFunctions(band.id).length > 0),
+    [bands, getAvailableBandFunctions]
+  );
+
+  // Get available functions for currently selected band
+  const currentBandFunctions = useMemo(() => {
+    if (source.signalRef.type !== "band" || !source.signalRef.bandId) {
+      return [];
+    }
+    return getAvailableBandFunctions(source.signalRef.bandId);
+  }, [source.signalRef, getAvailableBandFunctions]);
+
   const handleRefTypeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const type = e.target.value as Signal1DRef["type"];
     let newRef: Signal1DRef;
@@ -60,10 +116,15 @@ export function Source1DSelector({ source, onChange }: Source1DSelectorProps) {
         };
         break;
       case "band":
+        // Find first band with available data
+        const firstBandWithData = bandsWithData[0];
+        const firstFn = firstBandWithData
+          ? getAvailableBandFunctions(firstBandWithData.id)[0]
+          : "bandAmplitudeEnvelope";
         newRef = {
           type: "band",
-          bandId: bands[0]?.id ?? "",
-          functionId: "bandAmplitudeEnvelope",
+          bandId: firstBandWithData?.id ?? "",
+          functionId: firstFn ?? "bandAmplitudeEnvelope",
         };
         break;
       case "derived":
@@ -95,9 +156,13 @@ export function Source1DSelector({ source, onChange }: Source1DSelectorProps) {
 
   const handleBandChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     if (source.signalRef.type !== "band") return;
+    const newBandId = e.target.value;
+    // When band changes, also update to first available function for that band
+    const availableFns = getAvailableBandFunctions(newBandId);
+    const newFunctionId = availableFns[0] ?? "bandAmplitudeEnvelope";
     onChange({
       ...source,
-      signalRef: { ...source.signalRef, bandId: e.target.value },
+      signalRef: { ...source.signalRef, bandId: newBandId, functionId: newFunctionId },
     });
   };
 
@@ -136,14 +201,14 @@ export function Source1DSelector({ source, onChange }: Source1DSelectorProps) {
             />
             <span className="text-sm">Global MIR</span>
           </label>
-          <label className={`flex items-center space-x-2 ${bands.length === 0 ? "opacity-50" : ""}`}>
+          <label className={`flex items-center space-x-2 ${bandsWithData.length === 0 ? "opacity-50" : ""}`}>
             <input
               type="radio"
               name="refType"
               value="band"
               checked={source.signalRef.type === "band"}
               onChange={handleRefTypeChange}
-              disabled={bands.length === 0}
+              disabled={bandsWithData.length === 0}
               className="h-4 w-4 border-zinc-300 text-blue-600"
             />
             <span className="text-sm">Band Signal</span>
@@ -213,7 +278,7 @@ export function Source1DSelector({ source, onChange }: Source1DSelectorProps) {
               className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
             >
               <option value="">Select band...</option>
-              {bands.map((band) => (
+              {bandsWithData.map((band) => (
                 <option key={band.id} value={band.id}>
                   {band.label}
                 </option>
@@ -228,9 +293,9 @@ export function Source1DSelector({ source, onChange }: Source1DSelectorProps) {
               onChange={handleBandFunctionChange}
               className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
             >
-              {(Object.keys(BAND_MIR_LABELS) as (BandMirFunctionId | BandCqtFunctionId)[]).map((id) => (
-                <option key={id} value={id}>
-                  {BAND_MIR_LABELS[id]}
+              {currentBandFunctions.map((fn) => (
+                <option key={fn} value={fn}>
+                  {BAND_MIR_LABELS[fn]}
                 </option>
               ))}
             </select>

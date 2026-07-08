@@ -25,7 +25,7 @@
     "demo:build": "vite build demo",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint -c eslint.config.mjs .",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },
   "peerDependencies": {

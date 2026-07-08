@@ -8,7 +8,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "visualiser"
+name = "visualiser-cli"
 path = "src/main.rs"
 
 [dependencies]
@@ -51,8 +51,14 @@ getrandom = { version = "0.3", features = ["wasm_js"] }
 
 # Profiling profiles - use `wasm-pack build --profiling` for readable function names
 [profile.release]
-debug = true  # Enables DWARF debug info for profiling
+opt-level = "z"  # Optimize for size
+lto = true       # Link-time optimization
+codegen-units = 1
+strip = true     # Strip symbols for smaller binary
 
 [profile.profiling]
 inherits = "release"
 debug = 2  # Full debug info for profiling
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O", "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext", "--enable-mutable-globals"]

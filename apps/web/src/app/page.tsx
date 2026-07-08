@@ -8,6 +8,7 @@ import { Github } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 import { HeatmapWithBandOverlay } from "@/components/frequencyBand";
 import { InterpretationTreePanel } from "@/components/interpretationTree";
@@ -43,6 +44,7 @@ import { useAssetUpload } from "@/lib/hooks/useAssetUpload";
 import { useCloudAssetUploader } from "@/lib/hooks/useCloudAssetUploader";
 import { useCloudAssetLoader } from "@/lib/hooks/useCloudAssetLoader";
 import { useAudioSourceResolver } from "@/lib/hooks/useAudioSourceResolver";
+import { loadProjectWorkingState } from "@/lib/actions/project";
 import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
 import type { LocalAudioSource } from "@/lib/stores/types/audioInput";
 import { computePhaseHypotheses, createSegmentFromGrid, type BeatCandidate, type MusicalTimeStructure } from "@octoseq/mir";
@@ -83,6 +85,14 @@ import {
   useAutosaveStore,
 } from "@/lib/stores";
 import { getInspectorNodeType, getAudioSourceId } from "@/lib/nodeTypes";
+
+type LoadedBackendProject = {
+  id: string;
+  name: string;
+  ownerId: string;
+  isPublic: boolean;
+  workingState: Record<string, unknown> | null;
+};
 
 export default function Home() {
   // ===== REFS (stay in component) =====
@@ -444,6 +454,73 @@ export default function Home() {
       void serverAutosave.saveNow();
     }
   }, [pendingInitialSave, backendProjectId, serverAutosave]);
+
+  const handleLoadBackendProject = useCallback(
+    async (loadedProject: LoadedBackendProject): Promise<void> => {
+      console.log("Loading project:", loadedProject.name);
+
+      // Set the backend project ID to enable server sync
+      setBackendProjectId(loadedProject.id);
+
+      // If we have working state, load it using the project actions hook
+      // This properly hydrates all stores (bands, events, scripts, etc.)
+      if (loadedProject.workingState) {
+        console.log("[ProjectLoad] Working state found, hydrating stores...");
+        const json = JSON.stringify(loadedProject.workingState);
+        const success = loadProject(json);
+        if (success) {
+          console.log("Project loaded successfully");
+
+          // Load cloud assets (audio, meshes) referenced by the project
+          console.log("Loading cloud assets...");
+          const assetResults = await loadProjectAssets();
+          const successCount = assetResults.filter((r) => r.success).length;
+          const failCount = assetResults.filter((r) => !r.success).length;
+          console.log(`Cloud assets loaded: ${successCount} success, ${failCount} failed`);
+
+          // If the mixdown was loaded successfully, trigger MIR analysis
+          const mixdownLoaded = assetResults.some((r) => r.inputId === MIXDOWN_ID && r.success);
+          if (mixdownLoaded) {
+            console.log("[ProjectLoad] Mixdown loaded, triggering MIR analysis...");
+            runAllAnalyses();
+          }
+        } else {
+          console.error("Failed to load project working state");
+        }
+      } else {
+        console.warn("[ProjectLoad] No working state available - project may not have been saved yet");
+      }
+    },
+    [loadProject, loadProjectAssets, runAllAnalyses]
+  );
+
+  const handleLoadBackendProjectById = useCallback(
+    async (projectId: string): Promise<void> => {
+      try {
+        const result = await loadProjectWorkingState({ projectId });
+        if (result?.data) {
+          await handleLoadBackendProject({
+            id: result.data.project.id,
+            name: result.data.project.name,
+            ownerId: result.data.project.ownerId,
+            isPublic: result.data.project.isPublic,
+            workingState: result.data.workingState as Record<string, unknown> | null,
+          });
+        } else if (result?.serverError) {
+          console.error("Failed to load project:", result.serverError);
+          alert(`Failed to load project: ${result.serverError}`);
+        } else {
+          console.error("Failed to load project: unknown error");
+          alert("Failed to load project.");
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        console.error("Failed to load project:", error);
+        alert(`Failed to load project: ${message}`);
+      }
+    },
+    [handleLoadBackendProject]
+  );
 
   // Asset upload tracking
   const { uploads, cancelUpload, removeUpload } = useAssetUpload();
@@ -929,9 +1006,8 @@ export default function Home() {
         backendProjectId={backendProjectId}
         isSignedIn={isSignedIn ?? false}
         onCloned={(project) => {
-          // TODO: Load the cloned project
           console.log("Project cloned:", project);
-          setBackendProjectId(project.id);
+          void handleLoadBackendProjectById(project.id);
         }}
         onSaveToCloud={(project) => {
           // Backend project created - start syncing
@@ -941,46 +1017,10 @@ export default function Home() {
           // The useEffect will detect this and call saveNow() once the hook has the new backendProjectId
           setPendingInitialSave(true);
         }}
-        onLoadProject={async (loadedProject) => {
-          // Load project from server
-          console.log("Loading project:", loadedProject.name);
-
-          // Set the backend project ID to enable server sync
-          setBackendProjectId(loadedProject.id);
-
-          // If we have working state, load it using the project actions hook
-          // This properly hydrates all stores (bands, events, scripts, etc.)
-          if (loadedProject.workingState) {
-            console.log("[ProjectLoad] Working state found, hydrating stores...");
-            const json = JSON.stringify(loadedProject.workingState);
-            const success = loadProject(json);
-            if (success) {
-              console.log("Project loaded successfully");
-
-              // Load cloud assets (audio, meshes) referenced by the project
-              console.log("Loading cloud assets...");
-              const assetResults = await loadProjectAssets();
-              const successCount = assetResults.filter((r) => r.success).length;
-              const failCount = assetResults.filter((r) => !r.success).length;
-              console.log(`Cloud assets loaded: ${successCount} success, ${failCount} failed`);
-
-              // If the mixdown was loaded successfully, trigger MIR analysis
-              const mixdownLoaded = assetResults.some((r) => r.inputId === MIXDOWN_ID && r.success);
-              if (mixdownLoaded) {
-                console.log("[ProjectLoad] Mixdown loaded, triggering MIR analysis...");
-                runAllAnalyses();
-              }
-            } else {
-              console.error("Failed to load project working state");
-            }
-          } else {
-            console.warn("[ProjectLoad] No working state available - project may not have been saved yet");
-          }
-        }}
-        onDemoProjectCloned={(project) => {
-          // TODO: Load project working state into stores
-          console.log('Project cloned:', project);
-          alert(`Project "${project.name}" cloned successfully! Project loading will be available soon.`);
+        onLoadProject={handleLoadBackendProject}
+        onDemoProjectCloned={async (project) => {
+          console.log("Project cloned:", project);
+          await handleLoadBackendProjectById(project.id);
         }}
       />
 
@@ -994,6 +1034,7 @@ export default function Home() {
 
           <section>
             <div className="space-y-1.5">
+              <ErrorBoundary fallback={<div className="p-4 text-center text-sm text-red-600">Audio player failed to load</div>}>
               <WaveSurferPlayer
                 ref={playerRef}
                 fileInputRef={fileInputRef}
@@ -1094,6 +1135,7 @@ export default function Home() {
                   </div>
                 }
               />
+              </ErrorBoundary>
 
               {/* Band Amplitude Envelope Display */}
               {bandAmplitudeData && (
@@ -1386,6 +1428,7 @@ export default function Home() {
                           onMouseMove={handleCursorHoverFromViewport}
                           onMouseLeave={handleCursorLeave}
                         >
+                          <ErrorBoundary fallback={<div className="p-4 text-center text-sm text-red-600">Heatmap visualization failed to load</div>}>
                           <HeatmapWithBandOverlay
                             input={displayedHeatmap}
                             startTime={visibleRange.startTime}
@@ -1407,6 +1450,7 @@ export default function Home() {
                             playheadTimeSec={mirroredCursorTimeSec ?? playheadTimeSec}
                             sourceId={activeSourceId}
                           />
+                          </ErrorBoundary>
                         </div>
                       ) : (
                         <p className="text-sm text-zinc-500">Run {visualTab} to view output.</p>
@@ -1421,6 +1465,7 @@ export default function Home() {
             <ComposedSignalsPanel />
             <MeshAssetsPanel />
             <AuthoredEventsPanel />
+            <ErrorBoundary fallback={<div className="p-4 text-center text-sm text-red-600">Visualizer failed to load. Check browser console for details.</div>}>
             <VisualiserPanel
               audio={audio}
               playbackTime={playheadTimeSec}
@@ -1431,6 +1476,7 @@ export default function Home() {
               isPlaying={isAudioPlaying}
               musicalTimeStructure={effectiveMusicalTimeStructure}
             />
+            </ErrorBoundary>
 
           </section>
           <MirConfigModal />

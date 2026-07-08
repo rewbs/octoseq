@@ -264,7 +264,7 @@ describe("Activity Signal", () => {
             // Create test values (all 1s)
             const values = new Float32Array(activity.times.length).fill(1);
 
-            applyActivityGating(values, activity, { inactiveBehavior: "zero" });
+            applyActivityGating(values, activity);
 
             // All values should now be 0 (since all frames are inactive)
             for (let i = 0; i < values.length; i++) {

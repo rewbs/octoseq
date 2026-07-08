@@ -1,11 +1,18 @@
 "use client";
 
 import { memo, useEffect, useRef, useState, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
 import type { AudioBufferLike, MusicalTimeStructure } from "@octoseq/mir";
 import { computeBeatPosition } from "@octoseq/mir";
 import { GripHorizontal, GripVertical, Rows3, Columns3, FlaskConical, Loader2, BookOpen } from "lucide-react";
-import Editor, { type Monaco } from "@monaco-editor/react";
+import type { Monaco } from "@monaco-editor/react";
 import { useHotkeysContext } from "react-hotkeys-hook";
+
+// Lazy load Monaco Editor to reduce initial bundle size
+const Editor = dynamic(() => import("@monaco-editor/react").then(mod => ({ default: mod.default })), {
+  loading: () => <div className="flex items-center justify-center h-full text-sm text-zinc-500">Loading editor...</div>,
+  ssr: false,
+});
 import { useConfigStore, useDebugSignalStore, type RawAnalysisResult, type DebugSignal } from "@/lib/stores";
 import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
 import { useBandMirStore } from "@/lib/stores/bandMirStore";

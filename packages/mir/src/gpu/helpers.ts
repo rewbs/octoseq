@@ -18,6 +18,15 @@ export function byteSizeF32(n: number): number {
     return n * 4;
 }
 
+/**
+ * Metadata for pooled buffers to track their properties for release.
+ */
+export interface PooledBuffer {
+    buffer: GPUBuffer;
+    size: number;
+    usage: number;
+}
+
 export function createAndWriteStorageBuffer(gpu: MirGPU, data: Float32Array): GPUBuffer {
     const buf = gpu.device.createBuffer({
         size: byteSizeF32(data.length),
@@ -84,4 +93,80 @@ export async function submitAndReadback(
             gpuSubmitToReadbackMs: tDone - tSubmit,
         },
     };
+}
+
+// ============================================================================
+// Pooled Buffer Creation Functions
+// ============================================================================
+
+/**
+ * Create or acquire a storage buffer from the pool and write data to it.
+ *
+ * Returns a PooledBuffer that must be released back to the pool after use.
+ */
+export function createPooledStorageBuffer(gpu: MirGPU, data: Float32Array): PooledBuffer {
+    const size = byteSizeF32(data.length);
+    const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST;
+
+    const buffer = gpu.bufferPool.acquire(size, usage);
+    gpu.queue.writeBuffer(buffer, 0, data as unknown as BufferSource);
+
+    return { buffer, size, usage };
+}
+
+/**
+ * Create or acquire a uniform buffer from the pool and write u32x4 data to it.
+ *
+ * Returns a PooledBuffer that must be released back to the pool after use.
+ */
+export function createPooledUniformBufferU32x4(gpu: MirGPU, u32x4: Uint32Array): PooledBuffer {
+    if (u32x4.length !== 4) throw new Error("@octoseq/mir: uniform buffer must be 4 u32 values");
+
+    const size = 16;
+    const usage = GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST;
+
+    const buffer = gpu.bufferPool.acquire(size, usage);
+    gpu.queue.writeBuffer(buffer, 0, u32x4 as unknown as BufferSource);
+
+    return { buffer, size, usage };
+}
+
+/**
+ * Create or acquire a storage output buffer from the pool.
+ *
+ * Returns a PooledBuffer that must be released back to the pool after use.
+ */
+export function createPooledStorageOutBuffer(gpu: MirGPU, byteLength: number): PooledBuffer {
+    const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
+    const buffer = gpu.bufferPool.acquire(byteLength, usage);
+
+    return { buffer, size: byteLength, usage };
+}
+
+/**
+ * Create or acquire a readback buffer from the pool.
+ *
+ * Returns a PooledBuffer that must be released back to the pool after use.
+ */
+export function createPooledReadbackBuffer(gpu: MirGPU, byteLength: number): PooledBuffer {
+    const usage = GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST;
+    const buffer = gpu.bufferPool.acquire(byteLength, usage);
+
+    return { buffer, size: byteLength, usage };
+}
+
+/**
+ * Release a pooled buffer back to the pool for reuse.
+ */
+export function releasePooledBuffer(gpu: MirGPU, pooled: PooledBuffer): void {
+    gpu.bufferPool.release(pooled.buffer, pooled.size, pooled.usage);
+}
+
+/**
+ * Release multiple pooled buffers back to the pool at once.
+ */
+export function releasePooledBuffers(gpu: MirGPU, buffers: PooledBuffer[]): void {
+    for (const pooled of buffers) {
+        releasePooledBuffer(gpu, pooled);
+    }
 }

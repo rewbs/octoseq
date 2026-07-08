@@ -653,19 +653,36 @@ export function useDerivedSignalActions() {
 
       try {
         let result: DerivedSignalResult | null = null;
+        let errorMessage: string | undefined;
 
         // Dispatch based on source kind
         switch (definition.source.kind) {
           case "2d":
             result = await compute2DSignal(definition, definition.source);
+            if (!result) {
+              errorMessage = `No 2D MIR data available. Run MIR analysis first (${definition.source.functionId}).`;
+            }
             break;
 
           case "1d":
             result = await compute1DSignal(definition, definition.source);
+            if (!result) {
+              const ref = definition.source.signalRef;
+              if (ref.type === "mir") {
+                errorMessage = `No MIR data available. Run MIR analysis first (${ref.functionId}).`;
+              } else if (ref.type === "band") {
+                errorMessage = `No band MIR data available for band ${ref.bandId}.`;
+              } else if (ref.type === "derived") {
+                errorMessage = `Source derived signal not computed yet.`;
+              }
+            }
             break;
 
           case "events":
             result = await computeEventSignal(definition, definition.source);
+            if (!result) {
+              errorMessage = `No event data available for stream type ${definition.source.streamRef.type}.`;
+            }
             break;
         }
 
@@ -678,6 +695,18 @@ export function useDerivedSignalActions() {
           if (structure) {
             projectStore.syncDerivedSignals(structure);
           }
+        } else if (errorMessage) {
+          // Store error result so user sees feedback
+          const errorResult: DerivedSignalResult = {
+            definitionId: definition.id,
+            status: "error",
+            errorMessage,
+            times: new Float32Array(0),
+            values: new Float32Array(0),
+            valueRange: { min: 0, max: 0 },
+            computedAt: new Date().toISOString(),
+          };
+          derivedSignalStore.setCachedResult(definition.id, errorResult);
         }
 
         return result;
@@ -788,8 +817,16 @@ export function useDerivedSignalActions() {
       if (structure) {
         projectStore.syncDerivedSignals(structure);
       }
+
+      // Auto-recompute if enabled and source/transforms changed
+      const definition = derivedSignalStore.getSignalById(id);
+      if (definition?.autoRecompute && (updates.source || updates.transforms)) {
+        // Invalidate and recompute
+        derivedSignalStore.invalidateResult(id);
+        computeSignal(definition);
+      }
     },
-    []
+    [computeSignal]
   );
 
   /**
