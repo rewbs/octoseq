@@ -134,6 +134,7 @@ pub fn run_analysis_with_bands(
     let signals_needing_stats = engine.collect_signals_requiring_statistics();
     let stem_signals: BandSignalMap = std::collections::HashMap::new();
     let custom_signals: SignalMap = std::collections::HashMap::new();
+    let composed_signals: SignalMap = std::collections::HashMap::new();
     if !signals_needing_stats.is_empty() {
         log::info!(
             "Pre-computing statistics for {} signals before analysis...",
@@ -167,7 +168,7 @@ pub fn run_analysis_with_bands(
         }
 
         // Call update (scene graph changes are ignored)
-        engine.update(time, dt, &sampled, signals, band_signals, &stem_signals, &custom_signals, musical_time);
+        engine.update(time, dt, &sampled, signals, band_signals, &stem_signals, &custom_signals, &composed_signals, musical_time);
     }
 
     // Collect results
@@ -277,6 +278,7 @@ pub fn run_analysis_with_events_and_bands(
     let signals_needing_stats = engine.collect_signals_requiring_statistics();
     let stem_signals: BandSignalMap = std::collections::HashMap::new();
     let custom_signals: SignalMap = std::collections::HashMap::new();
+    let composed_signals: SignalMap = std::collections::HashMap::new();
     if !signals_needing_stats.is_empty() {
         log::info!(
             "Pre-computing statistics for {} signals before analysis...",
@@ -309,7 +311,7 @@ pub fn run_analysis_with_events_and_bands(
         }
 
         // Call update
-        engine.update(time, dt, &sampled, signals, band_signals, &stem_signals, &custom_signals, musical_time);
+        engine.update(time, dt, &sampled, signals, band_signals, &stem_signals, &custom_signals, &composed_signals, musical_time);
     }
 
     // Collect debug signals

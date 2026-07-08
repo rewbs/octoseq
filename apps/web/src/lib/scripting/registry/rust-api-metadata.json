@@ -1818,6 +1818,13 @@
           "optional": true,
           "readonly": true,
           "type_name": "Bands"
+        },
+        {
+          "description": "Human-authored interpretation curves (keyframe envelopes), keyed by name: `inputs.composedSignals[\"intensity\"]` returns a Signal.",
+          "name": "composedSignals",
+          "optional": true,
+          "readonly": true,
+          "type_name": "ComposedSignals"
         }
       ]
     },
@@ -1826,6 +1833,13 @@
       "kind": "opaque",
       "methods": [],
       "name": "Bands",
+      "properties": []
+    },
+    {
+      "description": "Composed signal accessors (string-keyed map). Each entry is a human-authored interpretation curve; indexing by name returns a Signal.",
+      "kind": "opaque",
+      "methods": [],
+      "name": "ComposedSignals",
       "properties": []
     },
     {

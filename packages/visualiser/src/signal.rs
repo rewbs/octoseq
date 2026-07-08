@@ -154,6 +154,28 @@ impl Signal {
         })
     }
 
+    /// Create a composed signal input.
+    /// Uses peak-preserving sampling with frame dt as window by default.
+    ///
+    /// - `name`: The composed signal name.
+    pub fn composed_input(name: impl Into<String>) -> Self {
+        Self::new(SignalNode::ComposedInput {
+            name: name.into(),
+            sampling: SamplingConfig::default(),
+        })
+    }
+
+    /// Create a composed signal input with custom sampling configuration.
+    pub fn composed_input_with_sampling(
+        name: impl Into<String>,
+        sampling: SamplingConfig,
+    ) -> Self {
+        Self::new(SignalNode::ComposedInput {
+            name: name.into(),
+            sampling,
+        })
+    }
+
     /// Create a constant signal.
     pub fn constant(value: f32) -> Self {
         Self::new(SignalNode::Constant(value))
@@ -784,6 +806,7 @@ impl Signal {
             | SignalNode::BandInput { .. }
             | SignalNode::StemInput { .. }
             | SignalNode::CustomSignalInput { .. }
+            | SignalNode::ComposedInput { .. }
             | SignalNode::Constant(_)
             | SignalNode::Generator(_)
             | SignalNode::EventStreamSource { .. }
@@ -884,6 +907,9 @@ impl Signal {
             }
             SignalNode::CustomSignalInput { signal_id, .. } => {
                 format!("CustomSignalInput(\"{}\")", signal_id)
+            }
+            SignalNode::ComposedInput { name, .. } => {
+                format!("ComposedInput(\"{}\")", name)
             }
             SignalNode::Constant(v) => format!("Constant({})", v),
             SignalNode::Add(a, b) => {
@@ -1215,6 +1241,12 @@ pub enum SignalNode {
     /// - `signal_id`: The custom signal ID.
     CustomSignalInput {
         signal_id: String,
+        sampling: SamplingConfig,
+    },
+    /// Reference to a composed signal (user-authored named 1D curve).
+    /// - `name`: The composed signal name.
+    ComposedInput {
+        name: String,
         sampling: SamplingConfig,
     },
     /// Constant value.

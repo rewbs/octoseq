@@ -13,6 +13,8 @@
 //!   [`LoadedPackage::band_id_to_label`]
 //! - `push_custom_signal`        -> [`LoadedPackage::custom_signals`] dual-keyed by
 //!   id AND name (when they differ), plus [`LoadedPackage::custom_signal_id_to_label`]
+//! - `push_composed_signal`      -> applied via `VisualiserState::push_composed_signal`
+//!   (keyed by name only)
 //! - `push_stem_signal`          -> applied via `VisualiserState::push_stem_signal`
 //!   (which dual-keys by stem id AND label internally)
 //! - `push_event_stream`         -> `event_rhai::store_named_event_stream`
@@ -26,7 +28,8 @@
 //!   retain it for parity but apply nothing)
 //! - `set_available_stems`       -> `VisualiserState::set_available_stems`
 //! - `load_script` preamble      -> `set_available_signals` / `set_available_bands`
-//!   / `set_available_custom_signals` (see [`apply_to_state`])
+//!   / `set_available_custom_signals` / `set_available_composed_signals`
+//!   (see [`apply_to_state`])
 //!
 //! This module is wasm-agnostic: it has no wasm-bindgen dependency and compiles
 //! for both native and wasm targets.
@@ -183,12 +186,9 @@ pub struct LoadedPackage {
     pub custom_signals: SignalMap,
     /// Custom signal id -> name (mirrors `custom_signal_id_to_label`).
     pub custom_signal_id_to_label: HashMap<String, String>,
-    /// PHASE3-TODO: composed signals are parsed for schema completeness but are
-    /// NOT routed into script inputs. wasm.rs has no `push_composed_signal` /
-    /// `set_available_composed_signals` today — VisualiserPanel guards those
-    /// calls behind `typeof` checks, so they are no-ops in the browser as well.
-    /// When the wasm push layer gains composed-signal support, mirror its
-    /// storage here and wire these into the frame loop.
+    /// Composed signals, keyed by name (mirrors `push_composed_signal`); applied
+    /// to the state via `VisualiserState::push_composed_signal` in
+    /// [`apply_to_state`], exactly like stem signals.
     pub composed_signals: SignalMap,
     /// Stem signals to apply via `VisualiserState::push_stem_signal`.
     pub stem_signals: Vec<LoadedStemSignal>,
@@ -246,6 +246,20 @@ impl LoadedPackage {
             .map(|(id, label)| (id.clone(), label.clone()))
             .collect();
         signals.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+        signals
+    }
+
+    /// (id, label) pairs for `VisualiserState::set_available_composed_signals`,
+    /// sorted by name. Composed signals are keyed by name only, so id and label
+    /// are both the name — exactly the `[name, name]` pairs VisualiserPanel sends
+    /// to the wasm `set_available_composed_signals`.
+    pub fn available_composed_signals(&self) -> Vec<(String, String)> {
+        let mut signals: Vec<(String, String)> = self
+            .composed_signals
+            .keys()
+            .map(|name| (name.clone(), name.clone()))
+            .collect();
+        signals.sort();
         signals
     }
 
@@ -351,7 +365,7 @@ pub fn load_package(json: &str) -> Result<LoadedPackage> {
         }
     }
 
-    // Composed signals — parsed only; see the PHASE3-TODO on the field.
+    // Composed signals — mirrors wasm `push_composed_signal`: keyed by name only.
     let mut composed_signals: SignalMap = HashMap::new();
     for s in pkg.composed_signals {
         composed_signals.insert(s.name, Rc::new(InputSignal::new(s.values, s.rate)));
@@ -440,14 +454,17 @@ pub fn load_package(json: &str) -> Result<LoadedPackage> {
 /// Apply the state-resident parts of a loaded package to a [`VisualiserState`],
 /// mirroring the wasm push layer:
 ///
-/// - stem signals    -> `VisualiserState::push_stem_signal` (dual-keyed id + label)
-/// - available stems -> `VisualiserState::set_available_stems`
-/// - event streams   -> the `event_rhai` thread-local stores (named / authored / band)
-/// - script env      -> `set_available_signals` / `set_available_bands` /
-///   `set_available_custom_signals`, exactly as the wasm `load_script` preamble does
+/// - stem signals     -> `VisualiserState::push_stem_signal` (dual-keyed id + label)
+/// - composed signals -> `VisualiserState::push_composed_signal` (keyed by name)
+/// - available stems  -> `VisualiserState::set_available_stems`
+/// - event streams    -> the `event_rhai` thread-local stores (named / authored / band)
+/// - script env       -> `set_available_signals` / `set_available_bands` /
+///   `set_available_custom_signals` / `set_available_composed_signals`, exactly
+///   as the wasm `load_script` preamble / VisualiserPanel do
 ///
-/// Existing stem signals and event streams are cleared first so repeated
-/// applications (e.g. sequential batch jobs) behave like a fresh browser session.
+/// Existing stem signals, composed signals, and event streams are cleared first
+/// so repeated applications (e.g. sequential batch jobs) behave like a fresh
+/// browser session.
 ///
 /// The per-frame inputs (named / band / custom signal maps and `musical_time`)
 /// stay on the [`LoadedPackage`] and must be passed to `VisualiserState::update`
@@ -455,6 +472,7 @@ pub fn load_package(json: &str) -> Result<LoadedPackage> {
 pub fn apply_to_state(pkg: &LoadedPackage, state: &mut VisualiserState) {
     // Reset any state-resident inputs from a previous package.
     state.clear_stem_signals();
+    state.clear_composed_signals();
     clear_named_event_streams();
     clear_authored_event_streams();
     clear_band_event_streams();
@@ -468,6 +486,10 @@ pub fn apply_to_state(pkg: &LoadedPackage, state: &mut VisualiserState) {
         );
     }
     state.set_available_stems(pkg.available_stems.clone());
+
+    for (name, signal) in &pkg.composed_signals {
+        state.push_composed_signal(name, Rc::clone(signal));
+    }
 
     for (name, stream) in &pkg.event_streams {
         store_named_event_stream(name.clone(), stream.clone());
@@ -483,6 +505,7 @@ pub fn apply_to_state(pkg: &LoadedPackage, state: &mut VisualiserState) {
     state.set_available_signals(pkg.available_signal_names());
     state.set_available_bands(pkg.available_bands());
     state.set_available_custom_signals(pkg.available_custom_signals());
+    state.set_available_composed_signals(pkg.available_composed_signals());
 }
 
 #[cfg(test)]
@@ -517,7 +540,8 @@ mod tests {
             { "id": "custom-1", "name": "My Signal", "rate": 25.0, "values": [0.9, 0.8] }
         ],
         "composedSignals": [
-            { "name": "buildup", "rate": 50.0, "values": [0.0, 1.0] }
+            { "name": "buildup", "rate": 50.0, "values": [0.0, 1.0] },
+            { "name": "Intensity", "rate": 25.0, "values": [0.5] }
         ],
         "eventStreams": [
             { "name": "beatCandidates", "events": [
@@ -625,8 +649,12 @@ mod tests {
             Some("My Signal")
         );
 
-        // Composed signals parsed (not routed; see PHASE3-TODO).
-        assert!(pkg.composed_signals.contains_key("buildup"));
+        // Composed signals keyed by name; duration derives from len / rate.
+        assert_eq!(pkg.composed_signals.len(), 2);
+        let buildup = pkg.composed_signals.get("buildup").expect("buildup signal");
+        assert!((buildup.get_duration() - 2.0 / 50.0).abs() < 1e-6);
+        let intensity = pkg.composed_signals.get("Intensity").expect("Intensity signal");
+        assert!((intensity.get_duration() - 1.0 / 25.0).abs() < 1e-6);
 
         // Stem signals kept as raw entries for VisualiserState::push_stem_signal.
         assert_eq!(pkg.stem_signals.len(), 1);
@@ -701,6 +729,16 @@ mod tests {
             vec![("custom-1".to_string(), "My Signal".to_string())]
         );
 
+        // Composed signals advertise [name, name] pairs, sorted by name -
+        // exactly what VisualiserPanel sends to set_available_composed_signals.
+        assert_eq!(
+            pkg.available_composed_signals(),
+            vec![
+                ("Intensity".to_string(), "Intensity".to_string()),
+                ("buildup".to_string(), "buildup".to_string()),
+            ]
+        );
+
         // The rotation/amplitude signal is the package's named "amplitude".
         let rotation = pkg.rotation_signal().expect("amplitude present");
         assert!(Rc::ptr_eq(
@@ -721,6 +759,24 @@ mod tests {
         assert!(get_authored_event_stream("drops").is_some());
         assert!(get_band_event_stream("band-1").is_some());
 
+        // Composed signals land in the state, keyed by name, sharing the
+        // package's Rc (so rates/durations match the parsed signals).
+        assert_eq!(state.composed_signals().len(), 2);
+        let buildup = state
+            .composed_signals()
+            .get("buildup")
+            .expect("buildup composed signal in state");
+        assert!((buildup.get_duration() - 2.0 / 50.0).abs() < 1e-6);
+        assert!(Rc::ptr_eq(
+            buildup,
+            pkg.composed_signals.get("buildup").expect("buildup in package"),
+        ));
+        let intensity = state
+            .composed_signals()
+            .get("Intensity")
+            .expect("Intensity composed signal in state");
+        assert!((intensity.get_duration() - 1.0 / 25.0).abs() < 1e-6);
+
         // Applying an empty package clears everything from the previous one.
         let empty = load_package(r#"{ "formatVersion": 1, "durationSec": 1.0 }"#)
             .expect("minimal package parses");
@@ -728,6 +784,7 @@ mod tests {
         assert!(get_named_event_stream("beatCandidates").is_none());
         assert!(get_authored_event_stream("drops").is_none());
         assert!(get_band_event_stream("band-1").is_none());
+        assert!(state.composed_signals().is_empty());
     }
 
     #[test]

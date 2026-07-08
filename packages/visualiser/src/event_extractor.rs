@@ -165,6 +165,8 @@ impl EventExtractor {
         let mut state = SignalState::new();
         // Custom signals not yet supported in event extractor
         let empty_custom_signals: SignalMap = HashMap::new();
+        // Composed signals not yet supported in event extractor
+        let empty_composed_signals: SignalMap = HashMap::new();
 
         for i in 0..step_count {
             let t = i as f32 * self.time_step;
@@ -179,6 +181,7 @@ impl EventExtractor {
                 &self.band_signals,
                 &self.stem_signals,
                 &empty_custom_signals,
+                &empty_composed_signals,
                 &stats,
                 &mut state,
                 Some(self.duration), // track_duration

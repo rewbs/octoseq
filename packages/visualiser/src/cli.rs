@@ -346,10 +346,11 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
         }
         if let Some(pkg) = package.as_ref() {
             println!(
-                "  Package: {} signals, {} band keys, {} custom, {} stem signals, {}/{}/{} event streams (named/authored/band){}",
+                "  Package: {} signals, {} band keys, {} custom, {} composed, {} stem signals, {}/{}/{} event streams (named/authored/band){}",
                 pkg.named_signals.len(),
                 pkg.band_signals.len(),
                 pkg.custom_signals.len(),
+                pkg.composed_signals.len(),
                 pkg.stem_signals.len(),
                 pkg.event_streams.len(),
                 pkg.authored_event_streams.len(),

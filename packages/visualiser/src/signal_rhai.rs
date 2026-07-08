@@ -21,6 +21,7 @@ thread_local! {
     static CURRENT_INPUT_SIGNALS: RefCell<Option<SignalMap>> = const { RefCell::new(None) };
     static CURRENT_BAND_SIGNALS: RefCell<Option<BandSignalMap>> = const { RefCell::new(None) };
     static CURRENT_CUSTOM_SIGNALS: RefCell<Option<SignalMap>> = const { RefCell::new(None) };
+    static CURRENT_COMPOSED_SIGNALS: RefCell<Option<SignalMap>> = const { RefCell::new(None) };
 }
 
 /// Set the input signals for the current thread (call before script execution).
@@ -42,6 +43,14 @@ pub fn set_current_custom_signals(custom_signals: SignalMap) {
     });
 }
 
+/// Set the composed signals for the current thread (call before script execution).
+/// Uses Rc<InputSignal> internally so cloning is cheap (just reference count increment).
+pub fn set_current_composed_signals(composed_signals: SignalMap) {
+    CURRENT_COMPOSED_SIGNALS.with(|cell| {
+        *cell.borrow_mut() = Some(composed_signals);
+    });
+}
+
 /// Clear the input signals for the current thread (call after script execution).
 pub fn clear_current_input_signals() {
     CURRENT_INPUT_SIGNALS.with(|cell| {
@@ -51,6 +60,9 @@ pub fn clear_current_input_signals() {
         *cell.borrow_mut() = None;
     });
     CURRENT_CUSTOM_SIGNALS.with(|cell| {
+        *cell.borrow_mut() = None;
+    });
+    CURRENT_COMPOSED_SIGNALS.with(|cell| {
         *cell.borrow_mut() = None;
     });
 }
@@ -791,6 +803,12 @@ pub fn register_signal_api(engine: &mut Engine) {
         Signal::custom_signal_input(id.as_str())
     });
 
+    // === Composed signal accessor ===
+    // Returns a Signal that reads from a composed signal by name.
+    engine.register_fn("__composed_signal_input", |name: ImmutableString| {
+        Signal::composed_input(name.as_str())
+    });
+
     // === Constant signal ===
     engine.register_fn("__signal_constant", |value: f32| Signal::constant(value));
     engine.register_fn("__signal_constant", |value: i64| Signal::constant(value as f32));
@@ -1089,6 +1107,41 @@ pub fn generate_custom_signals_namespace(signals: &[(String, String)]) -> String
     code
 }
 
+/// Generate Rhai code to add composed signals to the inputs namespace.
+///
+/// Composed signals are user-authored named 1D curves (keyframe envelopes).
+/// Each signal is accessible by both ID and label (typically identical, as
+/// composed signals are keyed by name).
+///
+/// This generates code like:
+/// ```rhai
+/// inputs.composedSignals = #{};
+/// inputs.composedSignals.__type = "composed_signals_namespace";
+/// inputs.composedSignals["intensity"] = __composed_signal_input("intensity");
+/// ```
+pub fn generate_composed_signals_namespace(signals: &[(String, String)]) -> String {
+    let mut code = String::from("inputs.composedSignals = #{};\n");
+    code.push_str("inputs.composedSignals.__type = \"composed_signals_namespace\";\n");
+
+    for (id, label) in signals {
+        // Register by ID
+        code.push_str(&format!(
+            "inputs.composedSignals[\"{}\"] = __composed_signal_input(\"{}\");\n",
+            id, id
+        ));
+
+        // Also register by label if different from ID
+        if label != id {
+            code.push_str(&format!(
+                "inputs.composedSignals[\"{}\"] = inputs.composedSignals[\"{}\"];\n",
+                label, id
+            ));
+        }
+    }
+
+    code
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1176,6 +1229,28 @@ mod tests {
         assert!(code.contains(r#"inputs.customSignals["sig-456"] = __custom_signal_input("sig-456");"#));
         let alias_count = code.matches(r#"inputs.customSignals["sig-456"] = inputs.customSignals["sig-456"]"#).count();
         assert_eq!(alias_count, 0);
+    }
+
+    #[test]
+    fn test_generate_composed_signals_namespace() {
+        let signals = vec![
+            ("intensity".to_string(), "intensity".to_string()), // Same ID and label (typical)
+            ("comp-123".to_string(), "Build Up".to_string()),
+        ];
+        let code = generate_composed_signals_namespace(&signals);
+
+        // Check structure
+        assert!(code.contains("inputs.composedSignals = #{};"));
+        assert!(code.contains(r#"inputs.composedSignals.__type = "composed_signals_namespace";"#));
+
+        // Check intensity - no alias since ID and label are the same
+        assert!(code.contains(r#"inputs.composedSignals["intensity"] = __composed_signal_input("intensity");"#));
+        let alias_count = code.matches(r#"inputs.composedSignals["intensity"] = inputs.composedSignals["intensity"]"#).count();
+        assert_eq!(alias_count, 0);
+
+        // Check comp-123 / Build Up
+        assert!(code.contains(r#"inputs.composedSignals["comp-123"] = __composed_signal_input("comp-123");"#));
+        assert!(code.contains(r#"inputs.composedSignals["Build Up"] = inputs.composedSignals["comp-123"];"#));
     }
 
     #[test]

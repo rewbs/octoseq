@@ -920,6 +920,20 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
   },
 
   // ============================================================================
+  // ComposedSignals - Human-authored interpretation curves
+  // ============================================================================
+  {
+    kind: "type",
+    name: "ComposedSignals",
+    path: "ComposedSignals",
+    description:
+      "Composed signal accessors (string-keyed map). Each entry is a human-authored interpretation curve (keyframe envelope); indexing by name returns a Signal.",
+    properties: [],
+    methods: [],
+    example: 'inputs.composedSignals["intensity"].smooth.exponential(0.2)',
+  },
+
+  // ============================================================================
   // BandSignals - Signals for a specific band
   // ============================================================================
   {

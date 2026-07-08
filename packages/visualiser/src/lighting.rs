@@ -183,6 +183,7 @@ mod tests {
         let band_signals = HashMap::new();
         let stem_signals = HashMap::new();
         let custom_signals = HashMap::new();
+        let composed_signals = HashMap::new();
         let statistics = StatisticsCache::new();
         let mut signal_state = SignalState::default();
         let mut ctx = EvalContext::new(
@@ -194,6 +195,7 @@ mod tests {
             &band_signals,
             &stem_signals,
             &custom_signals,
+            &composed_signals,
             &statistics,
             &mut signal_state,
             None,
@@ -214,6 +216,7 @@ mod tests {
         let band_signals = HashMap::new();
         let stem_signals = HashMap::new();
         let custom_signals = HashMap::new();
+        let composed_signals = HashMap::new();
         let statistics = StatisticsCache::new();
         let mut signal_state = SignalState::default();
         let mut ctx = EvalContext::new(
@@ -225,6 +228,7 @@ mod tests {
             &band_signals,
             &stem_signals,
             &custom_signals,
+            &composed_signals,
             &statistics,
             &mut signal_state,
             None,

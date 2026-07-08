@@ -459,6 +459,57 @@ impl WasmVisualiser {
         }
     }
 
+    // === Composed Signal Methods ===
+    // These methods handle user-authored named 1D curves (keyframe envelopes).
+
+    /// Push a composed signal for use in scripts.
+    /// The signal will be available as `inputs.composedSignals["name"]` in Rhai scripts.
+    ///
+    /// - `name`: The composed signal name (composed signals are keyed by name only).
+    /// - `samples`: Signal data.
+    /// - `sample_rate`: Sample rate of the signal.
+    pub fn push_composed_signal(&self, name: &str, samples: &[f32], sample_rate: f32) {
+        log::info!(
+            "Rust received composed signal '{}': {} samples, rate {}",
+            name,
+            samples.len(),
+            sample_rate
+        );
+        let mut inner = self.inner.borrow_mut();
+        inner
+            .state
+            .push_composed_signal(name, Rc::new(InputSignal::new(samples.to_vec(), sample_rate)));
+    }
+
+    /// Clear all composed signals.
+    pub fn clear_composed_signals(&self) {
+        let mut inner = self.inner.borrow_mut();
+        inner.state.clear_composed_signals();
+    }
+
+    /// Set available composed signals for script namespace generation.
+    /// This registers composed signal IDs and labels so the script engine can generate
+    /// `inputs.composedSignals["name"]` accessors.
+    ///
+    /// The JSON format should be an array of [id, label] pairs:
+    /// `[["intensity", "intensity"], ["buildup", "buildup"]]`
+    ///
+    /// Returns true if successful, false if parsing failed.
+    pub fn set_available_composed_signals(&self, json: &str) -> bool {
+        match serde_json::from_str::<Vec<(String, String)>>(json) {
+            Ok(signals) => {
+                log::info!("Setting {} available composed signals for script namespace", signals.len());
+                let mut inner = self.inner.borrow_mut();
+                inner.state.set_available_composed_signals(signals);
+                true
+            }
+            Err(e) => {
+                log::error!("Failed to parse available composed signals: {}", e);
+                false
+            }
+        }
+    }
+
     // === Band Event Methods ===
     // These methods handle pre-extracted events for frequency bands.
     // Events are extracted in TypeScript and pushed here for script access.

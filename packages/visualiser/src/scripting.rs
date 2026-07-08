@@ -64,10 +64,11 @@ use crate::script_log::{ScriptLogger, reset_frame_log_count};
 use crate::script_diagnostics::{from_eval_error, from_parse_error, lint_script, ScriptDiagnostic, ScriptPhase};
 use crate::script_introspection::register_introspection_api;
 use crate::signal_rhai::{
-    clear_current_input_signals, generate_custom_events_namespace, generate_custom_signals_namespace,
+    clear_current_input_signals, generate_composed_signals_namespace,
+    generate_custom_events_namespace, generate_custom_signals_namespace,
     generate_bands_namespace, generate_event_streams_namespace, generate_inputs_namespace,
-    generate_stems_namespace, register_signal_api, set_current_custom_signals,
-    set_current_input_signals, SIGNAL_API_RHAI,
+    generate_stems_namespace, register_signal_api, set_current_composed_signals,
+    set_current_custom_signals, set_current_input_signals, SIGNAL_API_RHAI,
 };
 use crate::signal::Signal;
 use crate::signal_eval::EvalContext;
@@ -160,6 +161,8 @@ pub struct ScriptEngine {
     available_stems: Vec<(String, String)>,
     /// Available custom signals: (id, name) pairs
     available_custom_signals: Vec<(String, String)>,
+    /// Available composed signals: (id, label) pairs
+    available_composed_signals: Vec<(String, String)>,
     /// Runtime state for stateful Signal operations (smooth, gates, delay, etc.)
     signal_state: SignalState,
     /// Precomputed signal statistics for normalization (optional/empty until populated).
@@ -611,6 +614,7 @@ impl ScriptEngine {
             available_bands: Vec::new(),
             available_stems: Vec::new(),
             available_custom_signals: Vec::new(),
+            available_composed_signals: Vec::new(),
             signal_state: SignalState::new(),
             signal_statistics: StatisticsCache::new(),
             post_chain: PostProcessingChain::new(),
@@ -682,6 +686,14 @@ impl ScriptEngine {
     /// Each signal is represented as a tuple of (id, name).
     pub fn set_available_custom_signals(&mut self, signals: Vec<(String, String)>) {
         self.available_custom_signals = signals;
+    }
+
+    /// Set the available composed signals for the inputs.composedSignals namespace.
+    /// Call this before load_script to make composed signals available.
+    ///
+    /// Each signal is represented as a tuple of (id, label).
+    pub fn set_available_composed_signals(&mut self, signals: Vec<(String, String)>) {
+        self.available_composed_signals = signals;
     }
 
     /// Initialize scope with API modules and empty entity tracking.
@@ -757,6 +769,9 @@ impl ScriptEngine {
 
         // Generate custom signals namespace
         let custom_signals_namespace = generate_custom_signals_namespace(&self.available_custom_signals);
+
+        // Generate composed signals namespace
+        let composed_signals_namespace = generate_composed_signals_namespace(&self.available_composed_signals);
 
         // Generate particles namespace
         let particles_namespace = generate_particles_namespace();
@@ -1543,6 +1558,9 @@ feedback.is_enabled = || {{
 // === Custom Signals Namespace (User-defined 1D signals from 2D data) ===
 {custom_signals_namespace}
 
+// === Composed Signals Namespace (User-authored named 1D curves) ===
+{composed_signals_namespace}
+
 // === Particles Namespace ===
 {particles_namespace}
 
@@ -1652,7 +1670,7 @@ feedback.is_enabled = || {{
     ///
     /// - `time`/`dt` are used for evaluating any Signal values assigned to entity properties.
     /// - `frame_inputs` are the per-frame sampled numeric inputs passed to the Rhai `update()` function.
-    /// - `input_signals`/`band_signals`/`stem_signals`/`custom_signals` are the raw signal buffers used by Signal evaluation.
+    /// - `input_signals`/`band_signals`/`stem_signals`/`custom_signals`/`composed_signals` are the raw signal buffers used by Signal evaluation.
     ///
     /// Note: SignalMap uses Rc<InputSignal> internally, so cloning for thread-local storage is cheap
     /// (just reference count increments, not deep copies of audio data).
@@ -1665,6 +1683,7 @@ feedback.is_enabled = || {{
         band_signals: &BandSignalMap,
         stem_signals: &BandSignalMap,
         custom_signals: &SignalMap,
+        composed_signals: &SignalMap,
         musical_time: Option<&MusicalTimeStructure>,
     ) {
         // Increment frame counter for time.frames signal
@@ -1686,6 +1705,7 @@ feedback.is_enabled = || {{
         // Set up thread-local input signals for sample_at API
         set_current_input_signals(input_signals.clone(), band_signals.clone());
         set_current_custom_signals(custom_signals.clone());
+        set_current_composed_signals(composed_signals.clone());
 
         // Create inputs map from the per-frame numeric inputs
         // Note: Rhai is compiled with f32_float feature, so use f32
@@ -1748,7 +1768,7 @@ feedback.is_enabled = || {{
 
         // Sync entities from scope to scene graph, evaluating any Signal properties at render time.
         time_start("sync_entities");
-        self.sync_entities_from_scope(time, dt, input_signals, band_signals, stem_signals, custom_signals, musical_time);
+        self.sync_entities_from_scope(time, dt, input_signals, band_signals, stem_signals, custom_signals, composed_signals, musical_time);
         time_end("sync_entities");
 
         // Log collection sizes periodically for performance profiling
@@ -1799,6 +1819,7 @@ feedback.is_enabled = || {{
         band_signals: &BandSignalMap,
         stem_signals: &BandSignalMap,
         custom_signals: &SignalMap,
+        composed_signals: &SignalMap,
         musical_time: Option<&MusicalTimeStructure>,
     ) {
         // Get the entities Map and scene_ids Array from scope
@@ -1831,6 +1852,7 @@ feedback.is_enabled = || {{
             band_signals,
             stem_signals,
             custom_signals,
+            composed_signals,
             &signal_statistics,
             &mut signal_state,
             None, // track_duration - TODO: pass actual track duration when available
@@ -3204,6 +3226,7 @@ feedback.is_enabled = || {{
             let empty_stats = crate::signal_stats::StatisticsCache::new();
 
             let empty_custom_signals: SignalMap = HashMap::new();
+            let empty_composed_signals: SignalMap = HashMap::new();
 
             for step in 0..step_count {
                 let time = step as f32 * time_step;
@@ -3217,6 +3240,7 @@ feedback.is_enabled = || {{
                     band_signals,
                     stem_signals,
                     &empty_custom_signals,
+                    &empty_composed_signals,
                     &empty_stats,
                     &mut temp_state,
                     Some(duration), // track_duration
@@ -3686,6 +3710,7 @@ mod tests {
         let band_signals: BandSignalMap = HashMap::new();
         let stem_signals: BandSignalMap = HashMap::new();
         let custom_signals: SignalMap = HashMap::new();
+        let composed_signals: SignalMap = HashMap::new();
         engine.update(
             time,
             dt,
@@ -3694,6 +3719,7 @@ mod tests {
             &band_signals,
             &stem_signals,
             &custom_signals,
+            &composed_signals,
             None,
         );
     }
@@ -3726,6 +3752,67 @@ mod tests {
         // Check rotation was set
         let (_, entity) = engine.scene_graph.scene_entities().next().unwrap();
         assert!((entity.transform().rotation.y - 1.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_composed_signal_input_end_to_end() {
+        let mut engine = ScriptEngine::new();
+
+        // Make a composed signal and a custom signal with the SAME name available:
+        // the two namespaces must stay isolated.
+        engine.set_available_composed_signals(vec![("intensity".to_string(), "intensity".to_string())]);
+        engine.set_available_custom_signals(vec![("intensity".to_string(), "intensity".to_string())]);
+
+        let script = r#"
+            let cube;
+
+            fn init(ctx) {
+                cube = mesh.cube();
+                scene.add(cube);
+            }
+
+            fn update(dt, frame) {
+                cube.scale = inputs.composedSignals["intensity"];
+                cube.rotation.y = inputs.customSignals["intensity"];
+            }
+        "#;
+
+        assert!(engine.load_script(script));
+
+        let input_signals: SignalMap = HashMap::new();
+        let band_signals: BandSignalMap = HashMap::new();
+        let stem_signals: BandSignalMap = HashMap::new();
+        let mut custom_signals: SignalMap = HashMap::new();
+        custom_signals.insert(
+            "intensity".to_string(),
+            std::rc::Rc::new(crate::input::InputSignal::new(vec![0.25; 100], 100.0)),
+        );
+        let mut composed_signals: SignalMap = HashMap::new();
+        composed_signals.insert(
+            "intensity".to_string(),
+            std::rc::Rc::new(crate::input::InputSignal::new(vec![0.75; 100], 100.0)),
+        );
+
+        let frame_inputs = make_signals(0.5, 0.016, 0.0, 0.0);
+        engine.update(
+            0.5,
+            0.016,
+            &frame_inputs,
+            &input_signals,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            None,
+        );
+
+        assert!(engine.last_error.is_none(), "script error: {:?}", engine.last_error);
+
+        // The composed signal drove the scale; the same-named custom signal
+        // drove the rotation - each namespace read its own map.
+        let (_, entity) = engine.scene_graph.scene_entities().next().expect("cube in scene");
+        assert!((entity.transform().scale.x - 0.75).abs() < 0.001);
+        assert!((entity.transform().rotation.y - 0.25).abs() < 0.001);
     }
 
     #[test]

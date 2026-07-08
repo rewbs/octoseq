@@ -45,6 +45,9 @@ pub struct SignalState {
     /// Tracks custom signals that have been warned about being missing.
     pub warned_missing_custom_signals: HashSet<String>,
 
+    /// Tracks composed signals that have been warned about being missing.
+    pub warned_missing_composed_signals: HashSet<String>,
+
     /// Tracks signals that have warned about missing statistics.
     pub warned_missing_stats: HashSet<SignalId>,
 }
@@ -68,6 +71,7 @@ impl SignalState {
         self.warned_missing_bands.clear();
         self.warned_missing_stems.clear();
         self.warned_missing_custom_signals.clear();
+        self.warned_missing_composed_signals.clear();
         self.warned_missing_stats.clear();
     }
 
@@ -104,6 +108,17 @@ impl SignalState {
             log::warn!(
                 "Custom signal not found: inputs.customSignals[\"{}\"] - returning 0.0",
                 signal_id
+            );
+        }
+    }
+
+    /// Warn once about a missing composed signal.
+    /// Logs a warning if this composed signal hasn't been warned about yet.
+    pub fn warn_missing_composed_signal(&mut self, name: &str) {
+        if self.warned_missing_composed_signals.insert(name.to_string()) {
+            log::warn!(
+                "Composed signal not found: inputs.composedSignals[\"{}\"] - returning 0.0",
+                name
             );
         }
     }
@@ -195,6 +210,7 @@ impl SignalState {
             ("warned_missing_bands", self.warned_missing_bands.len()),
             ("warned_missing_stems", self.warned_missing_stems.len()),
             ("warned_missing_custom", self.warned_missing_custom_signals.len()),
+            ("warned_missing_composed", self.warned_missing_composed_signals.len()),
             ("warned_missing_stats", self.warned_missing_stats.len()),
         ]
     }

@@ -103,6 +103,8 @@ pub struct VisualiserState {
     global_seed: u64,
     /// Stem-scoped input signals (stem_id -> feature -> Rc<InputSignal>)
     stem_signals: BandSignalMap,
+    /// Composed signals (name -> Rc<InputSignal>)
+    composed_signals: SignalMap,
 }
 
 impl VisualiserState {
@@ -117,6 +119,7 @@ impl VisualiserState {
             current_bpm: 120.0,
             global_seed: 0,
             stem_signals: HashMap::new(),
+            composed_signals: HashMap::new(),
         }
     }
 
@@ -180,6 +183,12 @@ impl VisualiserState {
         self.script_engine.set_available_custom_signals(signals);
     }
 
+    /// Configure which composed signals should be available in the global `inputs.composedSignals` namespace.
+    /// This must be called before `load_script()` for the `inputs.composedSignals["..."]` accessors to exist.
+    pub fn set_available_composed_signals(&mut self, signals: Vec<(String, String)>) {
+        self.script_engine.set_available_composed_signals(signals);
+    }
+
     /// Push a stem-scoped signal.
     /// Stores under both stem_id and label for dual-access support.
     /// Takes SharedSignal (Rc<InputSignal>) for cheap cloning when storing under multiple keys.
@@ -208,6 +217,23 @@ impl VisualiserState {
     /// Clear all stem signals.
     pub fn clear_stem_signals(&mut self) {
         self.stem_signals.clear();
+    }
+
+    /// Push a composed signal (user-authored named 1D curve).
+    /// Stored under its name only - composed signals have no separate id/label.
+    /// Takes SharedSignal (Rc<InputSignal>) for cheap cloning.
+    pub fn push_composed_signal(&mut self, name: &str, signal: SharedSignal) {
+        self.composed_signals.insert(name.to_string(), signal);
+    }
+
+    /// Clear all composed signals.
+    pub fn clear_composed_signals(&mut self) {
+        self.composed_signals.clear();
+    }
+
+    /// Get the composed signals (name -> Rc<InputSignal>).
+    pub fn composed_signals(&self) -> &SignalMap {
+        &self.composed_signals
     }
 
     /// Check if a script is loaded.
@@ -382,6 +408,7 @@ impl VisualiserState {
             band_signals,
             &self.stem_signals,
             custom_signals,
+            &self.composed_signals,
             musical_time,
         );
 
@@ -474,6 +501,7 @@ impl VisualiserState {
             band_signals,
             &self.stem_signals,
             custom_signals,
+            &self.composed_signals,
             musical_time,
         );
 
