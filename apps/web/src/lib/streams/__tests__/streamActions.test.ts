@@ -155,3 +155,40 @@ describe("toFrequencyBand", () => {
     });
   });
 });
+
+describe("band editing state pruning", () => {
+  it("clears solo/mute/hidden refs for removed streams only", async () => {
+    const { useBandEditingStore } = await import("../bandEditingStore");
+    loadMixdown({ audio: makeAudioRef(), buffer: makeBuffer() });
+    const stem = addStemWithAudio({ label: "Drums", audio: makeAudioRef(), buffer: makeBuffer() });
+    const band1 = addBand({ parentId: stem, label: "Kick", frequencyShape: [makeSegment()] });
+    const band2 = addBand({ parentId: MIXDOWN_STREAM_ID, label: "Bass", frequencyShape: [makeSegment()] });
+
+    const editing = useBandEditingStore.getState();
+    editing.setSoloedBand(band1);
+    editing.toggleMutedBand(band1);
+    editing.toggleMutedBand(band2);
+    editing.toggleEventVisibility(band1);
+
+    removeStreamCascade(stem); // cascades to band1
+
+    const after = useBandEditingStore.getState();
+    expect(after.soloedBandId).toBeNull();
+    expect(after.mutedBandIds.has(band1)).toBe(false);
+    expect(after.mutedBandIds.has(band2)).toBe(true);
+    expect(after.hiddenEventBandIds.has(band1)).toBe(false);
+  });
+
+  it("resetAllStreams clears all band-editing stream refs", async () => {
+    const { useBandEditingStore } = await import("../bandEditingStore");
+    loadMixdown({ audio: makeAudioRef(), buffer: makeBuffer() });
+    const band = addBand({ parentId: MIXDOWN_STREAM_ID, label: "Bass", frequencyShape: [makeSegment()] });
+    useBandEditingStore.getState().setSoloedBand(band);
+    useBandEditingStore.getState().toggleMutedBand(band);
+
+    resetAllStreams();
+
+    expect(useBandEditingStore.getState().soloedBandId).toBeNull();
+    expect(useBandEditingStore.getState().mutedBandIds.size).toBe(0);
+  });
+});
