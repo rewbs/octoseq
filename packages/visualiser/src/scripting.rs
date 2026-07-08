@@ -3815,6 +3815,79 @@ mod tests {
         assert!((entity.transform().rotation.y - 0.25).abs() < 0.001);
     }
 
+    /// Regression: float literals must reach Signal/EventStream APIs.
+    ///
+    /// Rhai is built with `f32_float`, so script float literals are f32. These
+    /// registrations were previously typed f64 and therefore unreachable
+    /// ("Function not found" at runtime): Signal operators with float operands,
+    /// Signal comparison methods with float thresholds, and EventStream count/
+    /// density windows with float values.
+    #[test]
+    fn test_float_literals_reach_signal_and_event_apis() {
+        let mut engine = ScriptEngine::new();
+        engine.set_available_signals(vec!["energy".to_string()]);
+
+        let script = r#"
+            let cube;
+
+            fn init(ctx) {
+                cube = mesh.cube();
+                scene.add(cube);
+            }
+
+            fn update(dt, frame) {
+                // Operators with float literals (both operand orders)
+                let a = inputs.mix.energy + 0.5;
+                let b = 1.0 - inputs.mix.energy;
+                let c = inputs.mix.energy * 2.0;
+                let d = inputs.mix.energy / 2.0;
+
+                // Comparison methods with float thresholds
+                let hot = inputs.mix.energy.gt(0.7);
+                let cold = inputs.mix.energy.lt(0.3);
+
+                // EventStream windows with float values
+                let events = inputs.mix.energy.pick.events(#{ min_threshold: 0.5 });
+                let density = events.count_prev_beats(4.0);
+
+                cube.scale = a.add(b).add(c).add(d).add(hot).add(cold).add(density);
+            }
+        "#;
+
+        assert!(engine.load_script(script), "load error: {:?}", engine.last_error);
+
+        let mut input_signals: SignalMap = HashMap::new();
+        input_signals.insert(
+            "energy".to_string(),
+            std::rc::Rc::new(crate::input::InputSignal::new(vec![0.6; 100], 100.0)),
+        );
+        let band_signals: BandSignalMap = HashMap::new();
+        let stem_signals: BandSignalMap = HashMap::new();
+        let custom_signals: SignalMap = HashMap::new();
+        let composed_signals: SignalMap = HashMap::new();
+
+        let frame_inputs = make_signals(0.5, 0.016, 0.0, 0.0);
+        engine.update(
+            0.5,
+            0.016,
+            &frame_inputs,
+            &input_signals,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            None,
+        );
+
+        assert!(
+            engine.last_error.is_none(),
+            "float-literal API call failed: {:?}",
+            engine.last_error
+        );
+        let (_, entity) = engine.scene_graph.scene_entities().next().expect("cube in scene");
+        assert!(entity.transform().scale.x.is_finite());
+    }
+
     #[test]
     fn test_line_strip() {
         let mut engine = ScriptEngine::new();

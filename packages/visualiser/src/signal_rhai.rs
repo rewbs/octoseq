@@ -122,9 +122,9 @@ pub fn register_signal_api(engine: &mut Engine) {
     // Signal + Signal
     engine.register_fn("+", |a: Signal, b: Signal| a.add(b));
     // Signal + f64 (Rhai's default float)
-    engine.register_fn("+", |a: Signal, b: f64| a.add_scalar(b as f32));
+    engine.register_fn("+", |a: Signal, b: f32| a.add_scalar(b));
     // f64 + Signal
-    engine.register_fn("+", |a: f64, b: Signal| Signal::constant(a as f32).add(b));
+    engine.register_fn("+", |a: f32, b: Signal| Signal::constant(a).add(b));
     // Signal + i64
     engine.register_fn("+", |a: Signal, b: i64| a.add_scalar(b as f32));
     // i64 + Signal
@@ -133,9 +133,9 @@ pub fn register_signal_api(engine: &mut Engine) {
     // Signal - Signal
     engine.register_fn("-", |a: Signal, b: Signal| a.sub(b));
     // Signal - f64
-    engine.register_fn("-", |a: Signal, b: f64| a.sub_scalar(b as f32));
+    engine.register_fn("-", |a: Signal, b: f32| a.sub_scalar(b));
     // f64 - Signal
-    engine.register_fn("-", |a: f64, b: Signal| Signal::constant(a as f32).sub(b));
+    engine.register_fn("-", |a: f32, b: Signal| Signal::constant(a).sub(b));
     // Signal - i64
     engine.register_fn("-", |a: Signal, b: i64| a.sub_scalar(b as f32));
     // i64 - Signal
@@ -144,9 +144,9 @@ pub fn register_signal_api(engine: &mut Engine) {
     // Signal * Signal
     engine.register_fn("*", |a: Signal, b: Signal| a.mul(b));
     // Signal * f64
-    engine.register_fn("*", |a: Signal, b: f64| a.mul(Signal::constant(b as f32)));
+    engine.register_fn("*", |a: Signal, b: f32| a.mul(Signal::constant(b)));
     // f64 * Signal
-    engine.register_fn("*", |a: f64, b: Signal| Signal::constant(a as f32).mul(b));
+    engine.register_fn("*", |a: f32, b: Signal| Signal::constant(a).mul(b));
     // Signal * i64
     engine.register_fn("*", |a: Signal, b: i64| a.mul(Signal::constant(b as f32)));
     // i64 * Signal
@@ -155,9 +155,9 @@ pub fn register_signal_api(engine: &mut Engine) {
     // Signal / Signal
     engine.register_fn("/", |a: Signal, b: Signal| a.div(b));
     // Signal / f64
-    engine.register_fn("/", |a: Signal, b: f64| a.div_scalar(b as f32));
+    engine.register_fn("/", |a: Signal, b: f32| a.div_scalar(b));
     // f64 / Signal
-    engine.register_fn("/", |a: f64, b: Signal| Signal::constant(a as f32).div(b));
+    engine.register_fn("/", |a: f32, b: Signal| Signal::constant(a).div(b));
     // Signal / i64
     engine.register_fn("/", |a: Signal, b: i64| a.div_scalar(b as f32));
     // i64 / Signal
@@ -325,32 +325,32 @@ pub fn register_signal_api(engine: &mut Engine) {
     // === Comparison operations (boolean signals) ===
     // These return signals that evaluate to 1.0 (true) or 0.0 (false)
     engine.register_fn("lt", |s: &mut Signal, other: Signal| s.lt(other));
-    engine.register_fn("lt", |s: &mut Signal, value: f64| {
-        s.lt(Signal::constant(value as f32))
+    engine.register_fn("lt", |s: &mut Signal, value: f32| {
+        s.lt(Signal::constant(value))
     });
     engine.register_fn("lt", |s: &mut Signal, value: i64| {
         s.lt(Signal::constant(value as f32))
     });
 
     engine.register_fn("gt", |s: &mut Signal, other: Signal| s.gt(other));
-    engine.register_fn("gt", |s: &mut Signal, value: f64| {
-        s.gt(Signal::constant(value as f32))
+    engine.register_fn("gt", |s: &mut Signal, value: f32| {
+        s.gt(Signal::constant(value))
     });
     engine.register_fn("gt", |s: &mut Signal, value: i64| {
         s.gt(Signal::constant(value as f32))
     });
 
     engine.register_fn("le", |s: &mut Signal, other: Signal| s.le(other));
-    engine.register_fn("le", |s: &mut Signal, value: f64| {
-        s.le(Signal::constant(value as f32))
+    engine.register_fn("le", |s: &mut Signal, value: f32| {
+        s.le(Signal::constant(value))
     });
     engine.register_fn("le", |s: &mut Signal, value: i64| {
         s.le(Signal::constant(value as f32))
     });
 
     engine.register_fn("ge", |s: &mut Signal, other: Signal| s.ge(other));
-    engine.register_fn("ge", |s: &mut Signal, value: f64| {
-        s.ge(Signal::constant(value as f32))
+    engine.register_fn("ge", |s: &mut Signal, value: f32| {
+        s.ge(Signal::constant(value))
     });
     engine.register_fn("ge", |s: &mut Signal, value: i64| {
         s.ge(Signal::constant(value as f32))
@@ -358,8 +358,8 @@ pub fn register_signal_api(engine: &mut Engine) {
 
     // Named 'eq' in Rhai (maps to eq_signal internally)
     engine.register_fn("eq", |s: &mut Signal, other: Signal| s.eq_signal(other));
-    engine.register_fn("eq", |s: &mut Signal, value: f64| {
-        s.eq_signal(Signal::constant(value as f32))
+    engine.register_fn("eq", |s: &mut Signal, value: f32| {
+        s.eq_signal(Signal::constant(value))
     });
     engine.register_fn("eq", |s: &mut Signal, value: i64| {
         s.eq_signal(Signal::constant(value as f32))
@@ -367,8 +367,8 @@ pub fn register_signal_api(engine: &mut Engine) {
 
     // Named 'ne' in Rhai (maps to ne_signal internally)
     engine.register_fn("ne", |s: &mut Signal, other: Signal| s.ne_signal(other));
-    engine.register_fn("ne", |s: &mut Signal, value: f64| {
-        s.ne_signal(Signal::constant(value as f32))
+    engine.register_fn("ne", |s: &mut Signal, value: f32| {
+        s.ne_signal(Signal::constant(value))
     });
     engine.register_fn("ne", |s: &mut Signal, value: i64| {
         s.ne_signal(Signal::constant(value as f32))

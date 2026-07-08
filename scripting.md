@@ -560,30 +560,21 @@ let powered = signal.pow(2.0);       // Raise to power
 let lerped = sig1.lerp(sig2, 0.5);   // Linear interpolation
 ```
 
-**Important: Prefer Methods Over Operators**
+**Operators and methods are interchangeable**
 
-Operator support for Signals is limited: `+`, `-`, `*`, `/` currently only work between two Signals or with integer operands. Mixing a Signal with a **float literal** fails with a type error. Method chaining works consistently for all operand types:
+`+`, `-`, `*`, `/` work between two Signals, and between a Signal and a numeric
+literal (float or integer) in either operand order. Method chaining is equivalent:
 
 ```rhai
-// ❌ WRONG - Signal combined with a float fails with a type error
-// let result = signal + 0.5;
-// let result = signal * 2.0;
-// let result = 1.0 - signal;
+// Operators with literals
+let result = signal + 0.5;
+let result = signal * 2.0;
+let inverted = 1.0 - signal;
 
-// ✅ CORRECT - use method chaining
+// Equivalent method chaining
 let result = signal.add(0.5);
 let result = signal.scale(2.0);
-let result = gen.constant(1.0).sub(signal);
-```
-
-For `scalar op signal` patterns, use the signal's method with `gen.constant()`:
-
-```rhai
-// Instead of: 1.0 - signal
 let inverted = gen.constant(1.0).sub(signal);
-
-// Instead of: 2.0 * signal
-let doubled = signal.scale(2.0);  // commutative, so this works
 ```
 
 ### Smoothing
@@ -993,7 +984,7 @@ Count events within a time window:
 let kicks = inputs.mix.onset.pick.events(#{ min_threshold: 0.3 });
 
 // Count events in a window looking backwards
-let recent_kicks = kicks.count_prev_beats(4);      // Events in last 4 beats
+let recent_kicks = kicks.count_prev_beats(4.0);    // Events in last 4 beats
 let recent_secs = kicks.count_prev_seconds(2);     // Events in last 2 seconds
 let recent_frames = kicks.count_prev_frames(60);   // Events in last 60 frames
 
@@ -1010,7 +1001,7 @@ let activity = kicks.count_prev_beats(8);
 cube.scale = activity.scale(0.1).add(1.0);
 ```
 
-**Window parameter:** Can be an integer constant or a Signal for dynamic windows (wrap fractional constants with `gen.constant()`, e.g. `kicks.count_prev_beats(gen.constant(1.5))`).
+**Window parameter:** Can be a numeric constant (float or integer) or a Signal for dynamic windows (e.g. `kicks.count_prev_beats(1.5)`).
 
 ### Event Phase Signal
 
@@ -2483,20 +2474,19 @@ Comparison methods return boolean-valued signals (1.0 = true, 0.0 = false).
 
 | Method | Signature                                 | Description                           |
 | ------ | ----------------------------------------- | ------------------------------------- |
-| `lt`   | `(Signal) -> Signal` or `(i64) -> Signal` | Less than                             |
-| `gt`   | `(Signal) -> Signal` or `(i64) -> Signal` | Greater than                          |
-| `le`   | `(Signal) -> Signal` or `(i64) -> Signal` | Less than or equal                    |
-| `ge`   | `(Signal) -> Signal` or `(i64) -> Signal` | Greater than or equal                 |
-| `eq`   | `(Signal) -> Signal` or `(i64) -> Signal` | Equal (epsilon tolerance: 1e-6)       |
-| `ne`   | `(Signal) -> Signal` or `(i64) -> Signal` | Not equal                             |
+| `lt`   | `(Signal \| f32 \| i64) -> Signal` | Less than                             |
+| `gt`   | `(Signal \| f32 \| i64) -> Signal` | Greater than                          |
+| `le`   | `(Signal \| f32 \| i64) -> Signal` | Less than or equal                    |
+| `ge`   | `(Signal \| f32 \| i64) -> Signal` | Greater than or equal                 |
+| `eq`   | `(Signal \| f32 \| i64) -> Signal` | Equal (epsilon tolerance: 1e-6)       |
+| `ne`   | `(Signal \| f32 \| i64) -> Signal` | Not equal                             |
 
-**Note:** Thresholds accept a `Signal` or an integer literal. Wrap fractional constants
-with `gen.constant()` (e.g. `energy.gt(gen.constant(0.7))`).
+**Note:** Thresholds accept a `Signal` or a numeric literal (float or integer).
 
 ```rhai
-let isLoud = inputs.mix.energy.gt(gen.constant(0.7));
-let isQuiet = inputs.mix.energy.lt(gen.constant(0.2));
-let isOnBeat = timing.beatPhase.lt(gen.constant(0.1));
+let isLoud = inputs.mix.energy.gt(0.7);
+let isQuiet = inputs.mix.energy.lt(0.2);
+let isOnBeat = timing.beatPhase.lt(0.1);
 ```
 
 #### Logical Operations
@@ -2513,9 +2503,9 @@ Combine boolean signals with logical operators.
 let energy = inputs.mix.energy;
 let flux = inputs.mix.flux;
 
-let isMedium = energy.ge(gen.constant(0.3)).and(energy.le(gen.constant(0.7)));
-let isActive = energy.gt(gen.constant(0.5)).or(flux.gt(gen.constant(0.3)));
-let isSilent = energy.lt(gen.constant(0.1));
+let isMedium = energy.ge(0.3).and(energy.le(0.7));
+let isActive = energy.gt(0.5).or(flux.gt(0.3));
+let isSilent = energy.lt(0.1);
 let isNotSilent = isSilent.not();
 ```
 
@@ -2538,13 +2528,13 @@ let energy = inputs.mix.energy;
 
 // Basic usage - intensity based on energy level
 let intensity = signal.select()
-    .when(energy.gt(gen.constant(0.8)), gen.constant(1.0))
-    .when(energy.gt(gen.constant(0.5)), energy)
-    .when(energy.gt(gen.constant(0.2)), energy.scale(0.5))
+    .when(energy.gt(0.8), gen.constant(1.0))
+    .when(energy.gt(0.5), energy)
+    .when(energy.gt(0.2), energy.scale(0.5))
     .otherwise(gen.constant(0.0));
 
 // Different behaviors for verse vs chorus
-let isChorus = inputs.mix.energy.gt(gen.constant(0.6));
+let isChorus = inputs.mix.energy.gt(0.6);
 let scale = signal.select()
     .when(isChorus, gen.sin(2.0, 0.0).map(-1.0, 1.0, 0.5, 2.0))
     .otherwise(gen.constant(1.0));
