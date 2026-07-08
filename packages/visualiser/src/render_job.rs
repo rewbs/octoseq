@@ -37,11 +37,21 @@ fn default_sample_rate() -> f32 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderJobSpec {
-    /// Path to input signal JSON file (array of floats).
-    pub input_path: PathBuf,
+    /// Path to input signal JSON file (array of floats). Legacy single-signal
+    /// path; mutually exclusive with `package_path`.
+    #[serde(default)]
+    pub input_path: Option<PathBuf>,
 
-    /// Path to Rhai script file.
-    pub script_path: PathBuf,
+    /// Path to an Interpretation Package v1 JSON file, which supplies the
+    /// script, duration, and all signal/event inputs. Mutually exclusive with
+    /// `input_path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_path: Option<PathBuf>,
+
+    /// Path to Rhai script file. Required for the legacy input path; optional
+    /// with a package (overrides the package's embedded script).
+    #[serde(default)]
+    pub script_path: Option<PathBuf>,
 
     /// Output directory for frames.
     pub output_dir: PathBuf,
@@ -84,11 +94,12 @@ pub struct RenderJobSpec {
 }
 
 impl RenderJobSpec {
-    /// Create a new render job spec with required fields only.
+    /// Create a new render job spec with required fields only (legacy input path).
     pub fn new(input_path: PathBuf, script_path: PathBuf, output_dir: PathBuf) -> Self {
         Self {
-            input_path,
-            script_path,
+            input_path: Some(input_path),
+            package_path: None,
+            script_path: Some(script_path),
             output_dir,
             fps: default_fps(),
             duration: None,
@@ -104,11 +115,44 @@ impl RenderJobSpec {
 
     /// Validate the job specification.
     pub fn validate(&self) -> Result<(), String> {
-        if !self.input_path.exists() {
-            return Err(format!("Input file not found: {:?}", self.input_path));
+        match (&self.input_path, &self.package_path) {
+            (Some(_), Some(_)) => {
+                return Err(
+                    "Provide either an input signal (--input) or an interpretation package \
+                     (--package), not both"
+                        .to_string(),
+                );
+            }
+            (None, None) => {
+                return Err(
+                    "Either an input signal (--input) or an interpretation package (--package) \
+                     is required"
+                        .to_string(),
+                );
+            }
+            _ => {}
         }
-        if !self.script_path.exists() {
-            return Err(format!("Script file not found: {:?}", self.script_path));
+        if let Some(input_path) = &self.input_path {
+            if !input_path.exists() {
+                return Err(format!("Input file not found: {:?}", input_path));
+            }
+            // The legacy input path has no other script source.
+            if self.script_path.is_none() {
+                return Err(
+                    "A script (--script) is required when rendering from a raw input signal"
+                        .to_string(),
+                );
+            }
+        }
+        if let Some(package_path) = &self.package_path {
+            if !package_path.exists() {
+                return Err(format!("Package file not found: {:?}", package_path));
+            }
+        }
+        if let Some(script_path) = &self.script_path {
+            if !script_path.exists() {
+                return Err(format!("Script file not found: {:?}", script_path));
+            }
         }
         if self.fps <= 0.0 {
             return Err("FPS must be positive".to_string());
@@ -192,7 +236,9 @@ impl BatchJobSpec {
                 .unwrap_or_else(|| "default".to_string());
             let track_name = job
                 .input_path
-                .file_stem()
+                .as_ref()
+                .or(job.package_path.as_ref())
+                .and_then(|p| p.file_stem())
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "track".to_string());
 
@@ -269,6 +315,14 @@ impl RenderMetadata {
         }
 
         Ok(format!("{:x}", hasher.finalize()))
+    }
+
+    /// Compute SHA-256 hash of an in-memory byte buffer (e.g. a script embedded
+    /// in an interpretation package).
+    pub fn hash_bytes(bytes: &[u8]) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        format!("{:x}", hasher.finalize())
     }
 
     /// Save metadata to a JSON file.
@@ -388,8 +442,9 @@ mod tests {
     #[test]
     fn test_render_job_spec_validation() {
         let spec = RenderJobSpec {
-            input_path: PathBuf::from("/nonexistent/input.json"),
-            script_path: PathBuf::from("/nonexistent/script.rhai"),
+            input_path: Some(PathBuf::from("/nonexistent/input.json")),
+            package_path: None,
+            script_path: Some(PathBuf::from("/nonexistent/script.rhai")),
             output_dir: PathBuf::from("/output"),
             fps: 60.0,
             duration: None,
@@ -403,6 +458,30 @@ mod tests {
         };
 
         // Should fail because files don't exist
+        assert!(spec.validate().is_err());
+    }
+
+    #[test]
+    fn test_render_job_spec_input_package_exclusivity() {
+        let mut spec = RenderJobSpec::new(
+            PathBuf::from("/nonexistent/input.json"),
+            PathBuf::from("/nonexistent/script.rhai"),
+            PathBuf::from("/output"),
+        );
+
+        // Both input and package is an error, regardless of file existence.
+        spec.package_path = Some(PathBuf::from("/nonexistent/package.json"));
+        let err = spec.validate().expect_err("both sources must be rejected");
+        assert!(err.contains("not both"), "unexpected error: {err}");
+
+        // Neither input nor package is an error.
+        spec.input_path = None;
+        spec.package_path = None;
+        assert!(spec.validate().is_err());
+
+        // Legacy input without a script is an error.
+        spec.input_path = Some(PathBuf::from("/nonexistent/input.json"));
+        spec.script_path = None;
         assert!(spec.validate().is_err());
     }
 

@@ -11,6 +11,7 @@ import type {
   DerivedSignalStatus,
 } from "./types/derivedSignal";
 import {
+  assertDerivedSignalStructureVersion,
   createEmptyDerivedSignalStructure,
   getDefaultStabilizationSettings,
   createDefault2DSignal,
@@ -617,6 +618,11 @@ export const useDerivedSignalStore = create<DerivedSignalState & DerivedSignalAc
       // ----------------------------
 
       loadFromProject: (structure) => {
+        // Fail loudly on legacy schema versions — no migration.
+        if (structure) {
+          assertDerivedSignalStructureVersion(structure);
+        }
+
         const graph = get().dependencyGraph;
         graph.clear();
 

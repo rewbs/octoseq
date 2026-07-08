@@ -89,7 +89,7 @@ export function useAutosave(options: UseAutosaveOptions = {}): UseAutosaveReturn
 
     // Build the serialized project with the current playhead position
     const serialized: ProjectSerialized = {
-      version: 1,
+      version: 2,
       project: {
         ...project,
         uiState: {

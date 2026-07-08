@@ -6,7 +6,23 @@
  */
 
 import type { ProjectSerialized } from "../stores/types/project";
-import type { AudioInputOrigin } from "../stores/types/audioInput";
+/**
+ * Persisted origin shape for audio assets in the IndexedDB registry.
+ * (Moved here from the deleted legacy audioInput store types; this module now
+ * owns the persisted format.)
+ */
+export type AudioInputOrigin =
+  | { kind: "file"; fileName: string }
+  | { kind: "url"; url: string; fileName?: string }
+  | { kind: "stem"; sourceId: string; method: string }
+  | { kind: "synthetic"; generatedFrom?: string[] };
+
+/** Persisted audio metadata shape for the IndexedDB registry. */
+export interface AudioInputMetadata {
+  sampleRate: number;
+  totalSamples: number;
+  duration: number;
+}
 
 // ----------------------------
 // Database Schema Version

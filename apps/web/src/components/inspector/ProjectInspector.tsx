@@ -13,6 +13,7 @@ import {
   Zap,
   Code,
   Music2,
+  Clapperboard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,9 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useProjectActions } from "@/lib/stores/hooks/useProjectActions";
 import { useConfirmDiscard } from "@/lib/hooks/useConfirmDiscard";
+import { MIXDOWN_STREAM_ID, isBandStream, useStreamStore } from "@/lib/streams";
+import { exportInterpretationPackage } from "@/lib/package/exportInterpretationPackage";
+import { downloadInterpretationPackage } from "@/lib/package/downloadPackage";
 
 /**
  * Inspector view for the Project node.
@@ -28,6 +32,7 @@ import { useConfirmDiscard } from "@/lib/hooks/useConfirmDiscard";
 export function ProjectInspector() {
   const activeProject = useProjectStore((s) => s.activeProject);
   const isDirty = useProjectStore((s) => s.isDirty);
+  const hasMixdown = useStreamStore((s) => s.streams.has(MIXDOWN_STREAM_ID));
 
   const stats = useMemo(() => {
     if (!activeProject) {
@@ -45,7 +50,7 @@ export function ProjectInspector() {
     );
 
     return {
-      bandCount: activeProject.interpretation.frequencyBands?.bands.length ?? 0,
+      bandCount: activeProject.streams.filter(isBandStream).length,
       eventStreamCount: activeProject.interpretation.authoredEvents.length,
       eventCount,
       scriptCount: activeProject.scripts.scripts.length,
@@ -117,6 +122,11 @@ export function ProjectInspector() {
       createProject();
     });
   }, [requireConfirm, createProject]);
+
+  // Export the interpretation as a render package for the offline CLI
+  const handleExportRenderPackage = useCallback(() => {
+    downloadInterpretationPackage(exportInterpretationPackage());
+  }, []);
 
   const formatDate = (isoString: string | undefined) => {
     if (!isoString) return "—";
@@ -256,6 +266,17 @@ export function ProjectInspector() {
           <Button variant="outline" size="sm" className="w-full justify-start" onClick={saveProject}>
             <Download className="h-4 w-4 mr-2" />
             Export Project...
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start"
+            onClick={handleExportRenderPackage}
+            disabled={!hasMixdown}
+            title={hasMixdown ? undefined : "Load audio before exporting a render package"}
+          >
+            <Clapperboard className="h-4 w-4 mr-2" />
+            Export render package
           </Button>
           <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleLoadClick}>
             <Upload className="h-4 w-4 mr-2" />

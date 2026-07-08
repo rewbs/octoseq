@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import { frequencyBoundsAt, type FrequencyBandStructure, type FrequencyBand } from "@octoseq/mir";
+import { frequencyBoundsAt, type FrequencyBand } from "@octoseq/mir";
 
 // ----------------------------
 // Types
@@ -23,8 +23,8 @@ export type UseBandAuditioningOptions = {
     /** Muted band IDs (not used for auditioning, but kept for consistency). */
     mutedBandIds: Set<string>;
 
-    /** The frequency band structure. */
-    structure: FrequencyBandStructure | null;
+    /** The frequency bands (legacy wire shape; build via toFrequencyBand). */
+    bands: FrequencyBand[];
 
     /** Current playhead time in seconds. */
     playheadTimeSec: number;
@@ -67,7 +67,7 @@ export function useBandAuditioning({
     getAudioUrlForSource,
     enabled,
     soloedBandId,
-    structure,
+    bands,
     playheadTimeSec,
     isMainPlaying,
     mainVolume,
@@ -85,8 +85,8 @@ export function useBandAuditioning({
 
     // Get the soloed band
     const soloedBand: FrequencyBand | null =
-        soloedBandId && structure
-            ? structure.bands.find((b) => b.id === soloedBandId) ?? null
+        soloedBandId
+            ? bands.find((b) => b.id === soloedBandId) ?? null
             : null;
 
     // Get the audio URL for the soloed band's source

@@ -26,6 +26,9 @@ pub mod event_stream;
 pub mod event_extractor;
 pub mod event_rhai;
 
+// Interpretation package loading (Phase 3: the wasm push contract, serialized)
+pub mod interpretation_package;
+
 // Mesh asset modules
 pub mod mesh_asset;
 pub mod deformation;

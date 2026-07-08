@@ -6,61 +6,20 @@
  */
 
 import type {
-  FrequencyBandStructure,
   MusicalTimeStructure,
   BeatGrid,
   TempoHypothesis,
   PhaseHypothesis,
   PhaseAlignmentConfig,
 } from "@octoseq/mir";
-import type { AudioInputMetadata, AudioInputOrigin } from "./audioInput";
+import type { Stream, ViewPreset } from "@/lib/streams";
 import type { AuthoredEventStream } from "./authoredEvent";
-import type { SubBeatDivision } from "../beatGridStore";
+import type { SubBeatDivision } from "../timingStore";
 import type { DerivedSignalStructure } from "./derivedSignal";
 import type { ComposedSignalStructure } from "./composedSignal";
 import type { MeshAssetStructure } from "./meshAsset";
 import { DEFAULT_SCRIPT } from "@/lib/scripting/defaultScripts";
 import { nanoid } from "nanoid";
-
-// ----------------------------
-// Audio References
-// ----------------------------
-
-/**
- * Reference to an audio input within a project.
- * Contains metadata for identification and re-import,
- * but not the actual AudioBuffer (which is runtime-only).
- */
-export interface ProjectAudioReference {
-  /** Original input ID (for linking). "mixdown" or nanoid for stems. */
-  id: string;
-  /** User-facing label. */
-  label: string;
-  /** Role in the collection. */
-  role: "mixdown" | "stem";
-  /** Audio metadata for identification. */
-  metadata: AudioInputMetadata;
-  /** Origin for re-import (file path, URL, etc.). */
-  origin: AudioInputOrigin;
-  /** Order index for stems. */
-  orderIndex?: number;
-  /**
-   * Reference to asset in the local asset registry.
-   * Used for persistent storage of audio data.
-   * Optional for backwards compatibility with v1 projects.
-   */
-  assetId?: string;
-}
-
-/**
- * Project audio collection (references only, not buffers).
- */
-export interface ProjectAudioCollection {
-  /** Mixdown reference (required once audio is loaded). */
-  mixdown: ProjectAudioReference | null;
-  /** Stem references in order. */
-  stems: ProjectAudioReference[];
-}
 
 // ----------------------------
 // Scripts
@@ -98,7 +57,7 @@ export interface ProjectScripts {
 // ----------------------------
 
 /**
- * Serializable beat grid state from beatGridStore.
+ * Serializable beat grid state from the timing store (beat-grid section).
  * Saved even if not yet promoted to Musical Time.
  */
 export interface ProjectBeatGridState {
@@ -133,8 +92,6 @@ export interface ProjectBeatGridState {
  * This is the core of what makes a project valuable.
  */
 export interface ProjectInterpretation {
-  /** Frequency band structure. */
-  frequencyBands: FrequencyBandStructure | null;
   /** Musical time structure (promoted beat grids). */
   musicalTime: MusicalTimeStructure | null;
   /** Authored event streams. */
@@ -166,6 +123,8 @@ export interface ProjectUIState {
   inspectorHeight: number;
   /** Last playhead position in seconds (for restoring on reload). */
   lastPlayheadPosition: number;
+  /** Named view presets (compared streams + analysis + panel visibility). */
+  viewPresets?: ViewPreset[];
 }
 
 // ----------------------------
@@ -187,8 +146,8 @@ export interface ProjectUIState {
  *
  * **Must Persist:**
  * - Project metadata (id, name, timestamps)
- * - Audio references (not buffers - those are runtime-only)
- * - Frequency bands, musical time, authored events, beat grid
+ * - Streams (mixdown/stems/bands; audio URLs are runtime-only and persist as null)
+ * - Musical time, authored events, beat grid
  * - Custom signals (definitions, not cached results)
  * - Scripts (full content)
  * - Mesh assets (3D objects with OBJ content)
@@ -211,8 +170,12 @@ export interface Project {
   /** ISO timestamp when last modified. */
   modifiedAt: string;
 
-  /** Audio references (metadata only, not buffers). */
-  audio: ProjectAudioCollection;
+  /**
+   * The full stream collection (mixdown, stems, and band streams).
+   * AudioStreams persist with audio.url null (blob URLs are runtime-only);
+   * decoded PCM never persists.
+   */
+  streams: Stream[];
   /** Authored interpretation data. */
   interpretation: ProjectInterpretation;
   /** Visualization scripts. */
@@ -232,8 +195,8 @@ export interface Project {
  * Versioned for future migrations.
  */
 export interface ProjectSerialized {
-  /** Schema version for migrations. */
-  version: 1;
+  /** Schema version. v1 payloads are rejected (no migration). */
+  version: 2;
   /** The project data. */
   project: Project;
 }
@@ -272,12 +235,8 @@ export function createEmptyProject(name: string): Project {
     name,
     createdAt: now,
     modifiedAt: now,
-    audio: {
-      mixdown: null,
-      stems: [],
-    },
+    streams: [],
     interpretation: {
-      frequencyBands: null,
       musicalTime: null,
       authoredEvents: [],
       beatGrid: null,

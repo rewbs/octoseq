@@ -1,19 +1,24 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Loader2, Pencil, Play, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
-import { useMirStore } from "@/lib/stores/mirStore";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
-import { useMirActions } from "@/lib/stores/hooks/useMirActions";
-import { useBandMirActions } from "@/lib/stores/hooks/useBandMirActions";
-import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
-import type { MirFunctionId } from "@/components/mir/MirControlPanel";
+import {
+  MIXDOWN_STREAM_ID,
+  audioCache,
+  isAudioStream,
+  isBandStream,
+  replaceStreamAudio,
+  runStreamAnalyses,
+  runStreamAnalysis,
+  useStreamStore,
+  type AnalysisId,
+  type BandStream,
+} from "@/lib/streams";
 
 // All MIR analyses that can be run on an audio source
-const ALL_MIR_ANALYSES: MirFunctionId[] = [
+const ALL_MIR_ANALYSES: AnalysisId[] = [
   "amplitudeEnvelope",
   "onsetEnvelope",
   "spectralFlux",
@@ -35,6 +40,19 @@ const ALL_MIR_ANALYSES: MirFunctionId[] = [
   "pitchConfidence",
 ];
 
+// All analyses available on band streams (STFT, CQT, then events)
+const ALL_BAND_ANALYSES: AnalysisId[] = [
+  "amplitudeEnvelope",
+  "onsetEnvelope",
+  "spectralFlux",
+  "spectralCentroid",
+  "cqtHarmonicEnergy",
+  "cqtBassPitchMotion",
+  "cqtTonalStability",
+  "onsetPeaks",
+  "beatCandidates",
+];
+
 interface AudioSourceInspectorProps {
   sourceId: string;
 }
@@ -44,17 +62,8 @@ interface AudioSourceInspectorProps {
  * Shows MIR analysis controls and stem replacement actions.
  */
 export function AudioSourceInspector({ sourceId }: AudioSourceInspectorProps) {
-  const getInputById = useAudioInputStore((s) => s.getInputById);
-  const replaceStem = useAudioInputStore((s) => s.replaceStem);
-  const renameInput = useAudioInputStore((s) => s.renameInput);
-  const invalidateInputMir = useMirStore((s) => s.invalidateInputMir);
-  const getBandsForSource = useFrequencyBandStore((s) => s.getBandsForSource);
-  const { runAnalysis } = useMirActions();
-  const {
-    runBandAnalysis,
-    runBandCqtAnalysis,
-    runTypedEventExtraction,
-  } = useBandMirActions();
+  const streams = useStreamStore((s) => s.streams);
+  const renameStream = useStreamStore((s) => s.renameStream);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const labelInputRef = useRef<HTMLInputElement>(null);
@@ -63,53 +72,39 @@ export function AudioSourceInspector({ sourceId }: AudioSourceInspectorProps) {
   const [isEditingLabel, setIsEditingLabel] = useState(false);
   const [editLabelValue, setEditLabelValue] = useState("");
 
-  const isStem = sourceId !== MIXDOWN_ID;
-  const audioInput = getInputById(sourceId);
+  const isStem = sourceId !== MIXDOWN_STREAM_ID;
+  const stream = streams.get(sourceId) ?? null;
+  const hasAudio = stream != null && audioCache.has(sourceId);
 
   // Get bands for this audio source
-  const bands = getBandsForSource(sourceId);
-  const bandIds = bands.map((b) => b.id);
+  const bands = useMemo(
+    () =>
+      [...streams.values()]
+        .filter((s): s is BandStream => isBandStream(s) && s.parentId === sourceId)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams, sourceId]
+  );
+  const bandIds = useMemo(() => bands.map((b) => b.id), [bands]);
 
   // Run all MIR analyses for this audio source and its bands
   const handleRunAllAnalyses = useCallback(async () => {
-    if (!audioInput?.audioBuffer) return;
+    if (!audioCache.has(sourceId)) return;
 
     setIsRunningAll(true);
     try {
       // First run audio source MIR analyses
-      for (const analysisId of ALL_MIR_ANALYSES) {
-        await runAnalysis(analysisId, sourceId);
-      }
+      await runStreamAnalyses([sourceId], ALL_MIR_ANALYSES, { force: true });
 
       // Then cascade to band analyses if there are bands
       if (bandIds.length > 0) {
-        // Run STFT-based band MIR analyses
-        await runBandAnalysis(bandIds, [
-          "bandAmplitudeEnvelope",
-          "bandOnsetStrength",
-          "bandSpectralFlux",
-          "bandSpectralCentroid",
-        ], sourceId);
-
-        // Run CQT-based band analyses
-        await runBandCqtAnalysis(bandIds, [
-          "bandCqtHarmonicEnergy",
-          "bandCqtBassPitchMotion",
-          "bandCqtTonalStability",
-        ], sourceId);
-
-        // Extract events from the band signals
-        await runTypedEventExtraction(bandIds, [
-          "bandOnsetPeaks",
-          "bandBeatCandidates",
-        ]);
+        await runStreamAnalyses(bandIds, ALL_BAND_ANALYSES);
       }
     } catch (error) {
       console.error("Failed to run analyses:", error);
     } finally {
       setIsRunningAll(false);
     }
-  }, [audioInput, runAnalysis, sourceId, bandIds, runBandAnalysis, runBandCqtAnalysis, runTypedEventExtraction]);
+  }, [sourceId, bandIds]);
 
   // Handle file selection for stem replacement
   const handleFileSelect = useCallback(
@@ -127,27 +122,37 @@ export function AudioSourceInspector({ sourceId }: AudioSourceInspectorProps) {
         const blob = new Blob([arrayBuffer], { type: file.type });
         const audioUrl = URL.createObjectURL(blob);
 
-        // Invalidate old MIR results for this stem
-        invalidateInputMir(sourceId);
+        const current = useStreamStore.getState().getStream(sourceId);
+        if (current && isAudioStream(current)) {
+          // Revoke old blob URL if it exists
+          if (current.audio.url) {
+            URL.revokeObjectURL(current.audio.url);
+          }
 
-        // Replace the stem with new audio
-        replaceStem(sourceId, {
-          audioBuffer: {
-            sampleRate: audioBuffer.sampleRate,
-            numberOfChannels: audioBuffer.numberOfChannels,
-            getChannelData: (channel: number) => audioBuffer.getChannelData(channel),
-          },
-          metadata: {
-            sampleRate: audioBuffer.sampleRate,
-            totalSamples: audioBuffer.length,
-            duration: audioBuffer.duration,
-          },
-          audioUrl,
-        });
+          // Replace the stem with new audio (invalidates the stream's analyses
+          // and those of its dependent bands)
+          replaceStreamAudio(
+            sourceId,
+            {
+              ...current.audio,
+              origin: { kind: "file", fileName: file.name },
+              url: audioUrl,
+              fileName: file.name,
+              durationSec: audioBuffer.duration,
+              sampleRate: audioBuffer.sampleRate,
+              channels: audioBuffer.numberOfChannels,
+            },
+            {
+              sampleRate: audioBuffer.sampleRate,
+              numberOfChannels: audioBuffer.numberOfChannels,
+              getChannelData: (channel: number) => audioBuffer.getChannelData(channel),
+            }
+          );
 
-        // Run analyses on the replaced stem
-        await runAnalysis("onsetEnvelope", sourceId);
-        await runAnalysis("spectralFlux", sourceId);
+          // Run analyses on the replaced stem
+          await runStreamAnalysis(sourceId, "onsetEnvelope");
+          await runStreamAnalysis(sourceId, "spectralFlux");
+        }
       } catch (error) {
         console.error("Failed to replace stem:", error);
       } finally {
@@ -157,28 +162,28 @@ export function AudioSourceInspector({ sourceId }: AudioSourceInspectorProps) {
         }
       }
     },
-    [isStem, sourceId, replaceStem, invalidateInputMir, runAnalysis]
+    [isStem, sourceId]
   );
 
   const handleStartEditLabel = useCallback(() => {
-    setEditLabelValue(audioInput?.label ?? "");
+    setEditLabelValue(stream?.label ?? "");
     setIsEditingLabel(true);
     // Focus the input after state update
     setTimeout(() => labelInputRef.current?.focus(), 0);
-  }, [audioInput?.label]);
+  }, [stream?.label]);
 
   const handleSaveLabel = useCallback(() => {
     const trimmed = editLabelValue.trim();
-    if (trimmed && trimmed !== audioInput?.label) {
-      renameInput(sourceId, trimmed);
+    if (trimmed && trimmed !== stream?.label) {
+      renameStream(sourceId, trimmed);
     }
     setIsEditingLabel(false);
-  }, [editLabelValue, audioInput?.label, renameInput, sourceId]);
+  }, [editLabelValue, stream?.label, renameStream, sourceId]);
 
   const handleCancelEditLabel = useCallback(() => {
     setIsEditingLabel(false);
-    setEditLabelValue(audioInput?.label ?? "");
-  }, [audioInput?.label]);
+    setEditLabelValue(stream?.label ?? "");
+  }, [stream?.label]);
 
   return (
     <div className="p-2 space-y-4">
@@ -207,12 +212,12 @@ export function AudioSourceInspector({ sourceId }: AudioSourceInspectorProps) {
               onClick={handleStartEditLabel}
               className="w-full flex items-center justify-between px-2 py-1.5 text-sm text-left rounded border border-transparent hover:border-zinc-300 dark:hover:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
             >
-              <span className="truncate">{audioInput?.label}</span>
+              <span className="truncate">{stream?.label}</span>
               <Pencil className="h-3 w-3 text-zinc-400 shrink-0 ml-2" />
             </button>
           )}
           <div className="text-xs text-zinc-400 dark:text-zinc-500">
-            Use in scripts: inputs.stems[&quot;{audioInput?.label}&quot;]
+            Use in scripts: inputs.stems[&quot;{stream?.label}&quot;]
           </div>
         </div>
       )}
@@ -227,7 +232,7 @@ export function AudioSourceInspector({ sourceId }: AudioSourceInspectorProps) {
             variant="outline"
             size="sm"
             className="w-full justify-start"
-            disabled={!audioInput?.audioBuffer || isRunningAll}
+            disabled={!hasAudio || isRunningAll}
             onClick={handleRunAllAnalyses}
           >
             {isRunningAll ? (

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
-import type { BandMir1DResult, BandCqt1DResult, BandMirDiagnostics, BandMirFunctionId, BandCqtFunctionId } from "@octoseq/mir";
+import type { BandMir1DResult, BandCqt1DResult, BandMirDiagnostics } from "@octoseq/mir";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
 import { createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
 import {
@@ -14,7 +14,13 @@ import {
   type RenderPoint,
 } from "@octoseq/wavesurfer-signalviewer";
 import { getBandColorHex } from "@/lib/bandColors";
-import { useBandMirStore, useFrequencyBandStore } from "@/lib/stores";
+import {
+  analysisKey,
+  useAnalysisStore,
+  useBandEditingStore,
+  useStreamStore,
+  type AnalysisId,
+} from "@/lib/streams";
 import { BandEventOverlay, BandEventCountBadge } from "./BandEventOverlay";
 import { GenericBeatGridOverlay } from "@/components/beatGrid/GenericBeatGridOverlay";
 
@@ -25,12 +31,9 @@ import { GenericBeatGridOverlay } from "@/components/beatGrid/GenericBeatGridOve
 /** Union type for band result - both STFT and CQT results share the same structure */
 type BandResultUnion = BandMir1DResult | BandCqt1DResult;
 
-/** CQT function IDs for type checking */
-const CQT_FUNCTIONS: BandCqtFunctionId[] = ["bandCqtHarmonicEnergy", "bandCqtBassPitchMotion", "bandCqtTonalStability"];
-
 export type BandMirSignalViewerProps = {
-    /** The band MIR function to show results for (e.g., "bandOnsetStrength" or "bandCqtHarmonicEnergy") */
-    fn: BandMirFunctionId | BandCqtFunctionId;
+    /** The unified analysis to show per-band results for (e.g., "onsetEnvelope" or "cqtHarmonicEnergy") */
+    fn: AnalysisId;
     /** Viewport from the main WaveSurfer instance */
     viewport: WaveSurferViewport | null;
     /** Shared mirrored cursor (hover or playhead) to display */
@@ -96,9 +99,12 @@ function BandSignalRow({
     const color = getBandColorHex(bandIndex);
     const hasWarnings = result.diagnostics.warnings.length > 0;
 
-    // Get event data for this band
-    const eventData = useBandMirStore((s) => s.getEventsCached(result.bandId));
-    const isEventVisible = useBandMirStore((s) => s.isBandEventVisible(result.bandId));
+    // Get event data for this band (unified onsetPeaks analysis)
+    const eventResult = useAnalysisStore((s) =>
+        s.results.get(analysisKey(result.bandId, "onsetPeaks"))
+    );
+    const eventData = eventResult?.kind === "bandEvents" ? eventResult : null;
+    const isEventVisible = useBandEditingStore((s) => !s.hiddenEventBandIds.has(result.bandId));
 
     // Create signal from result
     const signal = useMemo(() => {
@@ -421,36 +427,30 @@ export function BandMirSignalViewer({
     showBeatGrid = false,
     audioDuration = 0,
 }: BandMirSignalViewerProps) {
-    const expanded = useBandMirStore((s) => s.expanded);
-    const setExpanded = useBandMirStore((s) => s.setExpanded);
-    const cache = useBandMirStore((s) => s.cache);
-    const cqtCache = useBandMirStore((s) => s.cqtCache);
+    const expanded = useBandEditingStore((s) => s.signalViewerExpanded);
+    const setExpanded = useBandEditingStore((s) => s.setSignalViewerExpanded);
+    const allResults = useAnalysisStore((s) => s.results);
+    const streams = useStreamStore((s) => s.streams);
 
-    const structure = useFrequencyBandStore((s) => s.structure);
+    const bands = useMemo(
+        () =>
+            [...streams.values()]
+                .filter((s) => s.kind === "band")
+                .sort((a, b) => a.sortOrder - b.sortOrder),
+        [streams]
+    );
 
-    // Determine if this is a CQT function
-    const isCqtFn = CQT_FUNCTIONS.includes(fn as BandCqtFunctionId);
-
-    // Get results for this function from the appropriate cache
-    const results = useMemo(() => {
+    // Get per-band results for this analysis, in band sortOrder
+    const sortedResults = useMemo(() => {
         const entries: BandResultUnion[] = [];
-        const targetCache = isCqtFn ? cqtCache : cache;
-        for (const [key, result] of targetCache.entries()) {
-            if (key.endsWith(`:${fn}`)) {
+        for (const band of bands) {
+            const result = allResults.get(analysisKey(band.id, fn));
+            if (result && (result.kind === "bandMir1d" || result.kind === "bandCqt1d")) {
                 entries.push(result);
             }
         }
         return entries;
-    }, [cache, cqtCache, fn, isCqtFn]);
-
-    // Sort by band sortOrder
-    const sortedResults = useMemo(() => {
-        return [...results].sort((a, b) => {
-            const bandA = structure?.bands.find((band) => band.id === a.bandId);
-            const bandB = structure?.bands.find((band) => band.id === b.bandId);
-            return (bandA?.sortOrder ?? 0) - (bandB?.sortOrder ?? 0);
-        });
-    }, [results, structure]);
+    }, [bands, allResults, fn]);
 
     const [readyBandIds, setReadyBandIds] = useState<Set<string>>(new Set());
     const handleReady = useCallback((bandId: string) => {
@@ -489,7 +489,7 @@ export function BandMirSignalViewer({
 
     // Get band indices for coloring
     const bandIndexMap = new Map<string, number>();
-    structure?.bands.forEach((band, index) => {
+    bands.forEach((band, index) => {
         bandIndexMap.set(band.id, index);
     });
 

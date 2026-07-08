@@ -1,14 +1,20 @@
 "use client";
 
+import { useMemo } from "react";
 import { Input } from "@/components/ui/input";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import {
+  useStreamStore,
+  isAudioStream,
+  isBandStream,
+  MIXDOWN_STREAM_ID,
+} from "@/lib/streams";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import {
   REDUCER_EVENT_LABELS,
   REDUCER_EVENT_DESCRIPTIONS,
   type SourceEvents,
   type EventStreamRef,
+  type EventAnalysisId,
   type ReducerEventAlgorithmId,
   type EventWindow,
   type EventEnvelopeShape,
@@ -20,60 +26,62 @@ interface SourceEventSelectorProps {
   onChange: (source: DerivedSignalSource) => void;
 }
 
+const EVENT_ANALYSIS_OPTIONS: { id: EventAnalysisId; label: string }[] = [
+  { id: "onsetPeaks", label: "Onset Peaks" },
+  { id: "beatCandidates", label: "Beat Candidates" },
+];
+
 /**
  * Source selector for event streams.
  */
 export function SourceEventSelector({ source, onChange }: SourceEventSelectorProps) {
-  const audioCollection = useAudioInputStore((s) => s.collection);
-  const stemOrder = audioCollection?.stemOrder ?? [];
+  const streams = useStreamStore((s) => s.streams);
+  const audioStreams = useMemo(
+    () => [...streams.values()].filter(isAudioStream).sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
+  );
+  const bands = useMemo(
+    () => [...streams.values()].filter(isBandStream).sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
+  );
   const authoredStreams = useAuthoredEventStore((s) => s.streams);
-  const bandStructure = useFrequencyBandStore((s) => s.structure);
-  const bands = bandStructure?.bands ?? [];
 
   const handleStreamTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const type = e.target.value as EventStreamRef["type"];
     let newRef: EventStreamRef;
     switch (type) {
-      case "candidateOnsets":
-        newRef = { type: "candidateOnsets", audioSourceId: "mixdown" };
+      case "analysis":
+        newRef = { type: "analysis", streamId: MIXDOWN_STREAM_ID, analysisId: "onsetPeaks" };
         break;
-      case "candidateBeats":
-        newRef = { type: "candidateBeats", audioSourceId: "mixdown" };
-        break;
-      case "bandOnsetPeaks":
-        newRef = { type: "bandOnsetPeaks", bandId: bands[0]?.id ?? "" };
-        break;
-      case "bandBeatCandidates":
-        newRef = { type: "bandBeatCandidates", bandId: bands[0]?.id ?? "" };
-        break;
-      case "authoredEvents":
+      case "authored": {
         const firstStream = authoredStreams.values().next().value;
-        newRef = { type: "authoredEvents", streamId: firstStream?.id ?? "" };
+        newRef = { type: "authored", streamId: firstStream?.id ?? "" };
         break;
+      }
       default:
-        newRef = { type: "candidateOnsets", audioSourceId: "mixdown" };
+        newRef = { type: "analysis", streamId: MIXDOWN_STREAM_ID, analysisId: "onsetPeaks" };
     }
     onChange({ ...source, streamRef: newRef });
   };
 
-  const handleAudioSourceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    if (source.streamRef.type !== "candidateOnsets" && source.streamRef.type !== "candidateBeats") return;
+  const handleStreamChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (source.streamRef.type !== "analysis") return;
     onChange({
       ...source,
-      streamRef: { ...source.streamRef, audioSourceId: e.target.value },
+      streamRef: { ...source.streamRef, streamId: e.target.value },
     });
   };
 
-  const handleBandChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    if (source.streamRef.type !== "bandOnsetPeaks" && source.streamRef.type !== "bandBeatCandidates") return;
+  const handleEventAnalysisChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (source.streamRef.type !== "analysis") return;
     onChange({
       ...source,
-      streamRef: { ...source.streamRef, bandId: e.target.value },
+      streamRef: { ...source.streamRef, analysisId: e.target.value as EventAnalysisId },
     });
   };
 
   const handleAuthoredStreamChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    if (source.streamRef.type !== "authoredEvents") return;
+    if (source.streamRef.type !== "authored") return;
     onChange({
       ...source,
       streamRef: { ...source.streamRef, streamId: e.target.value },
@@ -149,16 +157,9 @@ export function SourceEventSelector({ source, onChange }: SourceEventSelectorPro
     });
   };
 
-  const isAudioBased = source.streamRef.type === "candidateOnsets" || source.streamRef.type === "candidateBeats";
-  const isBandBased = source.streamRef.type === "bandOnsetPeaks" || source.streamRef.type === "bandBeatCandidates";
-  const isAuthored = source.streamRef.type === "authoredEvents";
+  const streamRef = source.streamRef;
   const isEnvelopeReducer = source.reducer === "envelope";
   const isWindowedReducer = ["eventCount", "eventDensity", "weightedSum", "weightedMean"].includes(source.reducer);
-
-  // Get current values for conditional selects
-  const audioSourceId = isAudioBased ? (source.streamRef as { audioSourceId: string }).audioSourceId : "mixdown";
-  const bandId = isBandBased ? (source.streamRef as { bandId: string }).bandId : "";
-  const streamId = isAuthored ? (source.streamRef as { streamId: string }).streamId : "";
 
   return (
     <div className="space-y-4">
@@ -166,71 +167,69 @@ export function SourceEventSelector({ source, onChange }: SourceEventSelectorPro
       <div className="space-y-2">
         <label className="text-sm font-medium">Event Stream Type</label>
         <select
-          value={source.streamRef.type}
+          value={streamRef.type}
           onChange={handleStreamTypeChange}
           className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
         >
-          <option value="candidateOnsets">Candidate Onsets</option>
-          <option value="candidateBeats">Candidate Beats</option>
-          <option value="bandOnsetPeaks" disabled={bands.length === 0}>
-            Band Onset Peaks
-          </option>
-          <option value="bandBeatCandidates" disabled={bands.length === 0}>
-            Band Beat Candidates
-          </option>
-          <option value="authoredEvents" disabled={authoredStreams.size === 0}>
+          <option value="analysis">Detected Events</option>
+          <option value="authored" disabled={authoredStreams.size === 0}>
             Authored Events
           </option>
         </select>
       </div>
 
-      {/* Audio Source (for candidate events) */}
-      {isAudioBased && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Audio Source</label>
-          <select
-            value={audioSourceId}
-            onChange={handleAudioSourceChange}
-            className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-          >
-            <option value="mixdown">Mixdown</option>
-            {stemOrder.map((stemId) => {
-              const stem = audioCollection?.inputs[stemId];
-              return (
-                <option key={stemId} value={stemId}>
-                  {stem?.label ?? stemId}
-                </option>
-              );
-            })}
-          </select>
-        </div>
-      )}
+      {/* Detected events: one stream-grouped list, no mixdown/stem/band branching */}
+      {streamRef.type === "analysis" && (
+        <>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Stream</label>
+            <select
+              value={streamRef.streamId}
+              onChange={handleStreamChange}
+              className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+            >
+              <optgroup label="Audio">
+                {audioStreams.map((stream) => (
+                  <option key={stream.id} value={stream.id}>
+                    {stream.label}
+                  </option>
+                ))}
+              </optgroup>
+              {bands.length > 0 && (
+                <optgroup label="Bands">
+                  {bands.map((band) => (
+                    <option key={band.id} value={band.id}>
+                      {band.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </div>
 
-      {/* Band (for band events) */}
-      {isBandBased && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Band</label>
-          <select
-            value={bandId}
-            onChange={handleBandChange}
-            className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-          >
-            <option value="">Select band...</option>
-            {bands.map((band) => (
-              <option key={band.id} value={band.id}>
-                {band.label}
-              </option>
-            ))}
-          </select>
-        </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Events</label>
+            <select
+              value={streamRef.analysisId}
+              onChange={handleEventAnalysisChange}
+              className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
+            >
+              {EVENT_ANALYSIS_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </>
       )}
 
       {/* Authored Stream */}
-      {isAuthored && (
+      {streamRef.type === "authored" && (
         <div className="space-y-2">
           <label className="text-sm font-medium">Event Stream</label>
           <select
-            value={streamId}
+            value={streamRef.streamId}
             onChange={handleAuthoredStreamChange}
             className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
           >

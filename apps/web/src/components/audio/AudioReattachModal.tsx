@@ -5,10 +5,40 @@ import { FileAudio, Check, X, RefreshCw, AlertCircle } from "lucide-react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/lib/stores/projectStore";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
-import { useMirActions } from "@/lib/stores/hooks/useMirActions";
-import type { ProjectAudioReference } from "@/lib/stores/types/project";
+import {
+  MIXDOWN_STREAM_ID,
+  isAudioStream,
+  loadMixdown,
+  replaceStreamAudio,
+  runStreamAnalyses,
+  useStreamStore,
+  type AnalysisId,
+  type AudioStream,
+} from "@/lib/streams";
 import type { AudioBufferLike } from "@octoseq/mir";
+
+// All analyses to run after re-attaching audio
+const ALL_ANALYSES: AnalysisId[] = [
+  "amplitudeEnvelope",
+  "spectralCentroid",
+  "spectralFlux",
+  "melSpectrogram",
+  "onsetEnvelope",
+  "onsetPeaks",
+  "beatCandidates",
+  "tempoHypotheses",
+  "hpssHarmonic",
+  "hpssPercussive",
+  "mfcc",
+  "mfccDelta",
+  "mfccDeltaDelta",
+  "cqtHarmonicEnergy",
+  "cqtBassPitchMotion",
+  "cqtTonalStability",
+  "pitchF0",
+  "pitchConfidence",
+  "activity",
+];
 
 interface AudioReattachModalProps {
   open: boolean;
@@ -24,17 +54,16 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
   const audioLoadStatus = useProjectStore((s) => s.audioLoadStatus);
   const audioLoadErrors = useProjectStore((s) => s.audioLoadErrors);
   const setAudioLoadStatus = useProjectStore((s) => s.setAudioLoadStatus);
-  const { runAllAnalysesForInput } = useMirActions();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeRefId, setActiveRefId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Get all audio references
-  const audioRefs: ProjectAudioReference[] = [];
-  if (project?.audio.mixdown) audioRefs.push(project.audio.mixdown);
-  audioRefs.push(...(project?.audio.stems ?? []));
+  // Get all audio streams (mixdown first, then stems in order)
+  const audioRefs: AudioStream[] = (project?.streams ?? [])
+    .filter(isAudioStream)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
 
-  const handleSelectFile = useCallback((ref: ProjectAudioReference) => {
+  const handleSelectFile = useCallback((ref: AudioStream) => {
     setActiveRefId(ref.id);
     fileInputRef.current?.click();
   }, []);
@@ -66,39 +95,46 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
           getChannelData: (channel: number) => audioBuffer.getChannelData(channel),
         };
 
-        const metadata = {
-          sampleRate: audioBuffer.sampleRate,
-          totalSamples: audioBuffer.length,
-          duration: audioBuffer.duration,
-        };
-
-        // Update the appropriate store
-        const audioInputStore = useAudioInputStore.getState();
-
-        if (activeRefId === "mixdown") {
-          audioInputStore.updateMixdown({
-            audioBuffer: bufferLike,
-            metadata,
-            audioUrl,
-            origin: { kind: "file", fileName: file.name },
+        if (activeRefId === MIXDOWN_STREAM_ID) {
+          loadMixdown({
+            audio: {
+              origin: { kind: "file", fileName: file.name },
+              url: audioUrl,
+              fileName: file.name,
+              durationSec: audioBuffer.duration,
+              sampleRate: audioBuffer.sampleRate,
+              channels: audioBuffer.numberOfChannels,
+            },
+            buffer: bufferLike,
             label: file.name,
           });
         } else {
-          // For stems, replace the existing stem
-          const existingStem = audioInputStore.getInputById(activeRefId);
-          if (existingStem) {
-            audioInputStore.replaceStem(activeRefId, {
-              audioBuffer: bufferLike,
-              metadata,
-              audioUrl,
-            });
+          // For stems, replace the existing stream's audio
+          const existingStem = useStreamStore.getState().getStream(activeRefId);
+          if (existingStem && isAudioStream(existingStem)) {
+            if (existingStem.audio.url) {
+              URL.revokeObjectURL(existingStem.audio.url);
+            }
+            replaceStreamAudio(
+              activeRefId,
+              {
+                ...existingStem.audio,
+                origin: { kind: "file", fileName: file.name },
+                url: audioUrl,
+                fileName: file.name,
+                durationSec: audioBuffer.duration,
+                sampleRate: audioBuffer.sampleRate,
+                channels: audioBuffer.numberOfChannels,
+              },
+              bufferLike
+            );
           }
         }
 
         setAudioLoadStatus(activeRefId, "loaded");
 
         // Trigger MIR analyses for the re-attached audio
-        runAllAnalysesForInput(activeRefId);
+        runStreamAnalyses([activeRefId], ALL_ANALYSES);
       } catch (error) {
         console.error("Failed to load audio:", error);
         setAudioLoadStatus(
@@ -114,7 +150,7 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
         }
       }
     },
-    [activeRefId, setAudioLoadStatus, runAllAnalysesForInput]
+    [activeRefId, setAudioLoadStatus]
   );
 
   const getStatusIcon = (refId: string) => {
@@ -176,14 +212,14 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
                     <FileAudio className="h-4 w-4 text-zinc-400 shrink-0" />
                     <span className="text-sm font-medium truncate">{ref.label}</span>
                     <span className="text-xs px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 shrink-0">
-                      {ref.role}
+                      {ref.kind}
                     </span>
                   </div>
                   <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
-                    {ref.origin.kind === "file"
-                      ? ref.origin.fileName
-                      : ref.origin.kind === "url"
-                        ? ref.origin.fileName ?? ref.origin.url
+                    {ref.audio.origin.kind === "file"
+                      ? ref.audio.origin.fileName
+                      : ref.audio.origin.kind === "url"
+                        ? ref.audio.origin.fileName ?? ref.audio.origin.url
                         : "Unknown source"}
                   </div>
                   <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">

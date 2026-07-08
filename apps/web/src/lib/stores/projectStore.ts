@@ -9,15 +9,14 @@ import { nanoid } from "nanoid";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 
-import type { FrequencyBandStructure, MusicalTimeStructure } from "@octoseq/mir";
+import type { MusicalTimeStructure } from "@octoseq/mir";
+import { isAudioStream, isBandStream, type AudioStream, type Stream } from "@/lib/streams";
 import type { AuthoredEventStream } from "./types/authoredEvent";
 import type { DerivedSignalStructure } from "./types/derivedSignal";
 import type { ComposedSignalStructure } from "./types/composedSignal";
 import type { MeshAssetStructure } from "./types/meshAsset";
 import type {
   Project,
-  ProjectAudioCollection,
-  ProjectAudioReference,
   ProjectBeatGridState,
   ProjectScript,
   ProjectSerialized,
@@ -104,11 +103,8 @@ interface ProjectActions {
   // These are called by other stores when their data changes.
   // ----------------------------
 
-  /** Sync audio references from audioInputStore. */
-  syncAudioReferences: (collection: ProjectAudioCollection) => void;
-
-  /** Sync frequency bands from frequencyBandStore. */
-  syncFrequencyBands: (structure: FrequencyBandStructure | null) => void;
+  /** Sync the serialized stream collection from streamStore. */
+  syncStreams: (streams: Stream[]) => void;
 
   /** Sync musical time from musicalTimeStore. */
   syncMusicalTime: (structure: MusicalTimeStructure | null) => void;
@@ -193,10 +189,10 @@ interface ProjectActions {
   clearAudioLoadState: () => void;
 
   /** Get pending audio loads. */
-  getPendingAudioLoads: () => ProjectAudioReference[];
+  getPendingAudioLoads: () => AudioStream[];
 
   /** Get failed audio loads. */
-  getFailedAudioLoads: () => Array<{ ref: ProjectAudioReference; error: string }>;
+  getFailedAudioLoads: () => Array<{ ref: AudioStream; error: string }>;
 
   // ----------------------------
   // Queries
@@ -268,12 +264,8 @@ export const useProjectStore = create<ProjectStore>()(
           name,
           createdAt: now,
           modifiedAt: now,
-          audio: {
-            mixdown: null,
-            stems: [],
-          },
+          streams: [],
           interpretation: {
-            frequencyBands: null,
             musicalTime: null,
             authoredEvents: [],
             beatGrid: null,
@@ -381,7 +373,7 @@ export const useProjectStore = create<ProjectStore>()(
       // State Synchronization
       // ----------------------------
 
-      syncAudioReferences: (collection) => {
+      syncStreams: (streams) => {
         const { activeProject, suppressDirty } = get();
         if (!activeProject) return;
 
@@ -390,37 +382,14 @@ export const useProjectStore = create<ProjectStore>()(
             activeProject: state.activeProject
               ? {
                 ...state.activeProject,
-                audio: collection,
+                streams,
                 modifiedAt: new Date().toISOString(),
               }
               : null,
             isDirty: suppressDirty ? state.isDirty : true,
           }),
           false,
-          "syncAudioReferences"
-        );
-      },
-
-      syncFrequencyBands: (structure) => {
-        const { activeProject, suppressDirty } = get();
-        if (!activeProject) return;
-
-        set(
-          (state) => ({
-            activeProject: state.activeProject
-              ? {
-                ...state.activeProject,
-                interpretation: {
-                  ...state.activeProject.interpretation,
-                  frequencyBands: structure,
-                },
-                modifiedAt: new Date().toISOString(),
-              }
-              : null,
-            isDirty: suppressDirty ? state.isDirty : true,
-          }),
-          false,
-          "syncFrequencyBands"
+          "syncStreams"
         );
       },
 
@@ -776,7 +745,7 @@ export const useProjectStore = create<ProjectStore>()(
         if (!project) return null;
 
         const serialized: ProjectSerialized = {
-          version: 1,
+          version: 2,
           project: {
             ...project,
             modifiedAt: new Date().toISOString(),
@@ -885,19 +854,13 @@ export const useProjectStore = create<ProjectStore>()(
         if (!project) return [];
 
         const status = get().audioLoadStatus;
-        const pending: ProjectAudioReference[] = [];
+        const pending: AudioStream[] = [];
 
-        if (project.audio.mixdown) {
-          const mixdownStatus = status.get(project.audio.mixdown.id);
-          if (!mixdownStatus || mixdownStatus === "pending" || mixdownStatus === "failed") {
-            pending.push(project.audio.mixdown);
-          }
-        }
-
-        for (const stem of project.audio.stems) {
-          const stemStatus = status.get(stem.id);
-          if (!stemStatus || stemStatus === "pending" || stemStatus === "failed") {
-            pending.push(stem);
+        for (const stream of project.streams) {
+          if (!isAudioStream(stream)) continue;
+          const streamStatus = status.get(stream.id);
+          if (!streamStatus || streamStatus === "pending" || streamStatus === "failed") {
+            pending.push(stream);
           }
         }
 
@@ -910,24 +873,14 @@ export const useProjectStore = create<ProjectStore>()(
 
         const status = get().audioLoadStatus;
         const errors = get().audioLoadErrors;
-        const failed: Array<{ ref: ProjectAudioReference; error: string }> = [];
+        const failed: Array<{ ref: AudioStream; error: string }> = [];
 
-        if (project.audio.mixdown) {
-          const mixdownStatus = status.get(project.audio.mixdown.id);
-          if (mixdownStatus === "failed") {
+        for (const stream of project.streams) {
+          if (!isAudioStream(stream)) continue;
+          if (status.get(stream.id) === "failed") {
             failed.push({
-              ref: project.audio.mixdown,
-              error: errors.get(project.audio.mixdown.id) ?? "Unknown error",
-            });
-          }
-        }
-
-        for (const stem of project.audio.stems) {
-          const stemStatus = status.get(stem.id);
-          if (stemStatus === "failed") {
-            failed.push({
-              ref: stem,
-              error: errors.get(stem.id) ?? "Unknown error",
+              ref: stream,
+              error: errors.get(stream.id) ?? "Unknown error",
             });
           }
         }
@@ -962,7 +915,7 @@ export const useProjectStore = create<ProjectStore>()(
         );
 
         return {
-          bandCount: project.interpretation.frequencyBands?.bands.length ?? 0,
+          bandCount: project.streams.filter(isBandStream).length,
           eventStreamCount: project.interpretation.authoredEvents.length,
           eventCount,
           scriptCount: project.scripts.scripts.length,

@@ -1,7 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import { Input } from "@/components/ui/input";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useStreamStore, type AudioStream } from "@/lib/streams";
 import {
   SOURCE_2D_LABELS,
   REDUCER_2D_LABELS,
@@ -24,11 +25,17 @@ interface Source2DSelectorProps {
  * Source selector for 2D spectral data.
  */
 export function Source2DSelector({ source, onChange }: Source2DSelectorProps) {
-  const audioCollection = useAudioInputStore((s) => s.collection);
-  const stemOrder = audioCollection?.stemOrder ?? [];
+  const streams = useStreamStore((s) => s.streams);
+  const stems = useMemo(
+    () =>
+      [...streams.values()]
+        .filter((st): st is AudioStream => st.kind === "stem")
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
+  );
 
-  const handleAudioSourceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    onChange({ ...source, audioSourceId: e.target.value });
+  const handleStreamChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    onChange({ ...source, streamId: e.target.value });
   };
 
   const handleFunctionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -99,19 +106,16 @@ export function Source2DSelector({ source, onChange }: Source2DSelectorProps) {
       <div className="space-y-2">
         <label className="text-sm font-medium">Audio Source</label>
         <select
-          value={source.audioSourceId}
-          onChange={handleAudioSourceChange}
+          value={source.streamId}
+          onChange={handleStreamChange}
           className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
         >
           <option value="mixdown">Mixdown</option>
-          {stemOrder.map((stemId) => {
-            const stem = audioCollection?.inputs[stemId];
-            return (
-              <option key={stemId} value={stemId}>
-                {stem?.label ?? stemId}
-              </option>
-            );
-          })}
+          {stems.map((stem) => (
+            <option key={stem.id} value={stem.id}>
+              {stem.label}
+            </option>
+          ))}
         </select>
       </div>
 

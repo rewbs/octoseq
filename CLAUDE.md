@@ -99,13 +99,27 @@ When implementing new APIs or reviewing existing ones:
 
 ### State Management
 
-Zustand stores with actions in hooks (`useMirActions`, `useBandMirActions`, etc.):
+The web app is built on a **unified stream model** (`apps/web/src/lib/streams/` —
+see [docs/design/phase1-unified-streams.md](docs/design/phase1-unified-streams.md)).
+Everything analysable is a Stream: the mixdown, stems, and frequency bands
+(virtual streams over a parent's frequency region). Analyses are addressed
+`(streamId, analysisId)` regardless of stream kind.
 
-- `audioStore` - Audio data
-- `playbackStore` - Playback position
-- `mirStore` - MIR analysis results
-- `beatGridStore` - Beat/tempo data
-- `frequencyBandStore` - Frequency bands
+Core modules in `lib/streams`:
+
+- `streamStore` - The stream collection (mixdown/stems/bands incl. band definitions)
+- `analysisStore` - THE analysis cache, keyed `streamId::analysisId::paramsHash`
+- `analysisRunner` - `runStreamAnalysis(streamId, analysisId)` dispatches on stream kind
+- `streamActions` - Coordinated mutations (edits invalidate analyses explicitly)
+- `audioSourceStore` - Playback-source authority (URL resolution lifecycle)
+- `audioCache` / `rawFileCache` - Decoded PCM / original bytes (non-reactive)
+- `bandEditingStore` - Ephemeral band-authoring UI state
+- `display.ts` - Normalize-at-the-edge helpers (`toDisplaySignal`, `toUiResult`)
+
+Remaining domain stores in `lib/stores`: `timingStore` (beat grid + musical time +
+manual tempo), `projectStore` (schema v2: `Project.streams`, version-checked
+load), signal/event stores (derived/composed/authored/candidate), `playbackStore`,
+`mirStore` (display UI state only — no results).
 
 ## Development Notes
 

@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { useConfigStore, useMirStore, useTabResult, useDisplayedHeatmap } from "@/lib/stores";
+import { useAnalysisStore } from "@/lib/streams";
 
 /**
  * Debug panel component that displays debug options and timing information.
@@ -42,7 +43,7 @@ export function DebugPanel() {
   );
 
   // MIR store
-  const lastTimings = useMirStore((s) => s.lastTimings);
+  const lastTimings = useAnalysisStore((s) => s.lastRun);
 
   // Derived state
   const tabResult = useTabResult();

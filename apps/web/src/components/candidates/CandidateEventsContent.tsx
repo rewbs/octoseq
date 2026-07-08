@@ -5,7 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { Sparkles, Trash2, Info, Loader2, ChevronDown, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useStreamStore } from "@/lib/streams";
 import {
   useCandidateEventStore,
   type CandidateEventType,
@@ -43,9 +43,8 @@ export function CandidateEventsContent({ audioDuration }: CandidateEventsContent
       }))
     );
 
-  const audioCollection = useAudioInputStore((s) => s.collection);
   const hasAudio = audioDuration > 0;
-  const hasInputs = audioCollection !== null;
+  const hasInputs = useStreamStore((s) => s.streams.size > 0);
 
   const {
     generateAll,
@@ -75,10 +74,10 @@ export function CandidateEventsContent({ audioDuration }: CandidateEventsContent
 
   // Check if any source has analysis available
   const hasAnyAnalysis = useCallback(() => {
-    if (!audioCollection) return false;
+    if (!hasInputs) return false;
     const mixdownId = "mixdown";
     return EVENT_TYPES.some((type) => hasAnalysisFor(mixdownId, type));
-  }, [audioCollection, hasAnalysisFor]);
+  }, [hasInputs, hasAnalysisFor]);
 
   const handleGenerateAll = useCallback(() => {
     if (!isGenerating) {

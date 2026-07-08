@@ -12,7 +12,7 @@ import type {
   ComposedSignalNode,
   InterpolationType,
 } from "@/lib/stores/types/composedSignal";
-import type { SubBeatDivision } from "@/lib/stores/beatGridStore";
+import type { SubBeatDivision } from "@/lib/stores/timingStore";
 
 /**
  * Apply an easing function to a normalized t value [0, 1].

@@ -13,7 +13,7 @@
  */
 
 import type { AudioBufferLike } from "@octoseq/mir";
-import type { AudioSource } from "@/lib/stores/types/audioInput";
+import type { AudioSource } from "@/lib/streams";
 import { getAssetDownloadUrls } from "@/lib/actions/asset";
 
 // -----------------------------------------------------------------------------

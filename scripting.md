@@ -137,7 +137,7 @@ For declarative Signal visualization, use `line.trace()` instead of `line.strip(
 
 ```rhai
 // Create a line that automatically traces a Signal over time
-let amplitude_trace = line.trace(inputs.mix.rms, #{
+let energy_trace = line.trace(inputs.mix.energy, #{
     max_points: 256,  // Ring buffer size (default: 256)
     mode: "line",     // "line" or "points" (default: "line")
     x_scale: 1.0,     // Scale factor for X axis (time) (default: 1.0)
@@ -166,7 +166,7 @@ fn update(dt, frame) {
 }
 
 // Declarative (line.trace) - automatic Signal evaluation
-let trace = line.trace(inputs.mix.rms, #{ max_points: 256 });
+let trace = line.trace(inputs.mix.energy, #{ max_points: 256 });
 // No update() code needed - engine evaluates Signal automatically
 ```
 
@@ -176,7 +176,7 @@ Ribbons are thick extruded lines that create 3D path visualizations from Signal 
 
 ```rhai
 // Create a ribbon that traces a Signal with visual thickness
-let ribbon = line.ribbon(inputs.mix.rms, #{
+let ribbon = line.ribbon(inputs.mix.energy, #{
     max_points: 256,    // Ring buffer size (default: 256)
     mode: "strip",      // "strip" (flat) or "tube" (cylindrical)
     width: 0.1,         // Ribbon width/diameter (default: 0.1)
@@ -206,12 +206,12 @@ let ring = radial.ring(#{
     radius: 1.0,        // Distance from center (default: 1.0)
     thickness: 0.1,     // Ring thickness (default: 0.1)
     start_angle: 0.0,   // Start angle in radians (default: 0.0)
-    end_angle: TAU,     // End angle in radians (default: TAU = full circle)
+    end_angle: 6.283185, // End angle in radians (default: 2π = full circle)
     segments: 64        // Smoothness (default: 64)
 });
 
 // Create a signal-modulated circular waveform
-let wave = radial.wave(inputs.mix.rms, #{
+let wave = radial.wave(inputs.mix.energy, #{
     base_radius: 1.0,   // Base radius (default: 1.0)
     amplitude: 0.5,     // Modulation amplitude (default: 0.5)
     wave_frequency: 4,  // Waves per revolution (default: 4)
@@ -402,7 +402,7 @@ Not supported (signals are treated as plain values and won’t evaluate):
 ```rhai
 fn update(dt, frame) {
     // Declarative: assign a Signal graph (evaluated by the engine each frame)
-    cube.scale = inputs.mix.rms
+    cube.scale = inputs.mix.energy
         .smooth.exponential(0.05, 0.2)
         .normalise.robust()
         .scale(0.5)
@@ -421,9 +421,8 @@ If frequency bands are available, scripts get a band-scoped namespace at `inputs
 - Use `log.info(inputs.mix.bands)` to inspect available keys (and `describe(inputs.mix.bands)` for the API shape).
 
 Each band entry is a `BandSignals` object with:
-- `energy`, `onset`, `flux`, `centroid`, `amplitude` (alias of `energy`) → `Signal`
+- `energy`, `onset`, `flux`, `centroid` → `Signal`
 - `beatCandidates`, `onsetPeaks` → `EventStream` (pre-extracted events)
-- `events` → `EventStream` (legacy, prefer `beatCandidates`/`onsetPeaks`)
 
 ```rhai
 // Drive visuals from a band's energy signal
@@ -434,7 +433,7 @@ let bass = inputs.mix.bands["Bass"].energy
 cube.position.y = bass.scale(2.0);
 
 // Turn band-scoped events into an envelope signal
-let hits = inputs.mix.bands["Bass"].events.to_signal(#{
+let hits = inputs.mix.bands["Bass"].onsetPeaks.to_signal(#{
     envelope: "attack_decay",
     attack_beats: 0.01,
     decay_beats: 0.25,
@@ -460,23 +459,47 @@ Derived Signals are user-defined 1D signals created from various source types. T
 
 **Accessing in Scripts:**
 ```rhai
-// Access derived signal by name
+let cube = mesh.cube();
+
+// Access derived signals by name
 let bass_energy = inputs.customSignals["Bass Energy"];
+let treble_energy = inputs.customSignals["Treble Energy"];
 
-// Compose with other Signal operations
-cube.scale = bass_energy
-    .smooth.exponential(0.05, 0.2)
-    .normalise.robust()
-    .scale(0.5)
-    .add(1.0);
+fn update(dt, frame) {
+    // Compose with other Signal operations
+    cube.scale = bass_energy
+        .smooth.exponential(0.05, 0.2)
+        .normalise.robust()
+        .scale(0.5)
+        .add(1.0);
 
-// Combine with other signals
-let combined = inputs.customSignals["Bass Energy"]
-    .scale(0.5)
-    .add(inputs.customSignals["Treble Energy"].scale(0.5));
+    // Combine with other signals
+    let combined = bass_energy
+        .scale(0.5)
+        .add(treble_energy.scale(0.5));
+}
 ```
 
 Derived Signals are pre-computed and cached, making them efficient for complex derivations that would be expensive to compute per-frame.
+
+### Composed Signals
+
+Composed Signals are human-authored interpretation curves (keyframe envelopes drawn
+over the beat grid in the lab). They are accessible via
+`inputs.composedSignals["signal_name"]` and behave like any other Signal:
+
+```rhai
+let cube = mesh.cube();
+
+fn update(dt, frame) {
+    // A hand-drawn intensity curve driving scale
+    let intensity = inputs.composedSignals["intensity"];
+    cube.scale = intensity.smooth.exponential(0.05, 0.2).add(1.0);
+}
+```
+
+Composed signals are name-keyed and fully isolated from `inputs.customSignals` —
+a composed signal and a derived signal may share a name without shadowing each other.
 
 ### Time Signals
 
@@ -484,12 +507,12 @@ The `timing` namespace provides canonical time signals for declarative time-base
 
 ```rhai
 // Time signals - all return Signal objects
-timing.time          // Elapsed time in seconds
-timing.dt            // Delta time since last frame
-timing.beatPosition  // Current beat position (continuous)
-timing.beatIndex     // Current beat index (integer-valued)
-timing.beatPhase     // Beat phase 0-1 (fractional part of beat position)
-timing.bpm           // Current BPM (from beat grid, or 120.0 default)
+timing.time;          // Elapsed time in seconds
+timing.dt;            // Delta time since last frame
+timing.beatPosition;  // Current beat position (continuous)
+timing.beatIndex;     // Current beat index (integer-valued)
+timing.beatPhase;     // Beat phase 0-1 (fractional part of beat position)
+timing.bpm;           // Current BPM (from beat grid, or 120.0 default)
 ```
 
 **Declarative vs Imperative Time-Based Animation:**
@@ -501,7 +524,9 @@ fn update(dt, frame) {
     phase += dt * 0.5;
     cube.rotation.y = phase;
 }
+```
 
+```rhai
 // AFTER (declarative): use timing signals
 fn update(dt, frame) {
     cube.rotation.y = timing.time.scale(0.5);
@@ -535,30 +560,21 @@ let powered = signal.pow(2.0);       // Raise to power
 let lerped = sig1.lerp(sig2, 0.5);   // Linear interpolation
 ```
 
-**Important: Use Methods, Not Operators**
+**Operators and methods are interchangeable**
 
-Rhai does not support custom operator overloading. You **cannot** use `+`, `-`, `*`, `/` on Signals:
+`+`, `-`, `*`, `/` work between two Signals, and between a Signal and a numeric
+literal (float or integer) in either operand order. Method chaining is equivalent:
 
 ```rhai
-// ❌ WRONG - will fail with type error
+// Operators with literals
 let result = signal + 0.5;
 let result = signal * 2.0;
-let result = 1.0 - signal;
+let inverted = 1.0 - signal;
 
-// ✅ CORRECT - use method chaining
+// Equivalent method chaining
 let result = signal.add(0.5);
 let result = signal.scale(2.0);
-let result = gen.constant(1.0).sub(signal);
-```
-
-For `scalar op signal` patterns, use the signal's method with `gen.constant()`:
-
-```rhai
-// Instead of: 1.0 - signal
 let inverted = gen.constant(1.0).sub(signal);
-
-// Instead of: 2.0 * signal
-let doubled = signal.scale(2.0);  // commutative, so this works
 ```
 
 ### Smoothing
@@ -633,6 +649,9 @@ let tangent = signal.tan();     // tan(value)
 let asin_val = signal.asin();   // asin(value), input clamped to [-1, 1]
 let acos_val = signal.acos();   // acos(value), input clamped to [-1, 1]
 let atan_val = signal.atan();   // atan(value)
+
+let sig_y = gen.sin(1.0, 0.0);
+let sig_x = gen.sin(1.0, 0.25);
 let atan2_val = sig_y.atan2(sig_x);  // atan2(y, x)
 ```
 
@@ -690,15 +709,17 @@ let mapped = signal.map(0.0, 1.0, -1.0, 1.0);  // [0,1] → [-1,1]
 let smooth = signal.smoothstep(0.2, 0.8);  // Smooth transition in [0.2, 0.8]
 
 // Linear interpolation between two signals
+let sig_a = gen.sin(1.0, 0.0);
+let sig_b = inputs.mix.energy;
 let blended = sig_a.lerp(sig_b, 0.5);  // 50% blend
-let dynamic_blend = sig_a.lerp(sig_b, inputs.mix.rms);  // Audio-reactive blend
+let dynamic_blend = sig_a.lerp(sig_b, inputs.mix.onset);  // Audio-reactive blend
 ```
 
 All mapping parameters can be Signals for dynamic control:
 
 ```rhai
 // Dynamic range mapping based on audio energy
-let out_max = inputs.mix.rms.scale(2.0).add(1.0);
+let out_max = inputs.mix.energy.scale(2.0).add(1.0);
 let mapped = signal.map(0.0, 1.0, 0.0, out_max);
 ```
 
@@ -718,7 +739,7 @@ Many signal methods accept either a constant or another signal as a parameter. T
 let static_decay = signal.integrate(2.0);
 
 // Dynamic: decay rate controlled by another signal
-let decay_signal = inputs.mix.rms.normalise.robust().scale(4.0);
+let decay_signal = inputs.mix.energy.normalise.robust().scale(4.0);
 let dynamic_decay = signal.integrate(decay_signal);
 
 // Dynamic delay modulated by onset envelope
@@ -726,8 +747,8 @@ let delay_amount = inputs.mix.onset.normalise.robust().scale(0.5);
 let wobbly_delay = signal.delay(delay_amount);
 
 // Dynamic clamping range
-let min_bound = inputs.mix.rms.scale(0.2);
-let max_bound = inputs.mix.rms.scale(0.8).add(0.2);
+let min_bound = inputs.mix.energy.scale(0.2);
+let max_bound = inputs.mix.energy.scale(0.8).add(0.2);
 let adaptive_clamp = signal.clamp(min_bound, max_bound);
 ```
 
@@ -794,16 +815,20 @@ let value = signal.sample_at(5.0);  // Get value at t=5 seconds
 ```rhai
 // ✅ Good: Debug/inspection during development
 fn init(ctx) {
-    let peak_at_chorus = inputs.mix.rms.sample_at(45.0);
-    log.info("Amplitude at chorus: " + peak_at_chorus);
+    let peak_at_chorus = inputs.mix.energy.sample_at(45.0);
+    log.info("Energy at chorus: " + peak_at_chorus);
 }
+```
 
+```rhai
 // ✅ Good: One-time init calculations
 fn init(ctx) {
     let avg_energy = inputs.mix.energy.sample_at(30.0);  // Sample at 30s
     // Use for initial setup...
 }
+```
 
+```rhai
 // ❌ Avoid: Per-frame sampling (defeats declarative model)
 fn update(dt, frame) {
     // Don't do this - just assign the signal directly!
@@ -927,7 +952,7 @@ let envelope = events.to_signal(#{
 Create signals based on temporal distance to events:
 
 ```rhai
-let kicks = inputs.mix.kick.events(0.3);
+let kicks = inputs.mix.onset.pick.events(#{ min_threshold: 0.3 });
 
 // Distance from previous event (0 at event, grows linearly)
 let time_since_kick = kicks.beats_from_prev();       // In beats
@@ -956,34 +981,34 @@ let anticipation = kicks.beats_to_next()
 Count events within a time window:
 
 ```rhai
-let kicks = inputs.mix.kick.events(0.3);
+let kicks = inputs.mix.onset.pick.events(#{ min_threshold: 0.3 });
 
 // Count events in a window looking backwards
-let recent_kicks = kicks.count_prev_beats(4.0);      // Events in last 4 beats
-let recent_secs = kicks.count_prev_seconds(2.0);     // Events in last 2 seconds
-let recent_frames = kicks.count_prev_frames(60.0);   // Events in last 60 frames
+let recent_kicks = kicks.count_prev_beats(4.0);    // Events in last 4 beats
+let recent_secs = kicks.count_prev_seconds(2);     // Events in last 2 seconds
+let recent_frames = kicks.count_prev_frames(60);   // Events in last 60 frames
 
 // Count events in a window looking forwards
-let upcoming = kicks.count_next_beats(4.0);          // Events in next 4 beats
-let upcoming_secs = kicks.count_next_seconds(2.0);   // Events in next 2 seconds
+let upcoming = kicks.count_next_beats(4);          // Events in next 4 beats
+let upcoming_secs = kicks.count_next_seconds(2);   // Events in next 2 seconds
 
 // Density: count / window_size (events per unit time)
-let kick_rate = kicks.density_prev_beats(8.0);       // Kicks per beat over 8 beats
-let kick_hz = kicks.density_prev_seconds(4.0);       // Kicks per second over 4 seconds
+let kick_rate = kicks.density_prev_beats(8);       // Kicks per beat over 8 beats
+let kick_hz = kicks.density_prev_seconds(4);       // Kicks per second over 4 seconds
 
 // Use activity to control intensity
-let activity = kicks.count_prev_beats(8.0);
+let activity = kicks.count_prev_beats(8);
 cube.scale = activity.scale(0.1).add(1.0);
 ```
 
-**Window parameter:** Can be a constant or a Signal for dynamic windows.
+**Window parameter:** Can be a numeric constant (float or integer) or a Signal for dynamic windows (e.g. `kicks.count_prev_beats(1.5)`).
 
 ### Event Phase Signal
 
 Get position between events as a 0-1 value:
 
 ```rhai
-let beats = inputs.mix.beat.events(0.5);
+let beats = inputs.mix.onset.pick.events(#{ target_density: 1.0 });
 
 // Phase: 0 at previous event, 1 at next event
 let phase = beats.beat_phase_between();
@@ -1005,7 +1030,7 @@ let anticipation = phase.scale(2.0).clamp(0.0, 1.0);  // Build up in second half
 `impulse()` is an alias for `to_signal()`:
 
 ```rhai
-let kicks = inputs.mix.kick.events(0.3);
+let kicks = inputs.mix.onset.pick.events(#{ min_threshold: 0.3 });
 
 // These are equivalent
 let impulse1 = kicks.impulse();
@@ -1178,7 +1203,7 @@ fn init(ctx) {
 
 fn update(dt, frame) {
     // === CENTER CUBE: Declarative reactivity (assign a Signal to a numeric field) ===
-    center_cube.scale = inputs.mix.rms
+    center_cube.scale = inputs.mix.energy
         .smooth.exponential(0.05, 0.2)
         .normalise.robust()
         .scale(0.6)
@@ -1379,7 +1404,7 @@ fn update(dt, frame) {
     high_cube.position.y = highs.scale(1.5);
 
     // Band-scoped events → envelope flash
-    let bass_hit = inputs.mix.bands["Bass"].events.to_signal(#{
+    let bass_hit = inputs.mix.bands["Bass"].onsetPeaks.to_signal(#{
         envelope: "attack_decay",
         attack_beats: 0.01,
         decay_beats: 0.25,
@@ -1478,7 +1503,7 @@ fn init(ctx) {
 
 fn update(dt, frame) {
     // Audio reactivity
-    let energy = inputs.mix.rms
+    let energy = inputs.mix.energy
         .smooth.exponential(0.1, 0.3)
         .normalise.robust();
 
@@ -1555,7 +1580,7 @@ fn update(dt, frame) {
     // === ENERGY CUBE: Accumulated energy with decay ===
     // integrate() accumulates the signal over time
     // The decay parameter (2.0) makes old values fade
-    let accumulated = inputs.mix.rms
+    let accumulated = inputs.mix.energy
         .normalise.robust()
         .integrate(2.0)                   // Accumulate with decay
         .clamp(0.0, 3.0)                  // Prevent runaway growth
@@ -1580,7 +1605,7 @@ let beat_ring = scene.group();
 let beat_indicators = [];
 
 // === SIGNALS (computed once, evaluated every frame) ===
-let amplitude = inputs.mix.rms
+let amplitude = inputs.mix.energy
     .smooth.exponential(0.05, 0.2)
     .normalise.robust()
     .probe("vis_amplitude");
@@ -1756,7 +1781,7 @@ Use the `feedback` API to create Milkdrop-style temporal effects: trails, motion
 let cube = mesh.cube();
 
 // Audio-reactive signals
-let energy = inputs.mix.rms
+let energy = inputs.mix.energy
     .smooth.exponential(0.05, 0.2)
     .normalise.robust();
 
@@ -1833,7 +1858,7 @@ For audio-reactive feedback parameters, recreate and re-enable the config in `up
 ```rhai
 let sphere = mesh.sphere();
 
-let energy = inputs.mix.rms
+let energy = inputs.mix.energy
     .smooth.exponential(0.1, 0.3)
     .normalise.robust();
 
@@ -1972,7 +1997,7 @@ let cube = mesh.cube();
 let glowing_sphere = mesh.sphere();
 
 // Audio-reactive signals
-let energy = inputs.mix.rms
+let energy = inputs.mix.energy
     .smooth.exponential(0.05, 0.2)
     .normalise.robust();
 
@@ -2070,7 +2095,7 @@ fn update(dt, frame) {
     cube.rotation.y += dt * 0.5;
 
     // Signal-driven bloom intensity
-    bloom.intensity = inputs.mix.rms
+    bloom.intensity = inputs.mix.energy
         .smooth.exponential(0.05, 0.2)
         .normalise.robust()
         .scale(0.8);
@@ -2168,7 +2193,7 @@ let main_sphere = mesh.sphere();
 let accent_cubes = [];
 
 // Audio signals
-let energy = inputs.mix.rms
+let energy = inputs.mix.energy
     .smooth.exponential(0.05, 0.2)
     .normalise.robust();
 
@@ -2278,21 +2303,6 @@ Use detected pitch (f0) and confidence signals to drive visualization. The `pitc
 let vocal_sphere = mesh.sphere();
 let background = mesh.plane();
 
-// Pitch signal (Hz) - use normalise.robust() to map to 0-1 range for visuals
-let pitch = inputs.mix.pitch
-    .smooth.exponential(0.05, 0.15)
-    .normalise.robust();  // Maps typical vocal range to 0-1
-
-// Confidence signal - use to gate pitch when not confident
-let confidence = inputs.mix.pitchConfidence
-    .smooth.exponential(0.1, 0.3);
-
-// Derive "voiced" signal by thresholding confidence
-let voiced = confidence.gate.threshold(0.5);
-
-// Only react to pitch when we're confident it's voiced
-let pitch_when_voiced = pitch.mul(voiced);
-
 fn init(ctx) {
     vocal_sphere.position = #{ x: 0.0, y: 1.0, z: 0.0 };
     vocal_sphere.scale = 0.5;
@@ -2305,6 +2315,22 @@ fn init(ctx) {
 }
 
 fn update(dt, frame) {
+    // Pitch signal (Hz) - use normalise.robust() to map to 0-1 range for visuals
+    // (only present when the analysis package includes pitch detection)
+    let pitch = inputs.mix.pitch
+        .smooth.exponential(0.05, 0.15)
+        .normalise.robust();  // Maps typical vocal range to 0-1
+
+    // Confidence signal - use to gate pitch when not confident
+    let confidence = inputs.mix.pitchConfidence
+        .smooth.exponential(0.1, 0.3);
+
+    // Derive "voiced" signal by thresholding confidence
+    let voiced = confidence.gate.threshold(0.5);
+
+    // Only react to pitch when we're confident it's voiced
+    let pitch_when_voiced = pitch.mul(voiced);
+
     // Sphere rises with pitch (higher pitch = higher position)
     vocal_sphere.position.y = pitch_when_voiced.scale(2.0).add(0.5);
 
@@ -2448,12 +2474,14 @@ Comparison methods return boolean-valued signals (1.0 = true, 0.0 = false).
 
 | Method | Signature                                 | Description                           |
 | ------ | ----------------------------------------- | ------------------------------------- |
-| `lt`   | `(Signal) -> Signal` or `(f32) -> Signal` | Less than                             |
-| `gt`   | `(Signal) -> Signal` or `(f32) -> Signal` | Greater than                          |
-| `le`   | `(Signal) -> Signal` or `(f32) -> Signal` | Less than or equal                    |
-| `ge`   | `(Signal) -> Signal` or `(f32) -> Signal` | Greater than or equal                 |
-| `eq`   | `(Signal) -> Signal` or `(f32) -> Signal` | Equal (epsilon tolerance: 1e-6)       |
-| `ne`   | `(Signal) -> Signal` or `(f32) -> Signal` | Not equal                             |
+| `lt`   | `(Signal \| f32 \| i64) -> Signal` | Less than                             |
+| `gt`   | `(Signal \| f32 \| i64) -> Signal` | Greater than                          |
+| `le`   | `(Signal \| f32 \| i64) -> Signal` | Less than or equal                    |
+| `ge`   | `(Signal \| f32 \| i64) -> Signal` | Greater than or equal                 |
+| `eq`   | `(Signal \| f32 \| i64) -> Signal` | Equal (epsilon tolerance: 1e-6)       |
+| `ne`   | `(Signal \| f32 \| i64) -> Signal` | Not equal                             |
+
+**Note:** Thresholds accept a `Signal` or a numeric literal (float or integer).
 
 ```rhai
 let isLoud = inputs.mix.energy.gt(0.7);
@@ -2472,6 +2500,9 @@ Combine boolean signals with logical operators.
 | `not`  | `() -> Signal`         | True if <= 0                          |
 
 ```rhai
+let energy = inputs.mix.energy;
+let flux = inputs.mix.flux;
+
 let isMedium = energy.ge(0.3).and(energy.le(0.7));
 let isActive = energy.gt(0.5).or(flux.gt(0.3));
 let isSilent = energy.lt(0.1);
@@ -2492,6 +2523,9 @@ Conditions are evaluated in order; the first condition that evaluates to true (>
 The `.otherwise()` call is **required** to produce a valid Signal.
 
 ```rhai
+let cube = mesh.cube();
+let energy = inputs.mix.energy;
+
 // Basic usage - intensity based on energy level
 let intensity = signal.select()
     .when(energy.gt(0.8), gen.constant(1.0))
@@ -2502,10 +2536,14 @@ let intensity = signal.select()
 // Different behaviors for verse vs chorus
 let isChorus = inputs.mix.energy.gt(0.6);
 let scale = signal.select()
-    .when(isChorus, gen.sin(2.0, 0.0).map(-1, 1, 0.5, 2.0))
+    .when(isChorus, gen.sin(2.0, 0.0).map(-1.0, 1.0, 0.5, 2.0))
     .otherwise(gen.constant(1.0));
 
 cube.scale = scale;
+
+fn init(ctx) {
+    scene.add(cube);
+}
 ```
 
 **Important**: `signal.select()` produces a Signal, not control flow. It is evaluated per-frame
@@ -2840,7 +2878,7 @@ With Signal support, users can express intent declaratively:
 ```rhai
 // With Signal support (declarative, expressive)
 let bloom = fx.bloom(#{
-    intensity: inputs.mix.rms.smooth.exponential(0.1, 0.3).scale(0.5)
+    intensity: inputs.mix.energy.smooth.exponential(0.1, 0.3).scale(0.5)
 });
 // Engine evaluates automatically each frame
 ```

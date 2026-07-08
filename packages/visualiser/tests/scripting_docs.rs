@@ -68,7 +68,7 @@ events.limit = |max_events| this;
 events.to_signal = || gen.constant(0.0);
 "#
     } else {
-        r#"let events = inputs.time.pick.events(#{});"#
+        r#"let events = timing.time.pick.events(#{});"#
     };
 
     format!(
@@ -80,11 +80,11 @@ let sparkline = line.strip(#{{ max_points: 8 }});
 let value = 0.0;
 
 // Signal placeholders
-let signal = inputs.time;
-let signal1 = inputs.time;
-let signal2 = inputs.time;
-let sig1 = inputs.time;
-let sig2 = inputs.time;
+let signal = timing.time;
+let signal1 = timing.time;
+let signal2 = timing.time;
+let sig1 = timing.time;
+let sig2 = timing.time;
 {events_binding}
 
 {snippet}

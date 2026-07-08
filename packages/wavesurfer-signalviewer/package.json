@@ -35,7 +35,7 @@
     "@types/node": "latest",
     "eslint": "latest",
     "tsup": "latest",
-    "typescript": "latest",
+    "typescript": "^5",
     "vite": "latest",
     "vitest": "latest",
     "wavesurfer.js": "npm:@rewbs/wavesurfer.js@8.0.0-beta.1"

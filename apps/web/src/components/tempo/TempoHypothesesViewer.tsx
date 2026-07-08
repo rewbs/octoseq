@@ -2,11 +2,11 @@
 
 import { useCallback, useState, useRef, useEffect, useMemo } from "react";
 import { GripHorizontal, Plus, Copy, Trash2, Hand, MousePointerClick, Eye, EyeOff, ChevronDown, ChevronUp } from "lucide-react";
-import { useBeatGridStore } from "@/lib/stores/beatGridStore";
+import { useTimingStore } from "@/lib/stores/timingStore";
 import type { TempoHypothesis, PhaseHypothesis } from "@octoseq/mir";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
 import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
-import type { ExtendedTempoHypothesis, TempoHypothesisSource } from "@/lib/stores/manualTempoStore";
+import type { ExtendedTempoHypothesis, TempoHypothesisSource } from "@/lib/stores/timingStore";
 
 /**
  * Compute beat meter value (1 at beat, decays to 0 over one beat period).
@@ -217,8 +217,8 @@ export function TempoHypothesesViewer({
   onCursorTimeChange,
 }: TempoHypothesesViewerProps) {
   // Beat grid visibility for candidate hypotheses
-  const visibleHypothesisIds = useBeatGridStore((s) => s.visibleHypothesisIds);
-  const toggleHypothesisVisibility = useBeatGridStore((s) => s.toggleHypothesisVisibility);
+  const visibleHypothesisIds = useTimingStore((s) => s.visibleHypothesisIds);
+  const toggleHypothesisVisibility = useTimingStore((s) => s.toggleHypothesisVisibility);
 
   // Manual BPM input state
   const [manualBpmInput, setManualBpmInput] = useState("");

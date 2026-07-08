@@ -1,12 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import type { BandEventData } from "@/lib/stores/bandMirStore";
+import type { BandEventsResult } from "@octoseq/mir";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
 
 export type BandEventOverlayProps = {
     /** Event data for this band */
-    eventData: BandEventData | null;
+    eventData: BandEventsResult | null;
     /** Color for the event markers */
     color: string;
     /** Whether events are visible */
@@ -87,7 +87,7 @@ export function BandEventCountBadge({
     color,
     visible,
 }: {
-    eventData: BandEventData | null;
+    eventData: BandEventsResult | null;
     color: string;
     visible: boolean;
 }) {

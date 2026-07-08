@@ -23,6 +23,9 @@ import { TempoHypothesesViewer, type SignalOption } from "@/components/tempo/Tem
 import { MusicalTimePanel } from "@/components/tempo/MusicalTimePanel";
 import { WaveSurferPlayer, type WaveSurferPlayerHandle } from "@/components/wavesurfer/WaveSurferPlayer";
 import { VisualiserPanel } from "@/components/visualiser/VisualiserPanel";
+import { StreamManagerPanel } from "@/components/streams/StreamManagerPanel";
+import { ComparisonPanel } from "@/components/comparison/ComparisonPanel";
+import { PresetControls } from "@/components/view/PresetControls";
 import { DerivedSignalsPanel } from "@/components/derivedSignal/DerivedSignalsPanel";
 import { ComposedSignalsPanel } from "@/components/composedSignal/ComposedSignalsPanel";
 import { MeshAssetsPanel } from "@/components/meshAssets";
@@ -43,27 +46,34 @@ import { useAssetUpload } from "@/lib/hooks/useAssetUpload";
 import { useCloudAssetUploader } from "@/lib/hooks/useCloudAssetUploader";
 import { useCloudAssetLoader } from "@/lib/hooks/useCloudAssetLoader";
 import { useAudioSourceResolver } from "@/lib/hooks/useAudioSourceResolver";
-import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
-import type { LocalAudioSource } from "@/lib/stores/types/audioInput";
-import { computePhaseHypotheses, createSegmentFromGrid, type BeatCandidate, type MusicalTimeStructure } from "@octoseq/mir";
+import {
+  ALL_STREAM_ANALYSES,
+  MIXDOWN_STREAM_ID,
+  analysisKey,
+  audioCache,
+  isAudioStream,
+  rawFileCache,
+  removeStreamCascade,
+  runStreamAnalyses,
+  toDisplaySignal,
+  toFrequencyBand,
+  useAnalysisStore,
+  useAudioSourceStore,
+  useBandEditingStore,
+  useStreamStore,
+  type LocalAudioSource,
+} from "@/lib/streams";
+import { computePhaseHypotheses, createSegmentFromGrid, type AudioBufferLike, type BeatCandidate, type MusicalTimeStructure } from "@octoseq/mir";
 
 // Stores and hooks
 import {
-  useAudioInputStore,
   usePlaybackStore,
   useConfigStore,
   useMirStore,
   useSearchStore,
-  useBeatGridStore,
-  useMusicalTimeStore,
-  useManualTempoStore,
-  useFrequencyBandStore,
-  useBandMirStore,
-  setupBandMirInvalidation,
-  useMirActions,
+  useTimingStore,
   useNavigationActions,
   useAudioActions,
-  useBandMirActions,
   useProjectActions,
   useCandidatesById,
   useActiveCandidate,
@@ -92,17 +102,36 @@ export default function Home() {
   const userSetUseRefinementRef = useRef(false);
 
   // ===== STORE STATE =====
-  // Audio (from audioInputStore - single source of truth)
-  const audio = useAudioInputStore((s) => s.getAudio());
-  const audioSampleRate = useAudioInputStore((s) => s.getAudioSampleRate());
-  const audioTotalSamples = useAudioInputStore((s) => s.getAudioTotalSamples());
-  const audioDuration = useAudioInputStore((s) => s.getAudioDuration());
+  // Audio (from the unified stream model - single source of truth)
+  const streams = useStreamStore((s) => s.streams);
+  const mixdown = useStreamStore((s) => s.getMixdown());
+  const audio = useMemo(
+    () => (mixdown ? audioCache.get(MIXDOWN_STREAM_ID) : null),
+    [mixdown]
+  );
+  const audioSampleRate = mixdown?.audio.sampleRate ?? null;
+  const audioDuration = mixdown?.audio.durationSec ?? null;
+  const audioTotalSamples = useMemo(
+    () => (audio ? audio.getChannelData(0).length : null),
+    [audio]
+  );
 
-  // Audio input store (for waveform switching and stem checks)
-  const activeDisplayUrl = useAudioInputStore((s) => s.getActiveDisplayUrl());
-  const hasStems = useAudioInputStore((s) => s.hasStems());
-  const clearStems = useAudioInputStore((s) => s.clearStems);
-  const setTriggerFileInput = useAudioInputStore((s) => s.setTriggerFileInput);
+  // Waveform display switching and stem checks
+  const displayedStreamId = useAudioSourceStore((s) => s.displayedStreamId);
+  const activeDisplayUrl = useMemo(() => {
+    const displayed = streams.get(displayedStreamId);
+    return displayed && isAudioStream(displayed) ? displayed.audio.url : null;
+  }, [streams, displayedStreamId]);
+  const hasStems = useMemo(
+    () => [...streams.values()].some((stream) => stream.kind === "stem"),
+    [streams]
+  );
+  const clearStems = useCallback(() => {
+    for (const stem of useStreamStore.getState().getStems()) {
+      removeStreamCascade(stem.id);
+    }
+  }, []);
+  const setTriggerFileInput = useAudioSourceStore((s) => s.setTriggerFileInput);
 
   // Playback store
   const playheadTimeSec = usePlaybackStore((s) => s.playheadTimeSec);
@@ -133,10 +162,16 @@ export default function Home() {
   const setIsDebugOpen = useConfigStore((s) => s.setIsDebugOpen);
 
   // MIR store
-  const mirResults = useMirStore((s) => s.mirResults);
-  const isRunning = useMirStore((s) => s.isRunning);
-  const runningAnalysis = useMirStore((s) => s.runningAnalysis);
-  const lastTimings = useMirStore((s) => s.lastTimings);
+  const isRunning = useAnalysisStore((s) => s.pending.size > 0);
+  const runningAnalysisKey = useAnalysisStore((s) => {
+    const first = s.pending.values().next();
+    return first.done ? null : first.value;
+  });
+  const runningAnalysis = useMemo(
+    () => (runningAnalysisKey ? (runningAnalysisKey.split("::")[1] ?? null) : null),
+    [runningAnalysisKey]
+  );
+  const lastTimings = useAnalysisStore((s) => s.lastRun);
   const visualTab = useMirStore((s) => s.visualTab);
   const setVisualTab = useMirStore((s) => s.setVisualTab);
 
@@ -167,8 +202,8 @@ export default function Home() {
     }))
   );
 
-  // Beat grid store
-  const beatGridState = useBeatGridStore(
+  // Beat grid section of the timing store
+  const beatGridState = useTimingStore(
     useShallow((s) => ({
       selectedHypothesis: s.selectedHypothesis,
       phaseHypotheses: s.phaseHypotheses,
@@ -194,7 +229,7 @@ export default function Home() {
     clear: clearBeatGrid,
     canPromote: canPromoteBeatGrid,
     getPromotableGrid,
-  } = useBeatGridStore(
+  } = useTimingStore(
     useShallow((s) => ({
       selectHypothesis: s.selectHypothesis,
       updateSelectedBpm: s.updateSelectedBpm,
@@ -205,15 +240,15 @@ export default function Home() {
       setLocked: s.setLocked,
       toggleVisibility: s.toggleVisibility,
       toggleMetronome: s.toggleMetronome,
-      clear: s.clear,
+      clear: s.clearBeatGrid,
       canPromote: s.canPromote,
       getPromotableGrid: s.getPromotableGrid,
     }))
   );
 
-  // Musical time store (B4)
-  const musicalTimeStructure = useMusicalTimeStore((s) => s.structure);
-  const musicalTimeSelectedSegmentId = useMusicalTimeStore((s) => s.selectedSegmentId);
+  // Musical time section of the timing store (B4)
+  const musicalTimeStructure = useTimingStore((s) => s.structure);
+  const musicalTimeSelectedSegmentId = useTimingStore((s) => s.selectedSegmentId);
   const {
     promoteGrid,
     selectSegment: selectMusicalTimeSegment,
@@ -222,7 +257,7 @@ export default function Home() {
     updateBoundary: updateMusicalTimeBoundary,
     clearStructure: clearMusicalTime,
     reset: resetMusicalTime,
-  } = useMusicalTimeStore(
+  } = useTimingStore(
     useShallow((s) => ({
       promoteGrid: s.promoteGrid,
       selectSegment: s.selectSegment,
@@ -264,11 +299,11 @@ export default function Home() {
     };
   }, [musicalTimeStructure, beatGridState, audioDuration]);
 
-  // Manual tempo store
-  const manualHypotheses = useManualTempoStore((s) => s.hypotheses);
-  const beatMarkingActive = useManualTempoStore((s) => s.beatMarkingActive);
-  const beatMark1 = useManualTempoStore((s) => s.beatMark1);
-  const beatMark2 = useManualTempoStore((s) => s.beatMark2);
+  // Manual tempo section of the timing store
+  const manualHypotheses = useTimingStore((s) => s.hypotheses);
+  const beatMarkingActive = useTimingStore((s) => s.beatMarkingActive);
+  const beatMark1 = useTimingStore((s) => s.beatMark1);
+  const beatMark2 = useTimingStore((s) => s.beatMark2);
   const {
     createManualHypothesis,
     duplicateHypothesis,
@@ -282,14 +317,14 @@ export default function Home() {
     updateBeatMark,
     resetBeatMarks,
     getMarkedBpm,
-  } = useManualTempoStore(
+  } = useTimingStore(
     useShallow((s) => ({
       createManualHypothesis: s.createManualHypothesis,
       duplicateHypothesis: s.duplicateHypothesis,
       updateHypothesisBpm: s.updateHypothesisBpm,
       deleteHypothesis: s.deleteHypothesis,
       recordTap: s.recordTap,
-      clear: s.clear,
+      clear: s.clearManualTempo,
       startBeatMarking: s.startBeatMarking,
       stopBeatMarking: s.stopBeatMarking,
       placeBeatMark: s.placeBeatMark,
@@ -299,17 +334,20 @@ export default function Home() {
     }))
   );
 
-  // Frequency band store
-  const hasBands = useFrequencyBandStore((s) => (s.structure?.bands.length ?? 0) > 0);
-  const { structure: bandStructure, soloedBandId, mutedBandIds } = useFrequencyBandStore(
-    useShallow((s) => ({
-      structure: s.structure,
-      soloedBandId: s.soloedBandId,
-      mutedBandIds: s.mutedBandIds,
-    }))
+  // Band streams (unified model)
+  const bandStreams = useMemo(
+    () =>
+      [...streams.values()]
+        .filter((s) => s.kind === "band")
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
   );
-  // Subscribe to band MIR cache for tempo signal options refresh
-  const bandMirCacheSize = useBandMirStore((s) => s.cache.size);
+  const hasBands = bandStreams.length > 0;
+  const legacyBands = useMemo(() => bandStreams.map(toFrequencyBand), [bandStreams]);
+  const soloedBandId = useBandEditingStore((s) => s.soloedBandId);
+  const mutedBandIds = useBandEditingStore((s) => s.mutedBandIds);
+  // Subscribe to the analysis cache for tempo signal options refresh
+  const analysisResults = useAnalysisStore((s) => s.results);
   // No-op callback - components report progress but we don't display it
   const handleBandWaveformsReadyChange = useCallback(
     () => { },
@@ -317,11 +355,10 @@ export default function Home() {
   ) as (status: { ready: number; total: number }) => void;
 
   // Get audio URL for a specific source (used by band auditioning)
-  const getInputById = useAudioInputStore((s) => s.getInputById);
-  const getAudioUrlForSource = useCallback(
-    (sourceId: string) => getInputById(sourceId)?.audioUrl ?? null,
-    [getInputById]
-  );
+  const getAudioUrlForSource = useCallback((sourceId: string) => {
+    const stream = useStreamStore.getState().getStream(sourceId);
+    return stream && isAudioStream(stream) ? stream.audio.url : null;
+  }, []);
 
   // Tree selection state - to hide main viz when derived signals or event streams is selected
   const selectedNodeId = useInterpretationTreeStore((s) => s.selectedNodeId);
@@ -332,13 +369,14 @@ export default function Home() {
 
   // Derive the active audio source ID from the selected tree node (for filtering band overlays)
   const activeSourceId = useMemo(() => {
-    if (!selectedNodeId) return MIXDOWN_ID;
-    return getAudioSourceId(selectedNodeId) ?? MIXDOWN_ID;
+    if (!selectedNodeId) return MIXDOWN_STREAM_ID;
+    return getAudioSourceId(selectedNodeId) ?? MIXDOWN_STREAM_ID;
   }, [selectedNodeId]);
 
   // ===== ACTION HOOKS =====
-  const { runAllAnalyses } = useMirActions();
-  const { runBandAnalysis } = useBandMirActions();
+  const runAllAnalyses = useCallback(() => {
+    void runStreamAnalyses([MIXDOWN_STREAM_ID], ALL_STREAM_ANALYSES);
+  }, []);
   const { loadProject } = useProjectActions();
   const { loadProjectAssets } = useCloudAssetLoader();
 
@@ -359,7 +397,7 @@ export default function Home() {
         console.log(`[Recovery] Cloud assets loaded: ${successCount} success, ${failCount} failed`);
 
         // If the mixdown was loaded successfully, trigger MIR analysis
-        const mixdownLoaded = assetResults.some((r) => r.inputId === MIXDOWN_ID && r.success);
+        const mixdownLoaded = assetResults.some((r) => r.inputId === MIXDOWN_STREAM_ID && r.success);
         if (mixdownLoaded) {
           console.log("[Recovery] Mixdown loaded, triggering MIR analysis...");
           runAllAnalyses();
@@ -377,7 +415,7 @@ export default function Home() {
   // Watches currentAudioSource and resolves URLs for playback.
   // This is the bridge between AudioSource and WaveSurfer.
   useAudioSourceResolver();
-  const setCurrentAudioSource = useAudioInputStore((s) => s.setCurrentAudioSource);
+  const setCurrentAudioSource = useAudioSourceStore((s) => s.setCurrentSource);
   const { handleAudioDecoded, triggerFileInput } = useAudioActions({
     fileInputRef,
     onAudioLoaded: runAllAnalyses,
@@ -411,7 +449,7 @@ export default function Home() {
     enabled: true,
     soloedBandId,
     mutedBandIds,
-    structure: bandStructure,
+    bands: legacyBands,
     playheadTimeSec,
     isMainPlaying: isAudioPlaying,
     mainVolume: 1,
@@ -471,15 +509,12 @@ export default function Home() {
 
   // ===== STEM CONFIRMATION DIALOG =====
   // State for pending audio load when stems exist
-  const [pendingAudio, setPendingAudio] = useState<{
-    sampleRate: number;
-    getChannelData: (n: number) => Float32Array;
-  } | null>(null);
+  const [pendingAudio, setPendingAudio] = useState<AudioBufferLike | null>(null);
   const [showStemConfirmDialog, setShowStemConfirmDialog] = useState(false);
 
   // Wrapped audio decoded handler that shows confirmation if stems exist
   const handleAudioDecodedWithConfirmation = useCallback(
-    (a: { sampleRate: number; getChannelData: (n: number) => Float32Array }) => {
+    (a: AudioBufferLike) => {
       if (hasStems) {
         // Store pending audio and show confirmation dialog
         setPendingAudio(a);
@@ -524,7 +559,7 @@ export default function Home() {
       // =======================================================================
       const localSource: LocalAudioSource = {
         type: "local",
-        id: MIXDOWN_ID,
+        id: MIXDOWN_STREAM_ID,
         file,
         status: "pending",
       };
@@ -549,10 +584,14 @@ export default function Home() {
         },
         onComplete: (cloudAssetId) => {
           console.log("[AudioUpload] Upload complete, setting cloudAssetId:", cloudAssetId);
-          // Update the mixdown input with the cloud asset ID
-          useAudioInputStore.getState().setCloudAssetId(MIXDOWN_ID, cloudAssetId);
+          // Update the mixdown stream with the cloud asset ID
+          const streamStore = useStreamStore.getState();
+          const mix = streamStore.getMixdown();
+          if (mix) {
+            streamStore.updateAudio(MIXDOWN_STREAM_ID, { ...mix.audio, cloudAssetId });
+          }
           // Clear raw buffer since upload is complete
-          useAudioInputStore.getState().clearRawBuffer(MIXDOWN_ID);
+          rawFileCache.delete(MIXDOWN_STREAM_ID);
         },
         onError: (error) => {
           console.error("[AudioUpload] Upload failed:", error);
@@ -561,10 +600,15 @@ export default function Home() {
 
       if (result) {
         // Store the content hash and mime type immediately
-        useAudioInputStore.getState().setAssetMetadata(MIXDOWN_ID, {
-          contentHash: result.contentHash,
-          mimeType: result.mimeType,
-        });
+        const streamStore = useStreamStore.getState();
+        const mix = streamStore.getMixdown();
+        if (mix) {
+          streamStore.updateAudio(MIXDOWN_STREAM_ID, {
+            ...mix.audio,
+            contentHash: result.contentHash,
+            mimeType: result.mimeType,
+          });
+        }
       }
     },
     [isCloudUploadEnabled, uploadToCloud, setCurrentAudioSource]
@@ -585,20 +629,20 @@ export default function Home() {
     ];
 
     for (const sig of mir1dSignals) {
-      const result = mirResults[sig.id];
+      const result = analysisResults.get(analysisKey(MIXDOWN_STREAM_ID, sig.id));
+      const display = result ? toDisplaySignal(result, sig.id) : null;
       options.push({
         id: sig.id,
         label: sig.label,
         group: "mir",
-        data: result?.kind === "1d" ? { times: result.times, values: result.values } : null,
+        data: display,
       });
     }
 
-    // Band amplitude signals (if available)
-    const bands = bandStructure?.bands ?? [];
-    for (const band of bands) {
-      const bandResult = useBandMirStore.getState().cache.get(`${band.id}:bandOnsetStrength`);
-      if (bandResult) {
+    // Band onset signals (if available)
+    for (const band of bandStreams) {
+      const bandResult = analysisResults.get(analysisKey(band.id, "onsetEnvelope"));
+      if (bandResult && bandResult.kind === "bandMir1d") {
         options.push({
           id: `band:${band.id}:onsetStrength`,
           label: `${band.label} Onset`,
@@ -609,15 +653,14 @@ export default function Home() {
     }
 
     return options;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- bandMirCacheSize triggers refresh when band analysis completes
-  }, [mirResults, bandStructure, bandMirCacheSize]);
+  }, [bandStreams, analysisResults]);
 
   // Auto-compute amplitude envelope when band is selected but data missing
   useEffect(() => {
     if (selectedBandAmplitudeId && !bandAmplitudeData && audio) {
-      void runBandAnalysis([selectedBandAmplitudeId], ["bandAmplitudeEnvelope"]);
+      void runStreamAnalyses([selectedBandAmplitudeId], ["amplitudeEnvelope"]);
     }
-  }, [selectedBandAmplitudeId, bandAmplitudeData, audio, runBandAnalysis]);
+  }, [selectedBandAmplitudeId, bandAmplitudeData, audio]);
 
   // ===== DERIVED STATE HOOKS =====
   const candidatesById = useCandidatesById();
@@ -638,14 +681,14 @@ export default function Home() {
 
   // Extract beat candidates from MIR results for phase alignment
   const beatCandidates = useMemo((): BeatCandidate[] => {
-    const result = mirResults?.beatCandidates;
-    if (!result || result.kind !== "events") return [];
-    return result.events.map((e) => ({
-      time: e.time,
-      strength: e.strength,
+    const result = analysisResults.get(analysisKey(MIXDOWN_STREAM_ID, "beatCandidates"));
+    if (!result || result.kind !== "beatCandidates") return [];
+    return result.candidates.map((c) => ({
+      time: c.time,
+      strength: c.strength,
       source: "combined" as const,
     }));
-  }, [mirResults]);
+  }, [analysisResults]);
 
   // ===== KEYBOARD SHORTCUTS =====
   useKeyboardShortcuts({
@@ -699,11 +742,6 @@ export default function Home() {
       clearBeatGrid();
     }
   }, [audio, clearBeatGrid]);
-
-  // Invalidate band MIR cache when bands change
-  useEffect(() => {
-    return setupBandMirInvalidation();
-  }, []);
 
   // Reset musical time when audio is cleared
   useEffect(() => {
@@ -965,7 +1003,7 @@ export default function Home() {
               console.log(`Cloud assets loaded: ${successCount} success, ${failCount} failed`);
 
               // If the mixdown was loaded successfully, trigger MIR analysis
-              const mixdownLoaded = assetResults.some((r) => r.inputId === MIXDOWN_ID && r.success);
+              const mixdownLoaded = assetResults.some((r) => r.inputId === MIXDOWN_STREAM_ID && r.success);
               if (mixdownLoaded) {
                 console.log("[ProjectLoad] Mixdown loaded, triggering MIR analysis...");
                 runAllAnalyses();
@@ -1031,7 +1069,7 @@ export default function Home() {
                   updateManualCandidate(u);
                 }}
                 onAudioDecoded={handleAudioDecodedWithConfirmation}
-                onViewportChange={(vp) => setViewport(normalizeViewport(vp, audioDuration))}
+                onViewportChange={(vp) => setViewport(normalizeViewport(vp, audioDuration ?? 0))}
                 onPlaybackTime={(t) => setPlayheadTimeSec(t)}
                 onRegionChange={handleRegionChange}
                 onClearRegion={() => handleRegionChange(null)}
@@ -1195,7 +1233,7 @@ export default function Home() {
                           {hasBands && (visualTab === "amplitudeEnvelope" || visualTab === "onsetEnvelope" || visualTab === "spectralFlux" || visualTab === "spectralCentroid") && (
                             <div className="mt-2">
                               <BandMirSignalViewer
-                                fn={visualTab === "amplitudeEnvelope" ? "bandAmplitudeEnvelope" : visualTab === "onsetEnvelope" ? "bandOnsetStrength" : visualTab === "spectralCentroid" ? "bandSpectralCentroid" : "bandSpectralFlux"}
+                                fn={visualTab}
                                 viewport={viewport}
                                 cursorTimeSec={mirroredCursorTimeSec}
                                 onCursorTimeChange={setCursorTimeSec}
@@ -1204,7 +1242,7 @@ export default function Home() {
                                 audioDuration={audioDuration ?? 0}
                               />
                               <BandEventViewer
-                                fn="bandOnsetPeaks"
+                                fn="onsetPeaks"
                                 viewport={viewport}
                                 cursorTimeSec={mirroredCursorTimeSec}
                                 onCursorTimeChange={setCursorTimeSec}
@@ -1217,7 +1255,7 @@ export default function Home() {
                           {hasBands && (visualTab === "cqtHarmonicEnergy" || visualTab === "cqtBassPitchMotion" || visualTab === "cqtTonalStability") && (
                             <div className="mt-2">
                               <BandMirSignalViewer
-                                fn={visualTab === "cqtHarmonicEnergy" ? "bandCqtHarmonicEnergy" : visualTab === "cqtBassPitchMotion" ? "bandCqtBassPitchMotion" : "bandCqtTonalStability"}
+                                fn={visualTab}
                                 viewport={viewport}
                                 cursorTimeSec={mirroredCursorTimeSec}
                                 onCursorTimeChange={setCursorTimeSec}
@@ -1249,7 +1287,7 @@ export default function Home() {
                           {hasBands && (
                             <div className="mt-2">
                               <BandEventViewer
-                                fn="bandOnsetPeaks"
+                                fn="onsetPeaks"
                                 viewport={viewport}
                                 cursorTimeSec={mirroredCursorTimeSec}
                                 onCursorTimeChange={setCursorTimeSec}
@@ -1290,7 +1328,7 @@ export default function Home() {
                           {hasBands && (
                             <div className="mt-2">
                               <BandEventViewer
-                                fn="bandBeatCandidates"
+                                fn="beatCandidates"
                                 viewport={viewport}
                                 cursorTimeSec={mirroredCursorTimeSec}
                                 onCursorTimeChange={setCursorTimeSec}
@@ -1347,7 +1385,7 @@ export default function Home() {
                             onStartBeatMarking={startBeatMarking}
                             // Musical Time (B4)
                             canPromote={canPromoteBeatGrid()}
-                            audioDuration={audioDuration}
+                            audioDuration={audioDuration ?? undefined}
                             musicalTimeSegmentCount={musicalTimeStructure?.segments.length ?? 0}
                             onPromote={handlePromoteGrid}
                             // Signal viewer for visual correlation
@@ -1399,7 +1437,7 @@ export default function Home() {
                               fMin: 0,
                               fMax: audioSampleRate ? audioSampleRate / 2 : 22050,
                             }}
-                            audioDuration={audioDuration}
+                            audioDuration={audioDuration ?? undefined}
                             beatGrid={beatGridState.activeBeatGrid}
                             beatGridVisible={beatGridState.isVisible}
                             musicalTimeSegments={musicalTimeStructure?.segments}
@@ -1417,6 +1455,17 @@ export default function Home() {
               </div>}
             </div>
             {visualTab === "search" && <SearchPanel playerRef={playerRef} />}
+            <div className="mt-2 flex justify-end">
+              <PresetControls />
+            </div>
+            <StreamManagerPanel />
+            <ComparisonPanel
+              viewport={viewport}
+              cursorTimeSec={mirroredCursorTimeSec}
+              onCursorTimeChange={setCursorTimeSec}
+              showBeatGrid={beatGridState.isVisible}
+              audioDuration={audioDuration ?? 0}
+            />
             <DerivedSignalsPanel />
             <ComposedSignalsPanel />
             <MeshAssetsPanel />
@@ -1424,9 +1473,7 @@ export default function Home() {
             <VisualiserPanel
               audio={audio}
               playbackTime={playheadTimeSec}
-              audioDuration={audioDuration}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              mirResults={mirResults as any}
+              audioDuration={audioDuration ?? undefined}
               searchSignal={searchSignal}
               isPlaying={isAudioPlaying}
               musicalTimeStructure={effectiveMusicalTimeStructure}

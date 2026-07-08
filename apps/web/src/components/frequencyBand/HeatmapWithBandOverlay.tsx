@@ -7,10 +7,16 @@ import { HeatmapPlayheadOverlay } from "@/components/heatmap/HeatmapPlayheadOver
 import { FrequencyBandOverlay } from "./FrequencyBandOverlay";
 import { BeatGridOverlay } from "@/components/wavesurfer/BeatGridOverlay";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
+import {
+    toFrequencyBand,
+    updateBandShape,
+    useBandEditingStore,
+    useStreamStore,
+    type BandStream,
+} from "@/lib/streams";
 import { useElementSize } from "@/lib/useElementSize";
 import { useBandInteraction } from "@/lib/hooks/useBandInteraction";
-import { splitBandSegmentAt, type MelConversionConfig, type BeatGrid, type MusicalTimeSegment } from "@octoseq/mir";
+import { splitBandSegmentAt, type FrequencyBandStructure, type MelConversionConfig, type BeatGrid, type MusicalTimeSegment } from "@octoseq/mir";
 
 // ----------------------------
 // Types
@@ -119,44 +125,40 @@ export function HeatmapWithBandOverlay({
     const { ref: containerRef, size: containerSize } = useElementSize<HTMLDivElement>();
     const overlayContainerRef = useRef<HTMLDivElement>(null);
 
-    // Get band store state
-    const {
-        structure,
-        selectedBandId,
-        hoveredBandId,
-        hoveredKeyframeTime,
-        selectBand,
-        setHoveredBandId,
-        setHoveredKeyframeTime,
-        updateBand,
-        getBandById,
-        getBandsForSource,
-    } = useFrequencyBandStore(
+    // Band definitions and selection live in the unified stream store
+    const { streams, selectedBandId, selectBand } = useStreamStore(
         useShallow((s) => ({
-            structure: s.structure,
-            selectedBandId: s.selectedBandId,
-            hoveredBandId: s.hoveredBandId,
-            hoveredKeyframeTime: s.hoveredKeyframeTime,
-            selectBand: s.selectBand,
-            setHoveredBandId: s.setHoveredBandId,
-            setHoveredKeyframeTime: s.setHoveredKeyframeTime,
-            updateBand: s.updateBand,
-            getBandById: s.getBandById,
-            getBandsForSource: s.getBandsForSource,
+            streams: s.streams,
+            selectedBandId: s.selectedStreamId,
+            selectBand: s.selectStream,
         }))
     );
 
-    // Filter bands by sourceId if provided
-    const filteredStructure = useMemo(() => {
-        if (!structure) return null;
-        if (!sourceId) return structure; // No filter, show all bands
+    // Ephemeral band-editing UI state
+    const { hoveredBandId, hoveredKeyframeTime, setHoveredBand, setHoveredKeyframeTime } =
+        useBandEditingStore(
+            useShallow((s) => ({
+                hoveredBandId: s.hoveredBandId,
+                hoveredKeyframeTime: s.hoveredKeyframeTime,
+                setHoveredBand: s.setHoveredBand,
+                setHoveredKeyframeTime: s.setHoveredKeyframeTime,
+            }))
+        );
 
-        const filteredBands = getBandsForSource(sourceId);
-        return {
-            ...structure,
-            bands: filteredBands,
-        };
-    }, [structure, sourceId, getBandsForSource]);
+    // Band streams (filtered by sourceId if provided), adapted to the legacy
+    // FrequencyBandStructure shape that FrequencyBandOverlay still consumes.
+    const filteredStructure = useMemo<FrequencyBandStructure | null>(() => {
+        const bands = [...streams.values()]
+            .filter(
+                (s): s is BandStream =>
+                    s.kind === "band" && (sourceId === undefined || s.parentId === sourceId)
+            )
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map(toFrequencyBand);
+        if (bands.length === 0) return null;
+        // Timestamps are unused by the overlay; this is a display-edge adapter only.
+        return { version: 2, bands, createdAt: "", modifiedAt: "" };
+    }, [streams, sourceId]);
 
     // Get the actual rendered height from the container
     // The heatmap manages its own height, so we track it
@@ -191,21 +193,21 @@ export function HeatmapWithBandOverlay({
     // Handle double-click to add a keyframe (split segment)
     const handleDoubleClick = useCallback(
         (bandId: string, time: number) => {
-            const band = getBandById(bandId);
-            if (!band) return;
+            const stream = useStreamStore.getState().getStream(bandId);
+            if (!stream || stream.kind !== "band") return;
 
             // Split the segment at the given time
-            const updatedBand = splitBandSegmentAt(band, time);
+            const updatedBand = splitBandSegmentAt(toFrequencyBand(stream), time);
 
-            // Update the band in the store
-            updateBand(bandId, { frequencyShape: updatedBand.frequencyShape });
+            // Update the band in the store (analyses invalidate automatically)
+            updateBandShape(bandId, { frequencyShape: updatedBand.frequencyShape });
 
             // Select the band if not already selected
             if (selectedBandId !== bandId) {
                 selectBand(bandId);
             }
         },
-        [getBandById, updateBand, selectedBandId, selectBand]
+        [selectedBandId, selectBand]
     );
 
     return (
@@ -244,7 +246,7 @@ export function HeatmapWithBandOverlay({
                         hoveredKeyframeTime={hoveredKeyframeTime}
                         melConfig={melConfig}
                         onBandClick={(bandId) => selectBand(bandId)}
-                        onBandHover={(bandId) => setHoveredBandId(bandId)}
+                        onBandHover={(bandId) => setHoveredBand(bandId)}
                         onKeyframeHover={(time) => setHoveredKeyframeTime(time)}
                         onDoubleClick={handleDoubleClick}
                         onDragStart={handleDragStart}

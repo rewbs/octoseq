@@ -3,6 +3,7 @@
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/lib/stores/projectStore";
+import { isAudioStream } from "@/lib/streams";
 
 interface MissingAudioBannerProps {
   onReattach: () => void;
@@ -21,15 +22,9 @@ export function MissingAudioBanner({ onReattach }: MissingAudioBannerProps) {
   // Undefined status means audio was loaded directly (not through project import)
   let missingCount = 0;
 
-  if (activeProject?.audio.mixdown) {
-    const status = audioLoadStatus.get(activeProject.audio.mixdown.id);
-    if (status === "pending" || status === "failed") {
-      missingCount++;
-    }
-  }
-
-  for (const stem of activeProject?.audio.stems ?? []) {
-    const status = audioLoadStatus.get(stem.id);
+  for (const stream of activeProject?.streams ?? []) {
+    if (!isAudioStream(stream)) continue;
+    const status = audioLoadStatus.get(stream.id);
     if (status === "pending" || status === "failed") {
       missingCount++;
     }

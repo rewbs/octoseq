@@ -16,17 +16,15 @@ import {
   type EventWindowSpec,
   type EnvelopeShape,
 } from "@octoseq/mir";
-import { useMirStore } from "../mirStore";
+import { analysisKey, isBandStream, useAnalysisStore, useStreamStore } from "@/lib/streams";
 import { useDerivedSignalStore } from "../derivedSignalStore";
 import { useConfigStore } from "../configStore";
 import { useProjectStore } from "../projectStore";
 import { useAuthoredEventStore } from "../authoredEventStore";
-import { useAudioInputStore } from "../audioInputStore";
 import type {
   DerivedSignalDefinition,
   DerivedSignalResult,
   Source2DFunctionId,
-  Source1DGlobalFunctionId,
   Source2D,
   Source1D,
   SourceEvents,
@@ -86,11 +84,35 @@ function rangeSpec2DToBinRange(
     case "fullSpectrum":
       return undefined; // Use all bins
 
-    case "bandReference":
-      // TODO: Look up band from frequencyBandStore and get Hz range
-      // For now, fall back to full spectrum
-      console.warn("Band reference not yet implemented for derived signals");
-      return undefined;
+    case "bandReference": {
+      // The band's frequency SHAPE provides the Hz range; the band is a stream
+      // but here we only read its geometry, not its analyses.
+      const band = useStreamStore.getState().getStream(range.bandId);
+      if (!band || !isBandStream(band)) {
+        console.warn(
+          `Band reference "${range.bandId}" does not resolve to a band stream`
+        );
+        return undefined;
+      }
+      if (!melConfig) {
+        // Can't convert Hz to bins without mel config
+        return undefined;
+      }
+      let lowHz = Infinity;
+      let highHz = -Infinity;
+      for (const segment of band.frequencyShape) {
+        lowHz = Math.min(lowHz, segment.lowHzStart, segment.lowHzEnd);
+        highHz = Math.max(highHz, segment.highHzStart, segment.highHzEnd);
+      }
+      if (!Number.isFinite(lowHz) || !Number.isFinite(highHz)) {
+        console.warn(`Band "${range.bandId}" has an empty frequency shape`);
+        return undefined;
+      }
+      return {
+        lowBin: Math.max(0, Math.floor(hzToFeatureIndex(lowHz, melConfig))),
+        highBin: Math.min(numBins, Math.ceil(hzToFeatureIndex(highHz, melConfig))),
+      };
+    }
 
     case "frequencyRange":
       if (!melConfig) {
@@ -137,28 +159,6 @@ function buildReductionOptions(
 }
 
 /**
- * Map Source1DGlobalFunctionId to MirFunctionId.
- */
-function source1DToMirFunction(source: Source1DGlobalFunctionId): MirFunctionId {
-  switch (source) {
-    case "amplitudeEnvelope":
-      return "amplitudeEnvelope";
-    case "spectralCentroid":
-      return "spectralCentroid";
-    case "spectralFlux":
-      return "spectralFlux";
-    case "onsetEnvelope":
-      return "onsetEnvelope";
-    case "cqtHarmonicEnergy":
-      return "cqtHarmonicEnergy";
-    case "cqtBassPitchMotion":
-      return "cqtBassPitchMotion";
-    case "cqtTonalStability":
-      return "cqtTonalStability";
-  }
-}
-
-/**
  * Convert TransformChain to MIR TransformStep array.
  * The types should match directly.
  */
@@ -189,21 +189,25 @@ export function useDerivedSignalActions() {
       definition: DerivedSignalDefinition,
       source: Source2D
     ): Promise<DerivedSignalResult | null> => {
-      const mirStore = useMirStore.getState();
       const configStore = useConfigStore.getState();
 
       // Get the 2D MIR result
       const mirFunctionId = source2DToMirFunction(source.functionId);
-      const mirResult = mirStore.getInputMirResult(source.audioSourceId, mirFunctionId);
+      const mirResult = useAnalysisStore
+        .getState()
+        .getResult(analysisKey(source.streamId, mirFunctionId));
 
       if (!mirResult || mirResult.kind !== "2d") {
         console.warn(
-          `No 2D MIR result available for ${source.audioSourceId}:${mirFunctionId}`
+          `No 2D MIR result available for ${source.streamId}:${mirFunctionId}`
         );
         return null;
       }
 
-      const heatmapData: TimeAlignedHeatmapData = mirResult.raw;
+      const heatmapData: TimeAlignedHeatmapData = {
+        data: mirResult.data,
+        times: mirResult.times,
+      };
 
       // Get mel config for frequency conversion (only for mel-based sources)
       let melConfig: MelConversionConfig | null = null;
@@ -327,7 +331,6 @@ export function useDerivedSignalActions() {
       definition: DerivedSignalDefinition,
       source: Source1D
     ): Promise<DerivedSignalResult | null> => {
-      const mirStore = useMirStore.getState();
       const derivedSignalStore = useDerivedSignalStore.getState();
 
       let sourceValues: Float32Array;
@@ -335,27 +338,25 @@ export function useDerivedSignalActions() {
 
       // Get source data based on reference type
       switch (source.signalRef.type) {
-        case "mir": {
-          const mirFunctionId = source1DToMirFunction(source.signalRef.functionId);
-          const mirResult = mirStore.getInputMirResult(
-            source.signalRef.audioSourceId,
-            mirFunctionId
-          );
-          if (!mirResult || mirResult.kind !== "1d") {
+        case "analysis": {
+          const ref = source.signalRef;
+          const result = useAnalysisStore
+            .getState()
+            .getResult(analysisKey(ref.streamId, ref.analysisId));
+          if (
+            !result ||
+            (result.kind !== "1d" &&
+              result.kind !== "bandMir1d" &&
+              result.kind !== "bandCqt1d")
+          ) {
             console.warn(
-              `No 1D MIR result available for ${source.signalRef.audioSourceId}:${mirFunctionId}`
+              `No 1D analysis result available for ${ref.streamId}:${ref.analysisId}`
             );
             return null;
           }
-          sourceValues = mirResult.values;
-          sourceTimes = mirResult.times;
+          sourceValues = result.values;
+          sourceTimes = result.times;
           break;
-        }
-
-        case "band": {
-          // TODO: Get band MIR result
-          console.warn("Band 1D source not yet implemented");
-          return null;
         }
 
         case "derived": {
@@ -456,12 +457,10 @@ export function useDerivedSignalActions() {
       definition: DerivedSignalDefinition,
       source: SourceEvents
     ): Promise<DerivedSignalResult | null> => {
-      const mirStore = useMirStore.getState();
       const authoredEventStore = useAuthoredEventStore.getState();
-      const audioInputStore = useAudioInputStore.getState();
 
       // Get audio duration for signal generation
-      const audioDuration = audioInputStore.getAudioDuration();
+      const audioDuration = useStreamStore.getState().getMixdown()?.audio.durationSec ?? 0;
       if (audioDuration <= 0) {
         console.warn("No audio duration available for event signal");
         return null;
@@ -475,37 +474,31 @@ export function useDerivedSignalActions() {
       let events: EventItem[] = [];
 
       switch (source.streamRef.type) {
-        case "candidateOnsets": {
-          // Get onset peaks from MIR results
-          const onsetResult = mirStore.getInputMirResult(
-            source.streamRef.audioSourceId,
-            "onsetPeaks"
-          );
-          if (onsetResult && onsetResult.kind === "events") {
-            events = onsetResult.events.map((e: { time: number; strength: number }) => ({
-              time: e.time,
-              weight: e.strength,
-            }));
+        case "analysis": {
+          // One lookup for every stream kind; the result shape varies by
+          // producer (events / bandEvents / beatCandidates) but is uniform here.
+          const ref = source.streamRef;
+          const result = useAnalysisStore
+            .getState()
+            .getResult(analysisKey(ref.streamId, ref.analysisId));
+          if (result) {
+            if (result.kind === "events") {
+              events = result.events.map((e) => ({ time: e.time, weight: e.strength }));
+            } else if (result.kind === "bandEvents") {
+              events = result.events.map((e) => ({ time: e.time, weight: e.weight }));
+            } else if (result.kind === "beatCandidates") {
+              events = result.candidates.map((c) => ({ time: c.time, weight: c.strength }));
+            } else {
+              console.warn(
+                `Analysis result for ${ref.streamId}:${ref.analysisId} is not an event result (kind: ${result.kind})`
+              );
+              return null;
+            }
           }
           break;
         }
 
-        case "candidateBeats": {
-          // Get beat candidates from MIR results
-          const beatResult = mirStore.getInputMirResult(
-            source.streamRef.audioSourceId,
-            "beatCandidates"
-          );
-          if (beatResult && beatResult.kind === "events") {
-            events = beatResult.events.map((e: { time: number; strength: number }) => ({
-              time: e.time,
-              weight: e.strength,
-            }));
-          }
-          break;
-        }
-
-        case "authoredEvents": {
+        case "authored": {
           const stream = authoredEventStore.getStream(source.streamRef.streamId);
           if (stream) {
             events = stream.events.map((e) => ({
@@ -515,13 +508,6 @@ export function useDerivedSignalActions() {
             }));
           }
           break;
-        }
-
-        case "bandOnsetPeaks":
-        case "bandBeatCandidates": {
-          // TODO: Implement band event sources
-          console.warn("Band event sources not yet implemented");
-          return null;
         }
 
         default:
@@ -810,10 +796,11 @@ export function useDerivedSignalActions() {
    * Check if source 2D data is available for a signal.
    */
   const isSourceDataAvailable = useCallback(
-    (sourceAudioId: string, source2D: Source2DFunctionId): boolean => {
-      const mirStore = useMirStore.getState();
+    (streamId: string, source2D: Source2DFunctionId): boolean => {
       const mirFunctionId = source2DToMirFunction(source2D);
-      const result = mirStore.getInputMirResult(sourceAudioId, mirFunctionId);
+      const result = useAnalysisStore
+        .getState()
+        .getResult(analysisKey(streamId, mirFunctionId));
       return result !== null && result.kind === "2d";
     },
     []
@@ -824,15 +811,16 @@ export function useDerivedSignalActions() {
    */
   const getSource2DData = useCallback(
     (
-      sourceAudioId: string,
+      streamId: string,
       source2D: Source2DFunctionId
     ): TimeAlignedHeatmapData | null => {
-      const mirStore = useMirStore.getState();
       const mirFunctionId = source2DToMirFunction(source2D);
-      const result = mirStore.getInputMirResult(sourceAudioId, mirFunctionId);
+      const result = useAnalysisStore
+        .getState()
+        .getResult(analysisKey(streamId, mirFunctionId));
 
       if (result && result.kind === "2d") {
-        return result.raw;
+        return { data: result.data, times: result.times };
       }
 
       return null;

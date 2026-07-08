@@ -171,6 +171,7 @@ impl Default for LightingUniforms {
 mod tests {
     use super::*;
     use crate::signal_state::SignalState;
+    use crate::signal_stats::StatisticsCache;
     use std::collections::HashMap;
 
     #[test]
@@ -178,9 +179,27 @@ mod tests {
         let config = LightingConfig::default();
         assert!(!config.enabled);
 
+        let input_signals = HashMap::new();
+        let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
+        let composed_signals = HashMap::new();
+        let statistics = StatisticsCache::new();
         let mut signal_state = SignalState::default();
-        let mut cache = HashMap::new();
-        let mut ctx = EvalContext::new(&mut signal_state, &mut cache, 0.0, 0.0, 0);
+        let mut ctx = EvalContext::new(
+            0.0,
+            0.0,
+            0,
+            None,
+            &input_signals,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &statistics,
+            &mut signal_state,
+            None,
+        );
 
         let uniforms = config.to_uniforms(&mut ctx);
         assert_eq!(uniforms.enabled, 0);
@@ -193,9 +212,27 @@ mod tests {
         let mut config = LightingConfig::default();
         config.direction = Vec3Signal::new(2.0, 0.0, 0.0); // Not normalized
 
+        let input_signals = HashMap::new();
+        let band_signals = HashMap::new();
+        let stem_signals = HashMap::new();
+        let custom_signals = HashMap::new();
+        let composed_signals = HashMap::new();
+        let statistics = StatisticsCache::new();
         let mut signal_state = SignalState::default();
-        let mut cache = HashMap::new();
-        let mut ctx = EvalContext::new(&mut signal_state, &mut cache, 0.0, 0.0, 0);
+        let mut ctx = EvalContext::new(
+            0.0,
+            0.0,
+            0,
+            None,
+            &input_signals,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &statistics,
+            &mut signal_state,
+            None,
+        );
 
         let uniforms = config.to_uniforms(&mut ctx);
         // Should be normalized to [1, 0, 0]

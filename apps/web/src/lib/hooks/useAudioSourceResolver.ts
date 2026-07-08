@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useRef } from "react";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useAudioSourceStore } from "@/lib/streams";
 import { resolveAudioSource } from "@/lib/audio/audioSourceResolver";
 
 /**
@@ -28,10 +28,8 @@ import { resolveAudioSource } from "@/lib/audio/audioSourceResolver";
  * This hook should be mounted once at the app level.
  */
 export function useAudioSourceResolver(): void {
-  const currentAudioSource = useAudioInputStore((s) => s.currentAudioSource);
-  const updateAudioSourceStatus = useAudioInputStore(
-    (s) => s.updateAudioSourceStatus
-  );
+  const currentAudioSource = useAudioSourceStore((s) => s.currentSource);
+  const updateAudioSourceStatus = useAudioSourceStore((s) => s.updateSourceStatus);
 
   // Track the current source ID to detect changes
   const currentSourceIdRef = useRef<string | null>(null);

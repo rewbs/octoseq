@@ -2,12 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useProjectStore } from "../projectStore";
-import { useFrequencyBandStore } from "../frequencyBandStore";
-import { useMusicalTimeStore } from "../musicalTimeStore";
 import { useAuthoredEventStore } from "../authoredEventStore";
-import { useBeatGridStore } from "../beatGridStore";
+import { useTimingStore } from "../timingStore";
 import { useInterpretationTreeStore } from "../interpretationTreeStore";
-import { useAudioInputStore } from "../audioInputStore";
 import { useDerivedSignalStore } from "../derivedSignalStore";
 import { useComposedSignalStore } from "../composedSignalStore";
 import { useMeshAssetStore } from "../meshAssetStore";
@@ -15,11 +12,16 @@ import { usePlaybackStore } from "../playbackStore";
 import { useAutosaveStore } from "../autosaveStore";
 import { useAutosave } from "./useAutosave";
 import { clearAutosave } from "../../persistence/autosave";
-import type { ProjectAudioCollection, ProjectAudioReference, ProjectBeatGridState } from "../types/project";
-import type { AuthoredEventStream } from "../types/authoredEvent";
+import type { ProjectBeatGridState } from "../types/project";
 import type { AutosaveRecord } from "../../persistence/types";
-import type { AudioInput, AudioInputCollection } from "../types/audioInput";
-import { MIXDOWN_ID } from "../types/audioInput";
+import {
+  isAudioStream,
+  removeStreamCascade,
+  resetAllStreams,
+  useStreamStore,
+  type Stream,
+  useViewStore,
+} from "@/lib/streams";
 
 /**
  * Hook that provides project lifecycle actions and sets up store synchronization.
@@ -61,15 +63,15 @@ export function useProjectActions() {
   // ----------------------------
 
   useEffect(() => {
-    // Subscribe to frequency band changes
-    const unsubBands = useFrequencyBandStore.subscribe((state, prevState) => {
-      if (state.structure !== prevState.structure && useProjectStore.getState().activeProject) {
-        useProjectStore.getState().syncFrequencyBands(state.structure);
+    // Subscribe to stream collection changes (mixdown/stems/bands)
+    const unsubStreams = useStreamStore.subscribe((state, prevState) => {
+      if (state.streams !== prevState.streams && useProjectStore.getState().activeProject) {
+        useProjectStore.getState().syncStreams(serializeStreams([...state.streams.values()]));
       }
     });
 
-    // Subscribe to musical time changes
-    const unsubMusicalTime = useMusicalTimeStore.subscribe((state, prevState) => {
+    // Subscribe to musical time changes (musical-time section of the timing store)
+    const unsubMusicalTime = useTimingStore.subscribe((state, prevState) => {
       if (state.structure !== prevState.structure && useProjectStore.getState().activeProject) {
         useProjectStore.getState().syncMusicalTime(state.structure);
       }
@@ -83,8 +85,8 @@ export function useProjectActions() {
       }
     });
 
-    // Subscribe to beat grid changes
-    const unsubBeatGrid = useBeatGridStore.subscribe((state, prevState) => {
+    // Subscribe to beat grid changes (beat-grid section of the timing store)
+    const unsubBeatGrid = useTimingStore.subscribe((state, prevState) => {
       const relevantChange =
         state.activeBeatGrid !== prevState.activeBeatGrid ||
         state.selectedHypothesis !== prevState.selectedHypothesis ||
@@ -130,6 +132,14 @@ export function useProjectActions() {
       }
     });
 
+    // Subscribe to view preset changes
+    const unsubViewPresets = useViewStore.subscribe((state, prevState) => {
+      if (skipUiSyncRef.current) return;
+      if (state.presets !== prevState.presets && useProjectStore.getState().activeProject) {
+        useProjectStore.getState().syncUIState({ viewPresets: state.presets });
+      }
+    });
+
     // Subscribe to derived signal changes
     const unsubDerivedSignals = useDerivedSignalStore.subscribe((state, prevState) => {
       if (state.structure !== prevState.structure && useProjectStore.getState().activeProject) {
@@ -151,56 +161,16 @@ export function useProjectActions() {
       }
     });
 
-    // Subscribe to audio input changes
-    const unsubAudio = useAudioInputStore.subscribe((state, prevState) => {
-      if (state.collection !== prevState.collection && useProjectStore.getState().activeProject) {
-        const collection = state.collection;
-        if (collection) {
-          const mixdownInput = collection.inputs.mixdown;
-          const audioCollection: ProjectAudioCollection = {
-            mixdown: mixdownInput
-              ? {
-                  id: mixdownInput.id,
-                  label: mixdownInput.label,
-                  role: mixdownInput.role,
-                  metadata: mixdownInput.metadata!,
-                  origin: mixdownInput.origin,
-                  // Use cloudAssetId for persistent storage references
-                  assetId: mixdownInput.cloudAssetId ?? mixdownInput.assetId,
-                }
-              : null,
-            stems: collection.stemOrder
-              .map((stemId, index) => {
-                const stem = collection.inputs[stemId];
-                if (!stem || !stem.metadata) return null;
-                return {
-                  id: stem.id,
-                  label: stem.label,
-                  role: stem.role,
-                  metadata: stem.metadata,
-                  origin: stem.origin,
-                  orderIndex: index,
-                  // Use cloudAssetId for persistent storage references
-                  assetId: stem.cloudAssetId ?? stem.assetId,
-                } as ProjectAudioReference;
-              })
-              .filter((s): s is ProjectAudioReference => s !== null),
-          };
-          useProjectStore.getState().syncAudioReferences(audioCollection);
-        }
-      }
-    });
-
     return () => {
-      unsubBands();
+      unsubStreams();
       unsubMusicalTime();
       unsubAuthored();
       unsubBeatGrid();
       unsubTree();
+      unsubViewPresets();
       unsubDerivedSignals();
       unsubComposedSignals();
       unsubMeshAssets();
-      unsubAudio();
     };
   }, []);
 
@@ -221,16 +191,9 @@ export function useProjectActions() {
     setSuppressDirty(true);
 
     try {
-      // Hydrate frequency bands
-      if (project.interpretation.frequencyBands) {
-        useFrequencyBandStore.getState().importFromJSON(
-          JSON.stringify(project.interpretation.frequencyBands)
-        );
-      }
-
       // Hydrate musical time
       if (project.interpretation.musicalTime) {
-        useMusicalTimeStore.getState().importFromJSON(
+        useTimingStore.getState().importFromJSON(
           JSON.stringify(project.interpretation.musicalTime)
         );
       }
@@ -263,7 +226,7 @@ export function useProjectActions() {
       // Hydrate beat grid
       if (project.interpretation.beatGrid) {
         const bg = project.interpretation.beatGrid;
-        const beatGridStore = useBeatGridStore.getState();
+        const beatGridStore = useTimingStore.getState();
 
         if (bg.selectedHypothesis) {
           beatGridStore.selectHypothesis(bg.selectedHypothesis);
@@ -293,57 +256,10 @@ export function useProjectActions() {
         useMeshAssetStore.getState().loadFromProject(project.meshAssets);
       }
 
-      // Hydrate audio inputs (create stub entries for cloud loading)
-      // This creates the collection structure so cloud loader can fill in audio data
-      if (project.audio) {
-        const audioInputStore = useAudioInputStore.getState();
-        const inputs: Record<string, AudioInput> = {};
-        const stemOrder: string[] = [];
-
-        // Create mixdown stub if present
-        if (project.audio.mixdown) {
-          const mix = project.audio.mixdown;
-          inputs[MIXDOWN_ID] = {
-            id: MIXDOWN_ID,
-            label: mix.label,
-            role: "mixdown",
-            audioBuffer: null, // Will be loaded by cloud loader
-            metadata: mix.metadata,
-            audioUrl: null,
-            origin: mix.origin,
-            createdAt: new Date().toISOString(),
-            cloudAssetId: mix.assetId,
-          };
-        }
-
-        // Create stem stubs
-        // Sort by orderIndex to preserve order
-        const sortedStems = [...project.audio.stems].sort(
-          (a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)
-        );
-        for (const stem of sortedStems) {
-          inputs[stem.id] = {
-            id: stem.id,
-            label: stem.label,
-            role: "stem",
-            audioBuffer: null, // Will be loaded by cloud loader
-            metadata: stem.metadata,
-            audioUrl: null,
-            origin: stem.origin,
-            createdAt: new Date().toISOString(),
-            cloudAssetId: stem.assetId,
-          };
-          stemOrder.push(stem.id);
-        }
-
-        // Set the collection directly
-        const collection: AudioInputCollection = {
-          version: 1,
-          inputs,
-          stemOrder,
-        };
-        audioInputStore.setCollection(collection);
-      }
+      // Hydrate streams (mixdown/stems/bands). Persisted audio URLs are null;
+      // decoded PCM is absent until the cloud loader (or re-attach) supplies it.
+      resetAllStreams();
+      useStreamStore.getState().restoreStreams(project.streams);
 
       // Hydrate tree state
       if (project.uiState) {
@@ -361,6 +277,8 @@ export function useProjectActions() {
           treeStore.setInspectorHeight(project.uiState.inspectorHeight);
         }
         // Restore playhead position
+        useViewStore.getState().setPresets(project.uiState.viewPresets ?? []);
+
         if (project.uiState.lastPlayheadPosition && project.uiState.lastPlayheadPosition > 0) {
           usePlaybackStore.getState().setPlayheadTimeSec(project.uiState.lastPlayheadPosition);
           // Also set cursor time to match
@@ -385,13 +303,12 @@ export function useProjectActions() {
       // When creating a fresh new project (not importing current state),
       // clear all stores to ensure a completely clean slate
       if (!importCurrentState) {
-        useFrequencyBandStore.getState().clearStructure();
-        useMusicalTimeStore.getState().reset();
+        useTimingStore.getState().reset();
         useAuthoredEventStore.getState().reset();
-        useBeatGridStore.getState().clear();
+        useTimingStore.getState().clearBeatGrid();
         useDerivedSignalStore.getState().reset();
         useMeshAssetStore.getState().reset();
-        useAudioInputStore.getState().reset();
+        resetAllStreams();
         usePlaybackStore.getState().setPlayheadTimeSec(0);
         usePlaybackStore.getState().setCursorTimeSec(0);
       }
@@ -404,12 +321,12 @@ export function useProjectActions() {
 
         try {
           // Sync current state from all stores
-          const bandStructure = useFrequencyBandStore.getState().structure;
-          if (bandStructure) {
-            useProjectStore.getState().syncFrequencyBands(bandStructure);
+          const streams = [...useStreamStore.getState().streams.values()];
+          if (streams.length > 0) {
+            useProjectStore.getState().syncStreams(serializeStreams(streams));
           }
 
-          const musicalTimeStructure = useMusicalTimeStore.getState().structure;
+          const musicalTimeStructure = useTimingStore.getState().structure;
           if (musicalTimeStructure) {
             useProjectStore.getState().syncMusicalTime(musicalTimeStructure);
           }
@@ -419,7 +336,7 @@ export function useProjectActions() {
             useProjectStore.getState().syncAuthoredEvents(authoredStreams);
           }
 
-          const beatGridState = useBeatGridStore.getState();
+          const beatGridState = useTimingStore.getState();
           if (beatGridState.selectedHypothesis) {
             useProjectStore.getState().syncBeatGrid({
               selectedHypothesis: beatGridState.selectedHypothesis,
@@ -516,13 +433,12 @@ export function useProjectActions() {
       setActiveProject(project);
       hydrateStoresFromProject();
 
-      // Mark all audio references as pending (they need to be re-attached)
+      // Mark all audio streams as pending (they need to be re-attached)
       const setAudioLoadStatus = useProjectStore.getState().setAudioLoadStatus;
-      if (project.audio.mixdown) {
-        setAudioLoadStatus(project.audio.mixdown.id, "pending");
-      }
-      for (const stem of project.audio.stems) {
-        setAudioLoadStatus(stem.id, "pending");
+      for (const stream of project.streams) {
+        if (isAudioStream(stream)) {
+          setAudioLoadStatus(stream.id, "pending");
+        }
       }
 
       return true;
@@ -552,11 +468,14 @@ export function useProjectActions() {
   const handleResetProject = useCallback(() => {
     resetProject();
 
-    // Clear all relevant stores
-    useFrequencyBandStore.getState().clearStructure();
-    useMusicalTimeStore.getState().reset();
+    // Clear all relevant stores. Bands are streams now: remove band streams
+    // (audio streams are left in place, matching the legacy reset behavior).
+    for (const band of useStreamStore.getState().getBands()) {
+      removeStreamCascade(band.id);
+    }
+    useTimingStore.getState().reset();
     useAuthoredEventStore.getState().reset();
-    useBeatGridStore.getState().clear();
+    useTimingStore.getState().clearBeatGrid();
     useDerivedSignalStore.getState().reset();
     useMeshAssetStore.getState().reset();
     usePlaybackStore.getState().setPlayheadTimeSec(0);
@@ -664,4 +583,18 @@ export function useProjectActions() {
     dismissRecovery: handleDismissRecovery,
     formatAutosaveTimestamp: formatTimestamp,
   };
+}
+
+// ----------------------------
+// Stream serialization
+// ----------------------------
+
+/**
+ * Prepare streams for persistence. Blob URLs are runtime-only, so AudioStreams
+ * persist with audio.url null; everything else is stored verbatim.
+ */
+export function serializeStreams(streams: Stream[]): Stream[] {
+  return streams.map((stream) =>
+    isAudioStream(stream) ? { ...stream, audio: { ...stream.audio, url: null } } : stream
+  );
 }

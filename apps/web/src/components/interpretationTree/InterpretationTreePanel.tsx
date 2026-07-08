@@ -45,13 +45,18 @@ import {
   INSPECTOR_SECTION_MAX_RATIO,
 } from "@/lib/stores/interpretationTreeStore";
 import { InspectorContent } from "@/components/inspector/InspectorContent";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
-import type { AudioSource, RemoteAudioSource, GeneratedAudioSource } from "@/lib/stores/types/audioInput";
+import {
+  useStreamStore,
+  useAudioSourceStore,
+  audioCache,
+  isAudioStream,
+  MIXDOWN_STREAM_ID,
+  useBandEditingStore,
+} from "@/lib/streams";
+import type { AudioSource, RemoteAudioSource, GeneratedAudioSource } from "@/lib/streams";
 import { useProjectStore } from "@/lib/stores/projectStore";
 import { useMirStore } from "@/lib/stores/mirStore";
-import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
 import { getMirAnalysisId, getAudioSourceId, getBandId } from "@/lib/nodeTypes";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
 import { TreeNode } from "./TreeNode";
 import { useTreeData, type TreeNodeData } from "./useTreeData";
 
@@ -60,13 +65,13 @@ import { useTreeData, type TreeNodeData } from "./useTreeData";
  * Returns the input ID for audio nodes, or null for non-audio nodes.
  *
  * Node ID patterns:
- * - "audio:mixdown" → MIXDOWN_ID
+ * - "audio:mixdown" → MIXDOWN_STREAM_ID
  * - "audio:stem:{stemId}" → stemId
  * - anything else → null
  */
 function parseAudioInputId(nodeId: string): string | null {
   if (nodeId === TREE_NODE_IDS.MIXDOWN) {
-    return MIXDOWN_ID;
+    return MIXDOWN_STREAM_ID;
   }
   if (nodeId.startsWith("audio:stem:")) {
     return nodeId.slice("audio:stem:".length);
@@ -450,19 +455,20 @@ export function InterpretationTreePanel() {
   const selectNode = useInterpretationTreeStore((s) => s.selectNode);
   const inspectorSectionRatio = useInterpretationTreeStore((s) => s.inspectorSectionRatio);
   const setInspectorSectionRatio = useInterpretationTreeStore((s) => s.setInspectorSectionRatio);
-  const selectAudioInput = useAudioInputStore((s) => s.selectInput);
-  const setActiveDisplay = useAudioInputStore((s) => s.setActiveDisplay);
-  const setCurrentAudioSource = useAudioInputStore((s) => s.setCurrentAudioSource);
-  const getInputById = useAudioInputStore((s) => s.getInputById);
-  const triggerFileInput = useAudioInputStore((s) => s.triggerFileInput);
-  const hasAudio = useAudioInputStore((s) => s.getAudio() !== null);
+  const selectAudioInput = useStreamStore((s) => s.selectStream);
+  const setActiveDisplay = useAudioSourceStore((s) => s.setDisplayedStream);
+  const setCurrentAudioSource = useAudioSourceStore((s) => s.setCurrentSource);
+  const getStream = useStreamStore((s) => s.getStream);
+  const triggerFileInput = useAudioSourceStore((s) => s.triggerFileInput);
+  const hasMixdownStream = useStreamStore((s) => s.streams.has(MIXDOWN_STREAM_ID));
+  const hasAudio = hasMixdownStream && audioCache.get(MIXDOWN_STREAM_ID) !== null;
   const setActiveScript = useProjectStore((s) => s.setActiveScript);
   const activeProject = useProjectStore((s) => s.activeProject);
   const isDirty = useProjectStore((s) => s.isDirty);
   const setVisualTab = useMirStore((s) => s.setVisualTab);
   const setDisplayContextInputId = useMirStore((s) => s.setDisplayContextInputId);
-  const soloedBandId = useFrequencyBandStore((s) => s.soloedBandId);
-  const setSoloedBandId = useFrequencyBandStore((s) => s.setSoloedBandId);
+  const soloedBandId = useBandEditingStore((s) => s.soloedBandId);
+  const setSoloedBandId = useBandEditingStore((s) => s.setSoloedBand);
 
   // Ref for tracking container height for ratio calculations
   const containerRef = useRef<HTMLDivElement>(null);
@@ -494,32 +500,33 @@ export function InterpretationTreePanel() {
   const treeData = useTreeData();
 
   // Handle node selection - also selects audio input, script, or visual tab if applicable
-  // Helper to create an AudioSource from an existing AudioInput
+  // Helper to create an AudioSource from an existing AudioStream
   const createSourceFromInput = useCallback(
     (inputId: string): AudioSource | null => {
-      const input = getInputById(inputId);
-      if (!input) return null;
+      const stream = getStream(inputId);
+      if (!stream || !isAudioStream(stream)) return null;
+      const audio = stream.audio;
 
-      // If the input already has a URL, create a ready source
-      if (input.audioUrl) {
+      // If the stream already has a URL, create a ready source
+      if (audio.url) {
         // Determine source type based on origin
-        if (input.origin.kind === "synthetic") {
+        if (audio.origin.kind === "generated") {
           const source: GeneratedAudioSource = {
             type: "generated",
-            id: input.id,
-            generatedFrom: input.origin.generatedFrom ?? [],
+            id: stream.id,
+            generatedFrom: audio.origin.generatedFrom,
             status: "ready",
-            url: input.audioUrl,
+            url: audio.url,
           };
           return source;
-        } else if (input.cloudAssetId) {
+        } else if (audio.cloudAssetId) {
           // Has cloud asset - treat as remote (though URL is already resolved)
           const source: RemoteAudioSource = {
             type: "remote",
-            id: input.id,
-            cloudAssetId: input.cloudAssetId,
+            id: stream.id,
+            cloudAssetId: audio.cloudAssetId,
             status: "ready",
-            url: input.audioUrl,
+            url: audio.url,
           };
           return source;
         } else {
@@ -527,21 +534,21 @@ export function InterpretationTreePanel() {
           // (We don't have the File object anymore, so we use the existing URL)
           const source: RemoteAudioSource = {
             type: "remote",
-            id: input.id,
-            cloudAssetId: input.cloudAssetId ?? "",
+            id: stream.id,
+            cloudAssetId: audio.cloudAssetId ?? "",
             status: "ready",
-            url: input.audioUrl,
+            url: audio.url,
           };
           return source;
         }
       }
 
       // If no URL but has cloudAssetId, create pending remote source
-      if (input.cloudAssetId) {
+      if (audio.cloudAssetId) {
         const source: RemoteAudioSource = {
           type: "remote",
-          id: input.id,
-          cloudAssetId: input.cloudAssetId,
+          id: stream.id,
+          cloudAssetId: audio.cloudAssetId,
           status: "pending",
         };
         return source;
@@ -550,7 +557,7 @@ export function InterpretationTreePanel() {
       // No URL and no cloudAssetId - can't create a source
       return null;
     },
-    [getInputById]
+    [getStream]
   );
 
   const handleSelectNode = useCallback(

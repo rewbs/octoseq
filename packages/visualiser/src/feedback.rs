@@ -1099,7 +1099,8 @@ mod tests {
         let bands = HashMap::new();
         let stems = HashMap::new();
         let custom_signals = HashMap::new();
-        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom_signals, &stats, &mut state, None);
+        let composed_signals = HashMap::new();
+        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom_signals, &composed_signals, &stats, &mut state, None);
 
         let config = FeedbackConfig::new()
             .with_warp(WarpOperator::Spiral)
@@ -1136,7 +1137,8 @@ mod tests {
         let bands = HashMap::new();
         let stems = HashMap::new();
         let custom_signals = HashMap::new();
-        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom_signals, &stats, &mut state, None);
+        let composed_signals = HashMap::new();
+        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom_signals, &composed_signals, &stats, &mut state, None);
 
         let config = FeedbackConfig::new()
             .add_warp(WarpOperator::Spiral, WarpParams {

@@ -4,8 +4,7 @@ import { useCallback, useState } from "react";
 import { Loader2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getBandId } from "@/lib/nodeTypes";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
-import { useBandMirActions } from "@/lib/stores/hooks/useBandMirActions";
+import { runStreamAnalyses, useStreamStore } from "@/lib/streams";
 
 interface BandInspectorProps {
   nodeId: string;
@@ -17,16 +16,11 @@ interface BandInspectorProps {
  */
 export function BandInspector({ nodeId }: BandInspectorProps) {
   const bandId = getBandId(nodeId);
-  const getBandById = useFrequencyBandStore((s) => s.getBandById);
-  const {
-    runSingleBandAnalysis,
-    runBandCqtAnalysis,
-    runTypedEventExtraction,
-  } = useBandMirActions();
+  const stream = useStreamStore((s) => (bandId ? s.streams.get(bandId) : undefined));
 
   const [isRunningAll, setIsRunningAll] = useState(false);
 
-  const band = bandId ? getBandById(bandId) : null;
+  const band = stream && stream.kind === "band" ? stream : null;
 
   // Run all band MIR analyses for this band
   const handleRunAllAnalyses = useCallback(async () => {
@@ -34,32 +28,28 @@ export function BandInspector({ nodeId }: BandInspectorProps) {
 
     setIsRunningAll(true);
     try {
-      // Run STFT-based band MIR analyses
-      await runSingleBandAnalysis(bandId, [
-        "bandAmplitudeEnvelope",
-        "bandOnsetStrength",
-        "bandSpectralFlux",
-        "bandSpectralCentroid",
-      ]);
-
-      // Run CQT-based band analyses
-      await runBandCqtAnalysis([bandId], [
-        "bandCqtHarmonicEnergy",
-        "bandCqtBassPitchMotion",
-        "bandCqtTonalStability",
-      ]);
-
-      // Extract events from the band signals
-      await runTypedEventExtraction([bandId], [
-        "bandOnsetPeaks",
-        "bandBeatCandidates",
-      ]);
+      // STFT-based, CQT-based, then event extraction — the unified runner groups
+      // by family and orders stft -> cqt -> events internally.
+      await runStreamAnalyses(
+        [bandId],
+        [
+          "amplitudeEnvelope",
+          "onsetEnvelope",
+          "spectralFlux",
+          "spectralCentroid",
+          "cqtHarmonicEnergy",
+          "cqtBassPitchMotion",
+          "cqtTonalStability",
+          "onsetPeaks",
+          "beatCandidates",
+        ]
+      );
     } catch (error) {
       console.error("Failed to run band analyses:", error);
     } finally {
       setIsRunningAll(false);
     }
-  }, [bandId, runSingleBandAnalysis, runBandCqtAnalysis, runTypedEventExtraction]);
+  }, [bandId]);
 
   if (!band) {
     return (

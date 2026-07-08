@@ -5,11 +5,7 @@ export { useMirStore, mirTabDefinitions, type MirStore, type VisualTabId } from 
 export { useSearchStore, type SearchStore } from "./searchStore";
 export { useDebugSignalStore, type DebugSignalStore } from "./debugSignalStore";
 export { useScriptErrorStore, type ScriptErrorStore, type HistoricalScriptError } from "./scriptErrorStore";
-export { useBeatGridStore, type BeatGridStore } from "./beatGridStore";
-export { useMusicalTimeStore, type MusicalTimeStore } from "./musicalTimeStore";
-export { useManualTempoStore, type ManualTempoStore, type ExtendedTempoHypothesis, type TempoHypothesisSource, type BeatMark } from "./manualTempoStore";
-export { useFrequencyBandStore, type FrequencyBandStore, type BandInvalidationEvent, type BandInvalidationCallback } from "./frequencyBandStore";
-export { useBandMirStore, setupBandMirInvalidation, type BandMirStore } from "./bandMirStore";
+export { useTimingStore, SUB_BEAT_DIVISIONS, type TimingStore, type SubBeatDivision, type ExtendedTempoHypothesis, type TempoHypothesisSource, type BeatMark } from "./timingStore";
 export { useBandProposalStore, type BandProposalStore } from "./bandProposalStore";
 export { useProjectStore, type ProjectStore } from "./projectStore";
 export { useAutosaveStore, type AutosaveStore } from "./autosaveStore";
@@ -19,8 +15,6 @@ export {
   type InspectionViewMode,
 } from "./inspectionStore";
 export { useInterpretationTreeStore } from "./interpretationTreeStore";
-export { useAudioInputStore, type AudioInputStore } from "./audioInputStore";
-export { makeInputMirCacheKey, type InputMirCacheKey } from "./mirStore";
 export {
   useCandidateEventStore,
   type CandidateEventStore,
@@ -42,8 +36,6 @@ export type { UiMirResult, SearchResult, MirTimings, DebugSignal, AnalysisResult
 export type {
   Project,
   ProjectSerialized,
-  ProjectAudioReference,
-  ProjectAudioCollection,
   ProjectScript,
   ProjectScripts,
   ProjectInterpretation,
@@ -59,11 +51,9 @@ export type {
 } from "./types/composedSignal";
 
 // Action hooks
-export { useMirActions } from "./hooks/useMirActions";
 export { useSearchActions } from "./hooks/useSearchActions";
 export { useNavigationActions } from "./hooks/useNavigationActions";
 export { useAudioActions } from "./hooks/useAudioActions";
-export { useBandMirActions } from "./hooks/useBandMirActions";
 export { useBandProposalActions } from "./hooks/useBandProposalActions";
 export { useCandidateEventActions } from "./hooks/useCandidateEventActions";
 export { useAuthoredEventActions } from "./hooks/useAuthoredEventActions";

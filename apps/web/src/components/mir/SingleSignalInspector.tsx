@@ -4,10 +4,16 @@ import { useMemo } from "react";
 import { AlertCircle, Play } from "lucide-react";
 import { SignalViewer, createContinuousSignal, createSparseSignal } from "@/components/wavesurfer/SignalViewer";
 import { Button } from "@/components/ui/button";
-import { useMirStore, mirTabDefinitions } from "@/lib/stores/mirStore";
-import { useMirActions } from "@/lib/stores/hooks/useMirActions";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
-import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
+import { mirTabDefinitions } from "@/lib/stores/mirStore";
+import {
+  useStreamStore,
+  useAnalysisStore,
+  runStreamAnalysis,
+  analysisKey,
+  toDisplaySignal,
+  toDisplayEvents,
+  MIXDOWN_STREAM_ID,
+} from "@/lib/streams";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 import type { SignalData } from "@octoseq/wavesurfer-signalviewer";
@@ -55,19 +61,15 @@ export function SingleSignalInspector({
   showSourceLabel = true,
   color,
 }: SingleSignalInspectorProps) {
-  const { runAnalysis } = useMirActions();
-  const isRunning = useMirStore((s) => s.isRunning);
-  const runningAnalysis = useMirStore((s) => s.runningAnalysis);
-  const getInputMirResult = useMirStore((s) => s.getInputMirResult);
+  const isRunning = useAnalysisStore((s) => s.pending.size > 0);
+  const isThisRunning = useAnalysisStore((s) => s.pending.has(analysisKey(inputId, functionId)));
 
   // Get the input label for display
-  const input = useAudioInputStore((s) => s.getInputById(inputId));
-  const displayLabel = label ?? input?.label ?? (inputId === MIXDOWN_ID ? "Mixdown" : inputId);
+  const stream = useStreamStore((s) => s.streams.get(inputId));
+  const displayLabel = label ?? stream?.label ?? (inputId === MIXDOWN_STREAM_ID ? "Mixdown" : inputId);
 
-  // Get the MIR result for this input and function
-  const result = useMemo(() => {
-    return getInputMirResult(inputId, functionId);
-  }, [getInputMirResult, inputId, functionId]);
+  // Get the (raw) analysis result for this input and function
+  const result = useAnalysisStore((s) => s.results.get(analysisKey(inputId, functionId)));
 
   // Get function metadata for display
   const functionDef = useMemo(
@@ -75,20 +77,22 @@ export function SingleSignalInspector({
     [functionId]
   );
 
+  // Display-edge transforms (raw result -> normalized signal / uniform event list)
+  const displaySignal = result ? toDisplaySignal(result, functionId) : null;
+  const displayEvents = result ? toDisplayEvents(result) : null;
+
   // Convert result to SignalData
   const signalData: SignalData | null = useMemo(() => {
-    if (!result) return null;
-
-    if (result.kind === "1d") {
-      return createContinuousSignal(result.times, result.values);
+    if (displaySignal) {
+      return createContinuousSignal(displaySignal.times, displaySignal.values);
     }
 
-    if (result.kind === "events") {
+    if (displayEvents) {
       // Convert events to sparse signal
-      const times = new Float32Array(result.events.length);
-      const strengths = new Float32Array(result.events.length);
-      for (let i = 0; i < result.events.length; i++) {
-        const event = result.events[i];
+      const times = new Float32Array(displayEvents.length);
+      const strengths = new Float32Array(displayEvents.length);
+      for (let i = 0; i < displayEvents.length; i++) {
+        const event = displayEvents[i];
         times[i] = event?.time ?? 0;
         strengths[i] = event?.strength ?? 1;
       }
@@ -97,14 +101,11 @@ export function SingleSignalInspector({
 
     // 2D and tempoHypotheses not supported in single signal view
     return null;
-  }, [result]);
-
-  // Determine if this is currently running
-  const isThisRunning = isRunning && runningAnalysis === functionId;
+  }, [displaySignal, displayEvents]);
 
   // Handle run analysis for this input
   const handleRunAnalysis = () => {
-    runAnalysis(functionId, inputId);
+    runStreamAnalysis(inputId, functionId);
   };
 
   // Color configuration
@@ -158,7 +159,7 @@ export function SingleSignalInspector({
         viewport={viewport}
         cursorTimeSec={cursorTimeSec}
         onCursorTimeChange={onCursorTimeChange}
-        mode={result?.kind === "events" ? "impulses" : "filled"}
+        mode={displayEvents ? "impulses" : "filled"}
         baseline="bottom"
         normalization="global"
         color={{

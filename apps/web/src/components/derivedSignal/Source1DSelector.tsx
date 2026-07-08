@@ -1,12 +1,16 @@
 "use client";
 
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
+import { useMemo } from "react";
+import {
+  useStreamStore,
+  isAudioStream,
+  isBandStream,
+  MIXDOWN_STREAM_ID,
+  type AnalysisId,
+} from "@/lib/streams";
 import { useDerivedSignals } from "@/lib/stores/derivedSignalStore";
-import { useFrequencyBandStore } from "@/lib/stores/frequencyBandStore";
-import type { BandMirFunctionId, BandCqtFunctionId } from "@octoseq/mir";
 import {
   type Source1D,
-  type Source1DGlobalFunctionId,
   type Signal1DRef,
   type DerivedSignalSource,
 } from "@/lib/stores/types/derivedSignal";
@@ -16,96 +20,73 @@ interface Source1DSelectorProps {
   onChange: (source: DerivedSignalSource) => void;
 }
 
-// Labels for 1D global MIR functions
-const GLOBAL_1D_LABELS: Record<Source1DGlobalFunctionId, string> = {
-  amplitudeEnvelope: "Amplitude Envelope",
-  spectralCentroid: "Spectral Centroid",
-  spectralFlux: "Spectral Flux",
-  onsetEnvelope: "Onset Envelope",
-  cqtHarmonicEnergy: "CQT Harmonic Energy",
-  cqtBassPitchMotion: "CQT Bass Motion",
-  cqtTonalStability: "CQT Tonal Stability",
-};
-
-// Labels for band MIR functions
-const BAND_MIR_LABELS: Record<BandMirFunctionId | BandCqtFunctionId, string> = {
-  bandAmplitudeEnvelope: "Amplitude",
-  bandSpectralCentroid: "Spectral Centroid",
-  bandSpectralFlux: "Spectral Flux",
-  bandOnsetStrength: "Onset Strength",
-  bandCqtHarmonicEnergy: "Harmonic Energy",
-  bandCqtBassPitchMotion: "Bass Motion",
-  bandCqtTonalStability: "Tonal Stability",
-};
+/**
+ * 1D analyses offered as derived-signal sources.
+ * Unified ids — valid on audio streams and band streams alike.
+ */
+const ANALYSIS_1D_OPTIONS: { id: AnalysisId; label: string }[] = [
+  { id: "amplitudeEnvelope", label: "Amplitude Envelope" },
+  { id: "spectralCentroid", label: "Spectral Centroid" },
+  { id: "spectralFlux", label: "Spectral Flux" },
+  { id: "onsetEnvelope", label: "Onset Envelope" },
+  { id: "cqtHarmonicEnergy", label: "CQT Harmonic Energy" },
+  { id: "cqtBassPitchMotion", label: "CQT Bass Motion" },
+  { id: "cqtTonalStability", label: "CQT Tonal Stability" },
+];
 
 /**
  * Source selector for 1D signals.
  */
 export function Source1DSelector({ source, onChange }: Source1DSelectorProps) {
-  const audioCollection = useAudioInputStore((s) => s.collection);
-  const stemOrder = audioCollection?.stemOrder ?? [];
+  const streams = useStreamStore((s) => s.streams);
+  const audioStreams = useMemo(
+    () => [...streams.values()].filter(isAudioStream).sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
+  );
+  const bands = useMemo(
+    () => [...streams.values()].filter(isBandStream).sort((a, b) => a.sortOrder - b.sortOrder),
+    [streams]
+  );
   const derivedSignals = useDerivedSignals();
-  const bandStructure = useFrequencyBandStore((s) => s.structure);
-  const bands = bandStructure?.bands ?? [];
 
   const handleRefTypeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const type = e.target.value as Signal1DRef["type"];
     let newRef: Signal1DRef;
     switch (type) {
-      case "mir":
+      case "analysis":
         newRef = {
-          type: "mir",
-          audioSourceId: "mixdown",
-          functionId: "amplitudeEnvelope",
+          type: "analysis",
+          streamId: MIXDOWN_STREAM_ID,
+          analysisId: "amplitudeEnvelope",
         };
         break;
-      case "band":
-        newRef = {
-          type: "band",
-          bandId: bands[0]?.id ?? "",
-          functionId: "bandAmplitudeEnvelope",
-        };
-        break;
-      case "derived":
-        const otherSignals = derivedSignals.filter((s) => s.source.kind !== "1d" || s.source.signalRef.type !== "derived");
+      case "derived": {
+        const otherSignals = derivedSignals.filter(
+          (s) => s.source.kind !== "1d" || s.source.signalRef.type !== "derived"
+        );
         newRef = {
           type: "derived",
           signalId: otherSignals[0]?.id ?? "",
         };
         break;
+      }
     }
     onChange({ ...source, signalRef: newRef });
   };
 
-  const handleMirAudioSourceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    if (source.signalRef.type !== "mir") return;
+  const handleStreamChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (source.signalRef.type !== "analysis") return;
     onChange({
       ...source,
-      signalRef: { ...source.signalRef, audioSourceId: e.target.value },
+      signalRef: { ...source.signalRef, streamId: e.target.value },
     });
   };
 
-  const handleMirFunctionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    if (source.signalRef.type !== "mir") return;
+  const handleAnalysisChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    if (source.signalRef.type !== "analysis") return;
     onChange({
       ...source,
-      signalRef: { ...source.signalRef, functionId: e.target.value as Source1DGlobalFunctionId },
-    });
-  };
-
-  const handleBandChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    if (source.signalRef.type !== "band") return;
-    onChange({
-      ...source,
-      signalRef: { ...source.signalRef, bandId: e.target.value },
-    });
-  };
-
-  const handleBandFunctionChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    if (source.signalRef.type !== "band") return;
-    onChange({
-      ...source,
-      signalRef: { ...source.signalRef, functionId: e.target.value as BandMirFunctionId | BandCqtFunctionId },
+      signalRef: { ...source.signalRef, analysisId: e.target.value as AnalysisId },
     });
   };
 
@@ -129,24 +110,12 @@ export function Source1DSelector({ source, onChange }: Source1DSelectorProps) {
             <input
               type="radio"
               name="refType"
-              value="mir"
-              checked={source.signalRef.type === "mir"}
+              value="analysis"
+              checked={source.signalRef.type === "analysis"}
               onChange={handleRefTypeChange}
               className="h-4 w-4 border-zinc-300 text-blue-600"
             />
-            <span className="text-sm">Global MIR</span>
-          </label>
-          <label className={`flex items-center space-x-2 ${bands.length === 0 ? "opacity-50" : ""}`}>
-            <input
-              type="radio"
-              name="refType"
-              value="band"
-              checked={source.signalRef.type === "band"}
-              onChange={handleRefTypeChange}
-              disabled={bands.length === 0}
-              className="h-4 w-4 border-zinc-300 text-blue-600"
-            />
-            <span className="text-sm">Band Signal</span>
+            <span className="text-sm">Analysis Signal</span>
           </label>
           <label className={`flex items-center space-x-2 ${availableDerivedSignals.length === 0 ? "opacity-50" : ""}`}>
             <input
@@ -163,74 +132,45 @@ export function Source1DSelector({ source, onChange }: Source1DSelectorProps) {
         </div>
       </div>
 
-      {/* MIR-specific options */}
-      {source.signalRef.type === "mir" && (
+      {/* Analysis options: one stream-grouped list, no mixdown/stem/band branching */}
+      {source.signalRef.type === "analysis" && (
         <>
           <div className="space-y-2">
-            <label className="text-sm font-medium">Audio Source</label>
+            <label className="text-sm font-medium">Stream</label>
             <select
-              value={source.signalRef.audioSourceId}
-              onChange={handleMirAudioSourceChange}
+              value={source.signalRef.streamId}
+              onChange={handleStreamChange}
               className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
             >
-              <option value="mixdown">Mixdown</option>
-              {stemOrder.map((stemId) => {
-                const stem = audioCollection?.inputs[stemId];
-                return (
-                  <option key={stemId} value={stemId}>
-                    {stem?.label ?? stemId}
+              <optgroup label="Audio">
+                {audioStreams.map((stream) => (
+                  <option key={stream.id} value={stream.id}>
+                    {stream.label}
                   </option>
-                );
-              })}
+                ))}
+              </optgroup>
+              {bands.length > 0 && (
+                <optgroup label="Bands">
+                  {bands.map((band) => (
+                    <option key={band.id} value={band.id}>
+                      {band.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Signal</label>
             <select
-              value={source.signalRef.functionId}
-              onChange={handleMirFunctionChange}
+              value={source.signalRef.analysisId}
+              onChange={handleAnalysisChange}
               className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
             >
-              {(Object.keys(GLOBAL_1D_LABELS) as Source1DGlobalFunctionId[]).map((id) => (
-                <option key={id} value={id}>
-                  {GLOBAL_1D_LABELS[id]}
-                </option>
-              ))}
-            </select>
-          </div>
-        </>
-      )}
-
-      {/* Band-specific options */}
-      {source.signalRef.type === "band" && (
-        <>
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Band</label>
-            <select
-              value={source.signalRef.bandId}
-              onChange={handleBandChange}
-              className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-            >
-              <option value="">Select band...</option>
-              {bands.map((band) => (
-                <option key={band.id} value={band.id}>
-                  {band.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Signal</label>
-            <select
-              value={source.signalRef.functionId}
-              onChange={handleBandFunctionChange}
-              className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-800"
-            >
-              {(Object.keys(BAND_MIR_LABELS) as (BandMirFunctionId | BandCqtFunctionId)[]).map((id) => (
-                <option key={id} value={id}>
-                  {BAND_MIR_LABELS[id]}
+              {ANALYSIS_1D_OPTIONS.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
                 </option>
               ))}
             </select>

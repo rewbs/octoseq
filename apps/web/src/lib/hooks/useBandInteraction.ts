@@ -1,8 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { useShallow } from "zustand/react/shallow";
-import { useFrequencyBandStore, type BandDragState } from "@/lib/stores/frequencyBandStore";
+import {
+    toFrequencyBand,
+    updateBandShape,
+    useBandEditingStore,
+    useStreamStore,
+} from "@/lib/streams";
 import { frequencyBoundsAt, moveKeyframeTime, type MelConversionConfig } from "@octoseq/mir";
 import { hzToFeatureIndex, featureIndexToHz } from "@octoseq/mir";
 
@@ -80,21 +84,8 @@ export function useBandInteraction({
         time: number;
     } | null>(null);
 
-    const {
-        structure,
-        dragState,
-        startDrag,
-        endDrag,
-        updateBand,
-        getBandById,
-    } = useFrequencyBandStore(useShallow((s) => ({
-        structure: s.structure,
-        dragState: s.dragState,
-        startDrag: s.startDrag,
-        endDrag: s.endDrag,
-        updateBand: s.updateBand,
-        getBandById: s.getBandById,
-    })));
+    const dragState = useBandEditingStore((s) => s.dragState);
+    const setDragState = useBandEditingStore((s) => s.setDragState);
 
     // Handle drag start from overlay
     const handleDragStart = useCallback(
@@ -105,8 +96,9 @@ export function useBandInteraction({
             clientY: number;
             clientX: number;
         }) => {
-            const band = getBandById(info.bandId);
-            if (!band) return;
+            const stream = useStreamStore.getState().getStream(info.bandId);
+            if (!stream || stream.kind !== "band") return;
+            const band = toFrequencyBand(stream);
 
             const container = containerRef.current;
             if (!container) return;
@@ -129,14 +121,14 @@ export function useBandInteraction({
                 time,
             };
 
-            startDrag({
+            setDragState({
                 bandId: info.bandId,
                 mode: info.mode,
                 startValue: info.startValue,
                 startPosition: info.mode === "keyframe-time" ? info.clientX : info.clientY,
             });
         },
-        [containerRef, startTime, endTime, getBandById, startDrag]
+        [containerRef, startTime, endTime, setDragState]
     );
 
     // Handle mouse move during drag
@@ -150,8 +142,9 @@ export function useBandInteraction({
             const rect = container.getBoundingClientRect();
             const y = e.clientY - rect.top;
 
-            const band = getBandById(dragState.bandId);
-            if (!band) return;
+            const stream = useStreamStore.getState().getStream(dragState.bandId);
+            if (!stream || stream.kind !== "band") return;
+            const band = toFrequencyBand(stream);
 
             const { initialLowHz, initialHighHz, initialY, time } = dragStartRef.current;
 
@@ -224,7 +217,7 @@ export function useBandInteraction({
                     // Update the initial keyframe time so subsequent moves work correctly
                     dragStartRef.current.initialKeyframeTime = newTime;
 
-                    updateBand(band.id, { frequencyShape: updatedBand.frequencyShape });
+                    updateBandShape(band.id, { frequencyShape: updatedBand.frequencyShape });
                     return;
                 }
             }
@@ -239,12 +232,12 @@ export function useBandInteraction({
                 highHzEnd: newHighHz,
             }));
 
-            updateBand(band.id, { frequencyShape: newSegments });
+            updateBandShape(band.id, { frequencyShape: newSegments });
         };
 
         const handleMouseUp = () => {
             dragStartRef.current = null;
-            endDrag();
+            setDragState(null);
         };
 
         document.addEventListener("mousemove", handleMouseMove);
@@ -265,9 +258,7 @@ export function useBandInteraction({
         minBandWidthHz,
         snapTime,
         snapTolerancePx,
-        getBandById,
-        updateBand,
-        endDrag,
+        setDragState,
     ]);
 
     return {

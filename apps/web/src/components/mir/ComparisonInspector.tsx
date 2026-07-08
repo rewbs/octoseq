@@ -4,10 +4,13 @@ import { useMemo } from "react";
 import { Play, PlayCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SingleSignalInspector } from "./SingleSignalInspector";
-import { useMirStore } from "@/lib/stores/mirStore";
-import { useMirActions } from "@/lib/stores/hooks/useMirActions";
-import { useAudioInputStore } from "@/lib/stores/audioInputStore";
-import { MIXDOWN_ID } from "@/lib/stores/types/audioInput";
+import {
+  useStreamStore,
+  useAnalysisStore,
+  runStreamAnalysis,
+  analysisKey,
+  MIXDOWN_STREAM_ID,
+} from "@/lib/streams";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 
@@ -63,28 +66,30 @@ export function ComparisonInspector({
   showBeatGrid = false,
   audioDuration = 0,
 }: ComparisonInspectorProps) {
-  const { runAnalysis } = useMirActions();
-  const isRunning = useMirStore((s) => s.isRunning);
-  const inputMirCache = useMirStore((s) => s.inputMirCache);
+  const isRunning = useAnalysisStore((s) => s.pending.size > 0);
+  const analysisResults = useAnalysisStore((s) => s.results);
 
   // Get all audio sources (mixdown + stems)
-  const stems = useAudioInputStore((s) => s.getStems());
-  const mixdown = useAudioInputStore((s) => s.getMixdown());
+  const streams = useStreamStore((s) => s.streams);
 
   // Build list of all sources to compare
   const sources = useMemo(() => {
     const result: Array<{ id: string; label: string; color: typeof SOURCE_COLORS[0] }> = [];
 
     // Mixdown first
+    const mixdown = streams.get(MIXDOWN_STREAM_ID);
     if (mixdown) {
       result.push({
-        id: MIXDOWN_ID,
+        id: MIXDOWN_STREAM_ID,
         label: mixdown.label,
         color: getColorForIndex(0),
       });
     }
 
     // Then stems
+    const stems = [...streams.values()]
+      .filter((st) => st.kind === "stem")
+      .sort((a, b) => a.sortOrder - b.sortOrder);
     for (let i = 0; i < stems.length; i++) {
       const stem = stems[i];
       if (stem) {
@@ -97,30 +102,27 @@ export function ComparisonInspector({
     }
 
     return result;
-  }, [mixdown, stems]);
+  }, [streams]);
 
   // Check which sources have data
   const sourcesWithData = useMemo(() => {
-    return sources.filter((source) => {
-      const cacheKey = `${source.id}:${functionId}`;
-      return inputMirCache.has(cacheKey as `${string}:${MirFunctionId}`);
-    });
-  }, [sources, functionId, inputMirCache]);
+    return sources.filter((source) => analysisResults.has(analysisKey(source.id, functionId)));
+  }, [sources, functionId, analysisResults]);
 
   // Run analysis for all sources
   const handleRunAll = async () => {
     for (const source of sources) {
-      await runAnalysis(functionId, source.id);
+      await runStreamAnalysis(source.id, functionId, { force: true });
     }
   };
 
   // Run analysis for sources without data
   const handleRunMissing = async () => {
     const missing = sources.filter(
-      (source) => !inputMirCache.has(`${source.id}:${functionId}` as `${string}:${MirFunctionId}`)
+      (source) => !analysisResults.has(analysisKey(source.id, functionId))
     );
     for (const source of missing) {
-      await runAnalysis(functionId, source.id);
+      await runStreamAnalysis(source.id, functionId);
     }
   };
 

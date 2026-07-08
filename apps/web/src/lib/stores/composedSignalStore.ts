@@ -13,7 +13,7 @@ import {
   DEFAULT_VALUE_MIN,
   DEFAULT_VALUE_MAX,
 } from "./types/composedSignal";
-import type { SubBeatDivision } from "./beatGridStore";
+import type { SubBeatDivision } from "./timingStore";
 
 // ============================================================================
 // HELPER FUNCTIONS

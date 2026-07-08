@@ -1,9 +1,9 @@
 "use client";
 
 import { getInspectorNodeType, getAudioSourceId, getMirAnalysisId } from "@/lib/nodeTypes";
+import { useViewStore } from "@/lib/streams";
 import { ProjectInspector } from "./ProjectInspector";
 import { AudioSourceInspector } from "./AudioSourceInspector";
-import { StemsInspector } from "./StemsInspector";
 import { BandsInspector } from "./BandsInspector";
 import { BandInspector } from "./BandInspector";
 import { AuthoredEventsInspector } from "./AuthoredEventsInspector";
@@ -17,6 +17,23 @@ import { ScriptsInspector } from "./ScriptsInspector";
 
 interface InspectorContentProps {
   nodeId: string;
+}
+
+/** Stem management moved to the Streams panel in the main column (Phase 2). */
+function StreamsPanelPointer() {
+  const setStreamManagerOpen = useViewStore((s) => s.setStreamManagerOpen);
+  return (
+    <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
+      Streams (stems and bands) are managed in the{" "}
+      <button
+        className="underline text-zinc-700 dark:text-zinc-200"
+        onClick={() => setStreamManagerOpen(true)}
+      >
+        Streams panel
+      </button>{" "}
+      in the main view.
+    </div>
+  );
 }
 
 /**
@@ -43,7 +60,7 @@ export function InspectorContent({ nodeId }: InspectorContentProps) {
       return <AudioSourceInspector sourceId={sourceId ?? "mixdown"} />;
 
     case "stems-section":
-      return <StemsInspector />;
+      return <StreamsPanelPointer />;
 
     case "bands-section":
       return <BandsInspector nodeId={nodeId} />;

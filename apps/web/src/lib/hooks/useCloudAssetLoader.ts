@@ -14,10 +14,17 @@
 import { useCallback } from 'react';
 import { useUser } from '@clerk/nextjs';
 import { getAssetDownloadUrls } from '@/lib/actions/asset';
-import { useAudioInputStore } from '@/lib/stores/audioInputStore';
 import { useMeshAssetStore } from '@/lib/stores/meshAssetStore';
 import { useProjectStore } from '@/lib/stores/projectStore';
-import { MIXDOWN_ID, type RemoteAudioSource } from '@/lib/stores/types/audioInput';
+import {
+  MIXDOWN_STREAM_ID,
+  isAudioStream,
+  loadMixdown,
+  replaceStreamAudio,
+  useAudioSourceStore,
+  useStreamStore,
+  type RemoteAudioSource,
+} from '@/lib/streams';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -65,20 +72,20 @@ export function useCloudAssetLoader(): CloudAssetLoaderReturn {
         return false;
       }
 
-      const audioInputStore = useAudioInputStore.getState();
+      const audioSourceStore = useAudioSourceStore.getState();
 
       // =======================================================================
-      // DESIGN: Set currentAudioSource immediately for the mixdown.
+      // DESIGN: Set the playback source immediately for the mixdown.
       // This establishes the single source of truth for playback.
       // =======================================================================
-      if (inputId === MIXDOWN_ID) {
+      if (inputId === MIXDOWN_STREAM_ID) {
         const pendingSource: RemoteAudioSource = {
           type: 'remote',
           id: inputId,
           cloudAssetId: assetId,
           status: 'pending',
         };
-        audioInputStore.setCurrentAudioSource(pendingSource);
+        audioSourceStore.setCurrentSource(pendingSource);
         console.log('[CloudAssetLoader] Set pending RemoteAudioSource for mixdown');
       }
 
@@ -89,8 +96,8 @@ export function useCloudAssetLoader(): CloudAssetLoaderReturn {
         if (!result?.data?.assets || result.data.assets.length === 0) {
           console.error('[CloudAssetLoader] Failed to get download URL for asset:', assetId);
           useProjectStore.getState().setAudioLoadStatus(inputId, 'failed', 'Failed to get download URL');
-          if (inputId === MIXDOWN_ID) {
-            audioInputStore.updateAudioSourceStatus('failed', undefined, 'Failed to get download URL');
+          if (inputId === MIXDOWN_STREAM_ID) {
+            audioSourceStore.updateSourceStatus('failed', undefined, 'Failed to get download URL');
           }
           return false;
         }
@@ -99,16 +106,16 @@ export function useCloudAssetLoader(): CloudAssetLoaderReturn {
         if (!assetInfo) {
           console.error('[CloudAssetLoader] No asset info returned for:', assetId);
           useProjectStore.getState().setAudioLoadStatus(inputId, 'failed', 'Asset not found');
-          if (inputId === MIXDOWN_ID) {
-            audioInputStore.updateAudioSourceStatus('failed', undefined, 'Asset not found');
+          if (inputId === MIXDOWN_STREAM_ID) {
+            audioSourceStore.updateSourceStatus('failed', undefined, 'Asset not found');
           }
           return false;
         }
 
         // Fetch the audio file
         useProjectStore.getState().setAudioLoadStatus(inputId, 'loading');
-        if (inputId === MIXDOWN_ID) {
-          audioInputStore.updateAudioSourceStatus('resolving');
+        if (inputId === MIXDOWN_STREAM_ID) {
+          audioSourceStore.updateSourceStatus('resolving');
         }
 
         const response = await fetch(assetInfo.downloadUrl);
@@ -143,50 +150,49 @@ export function useCloudAssetLoader(): CloudAssetLoaderReturn {
         };
 
         // Handle mixdown vs stems differently
-        if (inputId === MIXDOWN_ID) {
-          // Get existing input for origin/label, or use defaults
-          const existingInput = audioInputStore.collection?.inputs[inputId];
+        if (inputId === MIXDOWN_STREAM_ID) {
+          // Get existing stream for origin/label, or use defaults
+          const existing = useStreamStore.getState().getMixdown();
 
-          // Update the audio input store with decoded buffer for MIR
-          // Note: updateMixdown will create the collection if it doesn't exist
-          audioInputStore.updateMixdown({
-            audioBuffer: audioBufferLike,
-            metadata: {
+          // Initialize/replace the mixdown stream (caches PCM, invalidates analyses)
+          loadMixdown({
+            audio: {
+              origin: existing?.audio.origin ?? { kind: 'url', url: audioUrl, fileName: 'Cloud Audio' },
+              url: audioUrl,
+              cloudAssetId: assetId,
+              fileName: existing?.audio.fileName,
+              durationSec: audioBuffer.duration,
               sampleRate: audioBuffer.sampleRate,
-              totalSamples: audioBuffer.length,
-              duration: audioBuffer.duration,
+              channels: audioBuffer.numberOfChannels,
             },
-            audioUrl,
-            origin: existingInput?.origin ?? { kind: 'url', url: audioUrl, fileName: 'Cloud Audio' },
-            label: existingInput?.label ?? 'Mixdown',
+            buffer: audioBufferLike,
+            label: existing?.label,
           });
 
           // =================================================================
-          // DESIGN: Update AudioSource to ready with the blob URL.
+          // DESIGN: Update the playback source to ready with the blob URL.
           // WaveSurfer will load directly from this URL.
           // =================================================================
-          audioInputStore.updateAudioSourceStatus('ready', audioUrl);
+          audioSourceStore.updateSourceStatus('ready', audioUrl);
           console.log('[CloudAssetLoader] AudioSource ready with blob URL');
-
-          // Set the cloud asset ID
-          audioInputStore.setCloudAssetId(inputId, assetId);
         } else {
-          // For stems, we need the input to exist first
-          const input = audioInputStore.collection?.inputs[inputId];
-          if (input) {
-            audioInputStore.replaceStem(inputId, {
-              audioBuffer: audioBufferLike,
-              metadata: {
+          // For stems, the stream must exist first (created during project hydration)
+          const stream = useStreamStore.getState().getStream(inputId);
+          if (stream && isAudioStream(stream)) {
+            replaceStreamAudio(
+              inputId,
+              {
+                ...stream.audio,
+                url: audioUrl,
+                cloudAssetId: assetId,
+                durationSec: audioBuffer.duration,
                 sampleRate: audioBuffer.sampleRate,
-                totalSamples: audioBuffer.length,
-                duration: audioBuffer.duration,
+                channels: audioBuffer.numberOfChannels,
               },
-              audioUrl,
-            });
-            // Set the cloud asset ID
-            audioInputStore.setCloudAssetId(inputId, assetId);
+              audioBufferLike
+            );
           } else {
-            console.warn('[CloudAssetLoader] Stem input not found:', inputId);
+            console.warn('[CloudAssetLoader] Stem stream not found:', inputId);
           }
         }
 
@@ -200,8 +206,8 @@ export function useCloudAssetLoader(): CloudAssetLoaderReturn {
           'failed',
           error instanceof Error ? error.message : 'Unknown error'
         );
-        if (inputId === MIXDOWN_ID) {
-          audioInputStore.updateAudioSourceStatus('failed', undefined, error instanceof Error ? error.message : 'Unknown error');
+        if (inputId === MIXDOWN_STREAM_ID) {
+          audioSourceStore.updateSourceStatus('failed', undefined, error instanceof Error ? error.message : 'Unknown error');
         }
         return false;
       }
@@ -295,21 +301,12 @@ export function useCloudAssetLoader(): CloudAssetLoaderReturn {
     const audioAssets: Array<{ assetId: string; inputId: string }> = [];
     const meshAssets: Array<{ assetId: string; meshId: string }> = [];
 
-    // Check mixdown
-    if (project.audio.mixdown?.assetId) {
-      audioAssets.push({
-        assetId: project.audio.mixdown.assetId,
-        inputId: project.audio.mixdown.id,
-      });
-    }
-
-    // Check stems
-    for (const stem of project.audio.stems) {
-      if (stem.assetId) {
-        audioAssets.push({
-          assetId: stem.assetId,
-          inputId: stem.id,
-        });
+    // Check audio streams (mixdown + stems)
+    for (const stream of project.streams) {
+      if (!isAudioStream(stream)) continue;
+      const assetId = stream.audio.cloudAssetId ?? stream.audio.assetId;
+      if (assetId) {
+        audioAssets.push({ assetId, inputId: stream.id });
       }
     }
 
