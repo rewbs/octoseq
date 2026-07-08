@@ -5,29 +5,23 @@ import { useShallow } from "zustand/react/shallow";
 import { Plus, Sparkles, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { pickPeaks, pickPeaksAdaptive, DEFAULT_PEAK_PICKING_PARAMS, type PeakPickingParams } from "@octoseq/mir";
-import { useDerivedSignalStore } from "@/lib/stores/derivedSignalStore";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useAuthoredEventActions } from "@/lib/stores/hooks/useAuthoredEventActions";
 import { usePlaybackStore } from "@/lib/stores/playbackStore";
+import { useStreamStore } from "@/lib/streams";
 import {
-  analysisKey,
-  isBandStream,
-  toDisplaySignal,
-  useAnalysisStore,
-  useStreamStore,
-} from "@/lib/streams";
+  SignalSourceSelector,
+  signalSourceValue,
+  useSignalSourceData,
+  useSignalSourceGroups,
+  useSignalSourceLabel,
+  type SignalSourceRef,
+} from "@/components/signals/SignalSourceSelector";
 import { useTimingStore } from "@/lib/stores/timingStore";
 import { useMirroredCursorTime } from "@/lib/stores/hooks/useDerivedState";
 import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
 import type { AuthoredEventProvenance } from "@/lib/stores/types/authoredEvent";
 import { cn } from "@/lib/utils";
-
-/**
- * Available signal source types for event extraction.
- */
-type SignalSource =
-  | { kind: "customSignal"; signalId: string; name: string }
-  | { kind: "bandEnvelope"; bandId: string; name: string };
 
 /**
  * Peak picking algorithm choices.
@@ -55,7 +49,7 @@ interface EventImportPanelProps {
  */
 export function EventImportPanel({ onClose }: EventImportPanelProps) {
   // Source selection
-  const [selectedSourceKey, setSelectedSourceKey] = useState<string>("");
+  const [selectedSourceRef, setSelectedSourceRef] = useState<SignalSourceRef | null>(null);
 
   // Peak picking algorithm and parameters
   const [algorithm, setAlgorithm] = useState<PeakAlgorithm>("threshold");
@@ -83,73 +77,13 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
     }))
   );
 
-  // Get available signals - use useShallow for array/object selectors to avoid infinite loops
-  const derivedSignals = useDerivedSignalStore(
-    useShallow((s) => s.structure?.signals ?? [])
-  );
-  const derivedSignalResults = useDerivedSignalStore((s) => s.resultCache);
-
-  const streams = useStreamStore((s) => s.streams);
-  const bands = useMemo(
-    () => [...streams.values()].filter(isBandStream).sort((a, b) => a.sortOrder - b.sortOrder),
-    [streams]
-  );
-  const analysisResults = useAnalysisStore((s) => s.results);
+  // Signal sources come from the shared selector (unified streams + analyses);
+  // the groups are read here for the empty state and default stream names.
+  const sourceGroups = useSignalSourceGroups({ includeDerived: true });
+  const signalData = useSignalSourceData(selectedSourceRef);
+  const selectedSourceLabel = useSignalSourceLabel(selectedSourceRef);
 
   const { createManualStream } = useAuthoredEventActions();
-
-  // Build available sources list
-  const availableSources = useMemo(() => {
-    const sources: SignalSource[] = [];
-
-    // Add computed custom signals
-    for (const signal of derivedSignals) {
-      if (derivedSignalResults.has(signal.id)) {
-        sources.push({
-          kind: "customSignal",
-          signalId: signal.id,
-          name: signal.name,
-        });
-      }
-    }
-
-    // Add band envelopes (amplitude)
-    for (const band of bands) {
-      if (analysisResults.has(analysisKey(band.id, "amplitudeEnvelope"))) {
-        sources.push({
-          kind: "bandEnvelope",
-          bandId: band.id,
-          name: `${band.label} Amplitude`,
-        });
-      }
-    }
-
-    return sources;
-  }, [derivedSignals, derivedSignalResults, bands, analysisResults]);
-
-  // Find selected source
-  const selectedSource = useMemo(() => {
-    if (!selectedSourceKey) return null;
-    return availableSources.find((s) => {
-      if (s.kind === "customSignal") return s.signalId === selectedSourceKey;
-      return s.bandId === selectedSourceKey;
-    }) ?? null;
-  }, [selectedSourceKey, availableSources]);
-
-  // Get signal data for selected source
-  const signalData = useMemo(() => {
-    if (!selectedSource) return null;
-
-    if (selectedSource.kind === "customSignal") {
-      const result = derivedSignalResults.get(selectedSource.signalId);
-      if (!result) return null;
-      return { times: result.times, values: result.values };
-    } else {
-      const result = analysisResults.get(analysisKey(selectedSource.bandId, "amplitudeEnvelope"));
-      if (!result) return null;
-      return toDisplaySignal(result, "amplitudeEnvelope");
-    }
-  }, [selectedSource, derivedSignalResults, analysisResults]);
 
   // Compute peaks from signal (debounced via auto-detect)
   const detectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -208,20 +142,21 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
   }, [autoDetect, signalData, algorithm, threshold, minDistance, adaptiveWindow, runDetection]);
 
   // Handle source selection
-  const handleSourceChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value;
-    setSelectedSourceKey(value);
+  const handleSourceChange = useCallback((ref: SignalSourceRef | null) => {
+    setSelectedSourceRef(ref);
     setPeakResult(null);
 
     // Set default name
-    const source = availableSources.find((s) => {
-      if (s.kind === "customSignal") return s.signalId === value;
-      return s.bandId === value;
-    });
-    if (source) {
-      setNewStreamName(`${source.name} Peaks`);
+    if (ref) {
+      const value = signalSourceValue(ref);
+      const option = sourceGroups
+        .flatMap((group) => group.options)
+        .find((o) => o.value === value);
+      if (option) {
+        setNewStreamName(`${option.label} Peaks`);
+      }
     }
-  }, [availableSources]);
+  }, [sourceGroups]);
 
   // Handle create new stream
   const handleCreateStream = useCallback(() => {
@@ -253,7 +188,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
     useAuthoredEventStore.getState().addEvents(streamId, events);
 
     // Reset state
-    setSelectedSourceKey("");
+    setSelectedSourceRef(null);
     setNewStreamName("");
     setPeakResult(null);
     onClose?.();
@@ -291,37 +226,13 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
       {/* Pipeline row: Source → Algorithm → Params */}
       <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-y border-zinc-200 dark:border-zinc-700 text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/50">
         <span className="text-zinc-400">From</span>
-        <select
-          value={selectedSourceKey}
+        <SignalSourceSelector
+          value={selectedSourceRef}
           onChange={handleSourceChange}
-          className="h-7 px-2 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 dark:text-zinc-100"
-        >
-          <option value="">Select signal...</option>
-          {availableSources.filter((s) => s.kind === "customSignal").length > 0 && (
-            <optgroup label="Custom Signals">
-              {availableSources
-                .filter((s): s is SignalSource & { kind: "customSignal" } => s.kind === "customSignal")
-                .map((source) => (
-                  <option key={source.signalId} value={source.signalId}>
-                    {source.name}
-                  </option>
-                ))}
-            </optgroup>
-          )}
-          {availableSources.filter((s) => s.kind === "bandEnvelope").length > 0 && (
-            <optgroup label="Band Envelopes">
-              {availableSources
-                .filter((s): s is SignalSource & { kind: "bandEnvelope" } => s.kind === "bandEnvelope")
-                .map((source) => (
-                  <option key={source.bandId} value={source.bandId}>
-                    {source.name}
-                  </option>
-                ))}
-            </optgroup>
-          )}
-        </select>
+          includeDerived
+        />
 
-        {selectedSource && (
+        {selectedSourceRef && (
           <>
             <span className="text-zinc-400">→</span>
             <select
@@ -345,7 +256,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
       </div>
 
       {/* Parameters row */}
-      {selectedSource && (
+      {selectedSourceRef && (
         <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 flex flex-wrap items-center gap-4">
           {/* Threshold slider */}
           <div className="flex items-center gap-2">
@@ -440,7 +351,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2 text-xs">
               <span className="text-zinc-600 dark:text-zinc-300 font-medium">
-                {selectedSource?.name}
+                {selectedSourceLabel}
               </span>
               {peakResult && (
                 <span className="text-amber-600 dark:text-amber-400">
@@ -519,7 +430,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
       )}
 
       {/* Empty state */}
-      {availableSources.length === 0 && (
+      {sourceGroups.length === 0 && (
         <div className="px-3 pb-3 text-xs text-zinc-500 italic">
           <p>To import events from a signal:</p>
           <ol className="list-decimal ml-4 mt-1 space-y-1">

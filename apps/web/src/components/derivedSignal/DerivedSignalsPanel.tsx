@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useCallback } from "react";
 import { useDerivedSignalStore, useDerivedSignals } from "@/lib/stores/derivedSignalStore";
 import { useDerivedSignalActions } from "@/lib/stores/hooks/useDerivedSignalActions";
 import { useInterpretationTreeStore } from "@/lib/stores/interpretationTreeStore";
@@ -42,26 +42,22 @@ export function DerivedSignalsPanel() {
   const signals = useDerivedSignals();
   const selectedSignalId = useDerivedSignalStore((s) => s.selectedSignalId);
   const selectSignal = useDerivedSignalStore((s) => s.selectSignal);
-  const getSignalById = useDerivedSignalStore((s) => s.getSignalById);
   const getSignalResult = useDerivedSignalStore((s) => s.getSignalResult);
   const computingSignalId = useDerivedSignalStore((s) => s.computingSignalId);
   const { addSignal, updateSignal, removeSignal, recomputeSignal } = useDerivedSignalActions();
 
-  const selectedSignal = selectedSignalId ? getSignalById(selectedSignalId) : null;
+  // Resolve the selection from the subscribed signals array so downstream
+  // derivations (like the active tab) track store updates.
+  const selectedSignal = useMemo(
+    () => (selectedSignalId ? (signals.find((s) => s.id === selectedSignalId) ?? null) : null),
+    [signals, selectedSignalId]
+  );
   const selectedResult = selectedSignalId ? getSignalResult(selectedSignalId) : null;
   const isComputing = selectedSignalId === computingSignalId;
 
-  // Tab state for source type
-  const [activeTab, setActiveTab] = useState<"2d" | "1d" | "events">(
-    selectedSignal?.source.kind ?? "2d"
-  );
-
-  // Sync tab with selected signal source type
-  useEffect(() => {
-    if (selectedSignal) {
-      setActiveTab(selectedSignal.source.kind);
-    }
-  }, [selectedSignal]);
+  // Derive the active tab from the selected signal's source kind — single
+  // source of truth, so the tab can never go stale against the signal.
+  const activeTab: "2d" | "1d" | "events" = selectedSignal?.source.kind ?? "2d";
 
   const handleAddSignal = (kind: "2d" | "1d" | "events") => {
     let defaults;
@@ -79,7 +75,6 @@ export function DerivedSignalsPanel() {
     const newId = addSignal(defaults);
     if (newId) {
       selectSignal(newId);
-      setActiveTab(kind);
     }
   };
 
@@ -124,8 +119,7 @@ export function DerivedSignalsPanel() {
   );
 
   const handleTabChange = (kind: "2d" | "1d" | "events") => {
-    setActiveTab(kind);
-    // Create new source when switching types - use updateSignal directly to avoid stale callback
+    // Switching tabs swaps the source type; the active tab follows the signal.
     if (selectedSignal && selectedSignal.source.kind !== kind) {
       let newSource: DerivedSignalSource;
       switch (kind) {
