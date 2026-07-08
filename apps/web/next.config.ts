@@ -28,11 +28,12 @@ const nextConfig: NextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline'", // Monaco Editor requires unsafe-eval
-              "style-src 'self' 'unsafe-inline'", // Tailwind requires unsafe-inline
+              // Monaco Editor requires unsafe-eval and (by default) loads from jsdelivr
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net https://*.clerk.accounts.dev https://clerk.octoseq.xyz",
+              "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net", // Tailwind requires unsafe-inline
               "img-src 'self' data: blob: https:",
-              "font-src 'self' data:",
-              "connect-src 'self' https://*.clerk.accounts.dev https://clerk.octoseq.xyz https://*.r2.cloudflarestorage.com",
+              "font-src 'self' data: https://cdn.jsdelivr.net",
+              "connect-src 'self' https://*.clerk.accounts.dev https://clerk.octoseq.xyz https://*.r2.cloudflarestorage.com https://cdn.jsdelivr.net",
               "media-src 'self' blob:",
               "worker-src 'self' blob:",
               "frame-ancestors 'none'",
