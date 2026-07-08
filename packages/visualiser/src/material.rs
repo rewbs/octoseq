@@ -7,6 +7,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::feedback::SignalOrF32;
+use crate::signal_eval::EvalContext;
+
 /// Unique identifier for a material.
 pub type MaterialId = String;
 
@@ -80,6 +83,187 @@ impl ParamValue {
     }
 }
 
+// ============================================================================
+// Signal-enabled Parameter Types (following "Signals Everywhere" principle)
+// ============================================================================
+
+/// A 2D vector where each component can be a static f32 or a dynamic Signal.
+#[derive(Clone, Debug)]
+pub struct Vec2Signal {
+    pub x: SignalOrF32,
+    pub y: SignalOrF32,
+}
+
+impl Vec2Signal {
+    /// Create a new Vec2Signal with static values.
+    pub fn new(x: f32, y: f32) -> Self {
+        Self {
+            x: SignalOrF32::Scalar(x),
+            y: SignalOrF32::Scalar(y),
+        }
+    }
+
+    /// Evaluate all components to produce a static [f32; 2].
+    pub fn evaluate(&self, ctx: &mut EvalContext) -> [f32; 2] {
+        [self.x.evaluate(ctx), self.y.evaluate(ctx)]
+    }
+}
+
+/// A 3D vector where each component can be a static f32 or a dynamic Signal.
+#[derive(Clone, Debug)]
+pub struct Vec3Signal {
+    pub x: SignalOrF32,
+    pub y: SignalOrF32,
+    pub z: SignalOrF32,
+}
+
+impl Vec3Signal {
+    /// Create a new Vec3Signal with static values.
+    pub fn new(x: f32, y: f32, z: f32) -> Self {
+        Self {
+            x: SignalOrF32::Scalar(x),
+            y: SignalOrF32::Scalar(y),
+            z: SignalOrF32::Scalar(z),
+        }
+    }
+
+    /// Evaluate all components to produce a static [f32; 3].
+    pub fn evaluate(&self, ctx: &mut EvalContext) -> [f32; 3] {
+        [
+            self.x.evaluate(ctx),
+            self.y.evaluate(ctx),
+            self.z.evaluate(ctx),
+        ]
+    }
+}
+
+/// A 4D vector where each component can be a static f32 or a dynamic Signal.
+/// Used for colors and other 4-component values.
+#[derive(Clone, Debug)]
+pub struct Vec4Signal {
+    pub x: SignalOrF32,
+    pub y: SignalOrF32,
+    pub z: SignalOrF32,
+    pub w: SignalOrF32,
+}
+
+impl Vec4Signal {
+    /// Create a new Vec4Signal with static values.
+    pub fn new(x: f32, y: f32, z: f32, w: f32) -> Self {
+        Self {
+            x: SignalOrF32::Scalar(x),
+            y: SignalOrF32::Scalar(y),
+            z: SignalOrF32::Scalar(z),
+            w: SignalOrF32::Scalar(w),
+        }
+    }
+
+    /// Evaluate all components to produce a static [f32; 4].
+    pub fn evaluate(&self, ctx: &mut EvalContext) -> [f32; 4] {
+        [
+            self.x.evaluate(ctx),
+            self.y.evaluate(ctx),
+            self.z.evaluate(ctx),
+            self.w.evaluate(ctx),
+        ]
+    }
+}
+
+/// Runtime value for a shader parameter with Signal support.
+///
+/// This is the script-facing type that supports both static values and Signals.
+/// At render time, these are evaluated to produce ParamValue (GPU-ready values).
+#[derive(Clone, Debug)]
+pub enum MaterialParamValue {
+    Float(SignalOrF32),
+    Vec2(Vec2Signal),
+    Vec3(Vec3Signal),
+    Vec4(Vec4Signal),
+}
+
+impl Default for MaterialParamValue {
+    fn default() -> Self {
+        MaterialParamValue::Float(SignalOrF32::Scalar(0.0))
+    }
+}
+
+impl MaterialParamValue {
+    /// Evaluate the parameter to produce a GPU-ready ParamValue.
+    pub fn evaluate(&self, ctx: &mut EvalContext) -> ParamValue {
+        match self {
+            MaterialParamValue::Float(v) => ParamValue::Float(v.evaluate(ctx)),
+            MaterialParamValue::Vec2(v) => ParamValue::Vec2(v.evaluate(ctx)),
+            MaterialParamValue::Vec3(v) => ParamValue::Vec3(v.evaluate(ctx)),
+            MaterialParamValue::Vec4(v) => ParamValue::Vec4(v.evaluate(ctx)),
+        }
+    }
+
+    /// Get the static value if all components are scalars (no signals).
+    /// Returns None if any component contains a Signal.
+    ///
+    /// This is useful for extracting default values which are always static.
+    pub fn as_static(&self) -> Option<ParamValue> {
+        match self {
+            MaterialParamValue::Float(v) => {
+                if let SignalOrF32::Scalar(val) = v {
+                    Some(ParamValue::Float(*val))
+                } else {
+                    None
+                }
+            }
+            MaterialParamValue::Vec2(v) => {
+                if let (SignalOrF32::Scalar(x), SignalOrF32::Scalar(y)) = (&v.x, &v.y) {
+                    Some(ParamValue::Vec2([*x, *y]))
+                } else {
+                    None
+                }
+            }
+            MaterialParamValue::Vec3(v) => {
+                if let (SignalOrF32::Scalar(x), SignalOrF32::Scalar(y), SignalOrF32::Scalar(z)) =
+                    (&v.x, &v.y, &v.z)
+                {
+                    Some(ParamValue::Vec3([*x, *y, *z]))
+                } else {
+                    None
+                }
+            }
+            MaterialParamValue::Vec4(v) => {
+                if let (
+                    SignalOrF32::Scalar(x),
+                    SignalOrF32::Scalar(y),
+                    SignalOrF32::Scalar(z),
+                    SignalOrF32::Scalar(w),
+                ) = (&v.x, &v.y, &v.z, &v.w)
+                {
+                    Some(ParamValue::Vec4([*x, *y, *z, *w]))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// Create from a static f32 value.
+    pub fn from_float(value: f32) -> Self {
+        MaterialParamValue::Float(SignalOrF32::Scalar(value))
+    }
+
+    /// Create from a static vec2 value.
+    pub fn from_vec2(value: [f32; 2]) -> Self {
+        MaterialParamValue::Vec2(Vec2Signal::new(value[0], value[1]))
+    }
+
+    /// Create from a static vec3 value.
+    pub fn from_vec3(value: [f32; 3]) -> Self {
+        MaterialParamValue::Vec3(Vec3Signal::new(value[0], value[1], value[2]))
+    }
+
+    /// Create from a static vec4/color value.
+    pub fn from_vec4(value: [f32; 4]) -> Self {
+        MaterialParamValue::Vec4(Vec4Signal::new(value[0], value[1], value[2], value[3]))
+    }
+}
+
 /// A shader parameter definition.
 #[derive(Clone, Debug)]
 pub struct ParamDef {
@@ -87,8 +271,8 @@ pub struct ParamDef {
     pub name: String,
     /// Type of the parameter.
     pub param_type: ParamType,
-    /// Default value when not specified by script.
-    pub default_value: ParamValue,
+    /// Default value when not specified by script (supports Signals).
+    pub default_value: MaterialParamValue,
     /// Optional minimum value (for Float type).
     pub min: Option<f32>,
     /// Optional maximum value (for Float type).
@@ -103,7 +287,7 @@ impl ParamDef {
         Self {
             name: name.into(),
             param_type: ParamType::Float,
-            default_value: ParamValue::Float(default),
+            default_value: MaterialParamValue::from_float(default),
             min: None,
             max: None,
             description: String::new(),
@@ -115,7 +299,7 @@ impl ParamDef {
         Self {
             name: name.into(),
             param_type: ParamType::Color,
-            default_value: ParamValue::Vec4(default),
+            default_value: MaterialParamValue::from_vec4(default),
             min: None,
             max: None,
             description: String::new(),
@@ -127,7 +311,7 @@ impl ParamDef {
         Self {
             name: name.into(),
             param_type: ParamType::Vec3,
-            default_value: ParamValue::Vec3(default),
+            default_value: MaterialParamValue::from_vec3(default),
             min: None,
             max: None,
             description: String::new(),
@@ -257,7 +441,7 @@ impl Material {
     }
 
     /// Get the default value for a parameter by name.
-    pub fn get_default(&self, name: &str) -> Option<&ParamValue> {
+    pub fn get_default(&self, name: &str) -> Option<&MaterialParamValue> {
         self.params.iter()
             .find(|p| p.name == name)
             .map(|p| &p.default_value)
@@ -571,5 +755,124 @@ mod tests {
         let registry = MaterialRegistry::new();
         let default = registry.default_material();
         assert_eq!(default.id, "default");
+    }
+
+    #[test]
+    fn test_builtin_material_defaults_are_static() {
+        // The renderer extracts defaults via `as_static().expect(...)`, so every
+        // built-in material default must remain static (no Signal components).
+        let registry = MaterialRegistry::new();
+        for id in registry.list_ids() {
+            let material = registry.get(id).unwrap();
+            for param in &material.params {
+                assert!(
+                    param.default_value.as_static().is_some(),
+                    "built-in material '{}' param '{}' has a non-static default",
+                    id,
+                    param.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_material_param_value_static_conversions() {
+        assert_eq!(
+            MaterialParamValue::from_float(0.75).as_static(),
+            Some(ParamValue::Float(0.75))
+        );
+        assert_eq!(
+            MaterialParamValue::from_vec2([1.0, 2.0]).as_static(),
+            Some(ParamValue::Vec2([1.0, 2.0]))
+        );
+        assert_eq!(
+            MaterialParamValue::from_vec3([1.0, 2.0, 3.0]).as_static(),
+            Some(ParamValue::Vec3([1.0, 2.0, 3.0]))
+        );
+        assert_eq!(
+            MaterialParamValue::from_vec4([1.0, 0.5, 0.25, 1.0]).as_static(),
+            Some(ParamValue::Vec4([1.0, 0.5, 0.25, 1.0]))
+        );
+    }
+
+    #[test]
+    fn test_signal_bound_material_param_evaluates_per_frame() {
+        use crate::input::{BandSignalMap, InputSignal, SignalMap};
+        use crate::signal::Signal;
+        use crate::signal_state::SignalState;
+        use crate::signal_stats::StatisticsCache;
+        use std::rc::Rc;
+
+        // An "amplitude" input that ramps from 0.0 to 3.0 over 4 samples at 1 Hz,
+        // so its value depends on the frame time it is sampled at.
+        let mut inputs: SignalMap = HashMap::new();
+        inputs.insert(
+            "amplitude".to_string(),
+            Rc::new(InputSignal::new(vec![0.0, 1.0, 2.0, 3.0], 1.0)),
+        );
+        let bands: BandSignalMap = HashMap::new();
+        let stems: BandSignalMap = HashMap::new();
+        let custom: SignalMap = HashMap::new();
+        let composed: SignalMap = HashMap::new();
+        let stats = StatisticsCache::new();
+        let mut state = SignalState::new();
+
+        // A material param with a Signal bound to it:
+        // e.g. emission intensity following the amplitude signal.
+        let param = MaterialParamValue::Float(SignalOrF32::Signal(Signal::input("amplitude")));
+
+        // Signal-bound params have no static value; they must be evaluated per-frame.
+        assert!(param.as_static().is_none());
+
+        // Evaluate the same param definition on two different frames.
+        let mut eval_at = |time: f32, state: &mut SignalState| -> f32 {
+            let mut ctx = EvalContext::new(
+                time, 0.016, 0, None, &inputs, &bands, &stems, &custom, &composed, &stats, state,
+                None,
+            );
+            match param.evaluate(&mut ctx) {
+                ParamValue::Float(v) => v,
+                other => panic!("expected Float, got {:?}", other),
+            }
+        };
+
+        let frame_a = eval_at(0.1, &mut state);
+        let frame_b = eval_at(2.5, &mut state);
+
+        // Per-frame evaluation: the same param yields different values as the
+        // underlying signal changes over time.
+        assert_ne!(frame_a, frame_b);
+        assert!(frame_a < 0.5, "early frame should sample the low ramp, got {frame_a}");
+        assert!(
+            (1.5..=3.0).contains(&frame_b),
+            "later frame should sample the high ramp, got {frame_b}"
+        );
+
+        // A vector param with one signal-bound component evaluates per-frame too,
+        // while its static components stay fixed.
+        let color = MaterialParamValue::Vec4(Vec4Signal {
+            x: SignalOrF32::Scalar(1.0),
+            y: SignalOrF32::Scalar(0.5),
+            z: SignalOrF32::Scalar(0.0),
+            w: SignalOrF32::Signal(Signal::input("amplitude")),
+        });
+        assert!(color.as_static().is_none());
+
+        let mut eval_color_at = |time: f32, state: &mut SignalState| -> [f32; 4] {
+            let mut ctx = EvalContext::new(
+                time, 0.016, 0, None, &inputs, &bands, &stems, &custom, &composed, &stats, state,
+                None,
+            );
+            match color.evaluate(&mut ctx) {
+                ParamValue::Vec4(v) => v,
+                other => panic!("expected Vec4, got {:?}", other),
+            }
+        };
+
+        let color_a = eval_color_at(0.1, &mut state);
+        let color_b = eval_color_at(2.5, &mut state);
+        assert_eq!(color_a[0..3], [1.0, 0.5, 0.0]);
+        assert_eq!(color_b[0..3], [1.0, 0.5, 0.0]);
+        assert_ne!(color_a[3], color_b[3]);
     }
 }
