@@ -64,6 +64,10 @@ jobs:
             curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
           fi
 
+      - name: Run Rust tests
+        working-directory: packages/visualiser
+        run: cargo test --lib
+
       - name: Build WASM
         working-directory: packages/visualiser
         run: |
@@ -163,6 +167,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --filter @octoseq/mir...
 
+      - name: Run MIR tests
+        working-directory: packages/mir
+        run: pnpm test
+
       - name: Build MIR
         working-directory: packages/mir
         run: pnpm build
@@ -245,6 +253,10 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --filter @octoseq/wavesurfer-signalviewer...
+
+      - name: Run wavesurfer-signalviewer tests
+        working-directory: packages/wavesurfer-signalviewer
+        run: pnpm test
 
       - name: Build wavesurfer-signalviewer
         working-directory: packages/wavesurfer-signalviewer
