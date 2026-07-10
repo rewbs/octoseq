@@ -36,7 +36,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              "connect-src 'self' https://*.clerk.accounts.dev https://clerk.octoseq.xyz https://*.r2.cloudflarestorage.com",
+              "connect-src 'self' blob: https://*.clerk.accounts.dev https://clerk.octoseq.xyz https://*.r2.cloudflarestorage.com",
               "media-src 'self' blob:",
               "worker-src 'self' blob:",
               "frame-ancestors 'none'",
