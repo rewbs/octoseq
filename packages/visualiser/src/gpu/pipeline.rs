@@ -227,8 +227,8 @@ pub fn billboard_quad_vertex_desc<'a>() -> wgpu::VertexBufferLayout<'a> {
 
 /// Create a point cloud rendering pipeline.
 ///
-/// Renders 3D points using GL_POINTS primitive topology.
-/// Each vertex is a 3D position, rendered as a point with configurable size.
+/// Renders each 3D point as an instanced camera-facing quad. The fragment
+/// shader masks the quad to a circle, making point_size a real pixel diameter.
 pub fn create_point_cloud_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::PipelineLayout,
@@ -244,7 +244,7 @@ pub fn create_point_cloud_pipeline(
             entry_point: Some("vs_main"),
             buffers: &[wgpu::VertexBufferLayout {
                 array_stride: (std::mem::size_of::<f32>() * 3) as wgpu::BufferAddress, // vec3<f32>
-                step_mode: wgpu::VertexStepMode::Vertex,
+                step_mode: wgpu::VertexStepMode::Instance,
                 attributes: &[wgpu::VertexAttribute {
                     offset: 0,
                     shader_location: 0,
@@ -264,10 +264,75 @@ pub fn create_point_cloud_pipeline(
             compilation_options: wgpu::PipelineCompilationOptions::default(),
         }),
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::PointList,
+            topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: None, // No culling for points
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        multiview: None,
+        cache: None,
+    })
+}
+
+/// Create a screen-space thick polyline pipeline.
+///
+/// Each instance contains a pair of 3D endpoints. Six generated vertices form
+/// a camera-facing quad whose width remains stable in screen pixels.
+pub fn create_polyline_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    color_format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::include_wgsl!("shader_polyline.wgsl"));
+
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Polyline Pipeline"),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            buffers: &[wgpu::VertexBufferLayout {
+                array_stride: (std::mem::size_of::<f32>() * 6) as wgpu::BufferAddress,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &[
+                    wgpu::VertexAttribute {
+                        offset: 0,
+                        shader_location: 0,
+                        format: wgpu::VertexFormat::Float32x3,
+                    },
+                    wgpu::VertexAttribute {
+                        offset: (std::mem::size_of::<f32>() * 3) as wgpu::BufferAddress,
+                        shader_location: 1,
+                        format: wgpu::VertexFormat::Float32x3,
+                    },
+                ],
+            }],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            targets: &[Some(wgpu::ColorTargetState {
+                format: color_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
             polygon_mode: wgpu::PolygonMode::Fill,
             unclipped_depth: false,
             conservative: false,
@@ -338,4 +403,26 @@ pub fn create_billboard_particle_pipeline(
         multiview: None,
         cache: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    fn validate_wgsl(source: &str) {
+        let module = naga::front::wgsl::parse_str(source).expect("WGSL should parse");
+        let mut validator = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        );
+        validator.validate(&module).expect("WGSL should validate");
+    }
+
+    #[test]
+    fn point_cloud_shader_is_valid_wgsl() {
+        validate_wgsl(include_str!("shader_point_cloud.wgsl"));
+    }
+
+    #[test]
+    fn polyline_shader_is_valid_wgsl() {
+        validate_wgsl(include_str!("shader_polyline.wgsl"));
+    }
 }

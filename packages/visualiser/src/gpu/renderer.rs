@@ -12,10 +12,10 @@ use crate::material::{MaterialRegistry, ParamValue};
 use crate::mesh_asset::{BoundingBox, MeshAsset, CUBE_BOUNDS, PLANE_BOUNDS, SPHERE_BOUNDS};
 use crate::particle_eval::{GpuMeshParticleInstance, GpuParticleInstance};
 use crate::post_processing::PostEffectRegistry;
-use crate::scene_graph::{MeshType, RenderMode, Transform};
+use crate::scene_graph::{EntityId, MeshType, RenderMode, Transform};
 use crate::visualiser::VisualiserState;
 use bytemuck::{Pod, Zeroable};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::iter;
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
@@ -29,12 +29,27 @@ const MAX_POINTS_PER_LINE: usize = 1024;
 /// Maximum points per point cloud.
 const MAX_POINTS_PER_CLOUD: usize = 10000;
 
+/// Maximum connected segments in one generated polyline.
+const MAX_POLYLINE_SEGMENTS: usize = 1024;
+
 /// Maximum number of meshes that can be rendered per frame.
 /// Each mesh needs its own uniform slot in the dynamic uniform buffer.
 const MAX_MESHES_PER_FRAME: usize = 256;
 
 /// Uniform buffer alignment (WebGPU minUniformBufferOffsetAlignment is typically 256 bytes)
 const UNIFORM_ALIGNMENT: usize = 256;
+
+fn build_polyline_segments(points: &[crate::scene_graph::Vec3]) -> Vec<[f32; 6]> {
+    points
+        .windows(2)
+        .take(MAX_POLYLINE_SEGMENTS)
+        .map(|segment| {
+            let start = segment[0];
+            let end = segment[1];
+            [start.x, start.y, start.z, end.x, end.y, end.z]
+        })
+        .collect()
+}
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Pod, Zeroable)]
@@ -252,7 +267,21 @@ struct PointCloudUniforms {
     model: [[f32; 4]; 4],
     color: [f32; 4],
     point_size: f32,
-    _padding: [f32; 3],
+    _padding: f32,
+    viewport_size: [f32; 2],
+}
+
+/// Per-entity resources avoid queue.write_buffer aliasing between draw calls.
+struct PointSpriteResources {
+    vertex_buffer: wgpu::Buffer,
+    uniform_buffer: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
+}
+
+struct PolylineResources {
+    segment_buffer: wgpu::Buffer,
+    uniform_buffer: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
 }
 
 /// Shared geometry for a mesh type.
@@ -321,11 +350,12 @@ pub struct Renderer {
 
     // Point cloud rendering
     point_cloud_pipeline: wgpu::RenderPipeline,
-    #[allow(dead_code)]
     point_cloud_bind_group_layout: wgpu::BindGroupLayout,
-    point_cloud_vertex_buffer: wgpu::Buffer,
-    point_cloud_uniform_buffer: wgpu::Buffer,
-    point_cloud_bind_group: wgpu::BindGroup,
+    point_sprite_resources: HashMap<EntityId, PointSpriteResources>,
+
+    // Connected screen-space polylines (radial waves)
+    polyline_pipeline: wgpu::RenderPipeline,
+    polyline_resources: HashMap<EntityId, PolylineResources>,
 
     // Mesh particle rendering
     mesh_particle_pipeline: wgpu::RenderPipeline,
@@ -643,39 +673,8 @@ impl Renderer {
 
         let point_cloud_pipeline =
             pipeline::create_point_cloud_pipeline(&device, &point_cloud_pipeline_layout, format);
-
-        // Point cloud vertex buffer (stores vec3 positions)
-        let point_cloud_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Point Cloud Vertex Buffer"),
-            size: (MAX_POINTS_PER_CLOUD * 3 * std::mem::size_of::<f32>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-
-        // Point cloud uniforms
-        let point_cloud_uniforms = PointCloudUniforms {
-            view_proj: [[0.0; 4]; 4],
-            model: [[0.0; 4]; 4],
-            color: [1.0, 1.0, 1.0, 1.0],
-            point_size: 2.0,
-            _padding: [0.0; 3],
-        };
-
-        let point_cloud_uniform_buffer =
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Point Cloud Uniform Buffer"),
-                contents: bytemuck::cast_slice(&[point_cloud_uniforms]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            });
-
-        let point_cloud_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &point_cloud_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: point_cloud_uniform_buffer.as_entire_binding(),
-            }],
-            label: Some("point_cloud_bind_group"),
-        });
+        let polyline_pipeline =
+            pipeline::create_polyline_pipeline(&device, &point_cloud_pipeline_layout, format);
 
         // === Mesh Particle Pipeline Setup ===
 
@@ -964,9 +963,9 @@ impl Renderer {
             line_bind_group,
             point_cloud_pipeline,
             point_cloud_bind_group_layout,
-            point_cloud_vertex_buffer,
-            point_cloud_uniform_buffer,
-            point_cloud_bind_group,
+            point_sprite_resources: HashMap::new(),
+            polyline_pipeline,
+            polyline_resources: HashMap::new(),
             mesh_particle_pipeline,
             mesh_particle_instance_buffer,
             mesh_particle_view_buffer,
@@ -1049,6 +1048,82 @@ impl Renderer {
             self.uniforms
                 .update_view_proj(self.size, state.camera_uniforms());
             self.post_processor.resize(&self.device, width, height);
+        }
+    }
+
+    fn create_point_sprite_resources(&self, entity_id: EntityId) -> PointSpriteResources {
+        let vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(&format!("Point Sprite Positions {}", entity_id.0)),
+            size: (MAX_POINTS_PER_CLOUD * 3 * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let uniforms = PointCloudUniforms {
+            view_proj: [[0.0; 4]; 4],
+            model: [[0.0; 4]; 4],
+            color: [1.0, 1.0, 1.0, 1.0],
+            point_size: 2.0,
+            _padding: 0.0,
+            viewport_size: [self.size.width as f32, self.size.height as f32],
+        };
+        let uniform_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("Point Sprite Uniforms {}", entity_id.0)),
+                contents: bytemuck::cast_slice(&[uniforms]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.point_cloud_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+            label: Some(&format!("Point Sprite Bind Group {}", entity_id.0)),
+        });
+
+        PointSpriteResources {
+            vertex_buffer,
+            uniform_buffer,
+            bind_group,
+        }
+    }
+
+    fn create_polyline_resources(&self, entity_id: EntityId) -> PolylineResources {
+        let segment_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(&format!("Polyline Segments {}", entity_id.0)),
+            size: (MAX_POLYLINE_SEGMENTS * 6 * std::mem::size_of::<f32>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let uniforms = PointCloudUniforms {
+            view_proj: [[0.0; 4]; 4],
+            model: [[0.0; 4]; 4],
+            color: [1.0, 1.0, 1.0, 1.0],
+            point_size: 3.0,
+            _padding: 0.0,
+            viewport_size: [self.size.width as f32, self.size.height as f32],
+        };
+        let uniform_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("Polyline Uniforms {}", entity_id.0)),
+                contents: bytemuck::cast_slice(&[uniforms]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &self.point_cloud_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+            label: Some(&format!("Polyline Bind Group {}", entity_id.0)),
+        });
+
+        PolylineResources {
+            segment_buffer,
+            uniform_buffer,
+            bind_group,
         }
     }
 
@@ -1220,7 +1295,7 @@ impl Renderer {
             })
             .map(|(entity_id, cloud)| {
                 let world_matrix = compute_world_matrix(entity_id, scene_graph);
-                (cloud.clone(), world_matrix)
+                (entity_id, cloud.clone(), world_matrix)
             })
             .collect();
 
@@ -1237,7 +1312,7 @@ impl Renderer {
             })
             .map(|(entity_id, wave)| {
                 let world_matrix = compute_world_matrix(entity_id, scene_graph);
-                (wave.clone(), world_matrix)
+                (entity_id, wave.clone(), world_matrix)
             })
             .collect();
 
@@ -1254,9 +1329,39 @@ impl Renderer {
             })
             .map(|(entity_id, ribbon)| {
                 let world_matrix = compute_world_matrix(entity_id, scene_graph);
-                (ribbon.clone(), world_matrix)
+                (entity_id, ribbon.clone(), world_matrix)
             })
             .collect();
+
+        // Point and line draws each need independent GPU buffers. Queue writes are
+        // applied before the render pass, so sharing one resource would make all
+        // entities use the final entity's geometry and uniforms.
+        let point_sprite_ids: HashSet<EntityId> = point_clouds_to_render
+            .iter()
+            .map(|(entity_id, _, _)| *entity_id)
+            .chain(ribbons_to_render.iter().map(|(entity_id, _, _)| *entity_id))
+            .collect();
+        self.point_sprite_resources
+            .retain(|entity_id, _| point_sprite_ids.contains(entity_id));
+        for entity_id in point_sprite_ids {
+            if !self.point_sprite_resources.contains_key(&entity_id) {
+                let resources = self.create_point_sprite_resources(entity_id);
+                self.point_sprite_resources.insert(entity_id, resources);
+            }
+        }
+
+        let polyline_ids: HashSet<EntityId> = radial_waves_to_render
+            .iter()
+            .map(|(entity_id, _, _)| *entity_id)
+            .collect();
+        self.polyline_resources
+            .retain(|entity_id, _| polyline_ids.contains(entity_id));
+        for entity_id in polyline_ids {
+            if !self.polyline_resources.contains_key(&entity_id) {
+                let resources = self.create_polyline_resources(entity_id);
+                self.polyline_resources.insert(entity_id, resources);
+            }
+        }
 
         let mut encoder = self
             .device
@@ -2084,17 +2189,23 @@ impl Renderer {
             // Render point clouds
             render_pass.set_pipeline(&self.point_cloud_pipeline);
 
-            for (cloud, world_matrix) in &point_clouds_to_render {
+            for (entity_id, cloud, world_matrix) in &point_clouds_to_render {
                 // Upload point positions (as flat f32 array: x, y, z, x, y, z, ...)
                 let point_count = cloud.positions.len().min(MAX_POINTS_PER_CLOUD);
+                if point_count == 0 {
+                    continue;
+                }
                 let positions_data: Vec<f32> = cloud
                     .positions
                     .iter()
                     .take(point_count)
                     .flat_map(|p| [p.x, p.y, p.z])
                     .collect();
+                let Some(resources) = self.point_sprite_resources.get(entity_id) else {
+                    continue;
+                };
                 self.queue.write_buffer(
-                    &self.point_cloud_vertex_buffer,
+                    &resources.vertex_buffer,
                     0,
                     bytemuck::cast_slice(&positions_data),
                 );
@@ -2105,63 +2216,63 @@ impl Renderer {
                     view_proj,
                     model: world_matrix.to_cols_array_2d(),
                     color: cloud.color,
-                    point_size: cloud.point_size,
-                    _padding: [0.0; 3],
+                    point_size: cloud.point_size.clamp(1.0, 64.0),
+                    _padding: 0.0,
+                    viewport_size: [self.size.width as f32, self.size.height as f32],
                 };
                 self.queue.write_buffer(
-                    &self.point_cloud_uniform_buffer,
+                    &resources.uniform_buffer,
                     0,
                     bytemuck::cast_slice(&[point_cloud_uniforms]),
                 );
 
-                render_pass.set_bind_group(0, &self.point_cloud_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, self.point_cloud_vertex_buffer.slice(..));
-                render_pass.draw(0..point_count as u32, 0..1);
+                render_pass.set_bind_group(0, &resources.bind_group, &[]);
+                render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
+                render_pass.draw(0..6, 0..point_count as u32);
             }
 
-            // Render radial waves (using point cloud pipeline with generated line points)
-            for (wave, world_matrix) in &radial_waves_to_render {
-                // Generate points for the wave
+            // Render radial waves as connected, screen-space thick polylines.
+            render_pass.set_pipeline(&self.polyline_pipeline);
+            for (entity_id, wave, world_matrix) in &radial_waves_to_render {
                 let points = wave.generate_points();
-                let point_count = points.len().min(MAX_POINTS_PER_CLOUD);
-                if point_count == 0 {
+                let segments_data = build_polyline_segments(&points);
+                let segment_count = segments_data.len();
+                if segment_count == 0 {
                     continue;
                 }
-
-                // Upload wave points
-                let positions_data: Vec<f32> = points
-                    .iter()
-                    .take(point_count)
-                    .flat_map(|p| [p.x, p.y, p.z])
-                    .collect();
+                let Some(resources) = self.polyline_resources.get(entity_id) else {
+                    continue;
+                };
                 self.queue.write_buffer(
-                    &self.point_cloud_vertex_buffer,
+                    &resources.segment_buffer,
                     0,
-                    bytemuck::cast_slice(&positions_data),
+                    bytemuck::cast_slice(&segments_data),
                 );
 
-                // Update point cloud uniforms (use larger point size for better line appearance)
                 let view_proj = self.uniforms.view_proj;
-                let point_cloud_uniforms = PointCloudUniforms {
+                let polyline_uniforms = PointCloudUniforms {
                     view_proj,
                     model: world_matrix.to_cols_array_2d(),
                     color: wave.color,
-                    point_size: 2.0, // Fixed size for wave visualization
-                    _padding: [0.0; 3],
+                    point_size: 3.5,
+                    _padding: 0.0,
+                    viewport_size: [self.size.width as f32, self.size.height as f32],
                 };
                 self.queue.write_buffer(
-                    &self.point_cloud_uniform_buffer,
+                    &resources.uniform_buffer,
                     0,
-                    bytemuck::cast_slice(&[point_cloud_uniforms]),
+                    bytemuck::cast_slice(&[polyline_uniforms]),
                 );
 
-                render_pass.set_bind_group(0, &self.point_cloud_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, self.point_cloud_vertex_buffer.slice(..));
-                render_pass.draw(0..point_count as u32, 0..1);
+                render_pass.set_bind_group(0, &resources.bind_group, &[]);
+                render_pass.set_vertex_buffer(0, resources.segment_buffer.slice(..));
+                render_pass.draw(0..6, 0..segment_count as u32);
             }
 
-            // Render ribbons (using point cloud pipeline with generated center line points)
-            for (ribbon, world_matrix) in &ribbons_to_render {
+            // Render ribbon center points as sized sprites until full ribbon
+            // extrusion is handled by its dedicated strip/tube renderer.
+            render_pass.set_pipeline(&self.point_cloud_pipeline);
+            for (entity_id, ribbon, world_matrix) in &ribbons_to_render {
                 // Generate center line points for the ribbon
                 let points = ribbon.generate_center_points();
                 let point_count = points.len().min(MAX_POINTS_PER_CLOUD);
@@ -2175,8 +2286,11 @@ impl Renderer {
                     .take(point_count)
                     .flat_map(|p| [p.x, p.y, p.z])
                     .collect();
+                let Some(resources) = self.point_sprite_resources.get(entity_id) else {
+                    continue;
+                };
                 self.queue.write_buffer(
-                    &self.point_cloud_vertex_buffer,
+                    &resources.vertex_buffer,
                     0,
                     bytemuck::cast_slice(&positions_data),
                 );
@@ -2187,18 +2301,19 @@ impl Renderer {
                     view_proj,
                     model: world_matrix.to_cols_array_2d(),
                     color: ribbon.color,
-                    point_size: 2.0, // Fixed size for ribbon visualization
-                    _padding: [0.0; 3],
+                    point_size: 2.5,
+                    _padding: 0.0,
+                    viewport_size: [self.size.width as f32, self.size.height as f32],
                 };
                 self.queue.write_buffer(
-                    &self.point_cloud_uniform_buffer,
+                    &resources.uniform_buffer,
                     0,
                     bytemuck::cast_slice(&[point_cloud_uniforms]),
                 );
 
-                render_pass.set_bind_group(0, &self.point_cloud_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, self.point_cloud_vertex_buffer.slice(..));
-                render_pass.draw(0..point_count as u32, 0..1);
+                render_pass.set_bind_group(0, &resources.bind_group, &[]);
+                render_pass.set_vertex_buffer(0, resources.vertex_buffer.slice(..));
+                render_pass.draw(0..6, 0..point_count as u32);
             }
         }
 
@@ -2522,5 +2637,45 @@ impl Renderer {
                 render_pass.draw_indexed(0..buffers.num_indices, 0, 0..instance_count as u32);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::scene_graph::{RadialWave, Vec3};
+
+    #[test]
+    fn polyline_segments_connect_adjacent_points() {
+        let points = [
+            Vec3::new(1.0, 2.0, 3.0),
+            Vec3::new(4.0, 5.0, 6.0),
+            Vec3::new(7.0, 8.0, 9.0),
+        ];
+
+        assert_eq!(
+            build_polyline_segments(&points),
+            vec![
+                [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                [4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
+            ]
+        );
+    }
+
+    #[test]
+    fn radial_wave_segments_form_a_closed_loop() {
+        let wave = RadialWave::new(2.0, 0.5, 6.0, 64);
+        let points = wave.generate_points();
+        let segments = build_polyline_segments(&points);
+
+        assert_eq!(segments.len(), 64);
+        let start = glam::Vec3::from_slice(&segments.first().unwrap()[0..3]);
+        let end = glam::Vec3::from_slice(&segments.last().unwrap()[3..6]);
+        assert!(start.distance(end) < 0.00001);
+    }
+
+    #[test]
+    fn point_uniform_layout_matches_wgsl_alignment() {
+        assert_eq!(std::mem::size_of::<PointCloudUniforms>(), 160);
     }
 }

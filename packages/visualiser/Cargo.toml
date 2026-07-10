@@ -49,6 +49,9 @@ web-sys = { version = "0.3", features = [
 rhai = { version = "1.20", features = ["no_module", "no_custom_syntax", "f32_float", "wasm-bindgen"] }
 getrandom = { version = "0.3", features = ["wasm_js"] }
 
+[dev-dependencies]
+naga = { version = "23.1.0", features = ["wgsl-in"] }
+
 # Profiling profiles - use `wasm-pack build --profiling` for readable function names
 [profile.release]
 opt-level = "z"  # Optimize for size

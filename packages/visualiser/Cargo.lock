@@ -2537,6 +2537,7 @@ dependencies = [
  "glam",
  "image",
  "log",
+ "naga",
  "pollster",
  "regex",
  "rhai",
