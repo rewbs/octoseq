@@ -3,8 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/prepare-monaco-assets.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/generate-demo-audio-list.mjs",
+    "prebuild": "node scripts/generate-demo-audio-list.mjs && node scripts/prepare-monaco-assets.mjs",
     "build": "next build",
     "postinstall": "prisma generate",
     "start": "next start",
@@ -38,6 +39,7 @@
     "dotenv": "^17.2.3",
     "idb": "^8.0.3",
     "lucide-react": "^0.562.0",
+    "monaco-editor": "0.55.1",
     "nanoid": "^5.1.6",
     "next": "16.2.10",
     "next-safe-action": "^8.0.11",

@@ -32,6 +32,6 @@ packages/visualiser/target
 .cargo-home
 
 **/src/generated/**
+apps/web/public/monaco/
 
 .vscode/.chrome
-
