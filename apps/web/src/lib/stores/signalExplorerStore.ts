@@ -1,10 +1,6 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type {
-  CursorContext,
-  ScriptSignalInfo,
-  SignalChainAnalysis,
-} from "../signalExplorer/types";
+import type { CursorContext, ScriptSignalInfo, SignalChainAnalysis } from "../signalExplorer/types";
 
 interface SignalExplorerState {
   // UI State
@@ -97,14 +93,11 @@ export const useSignalExplorerStore = create<SignalExplorerStore>()(
     (set) => ({
       ...initialState,
 
-      setExpanded: (expanded) =>
-        set({ isExpanded: expanded }, false, "setExpanded"),
+      setExpanded: (expanded) => set({ isExpanded: expanded }, false, "setExpanded"),
 
-      toggleExpanded: () =>
-        set((s) => ({ isExpanded: !s.isExpanded }), false, "toggleExpanded"),
+      toggleExpanded: () => set((s) => ({ isExpanded: !s.isExpanded }), false, "toggleExpanded"),
 
-      setCursor: (cursor) =>
-        set({ currentCursor: cursor }, false, "setCursor"),
+      setCursor: (cursor) => set({ currentCursor: cursor }, false, "setCursor"),
 
       setAnalysis: (analysis, signalName) =>
         set(
@@ -128,17 +121,13 @@ export const useSignalExplorerStore = create<SignalExplorerStore>()(
           "clearAnalysis"
         ),
 
-      setAnalyzing: (analyzing) =>
-        set({ isAnalyzing: analyzing }, false, "setAnalyzing"),
+      setAnalyzing: (analyzing) => set({ isAnalyzing: analyzing }, false, "setAnalyzing"),
 
-      setScriptSignals: (signals) =>
-        set({ scriptSignals: signals }, false, "setScriptSignals"),
+      setScriptSignals: (signals) => set({ scriptSignals: signals }, false, "setScriptSignals"),
 
-      setPlaybackActive: (active) =>
-        set({ isPlaybackActive: active }, false, "setPlaybackActive"),
+      setPlaybackActive: (active) => set({ isPlaybackActive: active }, false, "setPlaybackActive"),
 
-      setError: (error) =>
-        set({ lastError: error, isAnalyzing: false }, false, "setError"),
+      setError: (error) => set({ lastError: error, isAnalyzing: false }, false, "setError"),
 
       setBpm: (bpm) => set({ bpm }, false, "setBpm"),
 
@@ -148,18 +137,10 @@ export const useSignalExplorerStore = create<SignalExplorerStore>()(
         set({ windowBeats: Math.max(0.5, Math.min(16, windowBeats)) }, false, "setWindowBeats"),
 
       zoomIn: () =>
-        set(
-          (s) => ({ windowBeats: Math.max(0.5, s.windowBeats / 2) }),
-          false,
-          "zoomIn"
-        ),
+        set((s) => ({ windowBeats: Math.max(0.5, s.windowBeats / 2) }), false, "zoomIn"),
 
       zoomOut: () =>
-        set(
-          (s) => ({ windowBeats: Math.min(16, s.windowBeats * 2) }),
-          false,
-          "zoomOut"
-        ),
+        set((s) => ({ windowBeats: Math.min(16, s.windowBeats * 2) }), false, "zoomOut"),
 
       reset: () => set(initialState, false, "reset"),
     }),

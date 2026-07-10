@@ -1,42 +1,42 @@
 export type MirBackend = "cpu" | "gpu";
 
 export type MirRunTimings = {
-    totalMs: number;
-    cpuMs?: number;
-    gpuMs?: number;
+  totalMs: number;
+  cpuMs?: number;
+  gpuMs?: number;
 };
 
 export type MirRunMeta = {
-    backend: MirBackend;
-    usedGpu: boolean;
-    timings: MirRunTimings;
+  backend: MirBackend;
+  usedGpu: boolean;
+  timings: MirRunTimings;
 };
 
 export type Mir1DResult = {
-    kind: "1d";
-    times: Float32Array;
-    values: Float32Array;
-    meta: MirRunMeta;
+  kind: "1d";
+  times: Float32Array;
+  values: Float32Array;
+  meta: MirRunMeta;
 };
 
 export type Mir2DResult = {
-    kind: "2d";
-    times: Float32Array;
-    data: Float32Array[];
-    meta: MirRunMeta;
+  kind: "2d";
+  times: Float32Array;
+  data: Float32Array[];
+  meta: MirRunMeta;
 };
 
 export type MirEvent = {
-    time: number;
-    strength: number;
-    index: number;
+  time: number;
+  strength: number;
+  index: number;
 };
 
 export type MirEventsResult = {
-    kind: "events";
-    times: Float32Array;
-    events: MirEvent[];
-    meta: MirRunMeta;
+  kind: "events";
+  times: Float32Array;
+  events: MirEvent[];
+  meta: MirRunMeta;
 };
 
 /**
@@ -53,31 +53,31 @@ export type MirEventsResult = {
  * Future milestones will cluster, align, and refine these candidates.
  */
 export type BeatCandidate = {
-    /** Time in seconds from track start. */
-    time: number;
-    /** Relative salience/confidence (0-1 normalized). Higher = more likely to be a beat. */
-    strength: number;
-    /** Source of this candidate (for debugging/inspection). */
-    source: BeatCandidateSource;
+  /** Time in seconds from track start. */
+  time: number;
+  /** Relative salience/confidence (0-1 normalized). Higher = more likely to be a beat. */
+  strength: number;
+  /** Source of this candidate (for debugging/inspection). */
+  source: BeatCandidateSource;
 };
 
 export type BeatCandidateSource =
-    | "onset_peak"      // Derived from onset envelope peaks
-    | "flux_peak"       // Derived from spectral flux peaks
-    | "combined";       // Derived from combined salience signal
+  | "onset_peak" // Derived from onset envelope peaks
+  | "flux_peak" // Derived from spectral flux peaks
+  | "combined"; // Derived from combined salience signal
 
 export type BeatCandidatesResult = {
-    kind: "beatCandidates";
-    /** Frame times from the underlying analysis (for alignment). */
+  kind: "beatCandidates";
+  /** Frame times from the underlying analysis (for alignment). */
+  times: Float32Array;
+  /** The beat candidate events. */
+  candidates: BeatCandidate[];
+  /** Optional: the salience signal used for peak picking (for debugging). */
+  salience?: {
     times: Float32Array;
-    /** The beat candidate events. */
-    candidates: BeatCandidate[];
-    /** Optional: the salience signal used for peak picking (for debugging). */
-    salience?: {
-        times: Float32Array;
-        values: Float32Array;
-    };
-    meta: MirRunMeta;
+    values: Float32Array;
+  };
+  meta: MirRunMeta;
 };
 
 /**
@@ -88,45 +88,45 @@ export type BeatCandidatesResult = {
  * not collapsed - each BPM is preserved as a separate hypothesis.
  */
 export type TempoHypothesis = {
-    /** Deterministic identifier for this hypothesis (e.g., "hyp-0"). */
-    id: string;
-    /** Tempo in beats per minute (0.1 BPM precision). */
-    bpm: number;
-    /** Confidence score normalized to [0, 1]. Higher = more likely. */
-    confidence: number;
-    /** Evidence metadata for debugging/inspection. */
-    evidence: TempoHypothesisEvidence;
-    /** Harmonic family ID - hypotheses in the same family are harmonically related. */
-    familyId: string;
-    /** Harmonic relationship to the family root (1.0 = root, 2.0 = double, 0.5 = half, etc.). */
-    harmonicRatio: number;
+  /** Deterministic identifier for this hypothesis (e.g., "hyp-0"). */
+  id: string;
+  /** Tempo in beats per minute (0.1 BPM precision). */
+  bpm: number;
+  /** Confidence score normalized to [0, 1]. Higher = more likely. */
+  confidence: number;
+  /** Evidence metadata for debugging/inspection. */
+  evidence: TempoHypothesisEvidence;
+  /** Harmonic family ID - hypotheses in the same family are harmonically related. */
+  familyId: string;
+  /** Harmonic relationship to the family root (1.0 = root, 2.0 = double, 0.5 = half, etc.). */
+  harmonicRatio: number;
 };
 
 export type TempoHypothesisEvidence = {
-    /** Number of IOIs supporting this tempo. */
-    supportingIntervalCount: number;
-    /** Sum of weighted contributions (if strength-weighting enabled). */
-    weightedSupport: number;
-    /** Peak height in the histogram. */
-    peakHeight: number;
-    /** Histogram bin range [minBpm, maxBpm]. */
-    binRange: [number, number];
+  /** Number of IOIs supporting this tempo. */
+  supportingIntervalCount: number;
+  /** Sum of weighted contributions (if strength-weighting enabled). */
+  weightedSupport: number;
+  /** Peak height in the histogram. */
+  peakHeight: number;
+  /** Histogram bin range [minBpm, maxBpm]. */
+  binRange: [number, number];
 };
 
 export type TempoHypothesesResult = {
-    kind: "tempoHypotheses";
-    /** Frame times from underlying analysis (for alignment). */
-    times: Float32Array;
-    /** Ordered list of tempo hypotheses (by confidence descending). */
-    hypotheses: TempoHypothesis[];
-    /** The number of beat candidates used as input. */
-    inputCandidateCount: number;
-    /** Histogram data for debugging/visualization. */
-    histogram?: {
-        bpmBins: Float32Array;
-        counts: Float32Array;
-    };
-    meta: MirRunMeta;
+  kind: "tempoHypotheses";
+  /** Frame times from underlying analysis (for alignment). */
+  times: Float32Array;
+  /** Ordered list of tempo hypotheses (by confidence descending). */
+  hypotheses: TempoHypothesis[];
+  /** The number of beat candidates used as input. */
+  inputCandidateCount: number;
+  /** Histogram data for debugging/visualization. */
+  histogram?: {
+    bpmBins: Float32Array;
+    counts: Float32Array;
+  };
+  meta: MirRunMeta;
 };
 
 /**
@@ -134,18 +134,18 @@ export type TempoHypothesesResult = {
  * Provides information about the signal detection quality.
  */
 export type MirActivityDiagnostics = {
-    /** Estimated noise floor value (in log-energy scale). */
-    noiseFloor: number;
-    /** Enter threshold value (in log-energy scale). */
-    enterThreshold: number;
-    /** Exit threshold value (in log-energy scale). */
-    exitThreshold: number;
-    /** Total frames processed. */
-    totalFrames: number;
-    /** Number of frames marked as active. */
-    activeFrames: number;
-    /** Fraction of frames that are active (0-1). */
-    activeFraction: number;
+  /** Estimated noise floor value (in log-energy scale). */
+  noiseFloor: number;
+  /** Enter threshold value (in log-energy scale). */
+  enterThreshold: number;
+  /** Exit threshold value (in log-energy scale). */
+  exitThreshold: number;
+  /** Total frames processed. */
+  totalFrames: number;
+  /** Number of frames marked as active. */
+  activeFrames: number;
+  /** Fraction of frames that are active (0-1). */
+  activeFraction: number;
 };
 
 /**
@@ -155,22 +155,28 @@ export type MirActivityDiagnostics = {
  * Use activityLevel for soft gating (0-1) or isActive for hard gating (boolean).
  */
 export type MirActivityResult = {
-    kind: "activity";
-    /** Frame times in seconds. */
-    times: Float32Array;
-    /** Activity level per frame (0-1), suitable for soft gating. */
-    activityLevel: Float32Array;
-    /** Binary activity flag per frame (0 or 1), suitable for hard gating. */
-    isActive: Uint8Array;
-    /** Suppression mask (1 = in post-silence suppression window). */
-    suppressMask: Uint8Array;
-    /** Execution metadata. */
-    meta: MirRunMeta;
-    /** Diagnostics about detection quality. */
-    diagnostics: MirActivityDiagnostics;
+  kind: "activity";
+  /** Frame times in seconds. */
+  times: Float32Array;
+  /** Activity level per frame (0-1), suitable for soft gating. */
+  activityLevel: Float32Array;
+  /** Binary activity flag per frame (0 or 1), suitable for hard gating. */
+  isActive: Uint8Array;
+  /** Suppression mask (1 = in post-silence suppression window). */
+  suppressMask: Uint8Array;
+  /** Execution metadata. */
+  meta: MirRunMeta;
+  /** Diagnostics about detection quality. */
+  diagnostics: MirActivityDiagnostics;
 };
 
-export type MirResult = Mir1DResult | Mir2DResult | MirEventsResult | BeatCandidatesResult | TempoHypothesesResult | MirActivityResult;
+export type MirResult =
+  | Mir1DResult
+  | Mir2DResult
+  | MirEventsResult
+  | BeatCandidatesResult
+  | TempoHypothesesResult
+  | MirActivityResult;
 
 // ----------------------------
 // Beat Grid Phase Alignment (B3)
@@ -185,20 +191,20 @@ export type MirResult = Mir1DResult | Mir2DResult | MirEventsResult | BeatCandid
  * Beat grids are hypotheses that can be confirmed or adjusted by the user.
  */
 export type BeatGrid = {
-    /** Unique identifier for this grid (derived from source hypothesis + phase). */
-    id: string;
-    /** BPM of the grid (from the source tempo hypothesis). */
-    bpm: number;
-    /** Phase offset in seconds from track start. First beat occurs at this time. */
-    phaseOffset: number;
-    /** Confidence score [0, 1] for this phase alignment. */
-    confidence: number;
-    /** The tempo hypothesis this grid was derived from. */
-    sourceHypothesisId: string;
-    /** Whether the user has locked this grid (prevents auto-updates). */
-    isLocked: boolean;
-    /** User adjustment to phase offset in seconds (additive). */
-    userNudge: number;
+  /** Unique identifier for this grid (derived from source hypothesis + phase). */
+  id: string;
+  /** BPM of the grid (from the source tempo hypothesis). */
+  bpm: number;
+  /** Phase offset in seconds from track start. First beat occurs at this time. */
+  phaseOffset: number;
+  /** Confidence score [0, 1] for this phase alignment. */
+  confidence: number;
+  /** The tempo hypothesis this grid was derived from. */
+  sourceHypothesisId: string;
+  /** Whether the user has locked this grid (prevents auto-updates). */
+  isLocked: boolean;
+  /** User adjustment to phase offset in seconds (additive). */
+  userNudge: number;
 };
 
 /**
@@ -206,30 +212,30 @@ export type BeatGrid = {
  * Used during phase alignment scoring.
  */
 export type PhaseHypothesis = {
-    /** Index within the phase candidate list (0 to N-1). */
-    index: number;
-    /** Phase offset in seconds. */
-    phaseOffset: number;
-    /** Alignment score (sum of weighted matches, normalized). */
-    score: number;
-    /** Number of beat candidates matched within tolerance. */
-    matchCount: number;
-    /** Average offset error of matched candidates in seconds. */
-    avgOffsetError: number;
+  /** Index within the phase candidate list (0 to N-1). */
+  index: number;
+  /** Phase offset in seconds. */
+  phaseOffset: number;
+  /** Alignment score (sum of weighted matches, normalized). */
+  score: number;
+  /** Number of beat candidates matched within tolerance. */
+  matchCount: number;
+  /** Average offset error of matched candidates in seconds. */
+  avgOffsetError: number;
 };
 
 /**
  * Configuration for beat grid phase alignment.
  */
 export type PhaseAlignmentConfig = {
-    /** Number of phase candidates to generate per beat period. Default: 16. */
-    phaseResolution?: number;
-    /** Tolerance in seconds for matching candidates to grid lines. Default: 0.05 (50ms). */
-    matchTolerance?: number;
-    /** Number of top phase hypotheses to keep. Default: 3. */
-    topK?: number;
-    /** Weight for systematic offset penalty (0-1). Default: 0.2. */
-    offsetPenaltyWeight?: number;
+  /** Number of phase candidates to generate per beat period. Default: 16. */
+  phaseResolution?: number;
+  /** Tolerance in seconds for matching candidates to grid lines. Default: 0.05 (50ms). */
+  matchTolerance?: number;
+  /** Number of top phase hypotheses to keep. Default: 3. */
+  topK?: number;
+  /** Weight for systematic offset penalty (0-1). Default: 0.2. */
+  offsetPenaltyWeight?: number;
 };
 
 // ----------------------------
@@ -241,14 +247,14 @@ export type PhaseAlignmentConfig = {
  * Tracks how the segment was created for audit and debugging.
  */
 export type MusicalTimeProvenance = {
-    /** How this segment was created. */
-    source: "promoted_from_hypothesis" | "manual_entry" | "imported";
-    /** Reference to the original TempoHypothesis (if promoted). */
-    sourceHypothesisId?: string;
-    /** ISO timestamp when the segment was created/promoted. */
-    promotedAt: string;
-    /** User nudge value preserved from promotion (for provenance). */
-    userNudge?: number;
+  /** How this segment was created. */
+  source: "promoted_from_hypothesis" | "manual_entry" | "imported";
+  /** Reference to the original TempoHypothesis (if promoted). */
+  sourceHypothesisId?: string;
+  /** ISO timestamp when the segment was created/promoted. */
+  promotedAt: string;
+  /** User nudge value preserved from promotion (for provenance). */
+  userNudge?: number;
 };
 
 /**
@@ -261,20 +267,20 @@ export type MusicalTimeProvenance = {
  * They never change unless explicitly edited or unlocked by the user.
  */
 export type MusicalTimeSegment = {
-    /** Unique identifier for this segment. */
-    id: string;
-    /** Tempo in beats per minute. */
-    bpm: number;
-    /** Phase offset in seconds - first beat time relative to segment start. */
-    phaseOffset: number;
-    /** Segment start boundary in seconds (inclusive). */
-    startTime: number;
-    /** Segment end boundary in seconds (exclusive). */
-    endTime: number;
-    /** Confidence score frozen at lock time (optional, for display). */
-    confidence?: number;
-    /** Provenance metadata. */
-    provenance: MusicalTimeProvenance;
+  /** Unique identifier for this segment. */
+  id: string;
+  /** Tempo in beats per minute. */
+  bpm: number;
+  /** Phase offset in seconds - first beat time relative to segment start. */
+  phaseOffset: number;
+  /** Segment start boundary in seconds (inclusive). */
+  startTime: number;
+  /** Segment end boundary in seconds (exclusive). */
+  endTime: number;
+  /** Confidence score frozen at lock time (optional, for display). */
+  confidence?: number;
+  /** Provenance metadata. */
+  provenance: MusicalTimeProvenance;
 };
 
 /**
@@ -290,14 +296,14 @@ export type MusicalTimeSegment = {
  * - Gaps between segments are intentional (no musical time defined)
  */
 export type MusicalTimeStructure = {
-    /** Schema version for future migrations. */
-    version: 1;
-    /** Ordered list of musical time segments (by startTime ascending). */
-    segments: MusicalTimeSegment[];
-    /** ISO timestamp when the structure was created. */
-    createdAt: string;
-    /** ISO timestamp when the structure was last modified. */
-    modifiedAt: string;
+  /** Schema version for future migrations. */
+  version: 1;
+  /** Ordered list of musical time segments (by startTime ascending). */
+  segments: MusicalTimeSegment[];
+  /** ISO timestamp when the structure was created. */
+  createdAt: string;
+  /** ISO timestamp when the structure was last modified. */
+  modifiedAt: string;
 };
 
 /**
@@ -308,16 +314,16 @@ export type MusicalTimeStructure = {
  * This is a read-only computed value, not stored.
  */
 export type BeatPosition = {
-    /** The segment this position is within. */
-    segmentId: string;
-    /** Integer beat number from segment start (0, 1, 2, ...). */
-    beatIndex: number;
-    /** Phase within the current beat (0-1, exclusive). */
-    beatPhase: number;
-    /** Continuous beat position (beatIndex + beatPhase). */
-    beatPosition: number;
-    /** BPM of the containing segment. */
-    bpm: number;
+  /** The segment this position is within. */
+  segmentId: string;
+  /** Integer beat number from segment start (0, 1, 2, ...). */
+  beatIndex: number;
+  /** Phase within the current beat (0-1, exclusive). */
+  beatPhase: number;
+  /** Continuous beat position (beatIndex + beatPhase). */
+  beatPosition: number;
+  /** BPM of the containing segment. */
+  bpm: number;
 };
 
 // ----------------------------
@@ -330,8 +336,7 @@ export type BeatPosition = {
  * - "sectioned": Band applies only to explicit start/end times
  */
 export type FrequencyBandTimeScope =
-    | { kind: "global" }
-    | { kind: "sectioned"; startTime: number; endTime: number };
+  { kind: "global" } | { kind: "sectioned"; startTime: number; endTime: number };
 
 /**
  * A single time segment of a piecewise-linear frequency range.
@@ -347,18 +352,18 @@ export type FrequencyBandTimeScope =
  * - For sectioned bands, segments must fully cover the time scope
  */
 export type FrequencySegment = {
-    /** Start time of this segment in seconds (inclusive). */
-    startTime: number;
-    /** End time of this segment in seconds (exclusive). */
-    endTime: number;
-    /** Lower frequency bound in Hz at segment start. */
-    lowHzStart: number;
-    /** Upper frequency bound in Hz at segment start. */
-    highHzStart: number;
-    /** Lower frequency bound in Hz at segment end. */
-    lowHzEnd: number;
-    /** Upper frequency bound in Hz at segment end. */
-    highHzEnd: number;
+  /** Start time of this segment in seconds (inclusive). */
+  startTime: number;
+  /** End time of this segment in seconds (exclusive). */
+  endTime: number;
+  /** Lower frequency bound in Hz at segment start. */
+  lowHzStart: number;
+  /** Upper frequency bound in Hz at segment start. */
+  highHzStart: number;
+  /** Lower frequency bound in Hz at segment end. */
+  lowHzEnd: number;
+  /** Upper frequency bound in Hz at segment end. */
+  highHzEnd: number;
 };
 
 /**
@@ -366,12 +371,12 @@ export type FrequencySegment = {
  * Tracks how the band was created for audit and debugging.
  */
 export type FrequencyBandProvenance = {
-    /** How this band was created. */
-    source: "manual" | "imported" | "preset";
-    /** ISO timestamp when the band was created. */
-    createdAt: string;
-    /** Optional preset name if source is "preset". */
-    presetName?: string;
+  /** How this band was created. */
+  source: "manual" | "imported" | "preset";
+  /** ISO timestamp when the band was created. */
+  createdAt: string;
+  /** Optional preset name if source is "preset". */
+  presetName?: string;
 };
 
 /**
@@ -386,22 +391,22 @@ export type FrequencyBandProvenance = {
  * Bands are immutable unless explicitly edited by the user.
  */
 export type FrequencyBand = {
-    /** Unique identifier for this band. */
-    id: string;
-    /** Human-readable label (editable). */
-    label: string;
-    /** The audio source this band belongs to ("mixdown" or stem ID). */
-    sourceId: string;
-    /** Whether the band is currently active for processing. */
-    enabled: boolean;
-    /** Time scope for this band. */
-    timeScope: FrequencyBandTimeScope;
-    /** Piecewise-linear frequency shape over time. */
-    frequencyShape: FrequencySegment[];
-    /** Stable sort order (not insertion order). */
-    sortOrder: number;
-    /** Provenance metadata. */
-    provenance: FrequencyBandProvenance;
+  /** Unique identifier for this band. */
+  id: string;
+  /** Human-readable label (editable). */
+  label: string;
+  /** The audio source this band belongs to ("mixdown" or stem ID). */
+  sourceId: string;
+  /** Whether the band is currently active for processing. */
+  enabled: boolean;
+  /** Time scope for this band. */
+  timeScope: FrequencyBandTimeScope;
+  /** Piecewise-linear frequency shape over time. */
+  frequencyShape: FrequencySegment[];
+  /** Stable sort order (not insertion order). */
+  sortOrder: number;
+  /** Provenance metadata. */
+  provenance: FrequencyBandProvenance;
 };
 
 /**
@@ -417,14 +422,14 @@ export type FrequencyBand = {
  * - Bands are sorted by sortOrder for stable ordering
  */
 export type FrequencyBandStructure = {
-    /** Schema version for future migrations. */
-    version: 2;
-    /** Ordered list of frequency bands (by sortOrder). */
-    bands: FrequencyBand[];
-    /** ISO timestamp when the structure was created. */
-    createdAt: string;
-    /** ISO timestamp when the structure was last modified. */
-    modifiedAt: string;
+  /** Schema version for future migrations. */
+  version: 2;
+  /** Ordered list of frequency bands (by sortOrder). */
+  bands: FrequencyBand[];
+  /** ISO timestamp when the structure was created. */
+  createdAt: string;
+  /** ISO timestamp when the structure was last modified. */
+  modifiedAt: string;
 };
 
 /**
@@ -432,14 +437,14 @@ export type FrequencyBandStructure = {
  * Result of querying a band at a specific time point.
  */
 export type FrequencyBoundsAtTime = {
-    /** The band ID this belongs to. */
-    bandId: string;
-    /** Lower frequency in Hz at this time. */
-    lowHz: number;
-    /** Upper frequency in Hz at this time. */
-    highHz: number;
-    /** Whether the band is enabled. */
-    enabled: boolean;
+  /** The band ID this belongs to. */
+  bandId: string;
+  /** Lower frequency in Hz at this time. */
+  lowHz: number;
+  /** Upper frequency in Hz at this time. */
+  highHz: number;
+  /** Whether the band is enabled. */
+  enabled: boolean;
 };
 
 /**
@@ -450,16 +455,16 @@ export type FrequencyBoundsAtTime = {
  * This makes it easier to display and edit time-varying frequency bands.
  */
 export type FrequencyKeyframe = {
-    /** Time in seconds. */
-    time: number;
-    /** Lower frequency bound in Hz at this time. */
-    lowHz: number;
-    /** Upper frequency bound in Hz at this time. */
-    highHz: number;
-    /** Index of the segment this keyframe belongs to. */
-    segmentIndex: number;
-    /** Whether this is the start or end of the segment. */
-    edge: "start" | "end";
+  /** Time in seconds. */
+  time: number;
+  /** Lower frequency bound in Hz at this time. */
+  lowHz: number;
+  /** Upper frequency bound in Hz at this time. */
+  highHz: number;
+  /** Index of the segment this keyframe belongs to. */
+  segmentIndex: number;
+  /** Whether this is the start or end of the segment. */
+  edge: "start" | "end";
 };
 
 // ----------------------------
@@ -470,271 +475,264 @@ export type FrequencyKeyframe = {
  * Band MIR function identifiers (STFT-based).
  */
 export type BandMirFunctionId =
-    | "bandAmplitudeEnvelope"
-    | "bandOnsetStrength"
-    | "bandSpectralFlux"
-    | "bandSpectralCentroid";
+  "bandAmplitudeEnvelope" | "bandOnsetStrength" | "bandSpectralFlux" | "bandSpectralCentroid";
 
 /**
  * Band CQT function identifiers (CQT-based).
  */
 export type BandCqtFunctionId =
-    | "bandCqtHarmonicEnergy"
-    | "bandCqtBassPitchMotion"
-    | "bandCqtTonalStability";
+  "bandCqtHarmonicEnergy" | "bandCqtBassPitchMotion" | "bandCqtTonalStability";
 
 /**
  * Band event function identifiers (derived from 1D signals).
  */
-export type BandEventFunctionId =
-    | "bandOnsetPeaks"
-    | "bandBeatCandidates";
+export type BandEventFunctionId = "bandOnsetPeaks" | "bandBeatCandidates";
 
 /**
  * Diagnostics for band MIR computation.
  * Provides information about energy retention and potential issues.
  */
 export type BandMirDiagnostics = {
-    /** Average energy retention across all frames (0-1). */
-    meanEnergyRetained: number;
-    /** Number of frames with < 1% energy (weak band). */
-    weakFrameCount: number;
-    /** Number of frames with 0 energy (empty band). */
-    emptyFrameCount: number;
-    /** Total frames processed. */
-    totalFrames: number;
-    /** Warning messages (informational, not blocking). */
-    warnings: string[];
+  /** Average energy retention across all frames (0-1). */
+  meanEnergyRetained: number;
+  /** Number of frames with < 1% energy (weak band). */
+  weakFrameCount: number;
+  /** Number of frames with 0 energy (empty band). */
+  emptyFrameCount: number;
+  /** Total frames processed. */
+  totalFrames: number;
+  /** Warning messages (informational, not blocking). */
+  warnings: string[];
 };
 
 /**
  * Result of a band-scoped MIR computation (STFT-based).
  */
 export type BandMir1DResult = {
-    kind: "bandMir1d";
-    /** ID of the band this result is for. */
-    bandId: string;
-    /** Label of the band (for display). */
-    bandLabel: string;
-    /** The MIR function that produced this result. */
-    fn: BandMirFunctionId;
-    /** Frame times aligned to spectrogram timebase. */
-    times: Float32Array;
-    /** Signal values per frame. */
-    values: Float32Array;
-    /** Execution metadata. */
-    meta: MirRunMeta;
-    /** Diagnostics about energy retention and potential issues. */
-    diagnostics: BandMirDiagnostics;
+  kind: "bandMir1d";
+  /** ID of the band this result is for. */
+  bandId: string;
+  /** Label of the band (for display). */
+  bandLabel: string;
+  /** The MIR function that produced this result. */
+  fn: BandMirFunctionId;
+  /** Frame times aligned to spectrogram timebase. */
+  times: Float32Array;
+  /** Signal values per frame. */
+  values: Float32Array;
+  /** Execution metadata. */
+  meta: MirRunMeta;
+  /** Diagnostics about energy retention and potential issues. */
+  diagnostics: BandMirDiagnostics;
 };
 
 /**
  * Result of a band-scoped CQT computation.
  */
 export type BandCqt1DResult = {
-    kind: "bandCqt1d";
-    /** ID of the band this result is for. */
-    bandId: string;
-    /** Label of the band (for display). */
-    bandLabel: string;
-    /** The CQT function that produced this result. */
-    fn: BandCqtFunctionId;
-    /** Frame times aligned to CQT timebase. */
-    times: Float32Array;
-    /** Signal values per frame. */
-    values: Float32Array;
-    /** Execution metadata. */
-    meta: MirRunMeta;
-    /** Diagnostics about energy retention and potential issues. */
-    diagnostics: BandMirDiagnostics;
+  kind: "bandCqt1d";
+  /** ID of the band this result is for. */
+  bandId: string;
+  /** Label of the band (for display). */
+  bandLabel: string;
+  /** The CQT function that produced this result. */
+  fn: BandCqtFunctionId;
+  /** Frame times aligned to CQT timebase. */
+  times: Float32Array;
+  /** Signal values per frame. */
+  values: Float32Array;
+  /** Execution metadata. */
+  meta: MirRunMeta;
+  /** Diagnostics about energy retention and potential issues. */
+  diagnostics: BandMirDiagnostics;
 };
 
 /**
  * A band event (onset peak or beat candidate within a band).
  */
 export type BandMirEvent = {
-    /** Time in seconds. */
-    time: number;
-    /** Relative weight/strength (0-1 normalized). */
-    weight: number;
-    /** Optional beat position if beat grid exists. */
-    beatPosition?: number;
-    /** Optional beat phase if beat grid exists. */
-    beatPhase?: number;
+  /** Time in seconds. */
+  time: number;
+  /** Relative weight/strength (0-1 normalized). */
+  weight: number;
+  /** Optional beat position if beat grid exists. */
+  beatPosition?: number;
+  /** Optional beat phase if beat grid exists. */
+  beatPhase?: number;
 };
 
 /**
  * Diagnostics for band event extraction.
  */
 export type BandEventDiagnostics = {
-    /** Total number of events extracted. */
-    eventCount: number;
-    /** Events per second (density). */
-    eventsPerSecond: number;
-    /** Warning messages (e.g., too sparse or too dense). */
-    warnings: string[];
+  /** Total number of events extracted. */
+  eventCount: number;
+  /** Events per second (density). */
+  eventsPerSecond: number;
+  /** Warning messages (e.g., too sparse or too dense). */
+  warnings: string[];
 };
 
 /**
  * Result of band event extraction.
  */
 export type BandEventsResult = {
-    kind: "bandEvents";
-    /** ID of the band this result is for. */
-    bandId: string;
-    /** Label of the band (for display). */
-    bandLabel: string;
-    /** The event function that produced this result. */
-    fn: BandEventFunctionId;
-    /** Extracted events. */
-    events: BandMirEvent[];
-    /** Source signal used for extraction (for debugging). */
-    sourceSignal?: {
-        fn: BandMirFunctionId;
-        times: Float32Array;
-        values: Float32Array;
-    };
-    /** Execution metadata. */
-    meta: MirRunMeta;
-    /** Diagnostics about extraction quality. */
-    diagnostics: BandEventDiagnostics;
+  kind: "bandEvents";
+  /** ID of the band this result is for. */
+  bandId: string;
+  /** Label of the band (for display). */
+  bandLabel: string;
+  /** The event function that produced this result. */
+  fn: BandEventFunctionId;
+  /** Extracted events. */
+  events: BandMirEvent[];
+  /** Source signal used for extraction (for debugging). */
+  sourceSignal?: {
+    fn: BandMirFunctionId;
+    times: Float32Array;
+    values: Float32Array;
+  };
+  /** Execution metadata. */
+  meta: MirRunMeta;
+  /** Diagnostics about extraction quality. */
+  diagnostics: BandEventDiagnostics;
 };
 
 export type MirFunctionId =
-    | "amplitudeEnvelope"
-    | "spectralCentroid"
-    | "spectralFlux"
-    | "melSpectrogram"
-    | "onsetEnvelope"
-    | "onsetPeaks"
-    | "beatCandidates"
-    | "tempoHypotheses"
-    | "hpssHarmonic"
-    | "hpssPercussive"
-    | "mfcc"
-    | "mfccDelta"
-    | "mfccDeltaDelta"
-    // CQT-derived signals (F5)
-    | "cqtHarmonicEnergy"
-    | "cqtBassPitchMotion"
-    | "cqtTonalStability"
-    // Pitch detection (P1)
-    | "pitchF0"
-    | "pitchConfidence"
-    // Activity detection
-    | "activity";
+  | "amplitudeEnvelope"
+  | "spectralCentroid"
+  | "spectralFlux"
+  | "melSpectrogram"
+  | "onsetEnvelope"
+  | "onsetPeaks"
+  | "beatCandidates"
+  | "tempoHypotheses"
+  | "hpssHarmonic"
+  | "hpssPercussive"
+  | "mfcc"
+  | "mfccDelta"
+  | "mfccDeltaDelta"
+  // CQT-derived signals (F5)
+  | "cqtHarmonicEnergy"
+  | "cqtBassPitchMotion"
+  | "cqtTonalStability"
+  // Pitch detection (P1)
+  | "pitchF0"
+  | "pitchConfidence"
+  // Activity detection
+  | "activity";
 
 export type MirRunRequest = {
-    fn: MirFunctionId;
+  fn: MirFunctionId;
+  spectrogram?: {
+    fftSize: number;
+    hopSize: number;
+    window: "hann";
+  };
+  mel?: {
+    nMels: number;
+    fMin?: number;
+    fMax?: number;
+  };
+  backend?: MirBackend;
+
+  // Optional per-run config. Kept explicit (not a dynamic schema).
+  onset?: {
+    smoothMs?: number;
+    diffMethod?: "rectified" | "abs";
+    useLog?: boolean;
+  };
+  peakPick?: {
+    minIntervalSec?: number;
+    threshold?: number;
+    adaptiveFactor?: number;
+  };
+  hpss?: {
+    timeMedian?: number;
+    freqMedian?: number;
     spectrogram?: {
-        fftSize: number;
-        hopSize: number;
-        window: "hann";
+      fftSize: number;
+      hopSize: number;
+      window: "hann";
     };
-    mel?: {
-        nMels: number;
-        fMin?: number;
-        fMax?: number;
+  };
+  mfcc?: {
+    nCoeffs?: number;
+    spectrogram?: {
+      fftSize: number;
+      hopSize: number;
+      window: "hann";
     };
-    backend?: MirBackend;
+  };
+  beatCandidates?: {
+    /** Minimum inter-candidate interval in seconds. Default: 0.1 (100ms). */
+    minIntervalSec?: number;
+    /** Threshold factor for peak detection. Lower = more candidates. Default: 0.5. */
+    thresholdFactor?: number;
+    /** Smoothing window for salience signal in ms. Default: 50. */
+    smoothMs?: number;
+    /** Whether to include the salience signal in output (for debugging). */
+    includeSalience?: boolean;
+  };
+  tempoHypotheses?: {
+    /** Minimum BPM to consider. Default: 24. */
+    minBpm?: number;
+    /** Maximum BPM to consider. Default: 300. */
+    maxBpm?: number;
+    /** Histogram bin size in BPM. Default: 1.0. */
+    binSizeBpm?: number;
+    /** Maximum number of hypotheses to return. Default: 10. */
+    maxHypotheses?: number;
+    /** Minimum confidence threshold (0-1). Default: 0.05. */
+    minConfidence?: number;
+    /** Weight IOIs by beat candidate strength. Default: true. */
+    weightByStrength?: boolean;
+    /** Include histogram in output for debugging. Default: false. */
+    includeHistogram?: boolean;
+  };
 
-    // Optional per-run config. Kept explicit (not a dynamic schema).
-    onset?: {
-        smoothMs?: number;
-        diffMethod?: "rectified" | "abs";
-        useLog?: boolean;
-    };
-    peakPick?: {
-        minIntervalSec?: number;
-        threshold?: number;
-        adaptiveFactor?: number;
-    };
-    hpss?: {
-        timeMedian?: number;
-        freqMedian?: number;
-        spectrogram?: {
-            fftSize: number;
-            hopSize: number;
-            window: "hann";
-        };
-    };
-    mfcc?: {
-        nCoeffs?: number;
-        spectrogram?: {
-            fftSize: number;
-            hopSize: number;
-            window: "hann";
-        };
-    };
-    beatCandidates?: {
-        /** Minimum inter-candidate interval in seconds. Default: 0.1 (100ms). */
-        minIntervalSec?: number;
-        /** Threshold factor for peak detection. Lower = more candidates. Default: 0.5. */
-        thresholdFactor?: number;
-        /** Smoothing window for salience signal in ms. Default: 50. */
-        smoothMs?: number;
-        /** Whether to include the salience signal in output (for debugging). */
-        includeSalience?: boolean;
-    };
-    tempoHypotheses?: {
-        /** Minimum BPM to consider. Default: 24. */
-        minBpm?: number;
-        /** Maximum BPM to consider. Default: 300. */
-        maxBpm?: number;
-        /** Histogram bin size in BPM. Default: 1.0. */
-        binSizeBpm?: number;
-        /** Maximum number of hypotheses to return. Default: 10. */
-        maxHypotheses?: number;
-        /** Minimum confidence threshold (0-1). Default: 0.05. */
-        minConfidence?: number;
-        /** Weight IOIs by beat candidate strength. Default: true. */
-        weightByStrength?: boolean;
-        /** Include histogram in output for debugging. Default: false. */
-        includeHistogram?: boolean;
-    };
+  // CQT configuration (F5)
+  cqt?: {
+    /** Number of bins per octave. Default: 24 (quarter-tone). */
+    binsPerOctave?: number;
+    /** Minimum frequency in Hz. Default: 32.7 Hz (C1). */
+    fMin?: number;
+    /** Maximum frequency in Hz. Default: 8372 Hz (C9). */
+    fMax?: number;
+    /** Hop size in samples. Auto-computed if not specified. */
+    hopSize?: number;
+  };
 
-    // CQT configuration (F5)
-    cqt?: {
-        /** Number of bins per octave. Default: 24 (quarter-tone). */
-        binsPerOctave?: number;
-        /** Minimum frequency in Hz. Default: 32.7 Hz (C1). */
-        fMin?: number;
-        /** Maximum frequency in Hz. Default: 8372 Hz (C9). */
-        fMax?: number;
-        /** Hop size in samples. Auto-computed if not specified. */
-        hopSize?: number;
-    };
+  // Pitch detection configuration (P1)
+  pitch?: {
+    /** Minimum frequency in Hz. Default: 50. */
+    fMinHz?: number;
+    /** Maximum frequency in Hz. Default: 1000. */
+    fMaxHz?: number;
+    /** YIN threshold for voiced detection (0-1). Default: 0.15. */
+    threshold?: number;
+  };
 
-    // Pitch detection configuration (P1)
-    pitch?: {
-        /** Minimum frequency in Hz. Default: 50. */
-        fMinHz?: number;
-        /** Maximum frequency in Hz. Default: 1000. */
-        fMaxHz?: number;
-        /** YIN threshold for voiced detection (0-1). Default: 0.15. */
-        threshold?: number;
-    };
-
-    // Activity detection configuration
-    activity?: {
-        /** Percentile for noise floor estimation (0-100). Default: 10. */
-        energyPercentile?: number;
-        /** dB margin above noise floor to enter active state. Default: 6. */
-        enterMargin?: number;
-        /** dB margin above noise floor to exit active state. Default: 3. */
-        exitMargin?: number;
-        /** Hangover duration in ms to prevent rapid toggling. Default: 50. */
-        hangoverMs?: number;
-        /** Minimum active duration in ms. Default: 30. */
-        minActiveMs?: number;
-        /** Smoothing window in ms for activity level. Default: 20. */
-        smoothMs?: number;
-    };
+  // Activity detection configuration
+  activity?: {
+    /** Percentile for noise floor estimation (0-100). Default: 10. */
+    energyPercentile?: number;
+    /** dB margin above noise floor to enter active state. Default: 6. */
+    enterMargin?: number;
+    /** dB margin above noise floor to exit active state. Default: 3. */
+    exitMargin?: number;
+    /** Hangover duration in ms to prevent rapid toggling. Default: 50. */
+    hangoverMs?: number;
+    /** Minimum active duration in ms. Default: 30. */
+    minActiveMs?: number;
+    /** Smoothing window in ms for activity level. Default: 20. */
+    smoothMs?: number;
+  };
 };
 
 export type MirAudioPayload = {
-    sampleRate: number;
-    mono: Float32Array;
+  sampleRate: number;
+  mono: Float32Array;
 };
 
 // ----------------------------
@@ -748,14 +746,14 @@ export type MirAudioPayload = {
  * It is an internal spectral view, not a user-facing spectrogram.
  */
 export type CqtConfig = {
-    /** Number of bins per octave. Default: 24 (quarter-tone resolution). */
-    binsPerOctave: number;
-    /** Minimum frequency in Hz. Default: 32.7 Hz (C1). */
-    fMin: number;
-    /** Maximum frequency in Hz. Default: 8372 Hz (C9). */
-    fMax: number;
-    /** Hop size in samples. If not specified, auto-computed based on resolution. */
-    hopSize?: number;
+  /** Number of bins per octave. Default: 24 (quarter-tone resolution). */
+  binsPerOctave: number;
+  /** Minimum frequency in Hz. Default: 32.7 Hz (C1). */
+  fMin: number;
+  /** Maximum frequency in Hz. Default: 8372 Hz (C9). */
+  fMax: number;
+  /** Hop size in samples. If not specified, auto-computed based on resolution. */
+  hopSize?: number;
 };
 
 /**
@@ -765,20 +763,20 @@ export type CqtConfig = {
  * Each bin corresponds to a specific frequency based on the musical pitch scale.
  */
 export type CqtSpectrogram = {
-    /** Sample rate of source audio. */
-    sampleRate: number;
-    /** Configuration used for this computation. */
-    config: CqtConfig;
-    /** Time axis (frame centers in seconds). */
-    times: Float32Array;
-    /** CQT magnitudes [frame][bin], log-frequency ordered from fMin to fMax. */
-    magnitudes: Float32Array[];
-    /** Number of octaves covered. */
-    nOctaves: number;
-    /** Number of bins per octave. */
-    binsPerOctave: number;
-    /** Center frequency of each bin in Hz. */
-    binFrequencies: Float32Array;
+  /** Sample rate of source audio. */
+  sampleRate: number;
+  /** Configuration used for this computation. */
+  config: CqtConfig;
+  /** Time axis (frame centers in seconds). */
+  times: Float32Array;
+  /** CQT magnitudes [frame][bin], log-frequency ordered from fMin to fMax. */
+  magnitudes: Float32Array[];
+  /** Number of octaves covered. */
+  nOctaves: number;
+  /** Number of bins per octave. */
+  binsPerOctave: number;
+  /** Center frequency of each bin in Hz. */
+  binFrequencies: Float32Array;
 };
 
 /**
@@ -790,11 +788,11 @@ export type CqtSignalId = "harmonicEnergy" | "bassPitchMotion" | "tonalStability
  * Result of a CQT-derived 1D signal computation.
  */
 export type CqtSignalResult = {
-    kind: "cqt1d";
-    signalId: CqtSignalId;
-    times: Float32Array;
-    values: Float32Array;
-    meta: MirRunMeta;
+  kind: "cqt1d";
+  signalId: CqtSignalId;
+  times: Float32Array;
+  values: Float32Array;
+  meta: MirRunMeta;
 };
 
 // ----------------------------
@@ -805,20 +803,20 @@ export type CqtSignalResult = {
  * Source algorithm that generated a band proposal.
  */
 export type BandProposalSource =
-    /** Persistent spectral peak detected across time. */
-    | "spectral_peak"
-    /** Frequency region with distinct onset pattern. */
-    | "onset_band"
-    /** Concentrated energy cluster in frequency region. */
-    | "energy_cluster"
-    /** Detected harmonic series structure. */
-    | "harmonic_structure"
-    /** High harmonic energy from CQT analysis. */
-    | "cqt_harmonic"
-    /** Significant bass pitch motion from CQT analysis. */
-    | "cqt_bass_motion"
-    /** Low tonal stability region from CQT analysis. */
-    | "cqt_tonal_instability";
+  /** Persistent spectral peak detected across time. */
+  | "spectral_peak"
+  /** Frequency region with distinct onset pattern. */
+  | "onset_band"
+  /** Concentrated energy cluster in frequency region. */
+  | "energy_cluster"
+  /** Detected harmonic series structure. */
+  | "harmonic_structure"
+  /** High harmonic energy from CQT analysis. */
+  | "cqt_harmonic"
+  /** Significant bass pitch motion from CQT analysis. */
+  | "cqt_bass_motion"
+  /** Low tonal stability region from CQT analysis. */
+  | "cqt_tonal_instability";
 
 /**
  * A band proposal is an ephemeral suggestion for a frequency band.
@@ -830,41 +828,41 @@ export type BandProposalSource =
  * Design principle: Automation is advisory, not authoritative.
  */
 export type BandProposal = {
-    /** Unique ephemeral identifier for this proposal. */
-    id: string;
-    /** Proposed frequency band (same structure as FrequencyBand). */
-    band: FrequencyBand;
-    /** Salience score [0, 1] indicating how "interesting" this band is. */
-    salience: number;
-    /** Human-readable reason for this proposal. */
-    reason: string;
-    /** Algorithm that generated this proposal. */
-    source: BandProposalSource;
-    /** ISO timestamp when this proposal was generated. */
-    generatedAt: string;
+  /** Unique ephemeral identifier for this proposal. */
+  id: string;
+  /** Proposed frequency band (same structure as FrequencyBand). */
+  band: FrequencyBand;
+  /** Salience score [0, 1] indicating how "interesting" this band is. */
+  salience: number;
+  /** Human-readable reason for this proposal. */
+  reason: string;
+  /** Algorithm that generated this proposal. */
+  source: BandProposalSource;
+  /** ISO timestamp when this proposal was generated. */
+  generatedAt: string;
 };
 
 /**
  * Configuration for band proposal generation.
  */
 export type BandProposalConfig = {
-    /** Maximum number of proposals to generate. Default: 8. */
-    maxProposals?: number;
-    /** Minimum salience threshold for proposals [0, 1]. Default: 0.3. */
-    minSalience?: number;
-    /** Minimum separation in octaves between proposals. Default: 0.5. */
-    minSeparationOctaves?: number;
-    /** Minimum band width (Hz). Prevents implausibly narrow proposals. Default: 20. */
-    minBandwidthHz?: number;
-    /** Time window for analysis in seconds (0 = full track). Default: 0. */
-    analysisWindow?: number;
+  /** Maximum number of proposals to generate. Default: 8. */
+  maxProposals?: number;
+  /** Minimum salience threshold for proposals [0, 1]. Default: 0.3. */
+  minSalience?: number;
+  /** Minimum separation in octaves between proposals. Default: 0.5. */
+  minSeparationOctaves?: number;
+  /** Minimum band width (Hz). Prevents implausibly narrow proposals. Default: 20. */
+  minBandwidthHz?: number;
+  /** Time window for analysis in seconds (0 = full track). Default: 0. */
+  analysisWindow?: number;
 };
 
 /**
  * Result of band proposal generation.
  */
 export type BandProposalResult = {
-    kind: "bandProposals";
-    proposals: BandProposal[];
-    meta: MirRunMeta;
+  kind: "bandProposals";
+  proposals: BandProposal[];
+  meta: MirRunMeta;
 };

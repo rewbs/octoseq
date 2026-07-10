@@ -20,8 +20,7 @@ use visualiser::render_job::RenderJobSpec;
 const FRAME_COUNT: usize = 5;
 
 fn fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/fixtures/interpretation-package-v1.json")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/interpretation-package-v1.json")
 }
 
 #[test]

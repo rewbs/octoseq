@@ -5,12 +5,7 @@
  * for non-audio data (positive-only values, custom domains, etc.)
  */
 
-import type {
-  Plugin,
-  PluginManifest,
-  PluginContext,
-  PluginInstance,
-} from "wavesurfer.js";
+import type { Plugin, PluginManifest, PluginContext, PluginInstance } from "wavesurfer.js";
 import type {
   SignalViewerPluginOptions,
   SignalViewerActions,
@@ -40,9 +35,7 @@ export type SignalViewerPluginInstance = PluginInstance & {
 /**
  * Create a SignalViewer plugin
  */
-export function SignalViewerPlugin(
-  options: SignalViewerPluginOptions = {}
-): Plugin {
+export function SignalViewerPlugin(options: SignalViewerPluginOptions = {}): Plugin {
   return {
     manifest: MANIFEST,
     initialize(context: PluginContext): PluginInstance {
@@ -66,8 +59,7 @@ export function SignalViewerPlugin(
 
       // Create canvas
       const canvas = document.createElement("canvas");
-      canvas.style.cssText =
-        "position: absolute; left: 0; top: 0; width: 100%; height: 100%;";
+      canvas.style.cssText = "position: absolute; left: 0; top: 0; width: 100%; height: 100%;";
       container.appendChild(canvas);
 
       const maybeCtx = canvas.getContext("2d");
@@ -131,10 +123,7 @@ export function SignalViewerPlugin(
 
         // Resize if needed
         const dpr = window.devicePixelRatio || 1;
-        if (
-          canvas.width !== canvasWidth * dpr ||
-          canvas.height !== canvasHeight * dpr
-        ) {
+        if (canvas.width !== canvasWidth * dpr || canvas.height !== canvasHeight * dpr) {
           resizeCanvas();
         }
 
@@ -148,9 +137,7 @@ export function SignalViewerPlugin(
         }
 
         // Get visible layers
-        const visibleLayers = Array.from(layers.values()).filter(
-          (l) => l.visible
-        );
+        const visibleLayers = Array.from(layers.values()).filter((l) => l.visible);
         if (visibleLayers.length === 0) return;
 
         // Calculate layer heights and offsets
@@ -198,9 +185,7 @@ export function SignalViewerPlugin(
         let secondsPerGrid = pxPerGrid / minPxPerSec;
 
         // Snap to nice intervals
-        const niceIntervals = [
-          0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60,
-        ];
+        const niceIntervals = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 30, 60];
         for (const interval of niceIntervals) {
           if (interval >= secondsPerGrid) {
             secondsPerGrid = interval;
@@ -211,8 +196,7 @@ export function SignalViewerPlugin(
         // Draw vertical lines
         const startTime = scrollLeft / minPxPerSec;
         const endTime = (scrollLeft + width) / minPxPerSec;
-        const firstGridTime =
-          Math.ceil(startTime / secondsPerGrid) * secondsPerGrid;
+        const firstGridTime = Math.ceil(startTime / secondsPerGrid) * secondsPerGrid;
 
         for (let t = firstGridTime; t <= endTime; t += secondsPerGrid) {
           const x = t * minPxPerSec - scrollLeft;
@@ -229,12 +213,11 @@ export function SignalViewerPlugin(
        * Handle hover for tooltip
        */
       function handleHover(event: MouseEvent): void {
-        if (!options.onHover) return;
+        if (!options.onHover || currentView.minPxPerSec <= 0) return;
 
         const rect = container.getBoundingClientRect();
         const x = event.clientX - rect.left;
-        const time =
-          (x + currentView.scrollLeft) / currentView.minPxPerSec;
+        const time = (x + currentView.scrollLeft) / currentView.minPxPerSec;
 
         const values: Record<string, number | null> = {};
         for (const [id, layer] of layers) {
@@ -250,12 +233,11 @@ export function SignalViewerPlugin(
        * Handle click
        */
       function handleClick(event: MouseEvent): void {
-        if (!options.onClick) return;
+        if (!options.onClick || currentView.minPxPerSec <= 0) return;
 
         const rect = container.getBoundingClientRect();
         const x = event.clientX - rect.left;
-        const time =
-          (x + currentView.scrollLeft) / currentView.minPxPerSec;
+        const time = (x + currentView.scrollLeft) / currentView.minPxPerSec;
 
         options.onClick(time);
       }

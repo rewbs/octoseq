@@ -46,12 +46,7 @@ export function pickPeaks(
   values: Float32Array,
   params: Partial<PeakPickingParams> = {}
 ): PeakPickingResult {
-  const {
-    threshold,
-    minDistance,
-    preMax,
-    postMax,
-  } = { ...DEFAULT_PEAK_PICKING_PARAMS, ...params };
+  const { threshold, minDistance, preMax, postMax } = { ...DEFAULT_PEAK_PICKING_PARAMS, ...params };
 
   if (times.length === 0 || values.length === 0) {
     return {
@@ -259,12 +254,11 @@ export function pickPeaksAdaptive(
   params: Partial<PeakPickingParams> = {},
   includeThresholdCurve: boolean = false
 ): PeakPickingResult | AdaptivePeakPickingResult {
-  const {
-    threshold,
-    minDistance,
-    preMax,
-    postMax,
-  } = { ...DEFAULT_PEAK_PICKING_PARAMS, threshold: 1.5, ...params };
+  const { threshold, minDistance, preMax, postMax } = {
+    ...DEFAULT_PEAK_PICKING_PARAMS,
+    threshold: 1.5,
+    ...params,
+  };
 
   if (times.length === 0 || values.length === 0) {
     return {
@@ -399,9 +393,8 @@ export function pickPeaksAdaptive(
   // Compute normalized threshold curve for visualization
   const normalizedThreshold = new Float32Array(values.length);
   for (let i = 0; i < values.length; i++) {
-    normalizedThreshold[i] = range > 0
-      ? Math.max(0, Math.min(1, (adaptiveThreshold[i]! - minVal) / range))
-      : 0.5;
+    normalizedThreshold[i] =
+      range > 0 ? Math.max(0, Math.min(1, (adaptiveThreshold[i]! - minVal) / range)) : 0.5;
   }
 
   return {

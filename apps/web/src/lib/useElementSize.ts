@@ -7,24 +7,24 @@ import { useEffect, useState } from "react";
  * Used to make the heatmap width match the waveform container.
  */
 export function useElementSize<T extends HTMLElement>() {
-    const [el, setEl] = useState<T | null>(null);
-    const [size, setSize] = useState({ width: 0, height: 0 });
+  const [el, setEl] = useState<T | null>(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
 
-    useEffect(() => {
-        if (!el) return;
+  useEffect(() => {
+    if (!el) return;
 
-        const update = () => {
-            const rect = el.getBoundingClientRect();
-            setSize({ width: rect.width, height: rect.height });
-        };
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      setSize({ width: rect.width, height: rect.height });
+    };
 
-        update();
+    update();
 
-        const ro = new ResizeObserver(() => update());
-        ro.observe(el);
+    const ro = new ResizeObserver(() => update());
+    ro.observe(el);
 
-        return () => ro.disconnect();
-    }, [el]);
+    return () => ro.disconnect();
+  }, [el]);
 
-    return { ref: setEl, size };
+  return { ref: setEl, size };
 }

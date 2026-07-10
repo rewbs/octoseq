@@ -1,11 +1,13 @@
+use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 
-use crate::analysis_runner::{run_analysis_with_bands, run_analysis_with_events_and_bands, AnalysisConfig};
+use crate::analysis_runner::{
+    run_analysis_with_bands, run_analysis_with_events_and_bands, AnalysisConfig,
+};
 use crate::event_stream::Event;
 use crate::frequency_band::{FrequencyBandStructure, FrequencyBoundsAtTime};
 use crate::gpu::renderer::Renderer;
@@ -113,28 +115,44 @@ impl WasmVisualiser {
     }
 
     pub fn push_rotation_data(&self, samples: &[f32], sample_rate: f32) {
-        log::info!("Rust received rotation data: {} samples, rate {}", samples.len(), sample_rate);
+        log::info!(
+            "Rust received rotation data: {} samples, rate {}",
+            samples.len(),
+            sample_rate
+        );
         let mut inner = self.inner.borrow_mut();
         inner.rotation_signal = Some(Rc::new(InputSignal::new(samples.to_vec(), sample_rate)));
     }
 
     pub fn push_zoom_data(&self, samples: &[f32], sample_rate: f32) {
-        log::info!("Rust received zoom data: {} samples, rate {}", samples.len(), sample_rate);
+        log::info!(
+            "Rust received zoom data: {} samples, rate {}",
+            samples.len(),
+            sample_rate
+        );
         let mut inner = self.inner.borrow_mut();
         inner.zoom_signal = Some(Rc::new(InputSignal::new(samples.to_vec(), sample_rate)));
     }
 
     // Legacy support (optional, can remove if we update TS)
     pub fn push_data(&self, samples: &[f32], sample_rate: f32) {
-         self.push_rotation_data(samples, sample_rate);
+        self.push_rotation_data(samples, sample_rate);
     }
 
     /// Push a named signal for use in scripts.
     /// The signal will be available as `inputs.<name>` in Rhai scripts.
     pub fn push_signal(&self, name: &str, samples: &[f32], sample_rate: f32) {
-        log::info!("Rust received signal '{}': {} samples, rate {}", name, samples.len(), sample_rate);
+        log::info!(
+            "Rust received signal '{}': {} samples, rate {}",
+            name,
+            samples.len(),
+            sample_rate
+        );
         let mut inner = self.inner.borrow_mut();
-        inner.named_signals.insert(name.to_string(), Rc::new(InputSignal::new(samples.to_vec(), sample_rate)));
+        inner.named_signals.insert(
+            name.to_string(),
+            Rc::new(InputSignal::new(samples.to_vec(), sample_rate)),
+        );
     }
 
     /// Clear all named signals.
@@ -149,10 +167,7 @@ impl WasmVisualiser {
     pub fn set_musical_time(&self, json: &str) -> bool {
         match serde_json::from_str::<MusicalTimeStructure>(json) {
             Ok(structure) => {
-                log::info!(
-                    "Musical time set: {} segments",
-                    structure.segments.len()
-                );
+                log::info!("Musical time set: {} segments", structure.segments.len());
                 let mut inner = self.inner.borrow_mut();
                 inner.musical_time = Some(structure);
                 true
@@ -177,10 +192,7 @@ impl WasmVisualiser {
     pub fn set_frequency_bands(&self, json: &str) -> bool {
         match serde_json::from_str::<FrequencyBandStructure>(json) {
             Ok(structure) => {
-                log::info!(
-                    "Frequency bands set: {} bands",
-                    structure.bands.len()
-                );
+                log::info!("Frequency bands set: {} bands", structure.bands.len());
                 let mut inner = self.inner.borrow_mut();
                 inner.frequency_bands = Some(structure);
                 true
@@ -220,7 +232,8 @@ impl WasmVisualiser {
     /// Get the number of frequency bands.
     pub fn get_frequency_band_count(&self) -> usize {
         let inner = self.inner.borrow();
-        inner.frequency_bands
+        inner
+            .frequency_bands
             .as_ref()
             .map(|s| s.bands.len())
             .unwrap_or(0)
@@ -336,7 +349,9 @@ impl WasmVisualiser {
             .insert(stem_id.to_string(), stem_label.to_string());
 
         // Push to visualiser state (handles dual-key storage)
-        inner.state.push_stem_signal(stem_id, stem_label, feature, signal);
+        inner
+            .state
+            .push_stem_signal(stem_id, stem_label, feature, signal);
     }
 
     /// Clear all stem signals.
@@ -365,7 +380,10 @@ impl WasmVisualiser {
     pub fn set_available_stems(&self, json: &str) -> bool {
         match serde_json::from_str::<Vec<(String, String)>>(json) {
             Ok(stems) => {
-                log::info!("Setting {} available stems for script namespace", stems.len());
+                log::info!(
+                    "Setting {} available stems for script namespace",
+                    stems.len()
+                );
                 let mut inner = self.inner.borrow_mut();
                 inner.state.set_available_stems(stems);
                 true
@@ -415,9 +433,7 @@ impl WasmVisualiser {
 
         // Also store under label if different from ID (cheap Rc clone)
         if label != signal_id {
-            inner
-                .custom_signals
-                .insert(label.to_string(), signal);
+            inner.custom_signals.insert(label.to_string(), signal);
         }
     }
 
@@ -447,7 +463,10 @@ impl WasmVisualiser {
     pub fn set_available_custom_signals(&self, json: &str) -> bool {
         match serde_json::from_str::<Vec<(String, String)>>(json) {
             Ok(signals) => {
-                log::info!("Setting {} available custom signals for script namespace", signals.len());
+                log::info!(
+                    "Setting {} available custom signals for script namespace",
+                    signals.len()
+                );
                 let mut inner = self.inner.borrow_mut();
                 inner.state.set_available_custom_signals(signals);
                 true
@@ -476,9 +495,10 @@ impl WasmVisualiser {
             sample_rate
         );
         let mut inner = self.inner.borrow_mut();
-        inner
-            .state
-            .push_composed_signal(name, Rc::new(InputSignal::new(samples.to_vec(), sample_rate)));
+        inner.state.push_composed_signal(
+            name,
+            Rc::new(InputSignal::new(samples.to_vec(), sample_rate)),
+        );
     }
 
     /// Clear all composed signals.
@@ -498,7 +518,10 @@ impl WasmVisualiser {
     pub fn set_available_composed_signals(&self, json: &str) -> bool {
         match serde_json::from_str::<Vec<(String, String)>>(json) {
             Ok(signals) => {
-                log::info!("Setting {} available composed signals for script namespace", signals.len());
+                log::info!(
+                    "Setting {} available composed signals for script namespace",
+                    signals.len()
+                );
                 let mut inner = self.inner.borrow_mut();
                 inner.state.set_available_composed_signals(signals);
                 true
@@ -562,11 +585,7 @@ impl WasmVisualiser {
                 );
 
                 store_band_event_stream(band_id.to_string(), stream);
-                log::info!(
-                    "Pushed {} events for band '{}'",
-                    event_count,
-                    band_id
-                );
+                log::info!("Pushed {} events for band '{}'", event_count, band_id);
                 true
             }
             Err(e) => {
@@ -587,9 +606,7 @@ impl WasmVisualiser {
     /// Returns 0 if no events are stored for this band.
     pub fn get_band_event_count(&self, band_id: &str) -> usize {
         use crate::event_rhai::get_band_event_stream;
-        get_band_event_stream(band_id)
-            .map(|s| s.len())
-            .unwrap_or(0)
+        get_band_event_stream(band_id).map(|s| s.len()).unwrap_or(0)
     }
 
     /// Push a named event stream (e.g., "beatCandidates") for script access.
@@ -640,11 +657,7 @@ impl WasmVisualiser {
                 );
 
                 store_named_event_stream(name.to_string(), stream);
-                log::info!(
-                    "Pushed {} events for stream '{}'",
-                    event_count,
-                    name
-                );
+                log::info!("Pushed {} events for stream '{}'", event_count, name);
                 true
             }
             Err(e) => {
@@ -665,9 +678,7 @@ impl WasmVisualiser {
     /// Returns 0 if no events are stored for this name.
     pub fn get_event_stream_count(&self, name: &str) -> usize {
         use crate::event_rhai::get_named_event_stream;
-        get_named_event_stream(name)
-            .map(|s| s.len())
-            .unwrap_or(0)
+        get_named_event_stream(name).map(|s| s.len()).unwrap_or(0)
     }
 
     // === Authored Event Streams ===
@@ -765,7 +776,11 @@ impl WasmVisualiser {
         // - The global `inputs` signal namespace needs to know which names exist.
         // - The global `inputs.bands[...]` namespace needs the (id,label) list.
         let mut signal_names: Vec<String> = inner.named_signals.keys().cloned().collect();
-        signal_names.extend(["time", "dt", "amplitude", "flux"].into_iter().map(|s| s.to_string()));
+        signal_names.extend(
+            ["time", "dt", "amplitude", "flux"]
+                .into_iter()
+                .map(|s| s.to_string()),
+        );
         signal_names.sort();
         signal_names.dedup();
         inner.state.set_available_signals(signal_names);
@@ -812,7 +827,9 @@ impl WasmVisualiser {
     }
 
     pub fn resize(&self, width: u32, height: u32) {
-        if width == 0 || height == 0 { return; }
+        if width == 0 || height == 0 {
+            return;
+        }
 
         let mut inner = self.inner.borrow_mut();
         let ctx = &mut *inner;
@@ -916,13 +933,18 @@ impl WasmVisualiser {
         let inner = self.inner.borrow();
         let scene_graph = inner.state.scene_graph();
 
-        let positions: Vec<EntityPositionDebug> = scene_graph.scene_entities()
+        let positions: Vec<EntityPositionDebug> = scene_graph
+            .scene_entities()
             .map(|(id, entity)| {
                 let transform = entity.transform();
                 EntityPositionDebug {
                     id: id.0,
                     entity_type: format!("{:?}", entity),
-                    position: [transform.position.x, transform.position.y, transform.position.z],
+                    position: [
+                        transform.position.x,
+                        transform.position.y,
+                        transform.position.z,
+                    ],
                 }
             })
             .collect();
@@ -941,8 +963,16 @@ impl WasmVisualiser {
         let flags = CameraSignalFlags::from_config(config);
 
         let state = CameraStateDebug {
-            position: [uniforms.position[0], uniforms.position[1], uniforms.position[2]],
-            rotation: [uniforms.rotation[0], uniforms.rotation[1], uniforms.rotation[2]],
+            position: [
+                uniforms.position[0],
+                uniforms.position[1],
+                uniforms.position[2],
+            ],
+            rotation: [
+                uniforms.rotation[0],
+                uniforms.rotation[1],
+                uniforms.rotation[2],
+            ],
             target: if uniforms.mode == 1 {
                 Some([uniforms.target[0], uniforms.target[1], uniforms.target[2]])
             } else {
@@ -951,7 +981,11 @@ impl WasmVisualiser {
             fov: uniforms.fov,
             near: uniforms.near,
             far: uniforms.far,
-            mode: if uniforms.mode == 1 { "lookAt" } else { "euler" },
+            mode: if uniforms.mode == 1 {
+                "lookAt"
+            } else {
+                "euler"
+            },
             has_signals: config.has_signals(),
             signal_bound: CameraSignalFlagsDebug {
                 position_x: flags.position_x,
@@ -990,12 +1024,15 @@ impl WasmVisualiser {
         // Render
         match ctx.surface.get_current_texture() {
             Ok(output) => {
-                let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let view = output
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
                 ctx.renderer.render(&view, &ctx.state);
                 output.present();
-            },
+            }
             Err(wgpu::SurfaceError::Lost) => {
-                ctx.renderer.resize(ctx.config.width, ctx.config.height, &ctx.state);
+                ctx.renderer
+                    .resize(ctx.config.width, ctx.config.height, &ctx.state);
                 ctx.surface.configure(ctx.renderer.device(), &ctx.config);
             }
             Err(wgpu::SurfaceError::OutOfMemory) => {
@@ -1049,12 +1086,15 @@ impl WasmVisualiser {
         // Render
         match ctx.surface.get_current_texture() {
             Ok(output) => {
-                let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let view = output
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
                 ctx.renderer.render(&view, &ctx.state);
                 output.present();
-            },
+            }
             Err(wgpu::SurfaceError::Lost) => {
-                ctx.renderer.resize(ctx.config.width, ctx.config.height, &ctx.state);
+                ctx.renderer
+                    .resize(ctx.config.width, ctx.config.height, &ctx.state);
                 ctx.surface.configure(ctx.renderer.device(), &ctx.config);
             }
             Err(wgpu::SurfaceError::OutOfMemory) => {
@@ -1087,14 +1127,25 @@ impl WasmVisualiser {
             .collect();
 
         // Run analysis with the current named_signals, bands, band_signals, and musical_time
-        match run_analysis_with_bands(script, &inner.named_signals, &bands, &inner.band_signals, inner.musical_time.as_ref(), config) {
+        match run_analysis_with_bands(
+            script,
+            &inner.named_signals,
+            &bands,
+            &inner.band_signals,
+            inner.musical_time.as_ref(),
+            config,
+        ) {
             Ok(result) => {
                 let wasm_signals: Vec<WasmDebugSignal> = result
                     .debug_signals
                     .into_iter()
                     .map(|(name, sig)| {
                         let (times, values) = sig.to_arrays();
-                        WasmDebugSignal { name, times, values }
+                        WasmDebugSignal {
+                            name,
+                            times,
+                            values,
+                        }
                     })
                     .collect();
 
@@ -1162,7 +1213,11 @@ impl WasmVisualiser {
                     .into_iter()
                     .map(|(name, sig)| {
                         let (times, values) = sig.to_arrays();
-                        WasmDebugSignal { name, times, values }
+                        WasmDebugSignal {
+                            name,
+                            times,
+                            values,
+                        }
                     })
                     .collect();
 
@@ -1259,11 +1314,8 @@ impl WasmVisualiser {
         );
 
         match result {
-            Ok(analysis) => {
-                serde_json::to_string(&analysis).unwrap_or_else(|e| {
-                    format!(r#"{{"error":"Serialization error: {}"}}"#, e)
-                })
-            }
+            Ok(analysis) => serde_json::to_string(&analysis)
+                .unwrap_or_else(|e| format!(r#"{{"error":"Serialization error: {}"}}"#, e)),
             Err(e) => {
                 format!(r#"{{"error":"{}"}}"#, e.replace('"', "'"))
             }
@@ -1341,27 +1393,36 @@ pub async fn create_visualiser(canvas: HtmlCanvasElement) -> Result<WasmVisualis
     });
 
     let target = wgpu::SurfaceTarget::Canvas(canvas.clone());
-    let surface = instance.create_surface(target)
+    let surface = instance
+        .create_surface(target)
         .map_err(|e| JsValue::from_str(&format!("Failed to create surface: {}", e)))?;
 
-    let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::None,
-        compatible_surface: Some(&surface),
-        force_fallback_adapter: false,
-    }).await.ok_or_else(|| JsValue::from_str("Failed to find an appropriate adapter"))?;
+    let adapter = instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::None,
+            compatible_surface: Some(&surface),
+            force_fallback_adapter: false,
+        })
+        .await
+        .ok_or_else(|| JsValue::from_str("Failed to find an appropriate adapter"))?;
 
-    let (device, queue) = adapter.request_device(
-        &wgpu::DeviceDescriptor {
-            label: None,
-            required_features: wgpu::Features::empty(),
-            required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
-            memory_hints: Default::default(),
-        },
-        None,
-    ).await.map_err(|e| JsValue::from_str(&format!("Failed to create device: {}", e)))?;
+    let (device, queue) = adapter
+        .request_device(
+            &wgpu::DeviceDescriptor {
+                label: None,
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::downlevel_webgl2_defaults(),
+                memory_hints: Default::default(),
+            },
+            None,
+        )
+        .await
+        .map_err(|e| JsValue::from_str(&format!("Failed to create device: {}", e)))?;
 
     let surface_caps = surface.get_capabilities(&adapter);
-    let surface_format = surface_caps.formats.iter()
+    let surface_format = surface_caps
+        .formats
+        .iter()
         .copied()
         .find(|f: &wgpu::TextureFormat| f.is_srgb())
         .unwrap_or(surface_caps.formats[0]);
@@ -1378,13 +1439,7 @@ pub async fn create_visualiser(canvas: HtmlCanvasElement) -> Result<WasmVisualis
     };
     surface.configure(&device, &config);
 
-    let renderer = Renderer::new(
-        device,
-        queue,
-        config.format,
-        config.width,
-        config.height
-    );
+    let renderer = Renderer::new(device, queue, config.format, config.width, config.height);
 
     let state = VisualiserState::new();
 

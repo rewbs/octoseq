@@ -91,8 +91,6 @@ export interface AnalysisError {
 export type AnalysisResult = SignalChainAnalysis | AnalysisError;
 
 /** Type guard for analysis error */
-export function isAnalysisError(
-  result: AnalysisResult
-): result is AnalysisError {
+export function isAnalysisError(result: AnalysisResult): result is AnalysisError {
   return "error" in result;
 }

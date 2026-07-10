@@ -10,7 +10,7 @@ use rhai::{Dynamic, Engine, EvalAltResult, ImmutableString};
 use crate::event_rhai::{register_event_api, PickBuilder};
 use crate::input::{BandSignalMap, SignalMap};
 use crate::signal::{
-    GateBuilder, GeneratorNode, NormaliseBuilder, NoiseType, SelectBuilder, Signal, SignalNode,
+    GateBuilder, GeneratorNode, NoiseType, NormaliseBuilder, SelectBuilder, Signal, SignalNode,
     SignalParam, SmoothBuilder,
 };
 
@@ -114,7 +114,9 @@ pub fn register_signal_api(engine: &mut Engine) {
     // === Arithmetic methods on Signal ===
     engine.register_fn("add", |s: &mut Signal, other: Signal| s.add(other));
     engine.register_fn("add", |s: &mut Signal, value: f32| s.add_scalar(value));
-    engine.register_fn("add", |s: &mut Signal, value: i64| s.add_scalar(value as f32));
+    engine.register_fn("add", |s: &mut Signal, value: i64| {
+        s.add_scalar(value as f32)
+    });
     engine.register_fn("mul", |s: &mut Signal, other: Signal| s.mul(other));
 
     // === Arithmetic operators for Signal ===
@@ -210,10 +212,14 @@ pub fn register_signal_api(engine: &mut Engine) {
     // === Extended arithmetic ===
     engine.register_fn("sub", |s: &mut Signal, other: Signal| s.sub(other));
     engine.register_fn("sub", |s: &mut Signal, value: f32| s.sub_scalar(value));
-    engine.register_fn("sub", |s: &mut Signal, value: i64| s.sub_scalar(value as f32));
+    engine.register_fn("sub", |s: &mut Signal, value: i64| {
+        s.sub_scalar(value as f32)
+    });
     engine.register_fn("div", |s: &mut Signal, other: Signal| s.div(other));
     engine.register_fn("div", |s: &mut Signal, value: f32| s.div_scalar(value));
-    engine.register_fn("div", |s: &mut Signal, value: i64| s.div_scalar(value as f32));
+    engine.register_fn("div", |s: &mut Signal, value: i64| {
+        s.div_scalar(value as f32)
+    });
     engine.register_fn(
         "pow",
         |s: &mut Signal, exponent: Dynamic| -> Result<Signal, Box<EvalAltResult>> {
@@ -381,9 +387,10 @@ pub fn register_signal_api(engine: &mut Engine) {
 
     // === SelectBuilder ===
     engine.register_type_with_name::<SelectBuilder>("SelectBuilder");
-    engine.register_fn("when", |b: &mut SelectBuilder, cond: Signal, value: Signal| {
-        b.clone().when(cond, value)
-    });
+    engine.register_fn(
+        "when",
+        |b: &mut SelectBuilder, cond: Signal, value: Signal| b.clone().when(cond, value),
+    );
     engine.register_fn("otherwise", |b: &mut SelectBuilder, default: Signal| {
         b.clone().otherwise(default)
     });
@@ -400,7 +407,7 @@ pub fn register_signal_api(engine: &mut Engine) {
                 match name.as_str() {
                     "time" | "time.seconds" => time,
                     "time.dt" | "dt" => 0.016, // Default dt assumption
-                    "time.frames" => 0.0, // Cannot determine frame count from time alone
+                    "time.frames" => 0.0,      // Cannot determine frame count from time alone
                     "time.beats" | "time.phase" | "time.bpm" => {
                         log::warn!(
                             "sample_at: Cannot sample time.{} without musical context",
@@ -482,7 +489,9 @@ pub fn register_signal_api(engine: &mut Engine) {
 
     // signal.normalise -> NormaliseBuilder
     engine.register_type_with_name::<NormaliseBuilder>("NormaliseBuilder");
-    engine.register_get("normalise", |s: &mut Signal| NormaliseBuilder::new(s.clone()));
+    engine.register_get("normalise", |s: &mut Signal| {
+        NormaliseBuilder::new(s.clone())
+    });
 
     // signal.gate -> GateBuilder
     engine.register_type_with_name::<GateBuilder>("GateBuilder");
@@ -499,15 +508,24 @@ pub fn register_signal_api(engine: &mut Engine) {
         "exponential",
         |b: &mut SmoothBuilder, attack: f32, release: f32| b.clone().exponential(attack, release),
     );
-    engine.register_fn("exponential", |b: &mut SmoothBuilder, attack: i64, release: i64| {
-        b.clone().exponential(attack as f32, release as f32)
-    });
-    engine.register_fn("exponential", |b: &mut SmoothBuilder, attack: i64, release: f32| {
-        b.clone().exponential(attack as f32, release)
-    });
-    engine.register_fn("exponential", |b: &mut SmoothBuilder, attack: f32, release: i64| {
-        b.clone().exponential(attack, release as f32)
-    });
+    engine.register_fn(
+        "exponential",
+        |b: &mut SmoothBuilder, attack: i64, release: i64| {
+            b.clone().exponential(attack as f32, release as f32)
+        },
+    );
+    engine.register_fn(
+        "exponential",
+        |b: &mut SmoothBuilder, attack: i64, release: f32| {
+            b.clone().exponential(attack as f32, release)
+        },
+    );
+    engine.register_fn(
+        "exponential",
+        |b: &mut SmoothBuilder, attack: f32, release: i64| {
+            b.clone().exponential(attack, release as f32)
+        },
+    );
     engine.register_fn("gaussian", |b: &mut SmoothBuilder, sigma: f32| {
         b.clone().gaussian(sigma)
     });
@@ -518,18 +536,22 @@ pub fn register_signal_api(engine: &mut Engine) {
     // === NormaliseBuilder methods ===
     engine.register_fn("global", |b: &mut NormaliseBuilder| b.clone().global());
     engine.register_fn("robust", |b: &mut NormaliseBuilder| b.clone().robust());
-    engine.register_fn("to_range", |b: &mut NormaliseBuilder, min: f32, max: f32| {
-        b.clone().to_range(min, max)
-    });
-    engine.register_fn("to_range", |b: &mut NormaliseBuilder, min: i64, max: i64| {
-        b.clone().to_range(min as f32, max as f32)
-    });
-    engine.register_fn("to_range", |b: &mut NormaliseBuilder, min: i64, max: f32| {
-        b.clone().to_range(min as f32, max)
-    });
-    engine.register_fn("to_range", |b: &mut NormaliseBuilder, min: f32, max: i64| {
-        b.clone().to_range(min, max as f32)
-    });
+    engine.register_fn(
+        "to_range",
+        |b: &mut NormaliseBuilder, min: f32, max: f32| b.clone().to_range(min, max),
+    );
+    engine.register_fn(
+        "to_range",
+        |b: &mut NormaliseBuilder, min: i64, max: i64| b.clone().to_range(min as f32, max as f32),
+    );
+    engine.register_fn(
+        "to_range",
+        |b: &mut NormaliseBuilder, min: i64, max: f32| b.clone().to_range(min as f32, max),
+    );
+    engine.register_fn(
+        "to_range",
+        |b: &mut NormaliseBuilder, min: f32, max: i64| b.clone().to_range(min, max as f32),
+    );
 
     // === GateBuilder methods ===
     engine.register_fn("threshold", |b: &mut GateBuilder, threshold: f32| {
@@ -811,7 +833,9 @@ pub fn register_signal_api(engine: &mut Engine) {
 
     // === Constant signal ===
     engine.register_fn("__signal_constant", |value: f32| Signal::constant(value));
-    engine.register_fn("__signal_constant", |value: i64| Signal::constant(value as f32));
+    engine.register_fn("__signal_constant", |value: i64| {
+        Signal::constant(value as f32)
+    });
 }
 
 /// Rhai code to inject at script load time for the Signal API.
@@ -929,7 +953,8 @@ pub fn generate_inputs_namespace(signal_names: &[&str]) -> String {
 /// Note: Uses consistent naming (centroid, flux, onset, energy).
 /// Removed amplitude alias - just use energy.
 pub fn generate_bands_namespace(bands: &[(String, String)]) -> String {
-    let mut code = String::from("inputs.mix.bands = #{};\ninputs.mix.bands.__type = \"bands_namespace\";\n");
+    let mut code =
+        String::from("inputs.mix.bands = #{};\ninputs.mix.bands.__type = \"bands_namespace\";\n");
 
     for (id, label) in bands {
         // Create band object with signal accessors (keyed by ID)
@@ -985,7 +1010,8 @@ inputs.mix.bands["{id}"].onsetPeaks = __band_events_get("{id}:onsetPeaks");
 ///
 /// Note: Uses consistent naming (centroid, flux, onset, energy, pitch, pitchConfidence) - no aliases.
 pub fn generate_stems_namespace(stems: &[(String, String)]) -> String {
-    let mut code = String::from("inputs.stems = #{};\ninputs.stems.__type = \"stems_namespace\";\n");
+    let mut code =
+        String::from("inputs.stems = #{};\ninputs.stems.__type = \"stems_namespace\";\n");
 
     for (id, label) in stems {
         // Create stem object with signal accessors (keyed by ID)
@@ -1182,12 +1208,20 @@ mod tests {
 
         // Check band-123 / Bass
         assert!(code.contains(r#"inputs.mix.bands["band-123"] = #{};"#));
-        assert!(code.contains(r#"inputs.mix.bands["band-123"].energy = __band_signal_input("band-123", "energy");"#));
-        assert!(code.contains(r#"inputs.mix.bands["band-123"].onset = __band_signal_input("band-123", "onset");"#));
-        assert!(code.contains(r#"inputs.mix.bands["band-123"].flux = __band_signal_input("band-123", "flux");"#));
+        assert!(code.contains(
+            r#"inputs.mix.bands["band-123"].energy = __band_signal_input("band-123", "energy");"#
+        ));
+        assert!(code.contains(
+            r#"inputs.mix.bands["band-123"].onset = __band_signal_input("band-123", "onset");"#
+        ));
+        assert!(code.contains(
+            r#"inputs.mix.bands["band-123"].flux = __band_signal_input("band-123", "flux");"#
+        ));
         assert!(code.contains(r#"inputs.mix.bands["band-123"].centroid = __band_signal_input("band-123", "centroid");"#));
         assert!(code.contains(r#"inputs.mix.bands["band-123"].beatCandidates = __band_events_get("band-123:beatCandidates");"#));
-        assert!(code.contains(r#"inputs.mix.bands["band-123"].onsetPeaks = __band_events_get("band-123:onsetPeaks");"#));
+        assert!(code.contains(
+            r#"inputs.mix.bands["band-123"].onsetPeaks = __band_events_get("band-123:onsetPeaks");"#
+        ));
         assert!(code.contains(r#"inputs.mix.bands["Bass"] = inputs.mix.bands["band-123"];"#));
 
         // Check band-456 / Mids
@@ -1206,7 +1240,9 @@ mod tests {
         assert!(code.contains(r#"inputs.mix.bands["MyBand"].energy"#));
 
         // Should NOT have a duplicate alias line
-        let alias_count = code.matches(r#"inputs.mix.bands["MyBand"] = inputs.mix.bands["MyBand"]"#).count();
+        let alias_count = code
+            .matches(r#"inputs.mix.bands["MyBand"] = inputs.mix.bands["MyBand"]"#)
+            .count();
         assert_eq!(alias_count, 0);
     }
 
@@ -1222,12 +1258,19 @@ mod tests {
         assert!(code.contains("inputs.customSignals = #{};"));
 
         // Check sig-123 / Bass Energy
-        assert!(code.contains(r#"inputs.customSignals["sig-123"] = __custom_signal_input("sig-123");"#));
-        assert!(code.contains(r#"inputs.customSignals["Bass Energy"] = inputs.customSignals["sig-123"];"#));
+        assert!(
+            code.contains(r#"inputs.customSignals["sig-123"] = __custom_signal_input("sig-123");"#)
+        );
+        assert!(code
+            .contains(r#"inputs.customSignals["Bass Energy"] = inputs.customSignals["sig-123"];"#));
 
         // Check sig-456 - no alias since ID and name are the same
-        assert!(code.contains(r#"inputs.customSignals["sig-456"] = __custom_signal_input("sig-456");"#));
-        let alias_count = code.matches(r#"inputs.customSignals["sig-456"] = inputs.customSignals["sig-456"]"#).count();
+        assert!(
+            code.contains(r#"inputs.customSignals["sig-456"] = __custom_signal_input("sig-456");"#)
+        );
+        let alias_count = code
+            .matches(r#"inputs.customSignals["sig-456"] = inputs.customSignals["sig-456"]"#)
+            .count();
         assert_eq!(alias_count, 0);
     }
 
@@ -1244,13 +1287,21 @@ mod tests {
         assert!(code.contains(r#"inputs.composedSignals.__type = "composed_signals_namespace";"#));
 
         // Check intensity - no alias since ID and label are the same
-        assert!(code.contains(r#"inputs.composedSignals["intensity"] = __composed_signal_input("intensity");"#));
-        let alias_count = code.matches(r#"inputs.composedSignals["intensity"] = inputs.composedSignals["intensity"]"#).count();
+        assert!(code.contains(
+            r#"inputs.composedSignals["intensity"] = __composed_signal_input("intensity");"#
+        ));
+        let alias_count = code
+            .matches(r#"inputs.composedSignals["intensity"] = inputs.composedSignals["intensity"]"#)
+            .count();
         assert_eq!(alias_count, 0);
 
         // Check comp-123 / Build Up
-        assert!(code.contains(r#"inputs.composedSignals["comp-123"] = __composed_signal_input("comp-123");"#));
-        assert!(code.contains(r#"inputs.composedSignals["Build Up"] = inputs.composedSignals["comp-123"];"#));
+        assert!(code.contains(
+            r#"inputs.composedSignals["comp-123"] = __composed_signal_input("comp-123");"#
+        ));
+        assert!(code.contains(
+            r#"inputs.composedSignals["Build Up"] = inputs.composedSignals["comp-123"];"#
+        ));
     }
 
     #[test]
@@ -1259,7 +1310,11 @@ mod tests {
         let code = generate_custom_events_namespace(&streams);
 
         assert!(code.contains("inputs.customEvents = #{};"));
-        assert!(code.contains(r#"inputs.customEvents["Kick Events"] = __authored_events_get("Kick Events");"#));
-        assert!(code.contains(r#"inputs.customEvents["Snare Hits"] = __authored_events_get("Snare Hits");"#));
+        assert!(code.contains(
+            r#"inputs.customEvents["Kick Events"] = __authored_events_get("Kick Events");"#
+        ));
+        assert!(code.contains(
+            r#"inputs.customEvents["Snare Hits"] = __authored_events_get("Snare Hits");"#
+        ));
     }
 }

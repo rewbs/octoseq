@@ -138,7 +138,8 @@ impl PostEffect {
 
     /// Get the default value for a parameter.
     pub fn get_default(&self, name: &str) -> Option<&EffectParamValue> {
-        self.params.iter()
+        self.params
+            .iter()
             .find(|p| p.name == name)
             .map(|p| &p.default_value)
     }
@@ -317,7 +318,10 @@ impl PostProcessingChain {
 
     /// Build evaluated params map for use with PostProcessor::process().
     /// Uses the registry to determine param order and defaults.
-    pub fn build_params_map(&self, registry: &PostEffectRegistry) -> HashMap<String, Vec<EffectParamValue>> {
+    pub fn build_params_map(
+        &self,
+        registry: &PostEffectRegistry,
+    ) -> HashMap<String, Vec<EffectParamValue>> {
         let mut result = HashMap::new();
         for effect in &self.effects {
             if !effect.enabled {
@@ -326,7 +330,9 @@ impl PostProcessingChain {
             if let Some(def) = registry.get(&effect.effect_id) {
                 let mut params = Vec::new();
                 for param_def in &def.params {
-                    let value = effect.params.get(&param_def.name)
+                    let value = effect
+                        .params
+                        .get(&param_def.name)
                         .cloned()
                         .unwrap_or_else(|| param_def.default_value.clone());
                     params.push(value);
@@ -359,19 +365,27 @@ impl PostEffectRegistry {
             PostEffect::builder("bloom")
                 .name("Bloom")
                 .description("Adds glow to bright areas (optimized multi-pass)")
-                .param(EffectParamDef::float("threshold", 0.8)
-                    .with_range(0.0, 2.0)
-                    .with_description("Brightness threshold for bloom"))
-                .param(EffectParamDef::float("intensity", 0.5)
-                    .with_range(0.0, 2.0)
-                    .with_description("Bloom intensity"))
-                .param(EffectParamDef::float("radius", 4.0)
-                    .with_range(0.0, 32.0)
-                    .with_description("Blur radius (capped at 32)"))
-                .param(EffectParamDef::float("downsample", 2.0)
-                    .with_range(1.0, 8.0)
-                    .with_description("Downsample factor (1=full res, 2=half, etc.)"))
-                .build()
+                .param(
+                    EffectParamDef::float("threshold", 0.8)
+                        .with_range(0.0, 2.0)
+                        .with_description("Brightness threshold for bloom"),
+                )
+                .param(
+                    EffectParamDef::float("intensity", 0.5)
+                        .with_range(0.0, 2.0)
+                        .with_description("Bloom intensity"),
+                )
+                .param(
+                    EffectParamDef::float("radius", 4.0)
+                        .with_range(0.0, 32.0)
+                        .with_description("Blur radius (capped at 32)"),
+                )
+                .param(
+                    EffectParamDef::float("downsample", 2.0)
+                        .with_range(1.0, 8.0)
+                        .with_description("Downsample factor (1=full res, 2=half, etc.)"),
+                )
+                .build(),
         );
 
         // Color Grade effect
@@ -379,21 +393,31 @@ impl PostEffectRegistry {
             PostEffect::builder("color_grade")
                 .name("Color Grade")
                 .description("Adjusts color and tone")
-                .param(EffectParamDef::float("brightness", 0.0)
-                    .with_range(-1.0, 1.0)
-                    .with_description("Brightness adjustment"))
-                .param(EffectParamDef::float("contrast", 1.0)
-                    .with_range(0.0, 2.0)
-                    .with_description("Contrast multiplier"))
-                .param(EffectParamDef::float("saturation", 1.0)
-                    .with_range(0.0, 2.0)
-                    .with_description("Saturation multiplier"))
-                .param(EffectParamDef::float("gamma", 1.0)
-                    .with_range(0.1, 3.0)
-                    .with_description("Gamma correction"))
-                .param(EffectParamDef::color("tint", [1.0, 1.0, 1.0, 1.0])
-                    .with_description("Color tint"))
-                .build()
+                .param(
+                    EffectParamDef::float("brightness", 0.0)
+                        .with_range(-1.0, 1.0)
+                        .with_description("Brightness adjustment"),
+                )
+                .param(
+                    EffectParamDef::float("contrast", 1.0)
+                        .with_range(0.0, 2.0)
+                        .with_description("Contrast multiplier"),
+                )
+                .param(
+                    EffectParamDef::float("saturation", 1.0)
+                        .with_range(0.0, 2.0)
+                        .with_description("Saturation multiplier"),
+                )
+                .param(
+                    EffectParamDef::float("gamma", 1.0)
+                        .with_range(0.1, 3.0)
+                        .with_description("Gamma correction"),
+                )
+                .param(
+                    EffectParamDef::color("tint", [1.0, 1.0, 1.0, 1.0])
+                        .with_description("Color tint"),
+                )
+                .build(),
         );
 
         // Vignette effect
@@ -401,15 +425,21 @@ impl PostEffectRegistry {
             PostEffect::builder("vignette")
                 .name("Vignette")
                 .description("Darkens edges of the frame")
-                .param(EffectParamDef::float("intensity", 0.3)
-                    .with_range(0.0, 1.0)
-                    .with_description("Vignette darkness"))
-                .param(EffectParamDef::float("smoothness", 0.5)
-                    .with_range(0.0, 1.0)
-                    .with_description("Edge smoothness"))
-                .param(EffectParamDef::color("color", [0.0, 0.0, 0.0, 1.0])
-                    .with_description("Vignette color"))
-                .build()
+                .param(
+                    EffectParamDef::float("intensity", 0.3)
+                        .with_range(0.0, 1.0)
+                        .with_description("Vignette darkness"),
+                )
+                .param(
+                    EffectParamDef::float("smoothness", 0.5)
+                        .with_range(0.0, 1.0)
+                        .with_description("Edge smoothness"),
+                )
+                .param(
+                    EffectParamDef::color("color", [0.0, 0.0, 0.0, 1.0])
+                        .with_description("Vignette color"),
+                )
+                .build(),
         );
 
         // Distortion effect
@@ -417,12 +447,18 @@ impl PostEffectRegistry {
             PostEffect::builder("distortion")
                 .name("Distortion")
                 .description("Barrel/pincushion distortion")
-                .param(EffectParamDef::float("amount", 0.0)
-                    .with_range(-1.0, 1.0)
-                    .with_description("Distortion amount (negative = barrel, positive = pincushion)"))
-                .param(EffectParamDef::vec2("center", [0.5, 0.5])
-                    .with_description("Distortion center (normalized)"))
-                .build()
+                .param(
+                    EffectParamDef::float("amount", 0.0)
+                        .with_range(-1.0, 1.0)
+                        .with_description(
+                            "Distortion amount (negative = barrel, positive = pincushion)",
+                        ),
+                )
+                .param(
+                    EffectParamDef::vec2("center", [0.5, 0.5])
+                        .with_description("Distortion center (normalized)"),
+                )
+                .build(),
         );
 
         // Zoom with wrap effect
@@ -431,15 +467,21 @@ impl PostEffectRegistry {
             PostEffect::builder("zoom_wrap")
                 .name("Zoom Wrap")
                 .description("Zoom in/out with edge wrapping (repeat or mirror)")
-                .param(EffectParamDef::float("amount", 1.0)
-                    .with_range(0.5, 2.0)
-                    .with_description("Zoom scale factor (<1 = zoom in, >1 = zoom out)"))
-                .param(EffectParamDef::float("wrap_mode", 0.0)
-                    .with_range(0.0, 1.0)
-                    .with_description("Wrap mode: 0 = repeat, 1 = mirror"))
-                .param(EffectParamDef::vec2("center", [0.5, 0.5])
-                    .with_description("Zoom center in normalized coordinates"))
-                .build()
+                .param(
+                    EffectParamDef::float("amount", 1.0)
+                        .with_range(0.5, 2.0)
+                        .with_description("Zoom scale factor (<1 = zoom in, >1 = zoom out)"),
+                )
+                .param(
+                    EffectParamDef::float("wrap_mode", 0.0)
+                        .with_range(0.0, 1.0)
+                        .with_description("Wrap mode: 0 = repeat, 1 = mirror"),
+                )
+                .param(
+                    EffectParamDef::vec2("center", [0.5, 0.5])
+                        .with_description("Zoom center in normalized coordinates"),
+                )
+                .build(),
         );
 
         // Radial blur effect
@@ -448,15 +490,21 @@ impl PostEffectRegistry {
             PostEffect::builder("radial_blur")
                 .name("Radial Blur")
                 .description("Motion blur radiating from a center point")
-                .param(EffectParamDef::float("strength", 0.0)
-                    .with_range(0.0, 1.0)
-                    .with_description("Blur strength"))
-                .param(EffectParamDef::float("samples", 8.0)
-                    .with_range(2.0, 32.0)
-                    .with_description("Number of blur samples (higher = smoother)"))
-                .param(EffectParamDef::vec2("center", [0.5, 0.5])
-                    .with_description("Blur center in normalized coordinates"))
-                .build()
+                .param(
+                    EffectParamDef::float("strength", 0.0)
+                        .with_range(0.0, 1.0)
+                        .with_description("Blur strength"),
+                )
+                .param(
+                    EffectParamDef::float("samples", 8.0)
+                        .with_range(2.0, 32.0)
+                        .with_description("Number of blur samples (higher = smoother)"),
+                )
+                .param(
+                    EffectParamDef::vec2("center", [0.5, 0.5])
+                        .with_description("Blur center in normalized coordinates"),
+                )
+                .build(),
         );
 
         // Directional blur effect
@@ -464,16 +512,22 @@ impl PostEffectRegistry {
             PostEffect::builder("directional_blur")
                 .name("Directional Blur")
                 .description("Motion blur in a specific direction")
-                .param(EffectParamDef::float("amount", 0.0)
-                    .with_range(0.0, 20.0)
-                    .with_description("Blur amount in pixels"))
-                .param(EffectParamDef::float("angle", 0.0)
-                    .with_range(0.0, 6.283185)
-                    .with_description("Blur direction in radians"))
-                .param(EffectParamDef::float("samples", 8.0)
-                    .with_range(2.0, 32.0)
-                    .with_description("Number of blur samples"))
-                .build()
+                .param(
+                    EffectParamDef::float("amount", 0.0)
+                        .with_range(0.0, 20.0)
+                        .with_description("Blur amount in pixels"),
+                )
+                .param(
+                    EffectParamDef::float("angle", 0.0)
+                        .with_range(0.0, std::f32::consts::TAU)
+                        .with_description("Blur direction in radians"),
+                )
+                .param(
+                    EffectParamDef::float("samples", 8.0)
+                        .with_range(2.0, 32.0)
+                        .with_description("Number of blur samples"),
+                )
+                .build(),
         );
 
         // Chromatic aberration effect
@@ -481,13 +535,17 @@ impl PostEffectRegistry {
             PostEffect::builder("chromatic_aberration")
                 .name("Chromatic Aberration")
                 .description("RGB channel separation effect")
-                .param(EffectParamDef::float("amount", 0.0)
-                    .with_range(0.0, 10.0)
-                    .with_description("Separation amount"))
-                .param(EffectParamDef::float("angle", 0.0)
-                    .with_range(0.0, 6.283185)
-                    .with_description("Separation direction in radians"))
-                .build()
+                .param(
+                    EffectParamDef::float("amount", 0.0)
+                        .with_range(0.0, 10.0)
+                        .with_description("Separation amount"),
+                )
+                .param(
+                    EffectParamDef::float("angle", 0.0)
+                        .with_range(0.0, std::f32::consts::TAU)
+                        .with_description("Separation direction in radians"),
+                )
+                .build(),
         );
 
         // Film grain effect
@@ -495,16 +553,22 @@ impl PostEffectRegistry {
             PostEffect::builder("grain")
                 .name("Film Grain")
                 .description("Add deterministic film grain noise")
-                .param(EffectParamDef::float("amount", 0.0)
-                    .with_range(0.0, 0.5)
-                    .with_description("Grain intensity"))
-                .param(EffectParamDef::float("scale", 1.0)
-                    .with_range(0.1, 10.0)
-                    .with_description("Grain scale (smaller = finer)"))
-                .param(EffectParamDef::float("seed", 0.0)
-                    .with_range(0.0, 1000.0)
-                    .with_description("Random seed for reproducibility"))
-                .build()
+                .param(
+                    EffectParamDef::float("amount", 0.0)
+                        .with_range(0.0, 0.5)
+                        .with_description("Grain intensity"),
+                )
+                .param(
+                    EffectParamDef::float("scale", 1.0)
+                        .with_range(0.1, 10.0)
+                        .with_description("Grain scale (smaller = finer)"),
+                )
+                .param(
+                    EffectParamDef::float("seed", 0.0)
+                        .with_range(0.0, 1000.0)
+                        .with_description("Random seed for reproducibility"),
+                )
+                .build(),
         );
     }
 

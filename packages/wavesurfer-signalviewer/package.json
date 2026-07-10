@@ -7,8 +7,7 @@
   "type": "module",
   "sideEffects": false,
   "files": [
-    "dist",
-    "src"
+    "dist"
   ],
   "exports": {
     ".": {
@@ -32,12 +31,12 @@
     "wavesurfer.js": ">=8.0.0-beta.1"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "eslint": "latest",
-    "tsup": "latest",
+    "@types/node": "^24.10.1",
+    "eslint": "^9.39.2",
+    "tsup": "^8.5.1",
     "typescript": "^5",
-    "vite": "latest",
-    "vitest": "latest",
+    "vite": "^7.2.4",
+    "vitest": "4.1.8",
     "wavesurfer.js": "npm:@rewbs/wavesurfer.js@8.0.0-beta.1"
   },
   "publishConfig": {

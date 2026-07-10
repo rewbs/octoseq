@@ -2,41 +2,41 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import {
-    toFrequencyBand,
-    updateBandShape,
-    useBandEditingStore,
-    useStreamStore,
+  toFrequencyBand,
+  updateBandShape,
+  useBandEditingStore,
+  useStreamStore,
 } from "@/lib/streams";
 import { frequencyBoundsAt, moveKeyframeTime, type MelConversionConfig } from "@octoseq/mir";
-import { hzToFeatureIndex, featureIndexToHz } from "@octoseq/mir";
+import { featureIndexToHz } from "@octoseq/mir";
 
 // ----------------------------
 // Types
 // ----------------------------
 
 export type UseBandInteractionOptions = {
-    /** Container element for coordinate calculations. */
-    containerRef: React.RefObject<HTMLElement | null>;
+  /** Container element for coordinate calculations. */
+  containerRef: React.RefObject<HTMLElement | null>;
 
-    /** Visible time range. */
-    startTime: number;
-    endTime: number;
+  /** Visible time range. */
+  startTime: number;
+  endTime: number;
 
-    /** Container dimensions. */
-    width: number;
-    height: number;
+  /** Container dimensions. */
+  width: number;
+  height: number;
 
-    /** Mel configuration for Hz <-> Y conversion. */
-    melConfig: MelConversionConfig;
+  /** Mel configuration for Hz <-> Y conversion. */
+  melConfig: MelConversionConfig;
 
-    /** Minimum band width in Hz to enforce. */
-    minBandWidthHz?: number;
+  /** Minimum band width in Hz to enforce. */
+  minBandWidthHz?: number;
 
-    /** Optional snap function for keyframe time snapping. */
-    snapTime?: (time: number, toleranceSec: number) => number;
+  /** Optional snap function for keyframe time snapping. */
+  snapTime?: (time: number, toleranceSec: number) => number;
 
-    /** Snap tolerance in pixels. */
-    snapTolerancePx?: number;
+  /** Snap tolerance in pixels. */
+  snapTolerancePx?: number;
 };
 
 // ----------------------------
@@ -44,20 +44,14 @@ export type UseBandInteractionOptions = {
 // ----------------------------
 
 function yToHz(y: number, height: number, melConfig: MelConversionConfig): number {
-    const normalized = 1 - y / height;
-    const featureIndex = normalized * (melConfig.nMels - 1);
-    return featureIndexToHz(featureIndex, melConfig);
-}
-
-function hzToY(hz: number, height: number, melConfig: MelConversionConfig): number {
-    const featureIndex = hzToFeatureIndex(hz, melConfig);
-    const normalized = featureIndex / (melConfig.nMels - 1);
-    return height * (1 - normalized);
+  const normalized = 1 - y / height;
+  const featureIndex = normalized * (melConfig.nMels - 1);
+  return featureIndexToHz(featureIndex, melConfig);
 }
 
 function xToTime(x: number, width: number, startTime: number, endTime: number): number {
-    if (width <= 0) return startTime;
-    return startTime + (x / width) * (endTime - startTime);
+  if (width <= 0) return startTime;
+  return startTime + (x / width) * (endTime - startTime);
 }
 
 // ----------------------------
@@ -65,204 +59,205 @@ function xToTime(x: number, width: number, startTime: number, endTime: number): 
 // ----------------------------
 
 export function useBandInteraction({
+  containerRef,
+  startTime,
+  endTime,
+  width,
+  height,
+  melConfig,
+  minBandWidthHz = 20,
+  snapTime,
+  snapTolerancePx = 8,
+}: UseBandInteractionOptions) {
+  const dragStartRef = useRef<{
+    initialLowHz: number;
+    initialHighHz: number;
+    initialY: number;
+    initialX: number;
+    initialKeyframeTime: number;
+    time: number;
+  } | null>(null);
+
+  const dragState = useBandEditingStore((s) => s.dragState);
+  const setDragState = useBandEditingStore((s) => s.setDragState);
+
+  // Handle drag start from overlay
+  const handleDragStart = useCallback(
+    (info: {
+      bandId: string;
+      mode: "low-edge" | "high-edge" | "body" | "keyframe-time";
+      startValue: number;
+      clientY: number;
+      clientX: number;
+    }) => {
+      const stream = useStreamStore.getState().getStream(info.bandId);
+      if (!stream || stream.kind !== "band") return;
+      const band = toFrequencyBand(stream);
+
+      const container = containerRef.current;
+      if (!container) return;
+
+      const rect = container.getBoundingClientRect();
+      const y = info.clientY - rect.top;
+      const x = info.clientX - rect.left;
+
+      // Get current frequency bounds at the center of visible range
+      const time = (startTime + endTime) / 2;
+      const bounds = frequencyBoundsAt(band, time);
+      if (!bounds) return;
+
+      dragStartRef.current = {
+        initialLowHz: bounds.lowHz,
+        initialHighHz: bounds.highHz,
+        initialY: y,
+        initialX: x,
+        initialKeyframeTime: info.mode === "keyframe-time" ? info.startValue : 0,
+        time,
+      };
+
+      setDragState({
+        bandId: info.bandId,
+        mode: info.mode,
+        startValue: info.startValue,
+        startPosition: info.mode === "keyframe-time" ? info.clientX : info.clientY,
+      });
+    },
+    [containerRef, startTime, endTime, setDragState]
+  );
+
+  // Handle mouse move during drag
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const container = containerRef.current;
+      if (!container || !dragStartRef.current) return;
+
+      const rect = container.getBoundingClientRect();
+      const y = e.clientY - rect.top;
+
+      const stream = useStreamStore.getState().getStream(dragState.bandId);
+      if (!stream || stream.kind !== "band") return;
+      const band = toFrequencyBand(stream);
+
+      const { initialLowHz, initialHighHz, initialY } = dragStartRef.current;
+
+      // Convert Y delta to Hz delta
+      const currentHz = yToHz(y, height, melConfig);
+      const initialHz = yToHz(initialY, height, melConfig);
+      const deltaHz = currentHz - initialHz;
+
+      let newLowHz = initialLowHz;
+      let newHighHz = initialHighHz;
+
+      switch (dragState.mode) {
+        case "low-edge":
+          // Dragging lower edge
+          newLowHz = Math.max(
+            melConfig.fMin,
+            Math.min(initialHighHz - minBandWidthHz, initialLowHz + deltaHz)
+          );
+          break;
+
+        case "high-edge":
+          // Dragging upper edge
+          newHighHz = Math.min(
+            melConfig.fMax,
+            Math.max(initialLowHz + minBandWidthHz, initialHighHz + deltaHz)
+          );
+          break;
+
+        case "body": {
+          // Dragging the whole band (shift vertically)
+          const bandWidth = initialHighHz - initialLowHz;
+          newLowHz = initialLowHz + deltaHz;
+          newHighHz = initialHighHz + deltaHz;
+
+          // Clamp to valid range
+          if (newLowHz < melConfig.fMin) {
+            newLowHz = melConfig.fMin;
+            newHighHz = melConfig.fMin + bandWidth;
+          }
+          if (newHighHz > melConfig.fMax) {
+            newHighHz = melConfig.fMax;
+            newLowHz = melConfig.fMax - bandWidth;
+          }
+          break;
+        }
+
+        case "keyframe-time": {
+          // Drag keyframe horizontally in time
+          const rect = container.getBoundingClientRect();
+          const currentX = e.clientX - rect.left;
+          let newTime = xToTime(currentX, width, startTime, endTime);
+
+          // Clamp to valid time range (within audio duration)
+          newTime = Math.max(0, newTime);
+
+          // Apply snapping if available
+          if (snapTime) {
+            // Convert pixel tolerance to time tolerance
+            const timeRange = endTime - startTime;
+            const toleranceSec = width > 0 ? (snapTolerancePx / width) * timeRange : 0;
+            newTime = snapTime(newTime, toleranceSec);
+          }
+
+          // Use moveKeyframeTime to update the band
+          const updatedBand = moveKeyframeTime(
+            band,
+            dragStartRef.current.initialKeyframeTime,
+            newTime
+          );
+
+          // Update the initial keyframe time so subsequent moves work correctly
+          dragStartRef.current.initialKeyframeTime = newTime;
+
+          updateBandShape(band.id, { frequencyShape: updatedBand.frequencyShape });
+          return;
+        }
+      }
+
+      // Update all segments uniformly for now (constant bands)
+      // For time-varying bands, we'd need more sophisticated logic
+      const newSegments = band.frequencyShape.map((seg) => ({
+        ...seg,
+        lowHzStart: newLowHz,
+        lowHzEnd: newLowHz,
+        highHzStart: newHighHz,
+        highHzEnd: newHighHz,
+      }));
+
+      updateBandShape(band.id, { frequencyShape: newSegments });
+    };
+
+    const handleMouseUp = () => {
+      dragStartRef.current = null;
+      setDragState(null);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [
+    dragState,
     containerRef,
-    startTime,
-    endTime,
     width,
     height,
+    startTime,
+    endTime,
     melConfig,
-    minBandWidthHz = 20,
+    minBandWidthHz,
     snapTime,
-    snapTolerancePx = 8,
-}: UseBandInteractionOptions) {
-    const dragStartRef = useRef<{
-        initialLowHz: number;
-        initialHighHz: number;
-        initialY: number;
-        initialX: number;
-        initialKeyframeTime: number;
-        time: number;
-    } | null>(null);
+    snapTolerancePx,
+    setDragState,
+  ]);
 
-    const dragState = useBandEditingStore((s) => s.dragState);
-    const setDragState = useBandEditingStore((s) => s.setDragState);
-
-    // Handle drag start from overlay
-    const handleDragStart = useCallback(
-        (info: {
-            bandId: string;
-            mode: "low-edge" | "high-edge" | "body" | "keyframe-time";
-            startValue: number;
-            clientY: number;
-            clientX: number;
-        }) => {
-            const stream = useStreamStore.getState().getStream(info.bandId);
-            if (!stream || stream.kind !== "band") return;
-            const band = toFrequencyBand(stream);
-
-            const container = containerRef.current;
-            if (!container) return;
-
-            const rect = container.getBoundingClientRect();
-            const y = info.clientY - rect.top;
-            const x = info.clientX - rect.left;
-
-            // Get current frequency bounds at the center of visible range
-            const time = (startTime + endTime) / 2;
-            const bounds = frequencyBoundsAt(band, time);
-            if (!bounds) return;
-
-            dragStartRef.current = {
-                initialLowHz: bounds.lowHz,
-                initialHighHz: bounds.highHz,
-                initialY: y,
-                initialX: x,
-                initialKeyframeTime: info.mode === "keyframe-time" ? info.startValue : 0,
-                time,
-            };
-
-            setDragState({
-                bandId: info.bandId,
-                mode: info.mode,
-                startValue: info.startValue,
-                startPosition: info.mode === "keyframe-time" ? info.clientX : info.clientY,
-            });
-        },
-        [containerRef, startTime, endTime, setDragState]
-    );
-
-    // Handle mouse move during drag
-    useEffect(() => {
-        if (!dragState) return;
-
-        const handleMouseMove = (e: MouseEvent) => {
-            const container = containerRef.current;
-            if (!container || !dragStartRef.current) return;
-
-            const rect = container.getBoundingClientRect();
-            const y = e.clientY - rect.top;
-
-            const stream = useStreamStore.getState().getStream(dragState.bandId);
-            if (!stream || stream.kind !== "band") return;
-            const band = toFrequencyBand(stream);
-
-            const { initialLowHz, initialHighHz, initialY, time } = dragStartRef.current;
-
-            // Convert Y delta to Hz delta
-            const currentHz = yToHz(y, height, melConfig);
-            const initialHz = yToHz(initialY, height, melConfig);
-            const deltaHz = currentHz - initialHz;
-
-            let newLowHz = initialLowHz;
-            let newHighHz = initialHighHz;
-
-            switch (dragState.mode) {
-                case "low-edge":
-                    // Dragging lower edge
-                    newLowHz = Math.max(
-                        melConfig.fMin,
-                        Math.min(initialHighHz - minBandWidthHz, initialLowHz + deltaHz)
-                    );
-                    break;
-
-                case "high-edge":
-                    // Dragging upper edge
-                    newHighHz = Math.min(
-                        melConfig.fMax,
-                        Math.max(initialLowHz + minBandWidthHz, initialHighHz + deltaHz)
-                    );
-                    break;
-
-                case "body":
-                    // Dragging the whole band (shift vertically)
-                    const bandWidth = initialHighHz - initialLowHz;
-                    newLowHz = initialLowHz + deltaHz;
-                    newHighHz = initialHighHz + deltaHz;
-
-                    // Clamp to valid range
-                    if (newLowHz < melConfig.fMin) {
-                        newLowHz = melConfig.fMin;
-                        newHighHz = melConfig.fMin + bandWidth;
-                    }
-                    if (newHighHz > melConfig.fMax) {
-                        newHighHz = melConfig.fMax;
-                        newLowHz = melConfig.fMax - bandWidth;
-                    }
-                    break;
-
-                case "keyframe-time": {
-                    // Drag keyframe horizontally in time
-                    const rect = container.getBoundingClientRect();
-                    const currentX = e.clientX - rect.left;
-                    let newTime = xToTime(currentX, width, startTime, endTime);
-
-                    // Clamp to valid time range (within audio duration)
-                    newTime = Math.max(0, newTime);
-
-                    // Apply snapping if available
-                    if (snapTime) {
-                        // Convert pixel tolerance to time tolerance
-                        const timeRange = endTime - startTime;
-                        const toleranceSec = width > 0 ? (snapTolerancePx / width) * timeRange : 0;
-                        newTime = snapTime(newTime, toleranceSec);
-                    }
-
-                    // Use moveKeyframeTime to update the band
-                    const updatedBand = moveKeyframeTime(
-                        band,
-                        dragStartRef.current.initialKeyframeTime,
-                        newTime
-                    );
-
-                    // Update the initial keyframe time so subsequent moves work correctly
-                    dragStartRef.current.initialKeyframeTime = newTime;
-
-                    updateBandShape(band.id, { frequencyShape: updatedBand.frequencyShape });
-                    return;
-                }
-            }
-
-            // Update all segments uniformly for now (constant bands)
-            // For time-varying bands, we'd need more sophisticated logic
-            const newSegments = band.frequencyShape.map((seg) => ({
-                ...seg,
-                lowHzStart: newLowHz,
-                lowHzEnd: newLowHz,
-                highHzStart: newHighHz,
-                highHzEnd: newHighHz,
-            }));
-
-            updateBandShape(band.id, { frequencyShape: newSegments });
-        };
-
-        const handleMouseUp = () => {
-            dragStartRef.current = null;
-            setDragState(null);
-        };
-
-        document.addEventListener("mousemove", handleMouseMove);
-        document.addEventListener("mouseup", handleMouseUp);
-
-        return () => {
-            document.removeEventListener("mousemove", handleMouseMove);
-            document.removeEventListener("mouseup", handleMouseUp);
-        };
-    }, [
-        dragState,
-        containerRef,
-        width,
-        height,
-        startTime,
-        endTime,
-        melConfig,
-        minBandWidthHz,
-        snapTime,
-        snapTolerancePx,
-        setDragState,
-    ]);
-
-    return {
-        handleDragStart,
-        isDragging: dragState !== null,
-    };
+  return {
+    handleDragStart,
+    isDragging: dragState !== null,
+  };
 }

@@ -26,7 +26,6 @@ import {
   renderMarkers,
   renderSparseEvents,
   renderHeatStrip,
-  getBaselineY,
 } from "./renderers/index.js";
 
 /**
@@ -187,15 +186,28 @@ export class SignalLayer {
       const times = this._signal.times;
       const strengths = this._signal.strengths;
 
-      // Find closest event within a small tolerance
+      // Find the insertion point, then inspect the two nearest events.
       const tolerance = 0.05; // 50ms
-      for (let i = 0; i < times.length; i++) {
-        const t = times[i];
-        if (t !== undefined && Math.abs(t - time) < tolerance) {
-          return strengths?.[i] ?? 1;
+      let low = 0;
+      let high = times.length;
+      while (low < high) {
+        const mid = low + ((high - low) >> 1);
+        if ((times[mid] ?? Number.POSITIVE_INFINITY) < time) low = mid + 1;
+        else high = mid;
+      }
+
+      let nearest = -1;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      for (const index of [low - 1, low]) {
+        const eventTime = times[index];
+        if (eventTime === undefined) continue;
+        const distance = Math.abs(eventTime - time);
+        if (distance < nearestDistance) {
+          nearest = index;
+          nearestDistance = distance;
         }
       }
-      return null;
+      return nearest >= 0 && nearestDistance < tolerance ? (strengths?.[nearest] ?? 1) : null;
     }
 
     // For continuous signals, interpolate
@@ -275,7 +287,7 @@ export class SignalLayer {
 
     // Time to X conversion
     const timeToX = (time: number): number => {
-      return (time * minPxPerSec) - scrollLeft;
+      return time * minPxPerSec - scrollLeft;
     };
 
     // Render based on mode
@@ -345,8 +357,6 @@ export class SignalLayer {
 
     // Convert to render points
     const points: RenderPoint[] = [];
-    const baselineY = getBaselineY(this._baseline, layerHeight);
-
     for (let i = 0; i < times.length; i++) {
       const time = times[i];
       const value = values[i];

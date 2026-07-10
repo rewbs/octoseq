@@ -39,7 +39,7 @@ pub fn should_log_collections() -> bool {
         return false;
     }
     let frame = FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
-    frame % COLLECTION_LOG_INTERVAL == 0
+    frame.is_multiple_of(COLLECTION_LOG_INTERVAL)
 }
 
 /// Reset the frame counter (e.g., on script reload).
@@ -119,7 +119,7 @@ mod wasm_timing {
     }
 }
 
-pub use wasm_timing::{time_start, time_end, timed};
+pub use wasm_timing::{time_end, time_start, timed};
 
 // ============================================================================
 // Collection Size Tracking
@@ -188,13 +188,23 @@ impl CollectionStats {
             if previous > 0 && current > previous {
                 let growth = (current - previous) as f64 / previous as f64;
                 if growth > 0.1 {
-                    return Some(format!("{}: {} -> {} (+{:.0}%)", name, previous, current, growth * 100.0));
+                    return Some(format!(
+                        "{}: {} -> {} (+{:.0}%)",
+                        name,
+                        previous,
+                        current,
+                        growth * 100.0
+                    ));
                 }
             }
             None
         };
 
-        if let Some(w) = check("exp_smooth_state", self.exp_smooth_state, prev.exp_smooth_state) {
+        if let Some(w) = check(
+            "exp_smooth_state",
+            self.exp_smooth_state,
+            prev.exp_smooth_state,
+        ) {
             warnings.push(w);
         }
         if let Some(w) = check("ma_buffers", self.ma_buffers, prev.ma_buffers) {
@@ -203,14 +213,21 @@ impl CollectionStats {
         if let Some(w) = check("delay_buffers", self.delay_buffers, prev.delay_buffers) {
             warnings.push(w);
         }
-        if let Some(w) = check("integrate_state", self.integrate_state, prev.integrate_state) {
+        if let Some(w) = check(
+            "integrate_state",
+            self.integrate_state,
+            prev.integrate_state,
+        ) {
             warnings.push(w);
         }
 
         if warnings.is_empty() {
             None
         } else {
-            Some(format!("[PERF WARNING] Collections growing: {}", warnings.join(", ")))
+            Some(format!(
+                "[PERF WARNING] Collections growing: {}",
+                warnings.join(", ")
+            ))
         }
     }
 }

@@ -8,7 +8,6 @@ import { Activity, Trash2, RefreshCw, Plus, ChevronDown, ChevronRight } from "lu
 import { useState, useCallback } from "react";
 import {
   getSourceDescription,
-  getTransformDescription,
   SOURCE_KIND_LABELS,
   STABILIZATION_MODE_LABELS,
   ENVELOPE_MODE_LABELS,
@@ -34,7 +33,9 @@ export function DerivedSignalsInspector({ nodeId }: DerivedSignalsInspectorProps
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["source", "output"]));
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(
+    new Set(["source", "output"])
+  );
 
   // Parse node ID to determine if it's a specific signal or the section
   const isSection = nodeId === "derived-signals";
@@ -86,8 +87,8 @@ export function DerivedSignalsInspector({ nodeId }: DerivedSignalsInspectorProps
           Add Signal
         </Button>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Create signals from 2D spectral data, 1D MIR outputs, or event streams.
-          Derived signals can be used in scripts via{" "}
+          Create signals from 2D spectral data, 1D MIR outputs, or event streams. Derived signals
+          can be used in scripts via{" "}
           <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">
             inputs.customSignals[&quot;name&quot;]
           </code>
@@ -155,7 +156,9 @@ export function DerivedSignalsInspector({ nodeId }: DerivedSignalsInspectorProps
 
       {/* Enabled toggle */}
       <div className="flex items-center justify-between">
-        <label htmlFor="enabled" className="text-sm">Enabled</label>
+        <label htmlFor="enabled" className="text-sm">
+          Enabled
+        </label>
         <input
           type="checkbox"
           id="enabled"
@@ -214,9 +217,7 @@ export function DerivedSignalsInspector({ nodeId }: DerivedSignalsInspectorProps
         {expandedSections.has("transforms") && (
           <div className="border-t border-zinc-200 p-3 dark:border-zinc-700">
             {signal.transforms.length === 0 ? (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                No transforms configured
-              </p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">No transforms configured</p>
             ) : (
               <ul className="space-y-1 text-sm">
                 {signal.transforms.map((t, i) => (
@@ -304,7 +305,8 @@ export function DerivedSignalsInspector({ nodeId }: DerivedSignalsInspectorProps
                   <div>
                     <span className="font-medium">P5-P95: </span>
                     <span className="text-zinc-600 dark:text-zinc-400">
-                      {result.percentileRange.p5.toFixed(3)} – {result.percentileRange.p95.toFixed(3)}
+                      {result.percentileRange.p5.toFixed(3)} –{" "}
+                      {result.percentileRange.p95.toFixed(3)}
                     </span>
                   </div>
                 )}
@@ -315,9 +317,7 @@ export function DerivedSignalsInspector({ nodeId }: DerivedSignalsInspectorProps
                 )}
               </div>
             ) : (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                Not yet computed
-              </p>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">Not yet computed</p>
             )}
           </div>
         )}

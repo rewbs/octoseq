@@ -1,11 +1,11 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { Rocket, FolderOpen, Loader2, User, Calendar } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Modal } from '@/components/ui/modal';
-import { listPublicProjects, cloneProject } from '@/lib/actions/project';
-import { DEMO_PROJECT_IDS } from '@/lib/demoProjects';
+import { useState, useEffect } from "react";
+import { Rocket, FolderOpen, Loader2, User, Calendar } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
+import { listPublicProjects, cloneProject } from "@/lib/actions/project";
+import { DEMO_PROJECT_IDS } from "@/lib/demoProjects";
 
 interface DemoProject {
   id: string;
@@ -41,7 +41,7 @@ export function DemoProjectsModal({ onProjectCloned }: DemoProjectsModalProps) {
       setError(null);
 
       try {
-        const result = await listPublicProjects();
+        const result = await listPublicProjects({ limit: 50 });
 
         if (result?.data?.projects) {
           let projectList = result.data.projects as DemoProject[];
@@ -57,7 +57,7 @@ export function DemoProjectsModal({ onProjectCloned }: DemoProjectsModalProps) {
           setError(result.serverError);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load projects');
+        setError(err instanceof Error ? err.message : "Failed to load projects");
       } finally {
         setLoading(false);
       }
@@ -85,7 +85,7 @@ export function DemoProjectsModal({ onProjectCloned }: DemoProjectsModalProps) {
         setError(result.serverError);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to clone project');
+      setError(err instanceof Error ? err.message : "Failed to clone project");
     } finally {
       setCloning(null);
     }
@@ -93,21 +93,26 @@ export function DemoProjectsModal({ onProjectCloned }: DemoProjectsModalProps) {
 
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
+      year: "numeric",
+      month: "short",
+      day: "numeric",
     });
   };
 
-  const getOwnerName = (owner: DemoProject['owner']) => {
-    if (!owner) return 'Unknown';
+  const getOwnerName = (owner: DemoProject["owner"]) => {
+    if (!owner) return "Unknown";
     const parts = [owner.firstName, owner.lastName].filter(Boolean);
-    return parts.length > 0 ? parts.join(' ') : 'Unknown';
+    return parts.length > 0 ? parts.join(" ") : "Unknown";
   };
 
   return (
     <>
-      <Button className='animate-pulse-glow-blue' size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <Button
+        className="animate-pulse-glow-blue"
+        size="sm"
+        variant="outline"
+        onClick={() => setOpen(true)}
+      >
         <Rocket className="h-2 w-2 mr-1" />
         Demos
       </Button>
@@ -129,9 +134,7 @@ export function DemoProjectsModal({ onProjectCloned }: DemoProjectsModalProps) {
             <span className="ml-2 text-zinc-500">Loading projects...</span>
           </div>
         ) : projects.length === 0 ? (
-          <div className="text-center py-8 text-zinc-500">
-            No demo projects available yet.
-          </div>
+          <div className="text-center py-8 text-zinc-500">No demo projects available yet.</div>
         ) : (
           <div className="grid gap-3 max-h-[60vh] overflow-y-auto">
             {projects.map((project) => (
@@ -162,7 +165,7 @@ export function DemoProjectsModal({ onProjectCloned }: DemoProjectsModalProps) {
                   </div>
                 </div>
                 <span className="text-xs text-zinc-400 ml-2 shrink-0">
-                  {cloning === project.id ? 'Cloning...' : 'Clone'}
+                  {cloning === project.id ? "Cloning..." : "Clone"}
                 </span>
               </button>
             ))}

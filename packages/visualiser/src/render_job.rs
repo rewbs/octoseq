@@ -220,8 +220,7 @@ impl BatchJobSpec {
             return Err("Batch must contain at least one job".to_string());
         }
         for (i, job) in self.jobs.iter().enumerate() {
-            job.validate()
-                .map_err(|e| format!("Job {}: {}", i, e))?;
+            job.validate().map_err(|e| format!("Job {}: {}", i, e))?;
         }
         Ok(())
     }

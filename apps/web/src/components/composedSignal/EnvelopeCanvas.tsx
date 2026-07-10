@@ -6,7 +6,7 @@ import { Application, Graphics, Container } from "pixi.js";
 import { useComposedSignalStore } from "@/lib/stores/composedSignalStore";
 import { useComposedSignalActions } from "@/lib/stores/hooks/useComposedSignalActions";
 import { generateCurvePoints } from "@/lib/composedSignal/interpolate";
-import type { ComposedSignalNode, InterpolationType } from "@/lib/stores/types/composedSignal";
+import type { InterpolationType } from "@/lib/stores/types/composedSignal";
 
 const NODE_RADIUS = 6;
 const NODE_HOVER_RADIUS = 8;
@@ -53,7 +53,6 @@ interface DraggedNodePosition {
 export function EnvelopeCanvas({
   signalId,
   bpm,
-  durationBeats,
   playheadBeats,
   viewportStartSec,
   viewportEndSec,
@@ -170,7 +169,17 @@ export function EnvelopeCanvas({
     beatToXRef.current = beatToX;
     valueToYRef.current = valueToY;
     draggedPositionRef.current = draggedPosition;
-  }, [nodes, selectedNodeIds, hoveredNodeId, viewportStart, viewportEnd, playheadBeats, beatToX, valueToY, draggedPosition]);
+  }, [
+    nodes,
+    selectedNodeIds,
+    hoveredNodeId,
+    viewportStart,
+    viewportEnd,
+    playheadBeats,
+    beatToX,
+    valueToY,
+    draggedPosition,
+  ]);
 
   // Draw beat grid
   const drawGrid = useCallback(() => {
@@ -435,7 +444,6 @@ export function EnvelopeCanvas({
         }
       });
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Trigger initial render after init completes (with fresh callbacks)
@@ -458,7 +466,16 @@ export function EnvelopeCanvas({
   useEffect(() => {
     if (!initDoneRef.current) return;
     scheduleRender();
-  }, [nodes, selectedNodeIds, hoveredNodeId, viewportStart, viewportEnd, playheadBeats, draggedPosition, scheduleRender]);
+  }, [
+    nodes,
+    selectedNodeIds,
+    hoveredNodeId,
+    viewportStart,
+    viewportEnd,
+    playheadBeats,
+    draggedPosition,
+    scheduleRender,
+  ]);
 
   // Cleanup RAF on unmount
   useEffect(() => {
@@ -537,7 +554,16 @@ export function EnvelopeCanvas({
         clearNodeSelection();
       }
     },
-    [signalId, xToBeat, yToValue, snapBeatToGrid, addNode, selectNode, selectNodes, clearNodeSelection]
+    [
+      signalId,
+      xToBeat,
+      yToValue,
+      snapBeatToGrid,
+      addNode,
+      selectNode,
+      selectNodes,
+      clearNodeSelection,
+    ]
   );
 
   const handlePointerMove = useCallback(

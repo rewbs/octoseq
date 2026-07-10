@@ -9,11 +9,7 @@
  * @param toRate - Target sample rate (Hz)
  * @returns Resampled audio samples
  */
-export function resample(
-  samples: Float32Array,
-  fromRate: number,
-  toRate: number
-): Float32Array {
+export function resample(samples: Float32Array, fromRate: number, toRate: number): Float32Array {
   // No-op if rates match
   if (fromRate === toRate) {
     return samples;

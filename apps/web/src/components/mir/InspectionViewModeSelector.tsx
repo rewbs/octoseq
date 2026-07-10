@@ -26,13 +26,11 @@ interface ViewModeOption {
 export function InspectionViewModeSelector() {
   const viewMode = useInspectionStore((s) => s.viewMode);
   const setViewMode = useInspectionStore((s) => s.setViewMode);
-  const hasStems = useStreamStore((s) =>
-    [...s.streams.values()].some((st) => st.kind === "stem")
-  );
+  const hasStems = useStreamStore((s) => [...s.streams.values()].some((st) => st.kind === "stem"));
 
   // Get selected stream label for display
   const selectedStream = useStreamStore((s) =>
-    s.selectedStreamId ? s.streams.get(s.selectedStreamId) ?? null : null
+    s.selectedStreamId ? (s.streams.get(s.selectedStreamId) ?? null) : null
   );
 
   const options: ViewModeOption[] = useMemo(

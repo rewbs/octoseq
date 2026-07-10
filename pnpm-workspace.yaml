@@ -2,5 +2,26 @@ packages:
   - apps/*
   - packages/*
 
+allowBuilds:
+  "@clerk/shared": true
+  "@prisma/engines": true
+  esbuild: true
+  prisma: true
+  sharp: true
+  unrs-resolver: true
+  wasm-pack: true
+
+# pnpm 10 uses this allowlist; keep it in sync with allowBuilds until CI moves to pnpm 11.
 onlyBuiltDependencies:
+  - "@clerk/shared"
+  - "@prisma/engines"
+  - esbuild
+  - prisma
+  - sharp
+  - unrs-resolver
   - wasm-pack
+
+overrides:
+  "@hono/node-server@<1.19.13": 1.19.14
+  "dompurify@<3.4.11": 3.4.11
+  "postcss@<8.5.10": 8.5.16

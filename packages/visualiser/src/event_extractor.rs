@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use crate::event_stream::{
     Event, EventCluster, EventExtractionDebug, EventStream, PickEventsOptions, WeightMode,
 };
-use crate::input::{BandSignalMap, InputSignal, SignalMap};
+use crate::input::{BandSignalMap, SignalMap};
 use crate::musical_time::{MusicalTimeStructure, DEFAULT_BPM};
 use crate::signal::Signal;
 use crate::signal_eval::EvalContext;
@@ -152,10 +152,7 @@ impl EventExtractor {
     }
 
     /// Evaluate the source signal across the entire time grid.
-    fn evaluate_signal_grid(
-        &self,
-        signals: &SignalMap,
-    ) -> Result<(Vec<f32>, Vec<f32>), String> {
+    fn evaluate_signal_grid(&self, signals: &SignalMap) -> Result<(Vec<f32>, Vec<f32>), String> {
         let step_count = ((self.duration / self.time_step).ceil() as usize).max(1);
         let mut times = Vec::with_capacity(step_count);
         let mut values = Vec::with_capacity(step_count);
@@ -305,9 +302,9 @@ impl EventExtractor {
             }
 
             let last = result.last().unwrap();
-            let last_beat_pos = last.beat_position.unwrap_or_else(|| {
-                last.time * DEFAULT_BPM / 60.0
-            });
+            let last_beat_pos = last
+                .beat_position
+                .unwrap_or_else(|| last.time * DEFAULT_BPM / 60.0);
 
             let beat_diff = beat_pos - last_beat_pos;
 
@@ -330,10 +327,7 @@ impl EventExtractor {
     /// of each other. The cluster representative is the centroid.
     ///
     /// Returns: (clustered events, cluster info, rejected events)
-    fn cluster_similar(
-        &self,
-        events: &[Event],
-    ) -> (Vec<Event>, Vec<EventCluster>, Vec<Event>) {
+    fn cluster_similar(&self, events: &[Event]) -> (Vec<Event>, Vec<EventCluster>, Vec<Event>) {
         if events.is_empty() {
             return (Vec::new(), Vec::new(), Vec::new());
         }
@@ -341,8 +335,12 @@ impl EventExtractor {
         let tolerance = self.options.similarity_tolerance;
 
         // Sort by weight descending to process strongest first
-        let mut sorted: Vec<_> = events.iter().cloned().collect();
-        sorted.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal));
+        let mut sorted: Vec<_> = events.to_vec();
+        sorted.sort_by(|a, b| {
+            b.weight
+                .partial_cmp(&a.weight)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         struct Cluster {
             members: Vec<Event>,
@@ -358,12 +356,14 @@ impl EventExtractor {
 
             for cluster in clusters.iter_mut() {
                 // Check similarity: weight ratio and time proximity
-                let weight_ratio = event.weight.min(cluster.mean_weight)
-                    / event.weight.max(cluster.mean_weight);
+                let weight_ratio =
+                    event.weight.min(cluster.mean_weight) / event.weight.max(cluster.mean_weight);
 
                 // Beat-based time proximity (within 0.5 beats)
                 let event_beat = event.beat_position.unwrap_or(event.time * 2.0);
-                let cluster_beat = cluster.members.first()
+                let cluster_beat = cluster
+                    .members
+                    .first()
                     .and_then(|e| e.beat_position)
                     .unwrap_or(cluster.centroid_time * 2.0);
                 let beat_diff = (event_beat - cluster_beat).abs();
@@ -412,7 +412,7 @@ impl EventExtractor {
                 cluster_id: Some(cluster_id),
                 source: Some("clustered".to_string()),
                 beat_position: beat_pos,
-                beat_phase: beat_phase,
+                beat_phase,
             });
 
             cluster_info.push(EventCluster {
@@ -425,7 +425,9 @@ impl EventExtractor {
 
         // Sort by time
         clustered_events.sort_by(|a, b| {
-            a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal)
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         (clustered_events, cluster_info, rejected)
@@ -467,7 +469,9 @@ impl EventExtractor {
             } else {
                 // Over target - keep strongest, plus similar ones
                 window_events.sort_by(|a, b| {
-                    b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal)
+                    b.weight
+                        .partial_cmp(&a.weight)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
 
                 let mut window_kept: Vec<Event> = Vec::new();
@@ -497,7 +501,11 @@ impl EventExtractor {
         }
 
         // Sort by time
-        kept.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+        kept.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         (kept, rejected)
     }
@@ -537,12 +545,7 @@ impl EventExtractor {
     }
 
     /// Assign final weights based on weight mode.
-    fn assign_weights(
-        &self,
-        events: &[Event],
-        values: &[f32],
-        times: &[f32],
-    ) -> Vec<Event> {
+    fn assign_weights(&self, events: &[Event], values: &[f32], times: &[f32]) -> Vec<Event> {
         match &self.options.weight_mode {
             WeightMode::PeakHeight => {
                 // Already using peak height
@@ -622,11 +625,15 @@ impl EventExtractor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::input::InputSignal;
     use crate::signal::Signal;
 
     fn make_test_signal(values: Vec<f32>, sample_rate: f32) -> SignalMap {
         let mut signals = HashMap::new();
-        signals.insert("test".to_string(), std::rc::Rc::new(InputSignal::new(values, sample_rate)));
+        signals.insert(
+            "test".to_string(),
+            std::rc::Rc::new(InputSignal::new(values, sample_rate)),
+        );
         signals
     }
 
@@ -721,10 +728,18 @@ mod tests {
                 let t = i as f32 / 100.0;
                 // First peak at 0.50
                 let dist1 = (t - 0.50).abs();
-                let p1 = if dist1 < 0.02 { 1.0 - dist1 * 25.0 } else { 0.0 };
+                let p1 = if dist1 < 0.02 {
+                    1.0 - dist1 * 25.0
+                } else {
+                    0.0
+                };
                 // Second peak at 0.55 (slightly weaker)
                 let dist2 = (t - 0.55).abs();
-                let p2 = if dist2 < 0.02 { 0.9 - dist2 * 25.0 } else { 0.0 };
+                let p2 = if dist2 < 0.02 {
+                    0.9 - dist2 * 25.0
+                } else {
+                    0.0
+                };
                 0.1 + p1.max(0.0).max(p2.max(0.0))
             })
             .collect();
@@ -758,13 +773,7 @@ mod tests {
             ..Default::default()
         };
 
-        let extractor = EventExtractor::new(
-            Signal::constant(0.0),
-            options,
-            None,
-            1.0,
-            0.01,
-        );
+        let extractor = EventExtractor::new(Signal::constant(0.0), options, None, 1.0, 0.01);
 
         let adjusted = extractor.apply_phase_bias(&events);
 
@@ -860,7 +869,7 @@ mod tests {
         let events = vec![
             Event::with_beat_info(0.5, 0.80, 1.0, 0.0),
             Event::with_beat_info(0.52, 0.79, 1.04, 0.04), // Similar weight, close in time
-            Event::with_beat_info(1.0, 0.50, 2.0, 0.0),     // Different weight
+            Event::with_beat_info(1.0, 0.50, 2.0, 0.0),    // Different weight
         ];
 
         let options = PickEventsOptions {
@@ -868,13 +877,7 @@ mod tests {
             ..Default::default()
         };
 
-        let extractor = EventExtractor::new(
-            Signal::constant(0.0),
-            options,
-            None,
-            2.0,
-            0.01,
-        );
+        let extractor = EventExtractor::new(Signal::constant(0.0), options, None, 2.0, 0.01);
 
         let (clustered, clusters, _rejected) = extractor.cluster_similar(&events);
 
@@ -899,18 +902,12 @@ mod tests {
             .collect();
 
         let options = PickEventsOptions {
-            target_density: 1.0, // 1 per beat = 4 per window
+            target_density: 1.0,        // 1 per beat = 4 per window
             similarity_tolerance: 0.01, // Low tolerance
             ..Default::default()
         };
 
-        let extractor = EventExtractor::new(
-            Signal::constant(0.0),
-            options,
-            None,
-            2.0,
-            0.01,
-        );
+        let extractor = EventExtractor::new(Signal::constant(0.0), options, None, 2.0, 0.01);
 
         let (kept, rejected) = extractor.apply_density_constraint(&events);
 

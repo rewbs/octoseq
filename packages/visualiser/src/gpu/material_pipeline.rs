@@ -3,12 +3,11 @@
 //! This module creates and manages render pipelines for each material,
 //! handling shader compilation, uniform buffers, and bind groups.
 
-use std::collections::HashMap;
-use wgpu::util::DeviceExt;
 use bytemuck::{Pod, Zeroable};
+use std::collections::HashMap;
 
-use crate::material::{Material, MaterialId, MaterialRegistry, ParamValue};
 use crate::gpu::mesh::Vertex;
+use crate::material::{Material, MaterialId, MaterialRegistry, ParamValue};
 
 /// Maximum size for material uniform buffer (in bytes).
 /// Must be large enough for any material's parameters.
@@ -29,27 +28,27 @@ const GLOBAL_UNIFORM_ALIGNMENT: usize = 256;
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct GlobalUniforms {
     // Core transforms
-    pub view_proj: [[f32; 4]; 4],    // 64 bytes
-    pub model: [[f32; 4]; 4],        // 64 bytes
+    pub view_proj: [[f32; 4]; 4], // 64 bytes
+    pub model: [[f32; 4]; 4],     // 64 bytes
 
     // Time
-    pub time: f32,                    // 4 bytes
-    pub dt: f32,                      // 4 bytes
-    pub _time_padding: [f32; 2],      // 8 bytes (16-byte alignment)
+    pub time: f32,               // 4 bytes
+    pub dt: f32,                 // 4 bytes
+    pub _time_padding: [f32; 2], // 8 bytes (16-byte alignment)
 
     // Lighting
-    pub light_direction: [f32; 4],    // 16 bytes (xyz, w unused)
-    pub light_color: [f32; 4],        // 16 bytes (rgb, a = 1.0)
-    pub light_intensity: f32,         // 4 bytes
-    pub ambient_intensity: f32,       // 4 bytes
-    pub rim_intensity: f32,           // 4 bytes
-    pub rim_power: f32,               // 4 bytes
-    pub lighting_enabled: u32,        // 4 bytes (0 = disabled, 1 = enabled)
-    pub entity_emissive: f32,         // 4 bytes (per-entity emissive intensity)
-    pub _light_padding: [u32; 2],     // 8 bytes (16-byte alignment)
+    pub light_direction: [f32; 4], // 16 bytes (xyz, w unused)
+    pub light_color: [f32; 4],     // 16 bytes (rgb, a = 1.0)
+    pub light_intensity: f32,      // 4 bytes
+    pub ambient_intensity: f32,    // 4 bytes
+    pub rim_intensity: f32,        // 4 bytes
+    pub rim_power: f32,            // 4 bytes
+    pub lighting_enabled: u32,     // 4 bytes (0 = disabled, 1 = enabled)
+    pub entity_emissive: f32,      // 4 bytes (per-entity emissive intensity)
+    pub _light_padding: [u32; 2],  // 8 bytes (16-byte alignment)
 
     // Camera position (for rim lighting and view-dependent effects)
-    pub camera_position: [f32; 4],    // 16 bytes (xyz, w unused)
+    pub camera_position: [f32; 4], // 16 bytes (xyz, w unused)
 }
 // Total: 64 + 64 + 16 + 16 + 16 + 16 + 16 + 16 = 224 bytes
 
@@ -113,19 +112,22 @@ impl MaterialPipelineManager {
     ) -> Self {
         // Create global bind group layout with dynamic offset support
         // This allows per-entity uniforms to be indexed at render time
-        let global_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Material Global Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: true, // Enable dynamic offsets for per-entity data
-                    min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<GlobalUniforms>() as u64),
-                },
-                count: None,
-            }],
-        });
+        let global_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Material Global Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true, // Enable dynamic offsets for per-entity data
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<GlobalUniforms>() as u64,
+                        ),
+                    },
+                    count: None,
+                }],
+            });
 
         // Create global uniform buffer large enough for all meshes per frame
         // Each mesh gets its own slot at GLOBAL_UNIFORM_ALIGNMENT offset
@@ -178,19 +180,20 @@ impl MaterialPipelineManager {
         material: &Material,
     ) -> Result<(), String> {
         // Create material bind group layout
-        let material_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some(&format!("Material Bind Group Layout: {}", material.id)),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
+        let material_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some(&format!("Material Bind Group Layout: {}", material.id)),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
 
         // Create uniform buffer for material parameters
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -258,43 +261,46 @@ impl MaterialPipelineManager {
         });
 
         // Create wireframe pipeline if needed (only for triangle-based materials)
-        let wireframe_pipeline = if material.topology != crate::material::MaterialTopology::Triangles {
-            None // Non-triangle materials (Lines, Points) already use their native topology
-        } else {
-            Some(device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some(&format!("Material Wireframe Pipeline: {}", material.id)),
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some(&material.vertex_entry),
-                    buffers: &[Vertex::desc()],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some(&material.fragment_entry),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: self.format,
-                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::LineList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: None,
-                    polygon_mode: wgpu::PolygonMode::Fill,
-                    unclipped_depth: false,
-                    conservative: false,
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-                cache: None,
-            }))
-        };
+        let wireframe_pipeline =
+            if material.topology != crate::material::MaterialTopology::Triangles {
+                None // Non-triangle materials (Lines, Points) already use their native topology
+            } else {
+                Some(
+                    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                        label: Some(&format!("Material Wireframe Pipeline: {}", material.id)),
+                        layout: Some(&pipeline_layout),
+                        vertex: wgpu::VertexState {
+                            module: &shader,
+                            entry_point: Some(&material.vertex_entry),
+                            buffers: &[Vertex::desc()],
+                            compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &shader,
+                            entry_point: Some(&material.fragment_entry),
+                            targets: &[Some(wgpu::ColorTargetState {
+                                format: self.format,
+                                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            })],
+                            compilation_options: wgpu::PipelineCompilationOptions::default(),
+                        }),
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::LineList,
+                            strip_index_format: None,
+                            front_face: wgpu::FrontFace::Ccw,
+                            cull_mode: None,
+                            polygon_mode: wgpu::PolygonMode::Fill,
+                            unclipped_depth: false,
+                            conservative: false,
+                        },
+                        depth_stencil: None,
+                        multisample: wgpu::MultisampleState::default(),
+                        multiview: None,
+                        cache: None,
+                    }),
+                )
+            };
 
         self.resources.insert(
             material.id.clone(),
@@ -311,7 +317,11 @@ impl MaterialPipelineManager {
     }
 
     /// Load the shader module for a material.
-    fn load_material_shader(&self, device: &wgpu::Device, material_id: &str) -> Result<wgpu::ShaderModule, String> {
+    fn load_material_shader(
+        &self,
+        device: &wgpu::Device,
+        material_id: &str,
+    ) -> Result<wgpu::ShaderModule, String> {
         // For now, all materials use the same base shader with different entry points
         // In the future, we can have material-specific shaders
         let shader_source = match material_id {
@@ -344,9 +354,18 @@ impl MaterialPipelineManager {
     ///
     /// The `slot` parameter is the mesh index (0 to MAX_MESHES_PER_FRAME-1).
     /// This writes to `slot * GLOBAL_UNIFORM_ALIGNMENT` offset in the buffer.
-    pub fn update_global_uniforms_at(&self, queue: &wgpu::Queue, uniforms: &GlobalUniforms, slot: usize) {
+    pub fn update_global_uniforms_at(
+        &self,
+        queue: &wgpu::Queue,
+        uniforms: &GlobalUniforms,
+        slot: usize,
+    ) {
         let offset = (slot * GLOBAL_UNIFORM_ALIGNMENT) as u64;
-        queue.write_buffer(&self.global_uniform_buffer, offset, bytemuck::cast_slice(&[*uniforms]));
+        queue.write_buffer(
+            &self.global_uniform_buffer,
+            offset,
+            bytemuck::cast_slice(&[*uniforms]),
+        );
     }
 
     /// Get the dynamic offset for a mesh slot.

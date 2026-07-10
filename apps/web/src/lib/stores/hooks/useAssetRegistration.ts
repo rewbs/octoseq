@@ -32,10 +32,7 @@ export function useAssetRegistration() {
    * @returns Promise resolving to the assetId, or null if registration failed
    */
   const registerAudioAsset = useCallback(
-    async (
-      inputId: string,
-      rawBuffer: ArrayBuffer
-    ): Promise<string | null> => {
+    async (inputId: string, rawBuffer: ArrayBuffer): Promise<string | null> => {
       if (!isIndexedDBAvailable()) {
         console.warn("[AssetRegistration] IndexedDB not available");
         return null;

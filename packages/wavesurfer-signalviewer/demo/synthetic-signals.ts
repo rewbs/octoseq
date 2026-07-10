@@ -48,7 +48,6 @@ export function generateEnvelope(
   const times = new Float32Array(numSamples);
   const values = new Float32Array(numSamples);
 
-  const noteOnTime = 0;
   const noteOffTime = duration - releaseTime;
 
   for (let i = 0; i < numSamples; i++) {
@@ -161,10 +160,7 @@ export function generateSparseEvents(
 /**
  * Generate a stepped signal (like quantized data)
  */
-export function generateSteppedSignal(
-  duration: number,
-  numSteps: number = 20
-): ContinuousSignal {
+export function generateSteppedSignal(duration: number, numSteps: number = 20): ContinuousSignal {
   const times = new Float32Array(numSteps);
   const values = new Float32Array(numSteps);
 

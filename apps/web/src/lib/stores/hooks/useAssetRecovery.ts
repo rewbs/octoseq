@@ -21,7 +21,7 @@ import { isAudioStream, type AudioStream } from "@/lib/streams";
  * - Status tracking for recovery progress
  */
 export function useAssetRecovery() {
-  const activeProject = useProjectStore((s) => s.activeProject);
+  const activeProjectId = useProjectStore((s) => s.activeProject?.id);
 
   // Unresolved assets that need recovery
   const [unresolvedAssets, setUnresolvedAssets] = useState<UnresolvedAssetInfo[]>([]);
@@ -35,6 +35,7 @@ export function useAssetRecovery() {
     valid: string[];
     missing: UnresolvedAssetInfo[];
   }> => {
+    const activeProject = useProjectStore.getState().activeProject;
     if (!activeProject || !isIndexedDBAvailable()) {
       return { valid: [], missing: [] };
     }
@@ -85,7 +86,7 @@ export function useAssetRecovery() {
     } finally {
       setIsValidating(false);
     }
-  }, [activeProject]);
+  }, []);
 
   /**
    * Try to auto-match a file by content hash.
@@ -94,23 +95,20 @@ export function useAssetRecovery() {
    * @param fileBuffer - The ArrayBuffer of the replacement file
    * @returns Promise resolving to matching asset ID, or null if no match
    */
-  const tryAutoMatch = useCallback(
-    async (fileBuffer: ArrayBuffer): Promise<string | null> => {
-      if (!isIndexedDBAvailable()) {
-        return null;
-      }
+  const tryAutoMatch = useCallback(async (fileBuffer: ArrayBuffer): Promise<string | null> => {
+    if (!isIndexedDBAvailable()) {
+      return null;
+    }
 
-      try {
-        const contentHash = await computeContentHash(fileBuffer);
-        const matchingAsset = await findByContentHash(contentHash);
-        return matchingAsset?.id ?? null;
-      } catch (error) {
-        console.error("[AssetRecovery] Auto-match failed:", error);
-        return null;
-      }
-    },
-    []
-  );
+    try {
+      const contentHash = await computeContentHash(fileBuffer);
+      const matchingAsset = await findByContentHash(contentHash);
+      return matchingAsset?.id ?? null;
+    } catch (error) {
+      console.error("[AssetRecovery] Auto-match failed:", error);
+      return null;
+    }
+  }, []);
 
   /**
    * Check if a specific asset is resolved (exists in registry).
@@ -131,9 +129,7 @@ export function useAssetRecovery() {
    * @param assetId - The asset ID that was resolved
    */
   const markAssetResolved = useCallback((assetId: string) => {
-    setUnresolvedAssets((prev) =>
-      prev.filter((info) => info.assetId !== assetId)
-    );
+    setUnresolvedAssets((prev) => prev.filter((info) => info.assetId !== assetId));
   }, []);
 
   /**
@@ -145,6 +141,7 @@ export function useAssetRecovery() {
 
   // Validate assets when project changes
   useEffect(() => {
+    const activeProject = useProjectStore.getState().activeProject;
     if (activeProject) {
       // Only validate if project has asset references
       const hasAssetRefs = activeProject.streams.some(
@@ -155,7 +152,7 @@ export function useAssetRecovery() {
         validateProjectAssets();
       }
     }
-  }, [activeProject?.id]); // Only re-validate when project ID changes
+  }, [activeProjectId, validateProjectAssets]);
 
   return {
     unresolvedAssets,

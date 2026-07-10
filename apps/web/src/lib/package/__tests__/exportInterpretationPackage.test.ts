@@ -75,7 +75,7 @@ function makeToneBuffer(durationSec: number, sampleRate: number): AudioBufferLik
 
 /** Deterministic sawtooth values in [0, 0.9]. */
 function sawValues(count: number, period = 10): number[] {
-  return Array.from({ length: count }, (_, i) => (i % period) / period * 0.9);
+  return Array.from({ length: count }, (_, i) => ((i % period) / period) * 0.9);
 }
 
 function mir1d(values: number[], durationSec: number): AnalysisResult {
@@ -176,7 +176,12 @@ function hypothesis(bpm: number): TempoHypothesis {
     id: `hyp-${bpm}`,
     bpm,
     confidence: 1,
-    evidence: { supportingIntervalCount: 0, weightedSupport: 0, peakHeight: 0, binRange: [bpm, bpm] },
+    evidence: {
+      supportingIntervalCount: 0,
+      weightedSupport: 0,
+      peakHeight: 0,
+      binRange: [bpm, bpm],
+    },
     familyId: `fam-${Math.round(bpm)}`,
     harmonicRatio: 1,
   };
@@ -205,23 +210,21 @@ function makeDerivedStructure(
 ): DerivedSignalStructure {
   return {
     version: DERIVED_SIGNAL_SCHEMA_VERSION,
-    signals: signals.map(
-      (s, i): DerivedSignalDefinition => ({
-        id: s.id,
-        name: s.name,
-        source: {
-          kind: "1d",
-          signalRef: { type: "analysis", streamId: MIXDOWN_STREAM_ID, analysisId: "onsetEnvelope" },
-        },
-        transforms: [],
-        stabilization: { mode: "none", envelopeMode: "raw" },
-        autoRecompute: false,
-        enabled: s.enabled ?? true,
-        sortOrder: i,
-        createdAt: T0,
-        modifiedAt: T0,
-      })
-    ),
+    signals: signals.map((s, i): DerivedSignalDefinition => ({
+      id: s.id,
+      name: s.name,
+      source: {
+        kind: "1d",
+        signalRef: { type: "analysis", streamId: MIXDOWN_STREAM_ID, analysisId: "onsetEnvelope" },
+      },
+      transforms: [],
+      stabilization: { mode: "none", envelopeMode: "raw" },
+      autoRecompute: false,
+      enabled: s.enabled ?? true,
+      sortOrder: i,
+      createdAt: T0,
+      modifiedAt: T0,
+    })),
     createdAt: T0,
     modifiedAt: T0,
   };
@@ -348,8 +351,16 @@ describe("exportInterpretationPackage", () => {
       label: "Bass",
       frequencyShape: [makeSegment()],
     });
-    setResult(bandId, "amplitudeEnvelope", bandMir1d(bandId, "Bass", "bandAmplitudeEnvelope", [0, 5, 10], 10));
-    setResult(bandId, "onsetEnvelope", bandMir1d(bandId, "Bass", "bandOnsetStrength", [1, 2, 3], 10));
+    setResult(
+      bandId,
+      "amplitudeEnvelope",
+      bandMir1d(bandId, "Bass", "bandAmplitudeEnvelope", [0, 5, 10], 10)
+    );
+    setResult(
+      bandId,
+      "onsetEnvelope",
+      bandMir1d(bandId, "Bass", "bandOnsetStrength", [1, 2, 3], 10)
+    );
 
     const pkg = exportInterpretationPackage();
 
@@ -543,12 +554,18 @@ describe("exportInterpretationPackage", () => {
     expect(exportInterpretationPackage().script).toBeNull();
 
     useProjectStore.getState().createProject("Scripted");
-    useProjectStore
-      .getState()
-      .syncScripts(
-        [{ id: "script-1", name: "Main", content: "let c = mesh.cube();", createdAt: T0, modifiedAt: T0 }],
-        "script-1"
-      );
+    useProjectStore.getState().syncScripts(
+      [
+        {
+          id: "script-1",
+          name: "Main",
+          content: "let c = mesh.cube();",
+          createdAt: T0,
+          modifiedAt: T0,
+        },
+      ],
+      "script-1"
+    );
 
     expect(exportInterpretationPackage().script).toBe("let c = mesh.cube();");
   });
@@ -647,7 +664,11 @@ function seedDeterministicFixtureState(): void {
   );
 
   // Band analyses: one feature signal + events.
-  setResult(band.id, "amplitudeEnvelope", bandMir1d(band.id, band.label, "bandAmplitudeEnvelope", sawValues(40, 8), durationSec));
+  setResult(
+    band.id,
+    "amplitudeEnvelope",
+    bandMir1d(band.id, band.label, "bandAmplitudeEnvelope", sawValues(40, 8), durationSec)
+  );
   setResult(
     band.id,
     "onsetPeaks",
@@ -701,13 +722,19 @@ function seedDeterministicFixtureState(): void {
   // Derived signal with a computed result (id leaks — fixed).
   const derived = useDerivedSignalStore.getState();
   derived.loadFromProject(makeDerivedStructure([{ id: "derived-1", name: "Kick Energy" }]));
-  derived.setCachedResult("derived-1", makeDerivedResult("derived-1", sawValues(25, 5), durationSec));
+  derived.setCachedResult(
+    "derived-1",
+    makeDerivedResult("derived-1", sawValues(25, 5), durationSec)
+  );
 
   // Project + script (project id never leaks; name and script do — fixed).
   useProjectStore.getState().createProject("Fixture Project");
   useProjectStore
     .getState()
-    .syncScripts([{ id: "script-1", name: "Main", content: FIXTURE_SCRIPT, createdAt: T0, modifiedAt: T0 }], "script-1");
+    .syncScripts(
+      [{ id: "script-1", name: "Main", content: FIXTURE_SCRIPT, createdAt: T0, modifiedAt: T0 }],
+      "script-1"
+    );
 }
 
 describe("golden fixture", () => {
@@ -742,7 +769,9 @@ describe("golden fixture", () => {
       "bpm",
     ]);
     expect(parsed.bandSignals.map((s) => `${s.bandId}:${s.feature}`)).toEqual(["band-bass:energy"]);
-    expect(parsed.stemSignals.map((s) => `${s.stemId}:${s.feature}`)).toEqual(["stem-drums:energy"]);
+    expect(parsed.stemSignals.map((s) => `${s.stemId}:${s.feature}`)).toEqual([
+      "stem-drums:energy",
+    ]);
     expect(parsed.customSignals.map((s) => s.id)).toEqual(["derived-1"]);
     expect(parsed.composedSignals.map((s) => s.name)).toEqual(["intensity"]);
     expect(parsed.eventStreams.map((s) => s.name)).toEqual(["beatCandidates", "onsetPeaks"]);

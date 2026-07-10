@@ -15,7 +15,7 @@ function formatTimeMulti(
 ): { seconds: string; beats: string | null; frames: string } {
   const secondsStr = `${seconds.toFixed(2)}s`;
   const framesStr = `${Math.round(seconds * fps)}f`;
-  const beatsStr = bpm ? `${(seconds * bpm / 60).toFixed(2)}b` : null;
+  const beatsStr = bpm ? `${((seconds * bpm) / 60).toFixed(2)}b` : null;
   return { seconds: secondsStr, beats: beatsStr, frames: framesStr };
 }
 
@@ -148,9 +148,7 @@ export const SignalExplorerPanel = memo(function SignalExplorerPanel({
               {displaySignalName}
             </span>
           )}
-          {isAnalyzing && (
-            <Loader2 className="w-3 h-3 animate-spin text-zinc-400" />
-          )}
+          {isAnalyzing && <Loader2 className="w-3 h-3 animate-spin text-zinc-400" />}
           <ChevronDown className="w-4 h-4" />
         </button>
 
@@ -194,8 +192,7 @@ export const SignalExplorerPanel = memo(function SignalExplorerPanel({
 
         {!hasValidData && !isAnalyzing && (
           <div className="text-xs text-zinc-500 dark:text-zinc-400 py-4 text-center">
-            Hover over a signal variable in the script to explore its transform
-            chain.
+            Hover over a signal variable in the script to explore its transform chain.
           </div>
         )}
 
@@ -222,9 +219,7 @@ export const SignalExplorerPanel = memo(function SignalExplorerPanel({
                       <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
                         {center.seconds}
                       </span>
-                      {isPlaybackActive && (
-                        <span className="text-amber-500 animate-pulse">▶</span>
-                      )}
+                      {isPlaybackActive && <span className="text-amber-500 animate-pulse">▶</span>}
                     </div>
                     {center.beats && (
                       <span className="text-blue-500 font-semibold">{center.beats}</span>

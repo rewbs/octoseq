@@ -61,38 +61,33 @@ export function registerRhaiLanguage(
 
   // Register the language if not already registered
   const languages = monaco.languages.getLanguages();
-  const isRegistered = languages.some(
-    (lang: { id: string }) => lang.id === RHAI_LANGUAGE_ID
-  );
+  const isRegistered = languages.some((lang: { id: string }) => lang.id === RHAI_LANGUAGE_ID);
 
   if (!isRegistered) {
     monaco.languages.register({ id: RHAI_LANGUAGE_ID });
   }
 
   // Set language configuration (brackets, comments, etc.)
-  disposables.push(
-    monaco.languages.setLanguageConfiguration(RHAI_LANGUAGE_ID, rhaiLanguageConfig)
-  );
+  disposables.push(monaco.languages.setLanguageConfiguration(RHAI_LANGUAGE_ID, rhaiLanguageConfig));
 
   // Set tokenizer for syntax highlighting
-  disposables.push(
-    monaco.languages.setMonarchTokensProvider(RHAI_LANGUAGE_ID, rhaiTokensProvider)
-  );
+  disposables.push(monaco.languages.setMonarchTokensProvider(RHAI_LANGUAGE_ID, rhaiTokensProvider));
 
   // Register completion provider
   disposables.push(
     monaco.languages.registerCompletionItemProvider(
       RHAI_LANGUAGE_ID,
-      createCompletionProvider(monaco, { getAvailableBands, getAvailableStems, getAvailableCustomEvents })
+      createCompletionProvider(monaco, {
+        getAvailableBands,
+        getAvailableStems,
+        getAvailableCustomEvents,
+      })
     )
   );
 
   // Register hover provider
   disposables.push(
-    monaco.languages.registerHoverProvider(
-      RHAI_LANGUAGE_ID,
-      createHoverProvider(monaco)
-    )
+    monaco.languages.registerHoverProvider(RHAI_LANGUAGE_ID, createHoverProvider(monaco))
   );
 
   // Register signature help provider

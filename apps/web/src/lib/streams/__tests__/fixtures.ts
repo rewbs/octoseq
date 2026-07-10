@@ -22,9 +22,7 @@ export function makeBuffer(sampleRate = 44100): AudioBufferLike {
   };
 }
 
-export function makeSegment(
-  overrides: Partial<FrequencySegment> = {}
-): FrequencySegment {
+export function makeSegment(overrides: Partial<FrequencySegment> = {}): FrequencySegment {
   return {
     startTime: 0,
     endTime: 10,

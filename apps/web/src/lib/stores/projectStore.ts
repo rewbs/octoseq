@@ -344,10 +344,10 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                name,
-                modifiedAt: new Date().toISOString(),
-              }
+                  ...state.activeProject,
+                  name,
+                  modifiedAt: new Date().toISOString(),
+                }
               : null,
             isDirty: true,
           }),
@@ -381,10 +381,10 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                streams,
-                modifiedAt: new Date().toISOString(),
-              }
+                  ...state.activeProject,
+                  streams,
+                  modifiedAt: new Date().toISOString(),
+                }
               : null,
             isDirty: suppressDirty ? state.isDirty : true,
           }),
@@ -401,13 +401,13 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                interpretation: {
-                  ...state.activeProject.interpretation,
-                  musicalTime: structure,
-                },
-                modifiedAt: new Date().toISOString(),
-              }
+                  ...state.activeProject,
+                  interpretation: {
+                    ...state.activeProject.interpretation,
+                    musicalTime: structure,
+                  },
+                  modifiedAt: new Date().toISOString(),
+                }
               : null,
             isDirty: suppressDirty ? state.isDirty : true,
           }),
@@ -424,13 +424,13 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                interpretation: {
-                  ...state.activeProject.interpretation,
-                  authoredEvents: streams,
-                },
-                modifiedAt: new Date().toISOString(),
-              }
+                  ...state.activeProject,
+                  interpretation: {
+                    ...state.activeProject.interpretation,
+                    authoredEvents: streams,
+                  },
+                  modifiedAt: new Date().toISOString(),
+                }
               : null,
             isDirty: suppressDirty ? state.isDirty : true,
           }),
@@ -447,13 +447,13 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                interpretation: {
-                  ...state.activeProject.interpretation,
-                  beatGrid: beatGridState,
-                },
-                modifiedAt: new Date().toISOString(),
-              }
+                  ...state.activeProject,
+                  interpretation: {
+                    ...state.activeProject.interpretation,
+                    beatGrid: beatGridState,
+                  },
+                  modifiedAt: new Date().toISOString(),
+                }
               : null,
             isDirty: suppressDirty ? state.isDirty : true,
           }),
@@ -470,13 +470,13 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                interpretation: {
-                  ...state.activeProject.interpretation,
-                  derivedSignals: structure,
-                },
-                modifiedAt: new Date().toISOString(),
-              }
+                  ...state.activeProject,
+                  interpretation: {
+                    ...state.activeProject.interpretation,
+                    derivedSignals: structure,
+                  },
+                  modifiedAt: new Date().toISOString(),
+                }
               : null,
             isDirty: suppressDirty ? state.isDirty : true,
           }),
@@ -493,13 +493,13 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                interpretation: {
-                  ...state.activeProject.interpretation,
-                  composedSignals: structure,
-                },
-                modifiedAt: new Date().toISOString(),
-              }
+                  ...state.activeProject,
+                  interpretation: {
+                    ...state.activeProject.interpretation,
+                    composedSignals: structure,
+                  },
+                  modifiedAt: new Date().toISOString(),
+                }
               : null,
             isDirty: suppressDirty ? state.isDirty : true,
           }),
@@ -516,10 +516,10 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                meshAssets: structure,
-                modifiedAt: new Date().toISOString(),
-              }
+                  ...state.activeProject,
+                  meshAssets: structure,
+                  modifiedAt: new Date().toISOString(),
+                }
               : null,
             isDirty: suppressDirty ? state.isDirty : true,
           }),
@@ -536,13 +536,13 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                scripts: {
-                  scripts,
-                  activeScriptId,
-                },
-                modifiedAt: new Date().toISOString(),
-              }
+                  ...state.activeProject,
+                  scripts: {
+                    scripts,
+                    activeScriptId,
+                  },
+                  modifiedAt: new Date().toISOString(),
+                }
               : null,
             isDirty: suppressDirty ? state.isDirty : true,
           }),
@@ -564,13 +564,13 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                scripts: {
-                  ...state.activeProject.scripts,
-                  scripts: updatedScripts,
-                },
-                modifiedAt: now,
-              }
+                  ...state.activeProject,
+                  scripts: {
+                    ...state.activeProject.scripts,
+                    scripts: updatedScripts,
+                  },
+                  modifiedAt: now,
+                }
               : null,
             isDirty: suppressDirty ? state.isDirty : true,
           }),
@@ -587,13 +587,13 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                uiState: {
-                  ...state.activeProject.uiState,
-                  ...uiState,
-                },
-                modifiedAt: new Date().toISOString(),
-              }
+                  ...state.activeProject,
+                  uiState: {
+                    ...state.activeProject.uiState,
+                    ...uiState,
+                  },
+                  modifiedAt: new Date().toISOString(),
+                }
               : null,
             isDirty: suppressDirty ? state.isDirty : true,
           }),
@@ -625,13 +625,13 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                scripts: {
-                  scripts: [...state.activeProject.scripts.scripts, newScript],
-                  activeScriptId: scriptId, // Auto-activate new script
-                },
-                modifiedAt: now,
-              }
+                  ...state.activeProject,
+                  scripts: {
+                    scripts: [...state.activeProject.scripts.scripts, newScript],
+                    activeScriptId: scriptId, // Auto-activate new script
+                  },
+                  modifiedAt: now,
+                }
               : null,
             isDirty: true,
           }),
@@ -658,13 +658,13 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                scripts: {
-                  scripts,
-                  activeScriptId,
-                },
-                modifiedAt: new Date().toISOString(),
-              }
+                  ...state.activeProject,
+                  scripts: {
+                    scripts,
+                    activeScriptId,
+                  },
+                  modifiedAt: new Date().toISOString(),
+                }
               : null,
             isDirty: true,
           }),
@@ -686,13 +686,13 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                scripts: {
-                  ...state.activeProject.scripts,
-                  scripts: updatedScripts,
-                },
-                modifiedAt: now,
-              }
+                  ...state.activeProject,
+                  scripts: {
+                    ...state.activeProject.scripts,
+                    scripts: updatedScripts,
+                  },
+                  modifiedAt: now,
+                }
               : null,
             isDirty: true,
           }),
@@ -709,13 +709,13 @@ export const useProjectStore = create<ProjectStore>()(
           (state) => ({
             activeProject: state.activeProject
               ? {
-                ...state.activeProject,
-                scripts: {
-                  ...state.activeProject.scripts,
-                  activeScriptId: scriptId,
-                },
-                modifiedAt: new Date().toISOString(),
-              }
+                  ...state.activeProject,
+                  scripts: {
+                    ...state.activeProject.scripts,
+                    activeScriptId: scriptId,
+                  },
+                  modifiedAt: new Date().toISOString(),
+                }
               : null,
             isDirty: true,
           }),
@@ -731,9 +731,7 @@ export const useProjectStore = create<ProjectStore>()(
       getActiveScript: () => {
         const project = get().activeProject;
         if (!project || !project.scripts.activeScriptId) return undefined;
-        return project.scripts.scripts.find(
-          (s) => s.id === project.scripts.activeScriptId
-        );
+        return project.scripts.scripts.find((s) => s.id === project.scripts.activeScriptId);
       },
 
       // ----------------------------

@@ -203,9 +203,9 @@ pub fn node_transform_type(node: &SignalNode) -> TransformType {
         | SignalNode::Fract { .. } => TransformType::Modular,
 
         // Mapping/Shaping
-        SignalNode::Map { .. }
-        | SignalNode::Smoothstep { .. }
-        | SignalNode::Lerp { .. } => TransformType::Mapping,
+        SignalNode::Map { .. } | SignalNode::Smoothstep { .. } | SignalNode::Lerp { .. } => {
+            TransformType::Mapping
+        }
 
         // Time shifting
         SignalNode::Delay { .. } | SignalNode::Anticipate { .. } => TransformType::TimeShift,
@@ -225,15 +225,14 @@ pub fn node_transform_type(node: &SignalNode) -> TransformType {
         | SignalNode::Ne(_, _) => TransformType::Comparison,
 
         // Logic
-        SignalNode::And(_, _)
-        | SignalNode::Or(_, _)
-        | SignalNode::Not { .. } => TransformType::Logic,
+        SignalNode::And(_, _) | SignalNode::Or(_, _) | SignalNode::Not { .. } => {
+            TransformType::Logic
+        }
 
         // Conditional
         SignalNode::Select { .. } => TransformType::Conditional,
     }
 }
-
 
 /// Create a TransformStep from a Signal.
 pub fn signal_to_step(signal: &Signal) -> TransformStep {
@@ -534,7 +533,7 @@ pub fn sample_signal_chain(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::signal::{SmoothParams, NormaliseParams};
+    use crate::signal::{NormaliseParams, SmoothParams};
 
     #[test]
     fn test_extract_chain_simple() {
@@ -574,7 +573,8 @@ mod tests {
         let added = input.add(constant);
         assert_eq!(node_transform_type(&added.node), TransformType::Arithmetic);
 
-        let smoothed = Signal::input("test").smooth(SmoothParams::MovingAverage { window_beats: 0.5 });
+        let smoothed =
+            Signal::input("test").smooth(SmoothParams::MovingAverage { window_beats: 0.5 });
         assert_eq!(node_transform_type(&smoothed.node), TransformType::Smooth);
     }
 }

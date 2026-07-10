@@ -21,13 +21,13 @@
 //! ```
 
 use rhai::{Dynamic, Engine, Map};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use crate::event_stream::EventStream;
 use crate::particle::{
     ParticleConfig, ParticleEnvelope, ParticleGeometry, ParticleSystem, StreamMode,
-    VariationConfig,
+    VariationConfig, MAX_PARTICLE_INSTANCES,
 };
 use crate::scene_graph::Vec3;
 use crate::signal::{EasingFunction, EnvelopeShape, Signal};
@@ -119,13 +119,13 @@ pub fn register_particle_api(engine: &mut Engine) {
 
     engine.register_set("position", |h: &mut ParticleSystemHandle, pos: Map| {
         if let Some(x) = pos.get("x").and_then(|v| v.as_float().ok()) {
-            h.system.transform.position.x = x as f32;
+            h.system.transform.position.x = x;
         }
         if let Some(y) = pos.get("y").and_then(|v| v.as_float().ok()) {
-            h.system.transform.position.y = y as f32;
+            h.system.transform.position.y = y;
         }
         if let Some(z) = pos.get("z").and_then(|v| v.as_float().ok()) {
-            h.system.transform.position.z = z as f32;
+            h.system.transform.position.z = z;
         }
     });
 
@@ -140,16 +140,16 @@ pub fn register_particle_api(engine: &mut Engine) {
 
     engine.register_set("color", |h: &mut ParticleSystemHandle, color: Map| {
         if let Some(r) = color.get("r").and_then(|v| v.as_float().ok()) {
-            h.system.config.base_color[0] = r as f32;
+            h.system.config.base_color[0] = r;
         }
         if let Some(g) = color.get("g").and_then(|v| v.as_float().ok()) {
-            h.system.config.base_color[1] = g as f32;
+            h.system.config.base_color[1] = g;
         }
         if let Some(b) = color.get("b").and_then(|v| v.as_float().ok()) {
-            h.system.config.base_color[2] = b as f32;
+            h.system.config.base_color[2] = b;
         }
         if let Some(a) = color.get("a").and_then(|v| v.as_float().ok()) {
-            h.system.config.base_color[3] = a as f32;
+            h.system.config.base_color[3] = a;
         }
     });
 
@@ -177,9 +177,12 @@ pub fn register_particle_api(engine: &mut Engine) {
     // particles.from_events(events, options)
     engine.register_fn(
         "from_events",
-        |_builder: &mut ParticlesBuilder, events: EventStream, options: Map| -> ParticleSystemHandle {
+        |_builder: &mut ParticlesBuilder,
+         events: EventStream,
+         options: Map|
+         -> ParticleSystemHandle {
             let config = parse_particle_config(&options);
-            let instances_per_event = get_int_or(&options, "count", 1) as usize;
+            let instances_per_event = bounded_usize(&options, "count", 1, MAX_PARTICLE_INSTANCES);
 
             let system = ParticleSystem::from_events(
                 Arc::clone(&events.events),
@@ -215,12 +218,18 @@ fn parse_particle_config(options: &Map) -> ParticleConfig {
     }
 
     // Max instances
-    if let Some(max) = get_int(options, "max_instances") {
-        config.max_instances = max as usize;
-    }
+    config.max_instances = bounded_usize(
+        options,
+        "max_instances",
+        config.max_instances,
+        MAX_PARTICLE_INSTANCES,
+    );
 
     // Base color
-    if let Some(color_map) = options.get("color").and_then(|v| v.clone().try_cast::<Map>()) {
+    if let Some(color_map) = options
+        .get("color")
+        .and_then(|v| v.clone().try_cast::<Map>())
+    {
         config.base_color = parse_color(&color_map);
     }
 
@@ -308,7 +317,10 @@ fn parse_variation(options: &Map) -> VariationConfig {
     let mut variation = VariationConfig::default();
 
     // Position spread
-    if let Some(spread_map) = options.get("spread").and_then(|v| v.clone().try_cast::<Map>()) {
+    if let Some(spread_map) = options
+        .get("spread")
+        .and_then(|v| v.clone().try_cast::<Map>())
+    {
         variation.position_spread = Vec3::new(
             get_float(&spread_map, "x").unwrap_or(0.0),
             get_float(&spread_map, "y").unwrap_or(0.0),
@@ -341,7 +353,12 @@ fn parse_stream_mode(options: &Map) -> StreamMode {
     match mode_str.as_str() {
         "threshold" => StreamMode::Threshold {
             threshold: get_float(options, "threshold").unwrap_or(0.5),
-            instances_per_burst: get_int_or(options, "instances_per_burst", 10) as usize,
+            instances_per_burst: bounded_usize(
+                options,
+                "instances_per_burst",
+                10,
+                MAX_PARTICLE_INSTANCES,
+            ),
         },
         _ => StreamMode::Proportional {
             rate_per_beat: get_float(options, "rate_per_beat").unwrap_or(10.0),
@@ -368,7 +385,7 @@ fn apply_options_to_system(mut system: ParticleSystem, options: &Map) -> Particl
             "point" => ParticleGeometry::Point {
                 size: get_float(options, "point_size").unwrap_or(2.0),
             },
-            "billboard" | _ => ParticleGeometry::Billboard {
+            _ => ParticleGeometry::Billboard {
                 size: get_float(options, "billboard_size")
                     .or_else(|| get_float(options, "scale"))
                     .unwrap_or(0.1),
@@ -395,7 +412,6 @@ fn get_float(map: &Map, key: &str) -> Option<f32> {
     map.get(key).and_then(|v| {
         v.as_float()
             .ok()
-            .map(|f| f as f32)
             .or_else(|| v.as_int().ok().map(|i| i as f32))
     })
 }
@@ -404,8 +420,11 @@ fn get_int(map: &Map, key: &str) -> Option<i64> {
     map.get(key).and_then(|v| v.as_int().ok())
 }
 
-fn get_int_or(map: &Map, key: &str, default: i64) -> i64 {
-    get_int(map, key).unwrap_or(default)
+fn bounded_usize(map: &Map, key: &str, default: usize, max: usize) -> usize {
+    get_int(map, key)
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(default)
+        .clamp(1, max)
 }
 
 fn get_string(map: &Map, key: &str) -> Option<String> {
@@ -496,6 +515,21 @@ mod tests {
             mode,
             StreamMode::Threshold { threshold, instances_per_burst }
             if (threshold - 0.7).abs() < 0.01 && instances_per_burst == 15
+        ));
+    }
+
+    #[test]
+    fn invalid_particle_counts_are_bounded() {
+        let mut options = Map::new();
+        options.insert("max_instances".into(), Dynamic::from(-1_i64));
+        options.insert("instances_per_burst".into(), Dynamic::from(i64::MAX));
+        options.insert("mode".into(), Dynamic::from("threshold"));
+
+        assert_eq!(parse_particle_config(&options).max_instances, 1000);
+        assert!(matches!(
+            parse_stream_mode(&options),
+            StreamMode::Threshold { instances_per_burst, .. }
+                if instances_per_burst == MAX_PARTICLE_INSTANCES
         ));
     }
 }

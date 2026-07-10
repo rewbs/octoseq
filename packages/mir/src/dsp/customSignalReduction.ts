@@ -381,7 +381,10 @@ function reduceSpectralFlux(input: ReductionInput, options?: ReductionOptions): 
  * Spectral Centroid: Weighted center of mass in bin space.
  * Returns bin index (not Hz - caller can convert if needed).
  */
-function reduceSpectralCentroid(input: ReductionInput, options?: ReductionOptions): ReductionResult {
+function reduceSpectralCentroid(
+  input: ReductionInput,
+  options?: ReductionOptions
+): ReductionResult {
   const nFrames = input.data.length;
   const values = new Float32Array(nFrames);
 
@@ -474,7 +477,7 @@ function reduceOnsetStrength(input: ReductionInput, options?: ReductionOptions):
   if (smoothMs > 0 && nFrames >= 2) {
     const dt = (input.times[1] ?? 0) - (input.times[0] ?? 0);
     if (dt > 0) {
-      const windowFrames = Math.max(1, Math.round((smoothMs / 1000) / dt));
+      const windowFrames = Math.max(1, Math.round(smoothMs / 1000 / dt));
       const smoothed = movingAverage(values, windowFrames | 1);
       return {
         times: input.times,
@@ -525,10 +528,11 @@ export function reduce2DToSignal(
       return reduceSpectralCentroid(input, options);
     case "onsetStrength":
       return reduceOnsetStrength(input, options);
-    default:
+    default: {
       // Exhaustive check
       const _exhaustive: never = algorithm;
       throw new Error(`Unknown reduction algorithm: ${_exhaustive}`);
+    }
   }
 }
 
@@ -657,15 +661,15 @@ function getStabilizationWindowFrames(mode: StabilizationMode, frameTime: number
   // Map mode to smoothing time in seconds
   const smoothingTimes: Record<StabilizationMode, number> = {
     none: 0,
-    light: 0.01,    // 10ms
-    medium: 0.03,   // 30ms
-    heavy: 0.1,     // 100ms
+    light: 0.01, // 10ms
+    medium: 0.03, // 30ms
+    heavy: 0.1, // 100ms
   };
 
   const smoothMs = smoothingTimes[mode] * 1000;
   if (smoothMs <= 0 || frameTime <= 0) return 1;
 
-  return Math.max(1, Math.round((smoothMs / 1000) / frameTime)) | 1; // Ensure odd
+  return Math.max(1, Math.round(smoothMs / 1000 / frameTime)) | 1; // Ensure odd
 }
 
 /**

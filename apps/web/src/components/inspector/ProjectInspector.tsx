@@ -57,20 +57,10 @@ export function ProjectInspector() {
     };
   }, [activeProject]);
 
-  const {
-    createProject,
-    saveProject,
-    loadProjectFromFile,
-    renameProject,
-  } = useProjectActions();
+  const { createProject, saveProject, loadProjectFromFile, renameProject } = useProjectActions();
 
-  const {
-    showConfirm,
-    requireConfirm,
-    handleConfirm,
-    handleCancel,
-    setShowConfirm,
-  } = useConfirmDiscard();
+  const { showConfirm, requireConfirm, handleConfirm, handleCancel, setShowConfirm } =
+    useConfirmDiscard();
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
@@ -140,23 +130,13 @@ export function ProjectInspector() {
   if (!activeProject) {
     return (
       <div className="p-4 space-y-4">
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          No project loaded.
-        </p>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">No project loaded.</p>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleNewProject}
-          >
+          <Button variant="outline" size="sm" onClick={handleNewProject}>
             <Plus className="h-4 w-4 mr-2" />
             New Project
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleLoadClick}
-          >
+          <Button variant="outline" size="sm" onClick={handleLoadClick}>
             <Upload className="h-4 w-4 mr-2" />
             Import Project...
           </Button>
@@ -202,10 +182,20 @@ export function ProjectInspector() {
                 if (e.key === "Escape") handleCancelEdit();
               }}
             />
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleSaveName}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={handleSaveName}
+            >
               <Check className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleCancelEdit}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={handleCancelEdit}
+            >
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -234,7 +224,11 @@ export function ProjectInspector() {
         </label>
         <div className="grid grid-cols-2 gap-1">
           <StatRow icon={<Layers className="h-3 w-3" />} label="Bands" value={stats.bandCount} />
-          <StatRow icon={<Zap className="h-3 w-3" />} label="Streams" value={stats.eventStreamCount} />
+          <StatRow
+            icon={<Zap className="h-3 w-3" />}
+            label="Streams"
+            value={stats.eventStreamCount}
+          />
           <StatRow icon={<Music2 className="h-3 w-3" />} label="Events" value={stats.eventCount} />
           <StatRow icon={<Code className="h-3 w-3" />} label="Scripts" value={stats.scriptCount} />
         </div>
@@ -263,7 +257,12 @@ export function ProjectInspector() {
           Actions
         </label>
         <div className="flex flex-col gap-1">
-          <Button variant="outline" size="sm" className="w-full justify-start" onClick={saveProject}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start"
+            onClick={saveProject}
+          >
             <Download className="h-4 w-4 mr-2" />
             Export Project...
           </Button>
@@ -278,11 +277,21 @@ export function ProjectInspector() {
             <Clapperboard className="h-4 w-4 mr-2" />
             Export render package
           </Button>
-          <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleLoadClick}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start"
+            onClick={handleLoadClick}
+          >
             <Upload className="h-4 w-4 mr-2" />
             Import Project...
           </Button>
-          <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleNewProject}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start"
+            onClick={handleNewProject}
+          >
             <Plus className="h-4 w-4 mr-2" />
             New Project
           </Button>

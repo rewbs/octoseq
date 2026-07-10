@@ -124,11 +124,7 @@ export type AnalysisParams = Record<string, number | string | boolean>;
  * Everything the unified cache can hold. Band results keep their original shapes from
  * @octoseq/mir for now; consumers narrow on `kind`.
  */
-export type AnalysisResult =
-  | MirResult
-  | BandMir1DResult
-  | BandCqt1DResult
-  | BandEventsResult;
+export type AnalysisResult = MirResult | BandMir1DResult | BandCqt1DResult | BandEventsResult;
 
 /** Opaque cache key: `${streamId}::${analysisId}::${paramsHash}`. */
 export type AnalysisKey = string;

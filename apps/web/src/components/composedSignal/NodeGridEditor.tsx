@@ -24,7 +24,7 @@ interface NodeGridEditorProps {
  * Spreadsheet-style editor for composed signal nodes.
  * Each row represents a keyframe node with time, value, and interpolation.
  */
-export function NodeGridEditor({ signalId, bpm, durationBeats }: NodeGridEditorProps) {
+export function NodeGridEditor({ signalId }: NodeGridEditorProps) {
   // Subscribe directly to signal nodes for reactivity
   const {
     nodes,
@@ -158,11 +158,7 @@ export function NodeGridEditor({ signalId, bpm, durationBeats }: NodeGridEditorP
   );
 
   return (
-    <div
-      className="space-y-3"
-      onKeyDown={handleKeyDown}
-      tabIndex={0}
-    >
+    <div className="space-y-3" onKeyDown={handleKeyDown} tabIndex={0}>
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
@@ -191,9 +187,7 @@ export function NodeGridEditor({ signalId, bpm, durationBeats }: NodeGridEditorP
       {sortedNodes.length === 0 ? (
         <div className="text-center py-8 text-sm text-zinc-500 dark:text-zinc-400">
           <p>No keyframes yet.</p>
-          <p className="text-xs mt-1">
-            Click &quot;Add Node&quot; to create your first keyframe.
-          </p>
+          <p className="text-xs mt-1">Click &quot;Add Node&quot; to create your first keyframe.</p>
         </div>
       ) : (
         <div className="border rounded-lg border-zinc-200 dark:border-zinc-700 overflow-hidden">
@@ -208,11 +202,10 @@ export function NodeGridEditor({ signalId, bpm, durationBeats }: NodeGridEditorP
 
           {/* Rows */}
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {sortedNodes.map((node, index) => (
+            {sortedNodes.map((node) => (
               <NodeRow
                 key={node.id}
                 node={node}
-                index={index}
                 isSelected={selectedNodeIds.has(node.id)}
                 onRowClick={handleRowClick}
                 onTimeChange={handleTimeChange}
@@ -228,8 +221,8 @@ export function NodeGridEditor({ signalId, bpm, durationBeats }: NodeGridEditorP
       {/* Help text */}
       <div className="text-xs text-zinc-400 dark:text-zinc-500">
         <p>
-          Shift+click or Ctrl/Cmd+click for multi-select. Delete key to remove
-          selected. Ctrl/Cmd+A to select all.
+          Shift+click or Ctrl/Cmd+click for multi-select. Delete key to remove selected. Ctrl/Cmd+A
+          to select all.
         </p>
       </div>
     </div>
@@ -241,7 +234,6 @@ export function NodeGridEditor({ signalId, bpm, durationBeats }: NodeGridEditorP
  */
 function NodeRow({
   node,
-  index,
   isSelected,
   onRowClick,
   onTimeChange,
@@ -255,7 +247,6 @@ function NodeRow({
     value: number;
     interp_to_next: InterpolationType;
   };
-  index: number;
   isSelected: boolean;
   onRowClick: (nodeId: string, e: React.MouseEvent) => void;
   onTimeChange: (nodeId: string, value: string) => void;
@@ -293,9 +284,7 @@ function NodeRow({
     <div
       className={cn(
         "grid grid-cols-[24px_1fr_1fr_1fr_40px] gap-2 px-2 py-1.5 items-center cursor-pointer",
-        isSelected
-          ? "bg-blue-50 dark:bg-blue-900/30"
-          : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+        isSelected ? "bg-blue-50 dark:bg-blue-900/30" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
       )}
       onClick={(e) => onRowClick(node.id, e)}
     >
@@ -353,10 +342,7 @@ function NodeRow({
             </button>
             {/* Mini progress bar */}
             <div className="flex-1 h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-blue-500"
-                style={{ width: `${node.value * 100}%` }}
-              />
+              <div className="h-full bg-blue-500" style={{ width: `${node.value * 100}%` }} />
             </div>
           </div>
         )}

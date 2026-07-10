@@ -120,8 +120,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
     kind: "namespace",
     name: "radial",
     path: "radial",
-    description:
-      "Radial primitive factory. Create ring and arc meshes in the XY plane.",
+    description: "Radial primitive factory. Create ring and arc meshes in the XY plane.",
     properties: [],
     methods: [
       {
@@ -171,7 +170,8 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
   wave_frequency: 4,
   resolution: 128
 });`,
-        notes: "radius(angle) = base_radius + amplitude * signal_value * sin(angle * wave_frequency)",
+        notes:
+          "radius(angle) = base_radius + amplitude * signal_value * sin(angle * wave_frequency)",
       },
     ],
   },
@@ -183,8 +183,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
     kind: "namespace",
     name: "points",
     path: "points",
-    description:
-      "Point cloud factory. Create GL point primitives with deterministic distribution.",
+    description: "Point cloud factory. Create GL point primitives with deterministic distribution.",
     properties: [],
     methods: [
       {
@@ -596,8 +595,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
     kind: "namespace",
     name: "timing",
     path: "timing",
-    description:
-      "Time and musical timing signals. Available in both init() and update().",
+    description: "Time and musical timing signals. Available in both init() and update().",
     properties: [
       {
         name: "time",
@@ -687,7 +685,8 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         name: "composedSignals",
         path: "inputs.composedSignals",
         type: "ComposedSignals",
-        description: 'Human-authored interpretation curves (keyframe envelopes): inputs.composedSignals["intensity"].',
+        description:
+          'Human-authored interpretation curves (keyframe envelopes): inputs.composedSignals["intensity"].',
         readonly: true,
       },
     ],
@@ -701,8 +700,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
     kind: "namespace",
     name: "MixSignals",
     path: "inputs.mix",
-    description:
-      "Mixdown (full mix) audio signal accessors.",
+    description: "Mixdown (full mix) audio signal accessors.",
     properties: [
       {
         name: "rms",
@@ -772,14 +770,16 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         name: "pitch",
         path: "inputs.mix.pitch",
         type: "Signal",
-        description: "Detected pitch frequency in Hz. Returns 0 for unvoiced/silent frames. Derived from YIN algorithm.",
+        description:
+          "Detected pitch frequency in Hz. Returns 0 for unvoiced/silent frames. Derived from YIN algorithm.",
         readonly: true,
       },
       {
         name: "pitchConfidence",
         path: "inputs.mix.pitchConfidence",
         type: "Signal",
-        description: "Pitch detection confidence (0-1). Use with .gate(threshold) to derive voiced/unvoiced signal.",
+        description:
+          "Pitch detection confidence (0-1). Use with .gate(threshold) to derive voiced/unvoiced signal.",
         readonly: true,
       },
       // Activity detection
@@ -787,7 +787,8 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         name: "activity",
         path: "inputs.mix.activity",
         type: "Signal",
-        description: "Activity level (0-1). Measures signal presence vs silence/noise floor. Use for gating other signals.",
+        description:
+          "Activity level (0-1). Measures signal presence vs silence/noise floor. Use for gating other signals.",
         readonly: true,
       },
       {
@@ -1033,7 +1034,8 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
     kind: "namespace",
     name: "post",
     path: "post",
-    description: "Post-processing chain management. Add/remove/reorder effects in the render pipeline.",
+    description:
+      "Post-processing chain management. Add/remove/reorder effects in the render pipeline.",
     properties: [],
     methods: [
       {
@@ -1172,24 +1174,21 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         name: "position",
         path: "camera.position",
         type: "Map { x, y, z }",
-        description:
-          "Camera position in world space. Each component accepts Signal | f32.",
+        description: "Camera position in world space. Each component accepts Signal | f32.",
         readonly: false,
       },
       {
         name: "rotation",
         path: "camera.rotation",
         type: "Map { x, y, z }",
-        description:
-          "Euler rotation (pitch, yaw, roll) in radians. Used when target is not set.",
+        description: "Euler rotation (pitch, yaw, roll) in radians. Used when target is not set.",
         readonly: false,
       },
       {
         name: "target",
         path: "camera.target",
         type: "Map { x, y, z } | ()",
-        description:
-          "Look-at target position. Set to enable LookAt mode; () for Euler mode.",
+        description: "Look-at target position. Set to enable LookAt mode; () for Euler mode.",
         readonly: false,
       },
       {
@@ -1225,8 +1224,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
       {
         name: "lookAt",
         path: "camera.lookAt",
-        description:
-          "Set camera to look at a target position (enables LookAt mode).",
+        description: "Set camera to look at a target position (enables LookAt mode).",
         params: [
           {
             name: "target",
@@ -1240,8 +1238,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
       {
         name: "orbit",
         path: "camera.orbit",
-        description:
-          "Position camera on a circular orbit around a center point.",
+        description: "Position camera on a circular orbit around a center point.",
         params: [
           {
             name: "center",
@@ -1271,8 +1268,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
           {
             name: "distance",
             type: "Signal | f32",
-            description:
-              "How far to move (positive = forward, negative = backward).",
+            description: "How far to move (positive = forward, negative = backward).",
           },
         ],
         returns: "void",
@@ -1330,8 +1326,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         name: "intensity",
         path: "lighting.intensity",
         type: "Signal | f32",
-        description:
-          "Light intensity multiplier. Default: 1.0.",
+        description: "Light intensity multiplier. Default: 1.0.",
         readonly: false,
       },
       {
@@ -1346,8 +1341,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         name: "ambient",
         path: "lighting.ambient",
         type: "Signal | f32",
-        description:
-          "Ambient light intensity. Fills in shadowed areas. Default: 0.3.",
+        description: "Ambient light intensity. Fills in shadowed areas. Default: 0.3.",
         readonly: false,
       },
       {
@@ -1362,8 +1356,7 @@ export const NAMESPACE_ENTRIES: RegistryEntry[] = [
         name: "rim_power",
         path: "lighting.rim_power",
         type: "Signal | f32",
-        description:
-          "Rim lighting falloff power. Higher = sharper rim. Default: 2.0.",
+        description: "Rim lighting falloff power. Higher = sharper rim. Default: 2.0.",
         readonly: false,
       },
     ],

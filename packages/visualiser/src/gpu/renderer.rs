@@ -2,23 +2,23 @@
 //!
 //! Renders meshes and line strips from the script-driven scene graph.
 
-use wgpu::util::DeviceExt;
+use crate::camera::CameraUniforms;
+use crate::deformation::apply_deformations;
+use crate::gpu::material_pipeline::{GlobalUniforms, MaterialPipelineManager};
 use crate::gpu::mesh::{self, Vertex};
 use crate::gpu::pipeline;
-use crate::gpu::material_pipeline::{MaterialPipelineManager, GlobalUniforms};
 use crate::gpu::post_processor::PostProcessor;
-use crate::visualiser::VisualiserState;
-use crate::camera::CameraUniforms;
-use crate::scene_graph::{MeshType, RenderMode, Transform};
-use crate::deformation::apply_deformations;
-use crate::mesh_asset::{MeshAsset, BoundingBox, CUBE_BOUNDS, PLANE_BOUNDS, SPHERE_BOUNDS};
 use crate::material::{MaterialRegistry, ParamValue};
+use crate::mesh_asset::{BoundingBox, MeshAsset, CUBE_BOUNDS, PLANE_BOUNDS, SPHERE_BOUNDS};
 use crate::particle_eval::{GpuMeshParticleInstance, GpuParticleInstance};
 use crate::post_processing::PostEffectRegistry;
+use crate::scene_graph::{MeshType, RenderMode, Transform};
+use crate::visualiser::VisualiserState;
 use bytemuck::{Pod, Zeroable};
 use std::collections::HashMap;
 use std::iter;
 use std::sync::Arc;
+use wgpu::util::DeviceExt;
 
 /// Maximum number of mesh particle instances per draw call.
 const MAX_MESH_PARTICLE_INSTANCES: usize = 500;
@@ -76,6 +76,7 @@ impl Uniforms {
         self.view_proj = camera.view_projection_matrix(aspect).to_cols_array_2d();
     }
 
+    #[allow(dead_code)]
     fn update_model(&mut self, transform: &Transform) {
         // Position
         let translation = glam::Mat4::from_translation(glam::Vec3::new(
@@ -103,6 +104,7 @@ impl Uniforms {
         self.model = (translation * rotation * scale).to_cols_array_2d();
     }
 
+    #[allow(dead_code)]
     fn update_model_with_parent(&mut self, local_transform: &Transform, parent_model: glam::Mat4) {
         // Compute local model matrix
         let translation = glam::Mat4::from_translation(glam::Vec3::new(
@@ -129,38 +131,50 @@ impl Uniforms {
 }
 
 /// Compute the world transform matrix for an entity, walking up the parent chain.
-fn compute_world_matrix(entity_id: crate::scene_graph::EntityId, scene_graph: &crate::scene_graph::SceneGraph) -> glam::Mat4 {
-    let entity = match scene_graph.get(entity_id) {
-        Some(e) => e,
-        None => return glam::Mat4::IDENTITY,
-    };
+fn compute_world_matrix(
+    entity_id: crate::scene_graph::EntityId,
+    scene_graph: &crate::scene_graph::SceneGraph,
+) -> glam::Mat4 {
+    let mut chain = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    let mut current = Some(entity_id);
 
-    let local_transform = entity.transform();
-    let translation = glam::Mat4::from_translation(glam::Vec3::new(
-        local_transform.position.x,
-        local_transform.position.y,
-        local_transform.position.z,
-    ));
-    let rotation = glam::Mat4::from_euler(
-        glam::EulerRot::XYZ,
-        local_transform.rotation.x,
-        local_transform.rotation.y,
-        local_transform.rotation.z,
-    );
-    let scale = glam::Mat4::from_scale(glam::Vec3::new(
-        local_transform.scale.x,
-        local_transform.scale.y,
-        local_transform.scale.z,
-    ));
-    let local_matrix = translation * rotation * scale;
-
-    // Check for parent
-    if let Some(parent_id) = scene_graph.get_parent(entity_id) {
-        let parent_matrix = compute_world_matrix(parent_id, scene_graph);
-        parent_matrix * local_matrix
-    } else {
-        local_matrix
+    while let Some(id) = current {
+        if !visited.insert(id) {
+            log::error!(
+                "Scene graph cycle detected while resolving entity {:?}",
+                entity_id
+            );
+            return glam::Mat4::IDENTITY;
+        }
+        let Some(entity) = scene_graph.get(id) else {
+            return glam::Mat4::IDENTITY;
+        };
+        let transform = entity.transform();
+        let translation = glam::Mat4::from_translation(glam::Vec3::new(
+            transform.position.x,
+            transform.position.y,
+            transform.position.z,
+        ));
+        let rotation = glam::Mat4::from_euler(
+            glam::EulerRot::XYZ,
+            transform.rotation.x,
+            transform.rotation.y,
+            transform.rotation.z,
+        );
+        let scale = glam::Mat4::from_scale(glam::Vec3::new(
+            transform.scale.x,
+            transform.scale.y,
+            transform.scale.z,
+        ));
+        chain.push(translation * rotation * scale);
+        current = scene_graph.get_parent(id);
     }
+
+    chain
+        .into_iter()
+        .rev()
+        .fold(glam::Mat4::IDENTITY, |world, local| world * local)
 }
 
 /// Compute world-space bounding box vertices from local bounds and world transform.
@@ -197,22 +211,25 @@ fn compute_world_bounds_vertices(
 }
 
 /// Check if an entity or any of its ancestors is invisible.
-fn is_entity_visible(entity_id: crate::scene_graph::EntityId, scene_graph: &crate::scene_graph::SceneGraph) -> bool {
-    let entity = match scene_graph.get(entity_id) {
-        Some(e) => e,
-        None => return false,
-    };
-
-    if !entity.visible() {
-        return false;
+fn is_entity_visible(
+    entity_id: crate::scene_graph::EntityId,
+    scene_graph: &crate::scene_graph::SceneGraph,
+) -> bool {
+    let mut visited = std::collections::HashSet::new();
+    let mut current = Some(entity_id);
+    while let Some(id) = current {
+        if !visited.insert(id) {
+            return false;
+        }
+        let Some(entity) = scene_graph.get(id) else {
+            return false;
+        };
+        if !entity.visible() {
+            return false;
+        }
+        current = scene_graph.get_parent(id);
     }
-
-    // Check parent visibility
-    if let Some(parent_id) = scene_graph.get_parent(entity_id) {
-        is_entity_visible(parent_id, scene_graph)
-    } else {
-        true
-    }
+    true
 }
 
 #[repr(C)]
@@ -221,8 +238,8 @@ struct LineUniforms {
     color: [f32; 4],
     offset: [f32; 2],
     scale: [f32; 2],
-    count: f32,        // Number of valid points
-    max_points: f32,   // Capacity
+    count: f32,      // Number of valid points
+    max_points: f32, // Capacity
     _padding: [f32; 2],
 }
 
@@ -341,11 +358,16 @@ pub struct Renderer {
     // Post-processing and feedback
     post_processor: PostProcessor,
     post_effect_registry: PostEffectRegistry,
-    format: wgpu::TextureFormat,
 }
 
 impl Renderer {
-    pub fn new(device: wgpu::Device, queue: wgpu::Queue, format: wgpu::TextureFormat, width: u32, height: u32) -> Self {
+    pub fn new(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        format: wgpu::TextureFormat,
+        width: u32,
+        height: u32,
+    ) -> Self {
         let size = wgpu::Extent3d {
             width,
             height,
@@ -358,8 +380,8 @@ impl Renderer {
         let default_camera = CameraUniforms::new();
         uniforms.update_view_proj(size, &default_camera);
 
-        // Create a large uniform buffer for dynamic uniform binding (one slot per mesh)
-        let uniform_buffer_size = (UNIFORM_ALIGNMENT * MAX_MESHES_PER_FRAME) as u64;
+        // Reserve a solid and wireframe-color slot for every mesh.
+        let uniform_buffer_size = (UNIFORM_ALIGNMENT * MAX_MESHES_PER_FRAME * 2) as u64;
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Mesh Uniform Buffer (Dynamic)"),
             size: uniform_buffer_size,
@@ -367,19 +389,22 @@ impl Renderer {
             mapped_at_creation: false,
         });
 
-        let mesh_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: true, // Enable dynamic offsets
-                    min_binding_size: wgpu::BufferSize::new(std::mem::size_of::<Uniforms>() as u64),
-                },
-                count: None,
-            }],
-            label: Some("mesh_bind_group_layout"),
-        });
+        let mesh_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: true, // Enable dynamic offsets
+                        min_binding_size: wgpu::BufferSize::new(
+                            std::mem::size_of::<Uniforms>() as u64
+                        ),
+                    },
+                    count: None,
+                }],
+                label: Some("mesh_bind_group_layout"),
+            });
 
         let mesh_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &mesh_bind_group_layout,
@@ -400,8 +425,10 @@ impl Renderer {
             push_constant_ranges: &[],
         });
 
-        let mesh_pipeline = pipeline::create_render_pipeline(&device, &mesh_pipeline_layout, format);
-        let wireframe_pipeline = pipeline::create_wireframe_pipeline(&device, &mesh_pipeline_layout, format);
+        let mesh_pipeline =
+            pipeline::create_render_pipeline(&device, &mesh_pipeline_layout, format);
+        let wireframe_pipeline =
+            pipeline::create_wireframe_pipeline(&device, &mesh_pipeline_layout, format);
 
         // === Geometry Setup ===
 
@@ -418,11 +445,12 @@ impl Renderer {
             contents: bytemuck::cast_slice(&cube_indices),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let cube_wireframe_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Cube Wireframe Index Buffer"),
-            contents: bytemuck::cast_slice(&cube_edge_indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let cube_wireframe_index_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Cube Wireframe Index Buffer"),
+                contents: bytemuck::cast_slice(&cube_edge_indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
         let cube_geometry = MeshGeometry {
             vertex_buffer: cube_vertex_buffer,
             index_buffer: cube_index_buffer,
@@ -445,11 +473,12 @@ impl Renderer {
             contents: bytemuck::cast_slice(&plane_indices),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let plane_wireframe_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Plane Wireframe Index Buffer"),
-            contents: bytemuck::cast_slice(&plane_edge_indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let plane_wireframe_index_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Plane Wireframe Index Buffer"),
+                contents: bytemuck::cast_slice(&plane_edge_indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
         let plane_geometry = MeshGeometry {
             vertex_buffer: plane_vertex_buffer,
             index_buffer: plane_index_buffer,
@@ -472,11 +501,12 @@ impl Renderer {
             contents: bytemuck::cast_slice(&sphere_indices),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let sphere_wireframe_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Sphere Wireframe Index Buffer"),
-            contents: bytemuck::cast_slice(&sphere_edge_indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let sphere_wireframe_index_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Sphere Wireframe Index Buffer"),
+                contents: bytemuck::cast_slice(&sphere_edge_indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
         let sphere_geometry = MeshGeometry {
             vertex_buffer: sphere_vertex_buffer,
             index_buffer: sphere_index_buffer,
@@ -488,16 +518,18 @@ impl Renderer {
 
         // Debug cube geometry (8 vertices, 12 edges for wireframe bounding box)
         let (debug_cube_vertices, debug_cube_edges) = mesh::create_debug_cube_geometry();
-        let debug_cube_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Debug Cube Vertex Buffer"),
-            contents: bytemuck::cast_slice(&debug_cube_vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-        let debug_cube_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Debug Cube Index Buffer"),
-            contents: bytemuck::cast_slice(&debug_cube_edges),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let debug_cube_vertex_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Debug Cube Vertex Buffer"),
+                contents: bytemuck::cast_slice(&debug_cube_vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let debug_cube_index_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Debug Cube Index Buffer"),
+                contents: bytemuck::cast_slice(&debug_cube_edges),
+                usage: wgpu::BufferUsages::INDEX,
+            });
         let debug_cube_geometry = MeshGeometry {
             vertex_buffer: debug_cube_vertex_buffer,
             index_buffer: debug_cube_index_buffer,
@@ -528,19 +560,20 @@ impl Renderer {
 
         // === Line Pipeline Setup ===
 
-        let line_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("line_bind_group_layout"),
-        });
+        let line_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("line_bind_group_layout"),
+            });
 
         let line_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Line Pipeline Layout"),
@@ -548,7 +581,8 @@ impl Renderer {
             push_constant_ranges: &[],
         });
 
-        let line_pipeline = pipeline::create_sparkline_pipeline(&device, &line_pipeline_layout, format);
+        let line_pipeline =
+            pipeline::create_sparkline_pipeline(&device, &line_pipeline_layout, format);
 
         // Line vertex buffer (stores x,y pairs as floats)
         let line_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -585,27 +619,30 @@ impl Renderer {
 
         // === Point Cloud Pipeline Setup ===
 
-        let point_cloud_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("point_cloud_bind_group_layout"),
-        });
+        let point_cloud_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("point_cloud_bind_group_layout"),
+            });
 
-        let point_cloud_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Point Cloud Pipeline Layout"),
-            bind_group_layouts: &[&point_cloud_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let point_cloud_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Point Cloud Pipeline Layout"),
+                bind_group_layouts: &[&point_cloud_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-        let point_cloud_pipeline = pipeline::create_point_cloud_pipeline(&device, &point_cloud_pipeline_layout, format);
+        let point_cloud_pipeline =
+            pipeline::create_point_cloud_pipeline(&device, &point_cloud_pipeline_layout, format);
 
         // Point cloud vertex buffer (stores vec3 positions)
         let point_cloud_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -624,11 +661,12 @@ impl Renderer {
             _padding: [0.0; 3],
         };
 
-        let point_cloud_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Point Cloud Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[point_cloud_uniforms]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let point_cloud_uniform_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Point Cloud Uniform Buffer"),
+                contents: bytemuck::cast_slice(&[point_cloud_uniforms]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
         let point_cloud_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &point_cloud_bind_group_layout,
@@ -642,26 +680,28 @@ impl Renderer {
         // === Mesh Particle Pipeline Setup ===
 
         // Create a view-only uniform buffer for mesh particles (just view_proj matrix)
-        let mesh_particle_view_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Mesh Particle View Buffer"),
-            contents: bytemuck::cast_slice(&uniforms.view_proj),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let mesh_particle_view_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Mesh Particle View Buffer"),
+                contents: bytemuck::cast_slice(&uniforms.view_proj),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
         // Create bind group layout for mesh particles (view_proj only)
-        let mesh_particle_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("mesh_particle_bind_group_layout"),
-        });
+        let mesh_particle_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("mesh_particle_bind_group_layout"),
+            });
 
         let mesh_particle_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &mesh_particle_bind_group_layout,
@@ -672,18 +712,24 @@ impl Renderer {
             label: Some("mesh_particle_bind_group"),
         });
 
-        let mesh_particle_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Mesh Particle Pipeline Layout"),
-            bind_group_layouts: &[&mesh_particle_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let mesh_particle_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Mesh Particle Pipeline Layout"),
+                bind_group_layouts: &[&mesh_particle_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-        let mesh_particle_pipeline = pipeline::create_mesh_particle_pipeline(&device, &mesh_particle_pipeline_layout, format);
+        let mesh_particle_pipeline = pipeline::create_mesh_particle_pipeline(
+            &device,
+            &mesh_particle_pipeline_layout,
+            format,
+        );
 
         // Instance buffer for mesh particles
         let mesh_particle_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Mesh Particle Instance Buffer"),
-            size: (MAX_MESH_PARTICLE_INSTANCES * std::mem::size_of::<GpuMeshParticleInstance>()) as u64,
+            size: (MAX_MESH_PARTICLE_INSTANCES * std::mem::size_of::<GpuMeshParticleInstance>())
+                as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -693,26 +739,28 @@ impl Renderer {
         // Billboard uniforms: view_proj (mat4) + camera_right (vec4) + camera_up (vec4)
         // Total: 16 + 4 + 4 = 24 floats = 96 bytes
         let billboard_uniform_data: [f32; 24] = [0.0; 24];
-        let billboard_particle_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Billboard Particle Uniform Buffer"),
-            contents: bytemuck::cast_slice(&billboard_uniform_data),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
+        let billboard_particle_uniform_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Billboard Particle Uniform Buffer"),
+                contents: bytemuck::cast_slice(&billboard_uniform_data),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
 
         // Bind group layout for billboard particles (view_proj + camera vectors)
-        let billboard_particle_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("billboard_particle_bind_group_layout"),
-        });
+        let billboard_particle_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("billboard_particle_bind_group_layout"),
+            });
 
         let billboard_particle_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &billboard_particle_bind_group_layout,
@@ -723,13 +771,18 @@ impl Renderer {
             label: Some("billboard_particle_bind_group"),
         });
 
-        let billboard_particle_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Billboard Particle Pipeline Layout"),
-            bind_group_layouts: &[&billboard_particle_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let billboard_particle_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Billboard Particle Pipeline Layout"),
+                bind_group_layouts: &[&billboard_particle_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
-        let billboard_particle_pipeline = pipeline::create_billboard_particle_pipeline(&device, &billboard_particle_pipeline_layout, format);
+        let billboard_particle_pipeline = pipeline::create_billboard_particle_pipeline(
+            &device,
+            &billboard_particle_pipeline_layout,
+            format,
+        );
 
         // Instance buffer for billboard particles
         let billboard_particle_instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -742,28 +795,31 @@ impl Renderer {
         // Quad geometry for billboard particles (4 vertices, 6 indices)
         // Positions: (-0.5, -0.5), (0.5, -0.5), (0.5, 0.5), (-0.5, 0.5)
         let quad_vertices: [f32; 8] = [
-            -0.5, -0.5,  // bottom-left
-             0.5, -0.5,  // bottom-right
-             0.5,  0.5,  // top-right
-            -0.5,  0.5,  // top-left
+            -0.5, -0.5, // bottom-left
+            0.5, -0.5, // bottom-right
+            0.5, 0.5, // top-right
+            -0.5, 0.5, // top-left
         ];
         let quad_indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
-        let billboard_quad_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Billboard Quad Vertex Buffer"),
-            contents: bytemuck::cast_slice(&quad_vertices),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let billboard_quad_vertex_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Billboard Quad Vertex Buffer"),
+                contents: bytemuck::cast_slice(&quad_vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
 
-        let billboard_quad_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Billboard Quad Index Buffer"),
-            contents: bytemuck::cast_slice(&quad_indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
+        let billboard_quad_index_buffer =
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Billboard Quad Index Buffer"),
+                contents: bytemuck::cast_slice(&quad_indices),
+                usage: wgpu::BufferUsages::INDEX,
+            });
 
         // === Material System Setup ===
         let material_registry = MaterialRegistry::new();
-        let material_pipeline_manager = MaterialPipelineManager::new(&device, format, &material_registry);
+        let material_pipeline_manager =
+            MaterialPipelineManager::new(&device, format, &material_registry);
         let material_global_uniforms = GlobalUniforms::default();
 
         // === Blob Shadow Pipeline Setup ===
@@ -773,28 +829,29 @@ impl Renderer {
         });
 
         // Create shadow bind group layout (uses global uniforms + shadow-specific uniforms)
-        let shadow_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Shadow Bind Group Layout"),
-            entries: &[
-                // Global uniforms (view_proj, etc.) - reuse material global layout pattern
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+        let shadow_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Shadow Bind Group Layout"),
+                entries: &[
+                    // Global uniforms (view_proj, etc.) - reuse material global layout pattern
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-            ],
-        });
+                ],
+            });
 
         // Create shadow-specific bind group layout
-        let shadow_params_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Shadow Params Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
+        let shadow_params_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Shadow Params Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
@@ -803,15 +860,15 @@ impl Renderer {
                         min_binding_size: None,
                     },
                     count: None,
-                },
-            ],
-        });
+                }],
+            });
 
-        let shadow_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Shadow Pipeline Layout"),
-            bind_group_layouts: &[&shadow_bind_group_layout, &shadow_params_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let shadow_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Shadow Pipeline Layout"),
+                bind_group_layouts: &[&shadow_bind_group_layout, &shadow_params_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         let shadow_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Blob Shadow Pipeline"),
@@ -878,7 +935,8 @@ impl Renderer {
 
         // === Post-processing and Feedback ===
         let post_effect_registry = PostEffectRegistry::new();
-        let post_processor = PostProcessor::new(&device, format, width, height, &post_effect_registry);
+        let post_processor =
+            PostProcessor::new(&device, format, width, height, &post_effect_registry);
 
         Self {
             device,
@@ -928,7 +986,6 @@ impl Renderer {
             shadow_bind_group_layout,
             post_processor,
             post_effect_registry,
-            format,
         }
     }
 
@@ -966,11 +1023,15 @@ impl Renderer {
         let mut values = Vec::new();
         for param_def in &material.params {
             // Check if mesh provides an override, otherwise use the default
-            let value = mesh_params.values.get(&param_def.name)
+            let value = mesh_params
+                .values
+                .get(&param_def.name)
                 .cloned()
                 .unwrap_or_else(|| {
                     // Default values in built-in materials are always static
-                    param_def.default_value.as_static()
+                    param_def
+                        .default_value
+                        .as_static()
                         .expect("Built-in material defaults must be static")
                 });
             values.push(value);
@@ -980,19 +1041,14 @@ impl Renderer {
 
     pub fn resize(&mut self, width: u32, height: u32, state: &VisualiserState) {
         if width > 0 && height > 0 {
-            self.size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
-            self.uniforms.update_view_proj(self.size, state.camera_uniforms());
+            self.size = wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            };
+            self.uniforms
+                .update_view_proj(self.size, state.camera_uniforms());
             self.post_processor.resize(&self.device, width, height);
-        }
-    }
-
-    fn get_geometry(&self, mesh_type: &MeshType) -> Option<&MeshGeometry> {
-        match mesh_type {
-            MeshType::Cube => Some(&self.cube_geometry),
-            MeshType::Plane => Some(&self.plane_geometry),
-            MeshType::Sphere => Some(&self.sphere_geometry),
-            MeshType::Asset(_) => None, // Loaded mesh assets handled separately
-            MeshType::RadialRing { .. } => None, // Dynamic geometry handled separately
         }
     }
 
@@ -1019,24 +1075,30 @@ impl Renderer {
                 depth,
             );
 
-            let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Radial Ring Vertex Buffer"),
-                contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+            let vertex_buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Radial Ring Vertex Buffer"),
+                    contents: bytemuck::cast_slice(&vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
 
-            let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Radial Ring Index Buffer"),
-                contents: bytemuck::cast_slice(&indices),
-                usage: wgpu::BufferUsages::INDEX,
-            });
+            let index_buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("Radial Ring Index Buffer"),
+                    contents: bytemuck::cast_slice(&indices),
+                    usage: wgpu::BufferUsages::INDEX,
+                });
 
             let edge_indices = mesh::extract_edges(&indices);
-            let wireframe_index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Radial Ring Wireframe Index Buffer"),
-                contents: bytemuck::cast_slice(&edge_indices),
-                usage: wgpu::BufferUsages::INDEX,
-            });
+            let wireframe_index_buffer =
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("Radial Ring Wireframe Index Buffer"),
+                        contents: bytemuck::cast_slice(&edge_indices),
+                        usage: wgpu::BufferUsages::INDEX,
+                    });
 
             self.radial_ring_geometry = Some(MeshGeometry {
                 vertex_buffer,
@@ -1055,30 +1117,39 @@ impl Renderer {
     /// Get or create GPU buffers for a loaded mesh asset.
     fn get_or_create_loaded_mesh_buffers(&mut self, asset: &Arc<MeshAsset>) -> &LoadedMeshBuffers {
         if !self.loaded_mesh_buffers.contains_key(&asset.id) {
-            let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(&format!("Loaded Mesh Vertex Buffer: {}", asset.id)),
-                contents: bytemuck::cast_slice(&asset.vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-            let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(&format!("Loaded Mesh Index Buffer: {}", asset.id)),
-                contents: bytemuck::cast_slice(&asset.indices),
-                usage: wgpu::BufferUsages::INDEX,
-            });
-            let wireframe_index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(&format!("Loaded Mesh Wireframe Index Buffer: {}", asset.id)),
-                contents: bytemuck::cast_slice(&asset.edge_indices),
-                usage: wgpu::BufferUsages::INDEX,
-            });
+            let vertex_buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(&format!("Loaded Mesh Vertex Buffer: {}", asset.id)),
+                    contents: bytemuck::cast_slice(&asset.vertices),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+            let index_buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(&format!("Loaded Mesh Index Buffer: {}", asset.id)),
+                    contents: bytemuck::cast_slice(&asset.indices),
+                    usage: wgpu::BufferUsages::INDEX,
+                });
+            let wireframe_index_buffer =
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some(&format!("Loaded Mesh Wireframe Index Buffer: {}", asset.id)),
+                        contents: bytemuck::cast_slice(&asset.edge_indices),
+                        usage: wgpu::BufferUsages::INDEX,
+                    });
 
-            self.loaded_mesh_buffers.insert(asset.id.clone(), LoadedMeshBuffers {
-                vertex_buffer,
-                index_buffer,
-                wireframe_index_buffer,
-                num_indices: asset.indices.len() as u32,
-                num_edges: asset.edge_indices.len() as u32,
-                num_vertices: asset.vertices.len() as u32,
-            });
+            self.loaded_mesh_buffers.insert(
+                asset.id.clone(),
+                LoadedMeshBuffers {
+                    vertex_buffer,
+                    index_buffer,
+                    wireframe_index_buffer,
+                    num_indices: asset.indices.len() as u32,
+                    num_edges: asset.edge_indices.len() as u32,
+                    num_vertices: asset.vertices.len() as u32,
+                },
+            );
         }
         self.loaded_mesh_buffers.get(&asset.id).unwrap()
     }
@@ -1103,7 +1174,8 @@ impl Renderer {
 
         // Collect meshes to render (we need to clone data to avoid borrow conflicts)
         // Include entity_id for debug bounds checking
-        let meshes_to_render: Vec<_> = scene_graph.meshes()
+        let meshes_to_render: Vec<_> = scene_graph
+            .meshes()
             .filter(|(entity_id, _mesh)| {
                 // Check isolation mode
                 if let Some(isolated_id) = state.debug_options.isolated_entity {
@@ -1121,7 +1193,8 @@ impl Renderer {
             .collect();
 
         // Collect lines to render
-        let lines_to_render: Vec<_> = scene_graph.lines()
+        let lines_to_render: Vec<_> = scene_graph
+            .lines()
             .enumerate()
             .filter(|(_, (entity_id, line))| {
                 if let Some(isolated_id) = state.debug_options.isolated_entity {
@@ -1135,7 +1208,8 @@ impl Renderer {
             .collect();
 
         // Collect point clouds to render
-        let point_clouds_to_render: Vec<_> = scene_graph.point_clouds()
+        let point_clouds_to_render: Vec<_> = scene_graph
+            .point_clouds()
             .filter(|(entity_id, cloud)| {
                 if let Some(isolated_id) = state.debug_options.isolated_entity {
                     if *entity_id != isolated_id {
@@ -1151,7 +1225,8 @@ impl Renderer {
             .collect();
 
         // Collect radial waves to render
-        let radial_waves_to_render: Vec<_> = scene_graph.radial_waves()
+        let radial_waves_to_render: Vec<_> = scene_graph
+            .radial_waves()
             .filter(|(entity_id, _wave)| {
                 if let Some(isolated_id) = state.debug_options.isolated_entity {
                     if *entity_id != isolated_id {
@@ -1167,7 +1242,8 @@ impl Renderer {
             .collect();
 
         // Collect ribbons to render
-        let ribbons_to_render: Vec<_> = scene_graph.ribbons()
+        let ribbons_to_render: Vec<_> = scene_graph
+            .ribbons()
             .filter(|(entity_id, ribbon)| {
                 if let Some(isolated_id) = state.debug_options.isolated_entity {
                     if *entity_id != isolated_id {
@@ -1182,26 +1258,37 @@ impl Renderer {
             })
             .collect();
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Render Encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Render Encoder"),
+            });
 
         // Pre-write all mesh uniform data to the buffer BEFORE the render pass.
         // This is critical: queue.write_buffer() is immediate, not recorded in the command stream.
         // If we write during the render pass, all meshes would use the last mesh's data.
         for (mesh_idx, (_entity_id, mesh, world_matrix)) in meshes_to_render.iter().enumerate() {
             if mesh_idx >= MAX_MESHES_PER_FRAME {
-                log::warn!("Too many meshes ({} > {}), some will not be rendered", meshes_to_render.len(), MAX_MESHES_PER_FRAME);
+                log::warn!(
+                    "Too many meshes ({} > {}), some will not be rendered",
+                    meshes_to_render.len(),
+                    MAX_MESHES_PER_FRAME
+                );
                 break;
             }
 
             self.uniforms.model = world_matrix.to_cols_array_2d();
             self.uniforms.instance_color = mesh.color;
-
-            let offset = (mesh_idx * UNIFORM_ALIGNMENT) as u64;
+            let offset = (mesh_idx * 2 * UNIFORM_ALIGNMENT) as u64;
             self.queue.write_buffer(
                 &self.uniform_buffer,
                 offset,
+                bytemuck::cast_slice(&[self.uniforms]),
+            );
+            self.uniforms.instance_color = mesh.wireframe_color;
+            self.queue.write_buffer(
+                &self.uniform_buffer,
+                offset + UNIFORM_ALIGNMENT as u64,
                 bytemuck::cast_slice(&[self.uniforms]),
             );
         }
@@ -1235,11 +1322,8 @@ impl Renderer {
                 self.material_global_uniforms.model = world_matrix.to_cols_array_2d();
                 self.material_global_uniforms.time = state.time;
                 self.material_global_uniforms.dt = 0.016; // ~60fps default
-                self.material_global_uniforms.lighting_enabled = if mesh.lit {
-                    lighting.enabled
-                } else {
-                    0
-                };
+                self.material_global_uniforms.lighting_enabled =
+                    if mesh.lit { lighting.enabled } else { 0 };
                 self.material_global_uniforms.entity_emissive = mesh.emissive;
 
                 self.material_pipeline_manager.update_global_uniforms_at(
@@ -1276,7 +1360,10 @@ impl Renderer {
             // Shadows are rendered before meshes so they appear under objects
             render_pass.set_pipeline(&self.shadow_pipeline);
             render_pass.set_vertex_buffer(0, self.plane_geometry.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(self.plane_geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_index_buffer(
+                self.plane_geometry.index_buffer.slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
             // Bind globals (group 0) with offset 0 - shadow shader only uses view_proj which is same for all
             render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[0]);
 
@@ -1298,7 +1385,12 @@ impl Renderer {
                         mesh.shadow.color[2],
                         mesh.shadow.opacity,
                     ],
-                    params: [mesh.shadow.radius_x, mesh.shadow.radius_z, mesh.shadow.softness, 0.0],
+                    params: [
+                        mesh.shadow.radius_x,
+                        mesh.shadow.radius_z,
+                        mesh.shadow.softness,
+                        0.0,
+                    ],
                 };
                 self.queue.write_buffer(
                     &self.shadow_uniform_buffer,
@@ -1315,12 +1407,14 @@ impl Renderer {
 
             // === Render Meshes ===
             // Render meshes using pre-written uniform data with dynamic offsets
-            for (mesh_idx, (_entity_id, mesh, world_matrix)) in meshes_to_render.iter().enumerate() {
+            for (mesh_idx, (_entity_id, mesh, _world_matrix)) in meshes_to_render.iter().enumerate()
+            {
                 if mesh_idx >= MAX_MESHES_PER_FRAME {
                     break;
                 }
 
-                let dynamic_offset = (mesh_idx * UNIFORM_ALIGNMENT) as u32;
+                let dynamic_offset = (mesh_idx * 2 * UNIFORM_ALIGNMENT) as u32;
+                let wireframe_offset = dynamic_offset + UNIFORM_ALIGNMENT as u32;
 
                 match &mesh.mesh_type {
                     MeshType::Asset(asset_id) => {
@@ -1351,48 +1445,89 @@ impl Renderer {
                             match mesh.render_mode {
                                 RenderMode::Solid => {
                                     // Check if mesh has a material
-                                    let material_id = mesh.material_id.as_ref()
+                                    let material_id = mesh
+                                        .material_id
+                                        .as_ref()
                                         .filter(|id| self.material_registry.exists(id));
 
                                     if let Some(mat_id) = material_id {
                                         // Get material topology
-                                        let material_topology = self.material_registry.get(mat_id)
+                                        let material_topology = self
+                                            .material_registry
+                                            .get(mat_id)
                                             .map(|m| m.topology)
                                             .unwrap_or_default();
 
                                         // Use material pipeline
-                                        if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
+                                        if let Some(resources) =
+                                            self.material_pipeline_manager.get(mat_id)
+                                        {
                                             // Global uniforms are pre-written before render pass,
                                             // use dynamic offset to index into the correct slot
 
                                             // Evaluate and update material params
-                                            let params = self.evaluate_material_params(mat_id, &mesh.material_params);
-                                            self.material_pipeline_manager.update_material_uniforms(
-                                                &self.queue,
+                                            let params = self.evaluate_material_params(
                                                 mat_id,
-                                                &params,
+                                                &mesh.material_params,
                                             );
+                                            self.material_pipeline_manager
+                                                .update_material_uniforms(
+                                                    &self.queue,
+                                                    mat_id,
+                                                    &params,
+                                                );
 
                                             // Draw with material using dynamic offset for per-entity uniforms
-                                            let material_dynamic_offset = MaterialPipelineManager::dynamic_offset_for_slot(mesh_idx);
+                                            let material_dynamic_offset =
+                                                MaterialPipelineManager::dynamic_offset_for_slot(
+                                                    mesh_idx,
+                                                );
                                             render_pass.set_pipeline(&resources.pipeline);
-                                            render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[material_dynamic_offset]);
-                                            render_pass.set_bind_group(1, &resources.bind_group, &[]);
+                                            render_pass.set_bind_group(
+                                                0,
+                                                self.material_pipeline_manager.global_bind_group(),
+                                                &[material_dynamic_offset],
+                                            );
+                                            render_pass.set_bind_group(
+                                                1,
+                                                &resources.bind_group,
+                                                &[],
+                                            );
                                             if use_deformed {
-                                                render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
+                                                render_pass.set_vertex_buffer(
+                                                    0,
+                                                    self.deformed_vertex_staging.slice(..),
+                                                );
                                             } else {
-                                                render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
+                                                render_pass.set_vertex_buffer(
+                                                    0,
+                                                    buffers.vertex_buffer.slice(..),
+                                                );
                                             }
 
                                             // Draw based on material topology
                                             if material_topology.uses_edge_indices() {
                                                 // Lines: use edge indices
-                                                render_pass.set_index_buffer(buffers.wireframe_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                                                render_pass.draw_indexed(0..buffers.num_edges, 0, 0..1);
+                                                render_pass.set_index_buffer(
+                                                    buffers.wireframe_index_buffer.slice(..),
+                                                    wgpu::IndexFormat::Uint16,
+                                                );
+                                                render_pass.draw_indexed(
+                                                    0..buffers.num_edges,
+                                                    0,
+                                                    0..1,
+                                                );
                                             } else if material_topology.uses_indices() {
                                                 // Triangles: use triangle indices
-                                                render_pass.set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                                                render_pass.draw_indexed(0..buffers.num_indices, 0, 0..1);
+                                                render_pass.set_index_buffer(
+                                                    buffers.index_buffer.slice(..),
+                                                    wgpu::IndexFormat::Uint16,
+                                                );
+                                                render_pass.draw_indexed(
+                                                    0..buffers.num_indices,
+                                                    0,
+                                                    0..1,
+                                                );
                                             } else {
                                                 // Points: draw vertices directly without indices
                                                 render_pass.draw(0..buffers.num_vertices, 0..1);
@@ -1401,59 +1536,115 @@ impl Renderer {
                                     } else {
                                         // Fallback to legacy pipeline - use pre-written uniforms with dynamic offset
                                         render_pass.set_pipeline(&self.mesh_pipeline);
-                                        render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
+                                        render_pass.set_bind_group(
+                                            0,
+                                            &self.mesh_bind_group,
+                                            &[dynamic_offset],
+                                        );
                                         if use_deformed {
-                                            render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
+                                            render_pass.set_vertex_buffer(
+                                                0,
+                                                self.deformed_vertex_staging.slice(..),
+                                            );
                                         } else {
-                                            render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
+                                            render_pass.set_vertex_buffer(
+                                                0,
+                                                buffers.vertex_buffer.slice(..),
+                                            );
                                         }
-                                        render_pass.set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                        render_pass.set_index_buffer(
+                                            buffers.index_buffer.slice(..),
+                                            wgpu::IndexFormat::Uint16,
+                                        );
                                         render_pass.draw_indexed(0..buffers.num_indices, 0, 0..1);
                                     }
                                 }
                                 RenderMode::Wireframe => {
-                                    // TODO: wireframe_color needs separate uniform slot
                                     render_pass.set_pipeline(&self.wireframe_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
+                                    render_pass.set_bind_group(
+                                        0,
+                                        &self.mesh_bind_group,
+                                        &[wireframe_offset],
+                                    );
                                     if use_deformed {
-                                        render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
+                                        render_pass.set_vertex_buffer(
+                                            0,
+                                            self.deformed_vertex_staging.slice(..),
+                                        );
                                     } else {
-                                        render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
+                                        render_pass
+                                            .set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
                                     }
-                                    render_pass.set_index_buffer(buffers.wireframe_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.set_index_buffer(
+                                        buffers.wireframe_index_buffer.slice(..),
+                                        wgpu::IndexFormat::Uint16,
+                                    );
                                     render_pass.draw_indexed(0..buffers.num_edges, 0, 0..1);
                                 }
                                 RenderMode::SolidWithWireframe => {
                                     // First pass: solid - use pre-written uniforms with dynamic offset
                                     render_pass.set_pipeline(&self.mesh_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
+                                    render_pass.set_bind_group(
+                                        0,
+                                        &self.mesh_bind_group,
+                                        &[dynamic_offset],
+                                    );
                                     if use_deformed {
-                                        render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
+                                        render_pass.set_vertex_buffer(
+                                            0,
+                                            self.deformed_vertex_staging.slice(..),
+                                        );
                                     } else {
-                                        render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
+                                        render_pass
+                                            .set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
                                     }
-                                    render_pass.set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.set_index_buffer(
+                                        buffers.index_buffer.slice(..),
+                                        wgpu::IndexFormat::Uint16,
+                                    );
                                     render_pass.draw_indexed(0..buffers.num_indices, 0, 0..1);
 
-                                    // Second pass: wireframe overlay - also use dynamic offset
-                                    // TODO: wireframe_color needs separate handling
+                                    // Second pass: wireframe overlay with its own color slot.
                                     render_pass.set_pipeline(&self.wireframe_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
+                                    render_pass.set_bind_group(
+                                        0,
+                                        &self.mesh_bind_group,
+                                        &[wireframe_offset],
+                                    );
                                     if use_deformed {
-                                        render_pass.set_vertex_buffer(0, self.deformed_vertex_staging.slice(..));
+                                        render_pass.set_vertex_buffer(
+                                            0,
+                                            self.deformed_vertex_staging.slice(..),
+                                        );
                                     } else {
-                                        render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
+                                        render_pass
+                                            .set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
                                     }
-                                    render_pass.set_index_buffer(buffers.wireframe_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.set_index_buffer(
+                                        buffers.wireframe_index_buffer.slice(..),
+                                        wgpu::IndexFormat::Uint16,
+                                    );
                                     render_pass.draw_indexed(0..buffers.num_edges, 0, 0..1);
                                 }
                             }
                         }
                     }
-                    MeshType::RadialRing { radius, thickness, start_angle, end_angle, segments, depth } => {
+                    MeshType::RadialRing {
+                        radius,
+                        thickness,
+                        start_angle,
+                        end_angle,
+                        segments,
+                        depth,
+                    } => {
                         // Generate or get cached radial ring geometry
                         let _geom = self.get_or_create_radial_ring_geometry(
-                            *radius, *thickness, *start_angle, *end_angle, *segments, *depth
+                            *radius,
+                            *thickness,
+                            *start_angle,
+                            *end_angle,
+                            *segments,
+                            *depth,
                         );
                         let geometry = self.radial_ring_geometry.as_ref().unwrap();
                         let num_indices = geometry.num_indices;
@@ -1464,20 +1655,29 @@ impl Renderer {
                         match mesh.render_mode {
                             RenderMode::Solid => {
                                 let geometry = self.radial_ring_geometry.as_ref().unwrap();
-                                let material_id = mesh.material_id.as_ref()
+                                let material_id = mesh
+                                    .material_id
+                                    .as_ref()
                                     .filter(|id| self.material_registry.exists(id));
 
                                 if let Some(mat_id) = material_id {
-                                    let material_topology = self.material_registry.get(mat_id)
+                                    let material_topology = self
+                                        .material_registry
+                                        .get(mat_id)
                                         .map(|m| m.topology)
                                         .unwrap_or_default();
 
-                                    if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
+                                    if let Some(resources) =
+                                        self.material_pipeline_manager.get(mat_id)
+                                    {
                                         // Global uniforms are pre-written before render pass,
                                         // use dynamic offset to index into the correct slot
 
                                         // Evaluate and update material params
-                                        let params = self.evaluate_material_params(mat_id, &mesh.material_params);
+                                        let params = self.evaluate_material_params(
+                                            mat_id,
+                                            &mesh.material_params,
+                                        );
                                         self.material_pipeline_manager.update_material_uniforms(
                                             &self.queue,
                                             mat_id,
@@ -1485,19 +1685,35 @@ impl Renderer {
                                         );
 
                                         // Draw with material using dynamic offset for per-entity uniforms
-                                        let material_dynamic_offset = MaterialPipelineManager::dynamic_offset_for_slot(mesh_idx);
+                                        let material_dynamic_offset =
+                                            MaterialPipelineManager::dynamic_offset_for_slot(
+                                                mesh_idx,
+                                            );
                                         render_pass.set_pipeline(&resources.pipeline);
-                                        render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[material_dynamic_offset]);
+                                        render_pass.set_bind_group(
+                                            0,
+                                            self.material_pipeline_manager.global_bind_group(),
+                                            &[material_dynamic_offset],
+                                        );
                                         render_pass.set_bind_group(1, &resources.bind_group, &[]);
-                                        render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                        render_pass
+                                            .set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
 
                                         if material_topology.uses_edge_indices() {
-                                            if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
-                                                render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                            if let Some(ref wireframe_buffer) =
+                                                geometry.wireframe_index_buffer
+                                            {
+                                                render_pass.set_index_buffer(
+                                                    wireframe_buffer.slice(..),
+                                                    wgpu::IndexFormat::Uint16,
+                                                );
                                                 render_pass.draw_indexed(0..num_edges, 0, 0..1);
                                             }
                                         } else if material_topology.uses_indices() {
-                                            render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                            render_pass.set_index_buffer(
+                                                geometry.index_buffer.slice(..),
+                                                wgpu::IndexFormat::Uint16,
+                                            );
                                             render_pass.draw_indexed(0..num_indices, 0, 0..1);
                                         } else {
                                             render_pass.draw(0..num_vertices, 0..1);
@@ -1505,35 +1721,68 @@ impl Renderer {
                                     }
                                 } else {
                                     render_pass.set_pipeline(&self.mesh_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
-                                    render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
-                                    render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.set_bind_group(
+                                        0,
+                                        &self.mesh_bind_group,
+                                        &[dynamic_offset],
+                                    );
+                                    render_pass
+                                        .set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                    render_pass.set_index_buffer(
+                                        geometry.index_buffer.slice(..),
+                                        wgpu::IndexFormat::Uint16,
+                                    );
                                     render_pass.draw_indexed(0..num_indices, 0, 0..1);
                                 }
                             }
                             RenderMode::Wireframe => {
                                 let geometry = self.radial_ring_geometry.as_ref().unwrap();
-                                if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
+                                if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer
+                                {
                                     render_pass.set_pipeline(&self.wireframe_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
-                                    render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
-                                    render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.set_bind_group(
+                                        0,
+                                        &self.mesh_bind_group,
+                                        &[wireframe_offset],
+                                    );
+                                    render_pass
+                                        .set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                    render_pass.set_index_buffer(
+                                        wireframe_buffer.slice(..),
+                                        wgpu::IndexFormat::Uint16,
+                                    );
                                     render_pass.draw_indexed(0..num_edges, 0, 0..1);
                                 }
                             }
                             RenderMode::SolidWithWireframe => {
                                 let geometry = self.radial_ring_geometry.as_ref().unwrap();
                                 render_pass.set_pipeline(&self.mesh_pipeline);
-                                render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
+                                render_pass.set_bind_group(
+                                    0,
+                                    &self.mesh_bind_group,
+                                    &[dynamic_offset],
+                                );
                                 render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
-                                render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                render_pass.set_index_buffer(
+                                    geometry.index_buffer.slice(..),
+                                    wgpu::IndexFormat::Uint16,
+                                );
                                 render_pass.draw_indexed(0..num_indices, 0, 0..1);
 
-                                if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
+                                if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer
+                                {
                                     render_pass.set_pipeline(&self.wireframe_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
-                                    render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
-                                    render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.set_bind_group(
+                                        0,
+                                        &self.mesh_bind_group,
+                                        &[wireframe_offset],
+                                    );
+                                    render_pass
+                                        .set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                    render_pass.set_index_buffer(
+                                        wireframe_buffer.slice(..),
+                                        wgpu::IndexFormat::Uint16,
+                                    );
                                     render_pass.draw_indexed(0..num_edges, 0, 0..1);
                                 }
                             }
@@ -1563,22 +1812,31 @@ impl Renderer {
                                 };
 
                                 // Check if mesh has a material
-                                let material_id = mesh.material_id.as_ref()
+                                let material_id = mesh
+                                    .material_id
+                                    .as_ref()
                                     .filter(|id| self.material_registry.exists(id));
 
                                 if let Some(mat_id) = material_id {
                                     // Get material topology
-                                    let material_topology = self.material_registry.get(mat_id)
+                                    let material_topology = self
+                                        .material_registry
+                                        .get(mat_id)
                                         .map(|m| m.topology)
                                         .unwrap_or_default();
 
                                     // Use material pipeline
-                                    if let Some(resources) = self.material_pipeline_manager.get(mat_id) {
+                                    if let Some(resources) =
+                                        self.material_pipeline_manager.get(mat_id)
+                                    {
                                         // Global uniforms are pre-written before render pass,
                                         // use dynamic offset to index into the correct slot
 
                                         // Evaluate and update material params
-                                        let params = self.evaluate_material_params(mat_id, &mesh.material_params);
+                                        let params = self.evaluate_material_params(
+                                            mat_id,
+                                            &mesh.material_params,
+                                        );
                                         self.material_pipeline_manager.update_material_uniforms(
                                             &self.queue,
                                             mat_id,
@@ -1586,22 +1844,38 @@ impl Renderer {
                                         );
 
                                         // Draw with material using dynamic offset for per-entity uniforms
-                                        let material_dynamic_offset = MaterialPipelineManager::dynamic_offset_for_slot(mesh_idx);
+                                        let material_dynamic_offset =
+                                            MaterialPipelineManager::dynamic_offset_for_slot(
+                                                mesh_idx,
+                                            );
                                         render_pass.set_pipeline(&resources.pipeline);
-                                        render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[material_dynamic_offset]);
+                                        render_pass.set_bind_group(
+                                            0,
+                                            self.material_pipeline_manager.global_bind_group(),
+                                            &[material_dynamic_offset],
+                                        );
                                         render_pass.set_bind_group(1, &resources.bind_group, &[]);
-                                        render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                        render_pass
+                                            .set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
 
                                         // Draw based on material topology
                                         if material_topology.uses_edge_indices() {
                                             // Lines: use edge indices
-                                            if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
-                                                render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                            if let Some(ref wireframe_buffer) =
+                                                geometry.wireframe_index_buffer
+                                            {
+                                                render_pass.set_index_buffer(
+                                                    wireframe_buffer.slice(..),
+                                                    wgpu::IndexFormat::Uint16,
+                                                );
                                                 render_pass.draw_indexed(0..num_edges, 0, 0..1);
                                             }
                                         } else if material_topology.uses_indices() {
                                             // Triangles: use triangle indices
-                                            render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                            render_pass.set_index_buffer(
+                                                geometry.index_buffer.slice(..),
+                                                wgpu::IndexFormat::Uint16,
+                                            );
                                             render_pass.draw_indexed(0..num_indices, 0, 0..1);
                                         } else {
                                             // Points: draw vertices directly without indices
@@ -1611,26 +1885,41 @@ impl Renderer {
                                 } else {
                                     // Fallback to legacy pipeline - use pre-written uniforms with dynamic offset
                                     render_pass.set_pipeline(&self.mesh_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
-                                    render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
-                                    render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.set_bind_group(
+                                        0,
+                                        &self.mesh_bind_group,
+                                        &[dynamic_offset],
+                                    );
+                                    render_pass
+                                        .set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                    render_pass.set_index_buffer(
+                                        geometry.index_buffer.slice(..),
+                                        wgpu::IndexFormat::Uint16,
+                                    );
                                     render_pass.draw_indexed(0..num_indices, 0, 0..1);
                                 }
                             }
                             RenderMode::Wireframe => {
-                                // TODO: wireframe_color needs separate uniform slot to avoid conflation
-                                // For now, use pre-written uniforms (will use solid color instead of wireframe_color)
                                 let geometry = match &mesh.mesh_type {
                                     MeshType::Cube => &self.cube_geometry,
                                     MeshType::Plane => &self.plane_geometry,
                                     MeshType::Sphere => &self.sphere_geometry,
                                     _ => continue,
                                 };
-                                if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
+                                if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer
+                                {
                                     render_pass.set_pipeline(&self.wireframe_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
-                                    render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
-                                    render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.set_bind_group(
+                                        0,
+                                        &self.mesh_bind_group,
+                                        &[wireframe_offset],
+                                    );
+                                    render_pass
+                                        .set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                    render_pass.set_index_buffer(
+                                        wireframe_buffer.slice(..),
+                                        wgpu::IndexFormat::Uint16,
+                                    );
                                     render_pass.draw_indexed(0..num_edges, 0, 0..1);
                                 }
                             }
@@ -1643,24 +1932,39 @@ impl Renderer {
                                     _ => continue,
                                 };
                                 render_pass.set_pipeline(&self.mesh_pipeline);
-                                render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
+                                render_pass.set_bind_group(
+                                    0,
+                                    &self.mesh_bind_group,
+                                    &[dynamic_offset],
+                                );
                                 render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
-                                render_pass.set_index_buffer(geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                render_pass.set_index_buffer(
+                                    geometry.index_buffer.slice(..),
+                                    wgpu::IndexFormat::Uint16,
+                                );
                                 render_pass.draw_indexed(0..num_indices, 0, 0..1);
 
-                                // Second pass: wireframe overlay - also use dynamic offset
-                                // TODO: wireframe_color needs separate handling
+                                // Second pass: wireframe overlay with its own color slot.
                                 let geometry = match &mesh.mesh_type {
                                     MeshType::Cube => &self.cube_geometry,
                                     MeshType::Plane => &self.plane_geometry,
                                     MeshType::Sphere => &self.sphere_geometry,
                                     _ => continue,
                                 };
-                                if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer {
+                                if let Some(ref wireframe_buffer) = geometry.wireframe_index_buffer
+                                {
                                     render_pass.set_pipeline(&self.wireframe_pipeline);
-                                    render_pass.set_bind_group(0, &self.mesh_bind_group, &[dynamic_offset]);
-                                    render_pass.set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
-                                    render_pass.set_index_buffer(wireframe_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                                    render_pass.set_bind_group(
+                                        0,
+                                        &self.mesh_bind_group,
+                                        &[wireframe_offset],
+                                    );
+                                    render_pass
+                                        .set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
+                                    render_pass.set_index_buffer(
+                                        wireframe_buffer.slice(..),
+                                        wgpu::IndexFormat::Uint16,
+                                    );
                                     render_pass.draw_indexed(0..num_edges, 0, 0..1);
                                 }
                             }
@@ -1694,12 +1998,14 @@ impl Renderer {
                         MeshType::Cube => CUBE_BOUNDS,
                         MeshType::Plane => PLANE_BOUNDS,
                         MeshType::Sphere => SPHERE_BOUNDS,
-                        MeshType::Asset(asset_id) => {
-                            state.asset_registry.get(asset_id)
-                                .map(|a| a.bounds)
-                                .unwrap_or_default()
-                        }
-                        MeshType::RadialRing { radius, thickness, .. } => {
+                        MeshType::Asset(asset_id) => state
+                            .asset_registry
+                            .get(asset_id)
+                            .map(|a| a.bounds)
+                            .unwrap_or_default(),
+                        MeshType::RadialRing {
+                            radius, thickness, ..
+                        } => {
                             // Approximate bounds for radial ring
                             let outer = radius + thickness / 2.0;
                             BoundingBox {
@@ -1710,7 +2016,8 @@ impl Renderer {
                     };
 
                     // Compute world-space bounding box vertices
-                    let vertices = compute_world_bounds_vertices(&local_bounds, *world_matrix, debug_color);
+                    let vertices =
+                        compute_world_bounds_vertices(&local_bounds, *world_matrix, debug_color);
 
                     // Upload vertices to staging buffer
                     self.queue.write_buffer(
@@ -1721,7 +2028,8 @@ impl Renderer {
 
                     // Set identity model matrix (vertices are already in world space)
                     self.uniforms.model = glam::Mat4::IDENTITY.to_cols_array_2d();
-                    self.uniforms.instance_color = [debug_color[0], debug_color[1], debug_color[2], 1.0];
+                    self.uniforms.instance_color =
+                        [debug_color[0], debug_color[1], debug_color[2], 1.0];
                     self.queue.write_buffer(
                         &self.uniform_buffer,
                         0,
@@ -1730,7 +2038,10 @@ impl Renderer {
 
                     // Draw wireframe cube
                     render_pass.set_vertex_buffer(0, self.debug_bounds_vertex_buffer.slice(..));
-                    render_pass.set_index_buffer(self.debug_cube_geometry.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                    render_pass.set_index_buffer(
+                        self.debug_cube_geometry.index_buffer.slice(..),
+                        wgpu::IndexFormat::Uint16,
+                    );
                     render_pass.draw_indexed(0..self.debug_cube_geometry.num_edges, 0, 0..1);
                 }
             }
@@ -1776,7 +2087,9 @@ impl Renderer {
             for (cloud, world_matrix) in &point_clouds_to_render {
                 // Upload point positions (as flat f32 array: x, y, z, x, y, z, ...)
                 let point_count = cloud.positions.len().min(MAX_POINTS_PER_CLOUD);
-                let positions_data: Vec<f32> = cloud.positions.iter()
+                let positions_data: Vec<f32> = cloud
+                    .positions
+                    .iter()
                     .take(point_count)
                     .flat_map(|p| [p.x, p.y, p.z])
                     .collect();
@@ -1816,7 +2129,8 @@ impl Renderer {
                 }
 
                 // Upload wave points
-                let positions_data: Vec<f32> = points.iter()
+                let positions_data: Vec<f32> = points
+                    .iter()
                     .take(point_count)
                     .flat_map(|p| [p.x, p.y, p.z])
                     .collect();
@@ -1856,7 +2170,8 @@ impl Renderer {
                 }
 
                 // Upload ribbon points
-                let positions_data: Vec<f32> = points.iter()
+                let positions_data: Vec<f32> = points
+                    .iter()
                     .take(point_count)
                     .flat_map(|p| [p.x, p.y, p.z])
                     .collect();
@@ -1945,7 +2260,8 @@ impl Renderer {
         };
 
         // Update view projection matrix
-        self.uniforms.update_view_proj(self.size, state.camera_uniforms());
+        self.uniforms
+            .update_view_proj(self.size, state.camera_uniforms());
         self.queue.write_buffer(
             &self.mesh_particle_view_buffer,
             0,
@@ -1959,9 +2275,11 @@ impl Renderer {
             bytemuck::cast_slice(instances),
         );
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("Mesh Particle Encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("Mesh Particle Encoder"),
+            });
 
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -2006,7 +2324,9 @@ impl Renderer {
         state: &VisualiserState,
     ) {
         use crate::particle::ParticleGeometry;
-        use crate::particle_eval::{generate_gpu_instances, generate_mesh_particle_instances, ParticleEvalContext};
+        use crate::particle_eval::{
+            generate_gpu_instances, generate_mesh_particle_instances, ParticleEvalContext,
+        };
 
         let particle_systems = state.particle_systems();
         if particle_systems.is_empty() {
@@ -2025,11 +2345,15 @@ impl Renderer {
         };
 
         // Collect all particle instances by type
-        let mut mesh_instances_by_asset: std::collections::HashMap<String, Vec<GpuMeshParticleInstance>>
-            = std::collections::HashMap::new();
+        let mut mesh_instances_by_asset: std::collections::HashMap<
+            String,
+            Vec<GpuMeshParticleInstance>,
+        > = std::collections::HashMap::new();
         let mut billboard_instances: Vec<GpuParticleInstance> = Vec::new();
 
-        for (_id, system) in particle_systems.iter() {
+        let mut ordered_systems: Vec<_> = particle_systems.iter().collect();
+        ordered_systems.sort_by_key(|(id, _)| **id);
+        for (_id, system) in ordered_systems {
             if !system.visible || system.instances.is_empty() {
                 continue;
             }
@@ -2040,9 +2364,13 @@ impl Renderer {
                     let instances = generate_gpu_instances(system, &particle_ctx);
                     billboard_instances.extend(instances);
                 }
-                ParticleGeometry::Mesh { asset_id, base_scale } => {
+                ParticleGeometry::Mesh {
+                    asset_id,
+                    base_scale,
+                } => {
                     // Generate GPU instances for mesh particles
-                    let instances = generate_mesh_particle_instances(system, &particle_ctx, *base_scale);
+                    let instances =
+                        generate_mesh_particle_instances(system, &particle_ctx, *base_scale);
                     if !instances.is_empty() {
                         mesh_instances_by_asset
                             .entry(asset_id.clone())
@@ -2073,10 +2401,8 @@ impl Renderer {
             // Flatten the 4x4 matrix to [f32; 16]
             let vp = &self.uniforms.view_proj;
             let view_proj_flat: [f32; 16] = [
-                vp[0][0], vp[0][1], vp[0][2], vp[0][3],
-                vp[1][0], vp[1][1], vp[1][2], vp[1][3],
-                vp[2][0], vp[2][1], vp[2][2], vp[2][3],
-                vp[3][0], vp[3][1], vp[3][2], vp[3][3],
+                vp[0][0], vp[0][1], vp[0][2], vp[0][3], vp[1][0], vp[1][1], vp[1][2], vp[1][3],
+                vp[2][0], vp[2][1], vp[2][2], vp[2][3], vp[3][0], vp[3][1], vp[3][2], vp[3][3],
             ];
 
             let mut billboard_uniforms: [f32; 24] = [0.0; 24];
@@ -2118,13 +2444,18 @@ impl Renderer {
                 render_pass.set_bind_group(0, &self.billboard_particle_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.billboard_quad_vertex_buffer.slice(..));
                 render_pass.set_vertex_buffer(1, self.billboard_particle_instance_buffer.slice(..));
-                render_pass.set_index_buffer(self.billboard_quad_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass.set_index_buffer(
+                    self.billboard_quad_index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint16,
+                );
                 render_pass.draw_indexed(0..6, 0, 0..instance_count as u32);
             }
         }
 
         // Render mesh particles
-        for (asset_id, instances) in mesh_instances_by_asset.iter() {
+        let mut ordered_mesh_assets: Vec<_> = mesh_instances_by_asset.iter().collect();
+        ordered_mesh_assets.sort_by(|(left, _), (right, _)| left.cmp(right));
+        for (asset_id, instances) in ordered_mesh_assets {
             if instances.is_empty() {
                 continue;
             }
@@ -2150,7 +2481,8 @@ impl Renderer {
             };
 
             // Update view projection matrix
-            self.uniforms.update_view_proj(self.size, state.camera_uniforms());
+            self.uniforms
+                .update_view_proj(self.size, state.camera_uniforms());
             self.queue.write_buffer(
                 &self.mesh_particle_view_buffer,
                 0,
@@ -2185,7 +2517,8 @@ impl Renderer {
                 render_pass.set_bind_group(0, &self.mesh_particle_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, buffers.vertex_buffer.slice(..));
                 render_pass.set_vertex_buffer(1, self.mesh_particle_instance_buffer.slice(..));
-                render_pass.set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                render_pass
+                    .set_index_buffer(buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..buffers.num_indices, 0, 0..instance_count as u32);
             }
         }

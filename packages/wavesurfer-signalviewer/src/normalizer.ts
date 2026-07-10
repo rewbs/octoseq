@@ -5,11 +5,7 @@
  * different domain calculation methods.
  */
 
-import type {
-  NormalizationMode,
-  NormalizationBounds,
-  SignalData,
-} from "./types.js";
+import type { NormalizationMode, NormalizationBounds, SignalData } from "./types.js";
 import { percentile } from "./utils.js";
 
 /**
@@ -60,10 +56,7 @@ export class Normalizer {
   /**
    * Calculate bounds based on mode
    */
-  private calculateBounds(
-    signal: SignalData,
-    mode: NormalizationMode
-  ): NormalizationBounds {
+  private calculateBounds(signal: SignalData, mode: NormalizationMode): NormalizationBounds {
     // Handle fixed mode first - uses metadata
     if (mode === "fixed") {
       const domain = signal.meta?.domain;
@@ -80,8 +73,7 @@ export class Normalizer {
     }
 
     // Get values array
-    const values =
-      signal.kind === "continuous" ? signal.values : signal.strengths;
+    const values = signal.kind === "continuous" ? signal.values : signal.strengths;
     if (!values || values.length === 0) {
       return { min: 0, max: 1 };
     }
@@ -96,11 +88,7 @@ export class Normalizer {
 
       default:
         if (typeof mode === "object" && "percentile" in mode) {
-          return this.calculatePercentileBounds(
-            values,
-            mode.percentile[0],
-            mode.percentile[1]
-          );
+          return this.calculatePercentileBounds(values, mode.percentile[0], mode.percentile[1]);
         }
         return this.calculateGlobalBounds(values);
     }

@@ -23,23 +23,16 @@ import type { InterpolationType } from "../types/composedSignal";
  */
 export function useComposedSignalActions() {
   // Store state and actions
-  const {
-    getSignalById,
-    getEnabledSignals,
-    addNode,
-    selectedSignalId,
-    snapEnabled,
-    snapSubdivision,
-  } = useComposedSignalStore(
-    useShallow((s) => ({
-      getSignalById: s.getSignalById,
-      getEnabledSignals: s.getEnabledSignals,
-      addNode: s.addNode,
-      selectedSignalId: s.selectedSignalId,
-      snapEnabled: s.snapEnabled,
-      snapSubdivision: s.snapSubdivision,
-    }))
-  );
+  const { getSignalById, getEnabledSignals, addNode, snapEnabled, snapSubdivision } =
+    useComposedSignalStore(
+      useShallow((s) => ({
+        getSignalById: s.getSignalById,
+        getEnabledSignals: s.getEnabledSignals,
+        addNode: s.addNode,
+        snapEnabled: s.snapEnabled,
+        snapSubdivision: s.snapSubdivision,
+      }))
+    );
 
   // BPM from beat grid
   const bpm = useTimingStore((s) => s.selectedHypothesis?.bpm ?? null);
@@ -55,12 +48,7 @@ export function useComposedSignalActions() {
       const signal = getSignalById(signalId);
       if (!signal) return null;
 
-      return sampleComposedSignal(
-        signal.nodes,
-        timeBeats,
-        signal.valueMin,
-        signal.valueMax
-      );
+      return sampleComposedSignal(signal.nodes, timeBeats, signal.valueMin, signal.valueMax);
     },
     [getSignalById]
   );
@@ -77,12 +65,7 @@ export function useComposedSignalActions() {
       if (!signal) return null;
 
       const timeBeats = secondsToBeats(timeSeconds, bpm);
-      return sampleComposedSignal(
-        signal.nodes,
-        timeBeats,
-        signal.valueMin,
-        signal.valueMax
-      );
+      return sampleComposedSignal(signal.nodes, timeBeats, signal.valueMin, signal.valueMax);
     },
     [bpm, getSignalById]
   );

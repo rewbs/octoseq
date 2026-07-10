@@ -37,10 +37,7 @@ export function MeshAssetsInspector() {
         }
 
         // Read file as both text (for rendering) and bytes (for upload)
-        const [content, rawBytes] = await Promise.all([
-          file.text(),
-          file.arrayBuffer(),
-        ]);
+        const [content, rawBytes] = await Promise.all([file.text(), file.arrayBuffer()]);
 
         // Compute content hash for deduplication
         const contentHash = await computeContentHash(rawBytes);
@@ -106,9 +103,7 @@ export function MeshAssetsInspector() {
       {assets.length === 0 ? (
         <div className="text-center py-6">
           <Upload className="h-8 w-8 mx-auto mb-2 text-zinc-400" />
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            No 3D objects loaded.
-          </p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">No 3D objects loaded.</p>
           <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">
             Load .obj files to use as mesh assets in your scripts.
           </p>
@@ -134,7 +129,8 @@ export function MeshAssetsInspector() {
                   className="w-full text-sm font-medium bg-transparent border-b border-transparent hover:border-zinc-300 dark:hover:border-zinc-600 focus:border-blue-500 focus:outline-none"
                 />
                 <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-                  {asset.vertexCount.toLocaleString()} vertices, {asset.faceCount.toLocaleString()} faces
+                  {asset.vertexCount.toLocaleString()} vertices, {asset.faceCount.toLocaleString()}{" "}
+                  faces
                 </div>
               </div>
               <Button

@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { GripHorizontal } from "lucide-react";
 import { GenericBeatGridOverlay } from "@/components/beatGrid/GenericBeatGridOverlay";
 import type { WaveSurferViewport } from "./types";
@@ -91,7 +98,10 @@ export function SignalViewer({
   const startHeightRef = useRef(0);
 
   // Cached bounds (memoized to avoid setState in effects)
-  const bounds = useMemo(() => normalizer.computeBounds(signal, normalization), [signal, normalization]);
+  const bounds = useMemo(
+    () => normalizer.computeBounds(signal, normalization),
+    [signal, normalization]
+  );
   const boundsRef = useRef<NormalizationBounds | null>(bounds);
 
   // Hover state for value display
@@ -123,14 +133,17 @@ export function SignalViewer({
   const mergedColor = useMemo(() => ({ ...defaultColor, ...color }), [defaultColor, color]);
 
   // Resize handlers
-  const handleResizeStart = useCallback((e: ReactMouseEvent) => {
-    e.preventDefault();
-    isResizingRef.current = true;
-    startYRef.current = e.clientY;
-    startHeightRef.current = panelHeight;
-    document.body.style.cursor = "ns-resize";
-    document.body.style.userSelect = "none";
-  }, [panelHeight]);
+  const handleResizeStart = useCallback(
+    (e: ReactMouseEvent) => {
+      e.preventDefault();
+      isResizingRef.current = true;
+      startYRef.current = e.clientY;
+      startHeightRef.current = panelHeight;
+      document.body.style.cursor = "ns-resize";
+      document.body.style.userSelect = "none";
+    },
+    [panelHeight]
+  );
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -162,38 +175,41 @@ export function SignalViewer({
   }, [bounds]);
 
   // Get value at a specific time using binary search
-  const getValueAtTime = useCallback((time: number): number | null => {
-    if (signal.kind !== "continuous") return null;
-    const { times, values } = signal;
-    if (times.length === 0) return null;
+  const getValueAtTime = useCallback(
+    (time: number): number | null => {
+      if (signal.kind !== "continuous") return null;
+      const { times, values } = signal;
+      if (times.length === 0) return null;
 
-    // Binary search for the closest time
-    let left = 0;
-    let right = times.length - 1;
+      // Binary search for the closest time
+      let left = 0;
+      let right = times.length - 1;
 
-    if (time <= (times[0] ?? 0)) return values[0] ?? null;
-    if (time >= (times[right] ?? 0)) return values[right] ?? null;
+      if (time <= (times[0] ?? 0)) return values[0] ?? null;
+      if (time >= (times[right] ?? 0)) return values[right] ?? null;
 
-    while (left < right - 1) {
-      const mid = Math.floor((left + right) / 2);
-      const midTime = times[mid] ?? 0;
-      if (midTime <= time) {
-        left = mid;
-      } else {
-        right = mid;
+      while (left < right - 1) {
+        const mid = Math.floor((left + right) / 2);
+        const midTime = times[mid] ?? 0;
+        if (midTime <= time) {
+          left = mid;
+        } else {
+          right = mid;
+        }
       }
-    }
 
-    // Linear interpolation between left and right
-    const t0 = times[left] ?? 0;
-    const t1 = times[right] ?? 0;
-    const v0 = values[left] ?? 0;
-    const v1 = values[right] ?? 0;
+      // Linear interpolation between left and right
+      const t0 = times[left] ?? 0;
+      const t1 = times[right] ?? 0;
+      const v0 = values[left] ?? 0;
+      const v1 = values[right] ?? 0;
 
-    if (t1 === t0) return v0;
-    const ratio = (time - t0) / (t1 - t0);
-    return v0 + ratio * (v1 - v0);
-  }, [signal]);
+      if (t1 === t0) return v0;
+      const ratio = (time - t0) / (t1 - t0);
+      return v0 + ratio * (v1 - v0);
+    },
+    [signal]
+  );
 
   // Draw threshold line helper
   const drawThresholdLine = (
@@ -256,11 +272,7 @@ export function SignalViewer({
   };
 
   // Draw cursor helper
-  const drawCursor = (
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    h: number
-  ) => {
+  const drawCursor = (ctx: CanvasRenderingContext2D, x: number, h: number) => {
     ctx.save();
     ctx.strokeStyle = "rgba(239, 68, 68, 0.8)"; // red-500
     ctx.lineWidth = 1;
@@ -526,27 +538,30 @@ export function SignalViewer({
   }, []);
 
   // Handle mouse events for cursor
-  const handleMouseMove = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
-    if (!viewport) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const visibleDuration = viewport.endTime - viewport.startTime;
-    if (visibleDuration <= 0 || rect.width <= 0) return;
-    const time = viewport.startTime + (x / rect.width) * visibleDuration;
+  const handleMouseMove = useCallback(
+    (e: ReactMouseEvent<HTMLDivElement>) => {
+      if (!viewport) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const visibleDuration = viewport.endTime - viewport.startTime;
+      if (visibleDuration <= 0 || rect.width <= 0) return;
+      const time = viewport.startTime + (x / rect.width) * visibleDuration;
 
-    onCursorTimeChange?.(time);
+      onCursorTimeChange?.(time);
 
-    // Get value at cursor for display
-    const value = getValueAtTime(time);
-    const vpBounds = viewportBoundsRef.current;
-    setHoverInfo({
-      value,
-      time,
-      x,
-      viewportMin: vpBounds?.min ?? 0,
-      viewportMax: vpBounds?.max ?? 0,
-    });
-  }, [viewport, onCursorTimeChange, getValueAtTime]);
+      // Get value at cursor for display
+      const value = getValueAtTime(time);
+      const vpBounds = viewportBoundsRef.current;
+      setHoverInfo({
+        value,
+        time,
+        x,
+        viewportMin: vpBounds?.min ?? 0,
+        viewportMax: vpBounds?.max ?? 0,
+      });
+    },
+    [viewport, onCursorTimeChange, getValueAtTime]
+  );
 
   const handleMouseLeave = useCallback(() => {
     onCursorTimeChange?.(null);
@@ -557,9 +572,7 @@ export function SignalViewer({
     <div className="relative bg-zinc-100 dark:bg-zinc-900 rounded overflow-hidden">
       {label && (
         <div className="absolute top-1 left-2 z-10">
-          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            {label}
-          </span>
+          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{label}</span>
         </div>
       )}
       <div
@@ -569,10 +582,7 @@ export function SignalViewer({
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
       >
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full"
-        />
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
         {/* Beat grid overlay */}
         {showBeatGrid && audioDuration > 0 && (
           <GenericBeatGridOverlay
@@ -593,9 +603,13 @@ export function SignalViewer({
             <div className="bg-zinc-800/90 dark:bg-zinc-200/90 text-zinc-100 dark:text-zinc-900 text-xs px-2 py-1 rounded shadow-lg backdrop-blur-sm whitespace-nowrap">
               <div className="font-mono font-medium">{hoverInfo.value.toFixed(4)}</div>
               <div className="text-tiny opacity-70 mt-0.5">
-                <span>vp: {hoverInfo.viewportMin.toFixed(2)}–{hoverInfo.viewportMax.toFixed(2)}</span>
+                <span>
+                  vp: {hoverInfo.viewportMin.toFixed(2)}–{hoverInfo.viewportMax.toFixed(2)}
+                </span>
                 {bounds && (
-                  <span className="ml-1.5">all: {bounds.min.toFixed(2)}–{bounds.max.toFixed(2)}</span>
+                  <span className="ml-1.5">
+                    all: {bounds.min.toFixed(2)}–{bounds.max.toFixed(2)}
+                  </span>
                 )}
               </div>
             </div>

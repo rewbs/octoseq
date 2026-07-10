@@ -9,6 +9,8 @@ use crate::event_stream::Event;
 use crate::scene_graph::{Transform, Vec3};
 use crate::signal::{EasingFunction, EnvelopeShape, Signal};
 
+pub const MAX_PARTICLE_INSTANCES: usize = 262_144;
+
 /// A particle system that emits instances based on events or signals.
 #[derive(Clone, Debug)]
 pub struct ParticleSystem {
@@ -194,8 +196,10 @@ impl ParticleSystem {
     pub fn from_events(
         events: Arc<Vec<Event>>,
         instances_per_event: usize,
-        config: ParticleConfig,
+        mut config: ParticleConfig,
     ) -> Self {
+        config.max_instances = config.max_instances.clamp(1, MAX_PARTICLE_INSTANCES);
+        let instances_per_event = instances_per_event.clamp(1, config.max_instances);
         Self {
             transform: Transform::default(),
             visible: true,
@@ -212,7 +216,8 @@ impl ParticleSystem {
     }
 
     /// Create a new particle system from a signal stream.
-    pub fn from_stream(signal: Signal, mode: StreamMode, config: ParticleConfig) -> Self {
+    pub fn from_stream(signal: Signal, mode: StreamMode, mut config: ParticleConfig) -> Self {
+        config.max_instances = config.max_instances.clamp(1, MAX_PARTICLE_INSTANCES);
         Self {
             transform: Transform::default(),
             visible: true,
@@ -299,8 +304,8 @@ impl ParticleSystem {
             (next_f32() - 0.5) * config.position_spread.z * 2.0,
         );
 
-        let scale_mult = config.scale_range[0]
-            + next_f32() * (config.scale_range[1] - config.scale_range[0]);
+        let scale_mult =
+            config.scale_range[0] + next_f32() * (config.scale_range[1] - config.scale_range[0]);
 
         let color_shift = [
             (next_f32() - 0.5) * config.color_variation * 2.0,
@@ -352,10 +357,7 @@ mod tests {
 
     #[test]
     fn test_particle_system_from_events() {
-        let events = Arc::new(vec![
-            Event::new(0.0, 1.0),
-            Event::new(1.0, 0.8),
-        ]);
+        let events = Arc::new(vec![Event::new(0.0, 1.0), Event::new(1.0, 0.8)]);
         let config = ParticleConfig::default();
         let system = ParticleSystem::from_events(events, 5, config);
 
@@ -366,8 +368,10 @@ mod tests {
     #[test]
     fn test_particle_reset() {
         let events = Arc::new(vec![Event::new(0.0, 1.0)]);
-        let mut config = ParticleConfig::default();
-        config.seed = 42;
+        let config = ParticleConfig {
+            seed: 42,
+            ..Default::default()
+        };
         let mut system = ParticleSystem::from_events(events, 1, config);
 
         system.spawn_instance(0.0, 0.0, 1.0);
@@ -380,8 +384,10 @@ mod tests {
     #[test]
     fn test_deterministic_variation() {
         let events = Arc::new(vec![Event::new(0.0, 1.0)]);
-        let mut config = ParticleConfig::default();
-        config.seed = 123;
+        let mut config = ParticleConfig {
+            seed: 123,
+            ..Default::default()
+        };
         config.variation.position_spread = Vec3::new(1.0, 1.0, 1.0);
 
         let mut system1 = ParticleSystem::from_events(events.clone(), 1, config.clone());
@@ -400,8 +406,10 @@ mod tests {
     #[test]
     fn test_multiple_particles_have_different_positions() {
         let events = Arc::new(vec![Event::new(0.0, 1.0)]);
-        let mut config = ParticleConfig::default();
-        config.seed = 42;
+        let mut config = ParticleConfig {
+            seed: 42,
+            ..Default::default()
+        };
         config.variation.position_spread = Vec3::new(1.0, 1.0, 1.0);
 
         let mut system = ParticleSystem::from_events(events, 10, config);
@@ -427,8 +435,10 @@ mod tests {
         // Seed 0 was previously degenerate (xorshift produces all zeros)
         // After fix, it should produce valid variation
         let events = Arc::new(vec![Event::new(0.0, 1.0)]);
-        let mut config = ParticleConfig::default();
-        config.seed = 0; // Explicitly test seed 0
+        let mut config = ParticleConfig {
+            seed: 0,
+            ..Default::default()
+        };
         config.variation.position_spread = Vec3::new(1.0, 1.0, 1.0);
 
         let mut system = ParticleSystem::from_events(events, 2, config);

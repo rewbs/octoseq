@@ -64,7 +64,7 @@ export function detectSignalAtCursor(
   const textUntilPosition = lineContent.substring(0, word.startColumn - 1);
 
   // Parse backward to find the root identifier
-  const rootName = parseRootIdentifier(textUntilPosition, wordText);
+  const rootName = parseRootIdentifier(textUntilPosition);
   if (rootName && scriptSignals.find((s) => s.name === rootName)) {
     return {
       signalName: rootName,
@@ -86,10 +86,7 @@ export function detectSignalAtCursor(
  * Given text like "smoothed.normalise" with cursor on "normalise",
  * this function walks backward to find "smoothed" as the root.
  */
-function parseRootIdentifier(
-  textBefore: string,
-  currentWord: string
-): string | null {
+function parseRootIdentifier(textBefore: string): string | null {
   const trimmed = textBefore.trimEnd();
   if (!trimmed) return null;
 

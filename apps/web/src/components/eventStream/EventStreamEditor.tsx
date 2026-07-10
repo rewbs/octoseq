@@ -92,11 +92,7 @@ export function EventStreamEditor({
     }))
   );
 
-  const {
-    addEventAtTime,
-    deleteSelectedEvents,
-    moveSelectedEvents,
-  } = useAuthoredEventActions();
+  const { addEventAtTime, deleteSelectedEvents, moveSelectedEvents } = useAuthoredEventActions();
 
   const selectEvent = useAuthoredEventStore((s) => s.selectEvent);
   const selectEvents = useAuthoredEventStore((s) => s.selectEvents);
@@ -223,10 +219,7 @@ export function EventStreamEditor({
       if (event.time < startTime - 1 || event.time > endTime + 1) continue;
 
       const x = timeToX(event.time, width);
-      const markerHeight = Math.max(
-        EVENT_MARKER_MIN_HEIGHT,
-        height * 0.8 * event.weight
-      );
+      const markerHeight = Math.max(EVENT_MARKER_MIN_HEIGHT, height * 0.8 * event.weight);
       const y = height - markerHeight;
 
       const isSelected = selectedEventIds.has(event.id);
@@ -328,7 +321,7 @@ export function EventStreamEditor({
 
       // Update drag state
       if (dragState) {
-        setDragState((prev) => prev ? { ...prev, currentX: x, currentY: y } : null);
+        setDragState((prev) => (prev ? { ...prev, currentX: x, currentY: y } : null));
         return;
       }
 
@@ -462,7 +455,16 @@ export function EventStreamEditor({
 
       setDragState(null);
     },
-    [dragState, stream, streamId, selectedEventIds, xToTime, selectEvents, moveSelectedEvents, snapTime]
+    [
+      dragState,
+      stream,
+      streamId,
+      selectedEventIds,
+      xToTime,
+      selectEvents,
+      moveSelectedEvents,
+      snapTime,
+    ]
   );
 
   // Key down handler
@@ -528,11 +530,7 @@ export function EventStreamEditor({
   }, []);
 
   if (!stream) {
-    return (
-      <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
-        Stream not found.
-      </div>
-    );
+    return <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">Stream not found.</div>;
   }
 
   return (

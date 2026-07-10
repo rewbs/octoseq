@@ -56,7 +56,7 @@ export async function decodeAudioSource(
   source: AudioSource,
   options: DecodeOptions = {}
 ): Promise<DecodeResult> {
-  const { signal, onProgress } = options;
+  const { signal } = options;
 
   // Check for cancellation
   if (signal?.aborted) {
@@ -73,19 +73,14 @@ export async function decodeAudioSource(
     case "generated":
       // Generated sources should already have their buffer available
       // This path shouldn't normally be called, but handle it gracefully
-      throw new Error(
-        "Generated sources should have their buffer set during generation"
-      );
+      throw new Error("Generated sources should have their buffer set during generation");
   }
 }
 
 /**
  * Decode a local File to PCM data.
  */
-async function decodeLocalFile(
-  file: File,
-  options: DecodeOptions
-): Promise<DecodeResult> {
+async function decodeLocalFile(file: File, options: DecodeOptions): Promise<DecodeResult> {
   const { signal, onProgress } = options;
 
   onProgress?.("fetching");
@@ -237,9 +232,7 @@ export function createAudioBufferLike(
     numberOfChannels: channels.length,
     getChannelData: (channel: number) => {
       if (channel < 0 || channel >= channels.length) {
-        throw new RangeError(
-          `Channel ${channel} out of range [0, ${channels.length - 1}]`
-        );
+        throw new RangeError(`Channel ${channel} out of range [0, ${channels.length - 1}]`);
       }
       // Non-null assertion safe because we've validated the bounds
       return channels[channel]!;

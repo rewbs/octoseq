@@ -58,10 +58,8 @@ export function useKeyboardShortcuts({
   useHotkeys("b", onJumpToBestUnreviewed, baseOptions, [onJumpToBestUnreviewed]);
 
   // Conditional delete shortcut
-  useHotkeys(
-    "delete, backspace",
+  useHotkeys("delete, backspace", onDeleteManual, { ...baseOptions, enabled: canDeleteManual }, [
     onDeleteManual,
-    { ...baseOptions, enabled: canDeleteManual },
-    [onDeleteManual, canDeleteManual]
-  );
+    canDeleteManual,
+  ]);
 }

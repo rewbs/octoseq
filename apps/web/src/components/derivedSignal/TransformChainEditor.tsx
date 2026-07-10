@@ -65,7 +65,7 @@ export function TransformChainEditor({ transforms, onChange }: TransformChainEdi
 
   const handleUpdateTransform = (index: number, updates: Partial<TransformStep>) => {
     const newTransforms = transforms.map((t, i) =>
-      i === index ? { ...t, ...updates } as TransformStep : t
+      i === index ? ({ ...t, ...updates } as TransformStep) : t
     );
     onChange(newTransforms);
   };
@@ -160,7 +160,9 @@ export function TransformChainEditor({ transforms, onChange }: TransformChainEdi
                 ) : (
                   <ChevronRight className="h-4 w-4 text-zinc-400" />
                 )}
-                <span className="flex-1 text-sm font-medium">{TRANSFORM_LABELS[transform.kind]}</span>
+                <span className="flex-1 text-sm font-medium">
+                  {TRANSFORM_LABELS[transform.kind]}
+                </span>
                 <span className="text-xs text-zinc-500 dark:text-zinc-400">
                   {getTransformSummary(transform)}
                 </span>
@@ -388,9 +390,7 @@ function ScaleParams({
           step={0.1}
         />
       </div>
-      <p className="text-xs text-zinc-500 dark:text-zinc-400">
-        output = input × scale + offset
-      </p>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">output = input × scale + offset</p>
     </div>
   );
 }

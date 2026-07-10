@@ -106,8 +106,7 @@ export const useAudioSourceStore = create<AudioSourceState & AudioSourceActions>
     (set, get) => ({
       ...initialState,
 
-      setCurrentSource: (source) =>
-        set({ currentSource: source }, false, "setCurrentSource"),
+      setCurrentSource: (source) => set({ currentSource: source }, false, "setCurrentSource"),
 
       updateSourceStatus: (status, url, error) =>
         set(
@@ -133,11 +132,7 @@ export const useAudioSourceStore = create<AudioSourceState & AudioSourceActions>
       },
 
       reset: () =>
-        set(
-          { ...initialState, triggerFileInput: get().triggerFileInput },
-          false,
-          "reset"
-        ),
+        set({ ...initialState, triggerFileInput: get().triggerFileInput }, false, "reset"),
     }),
     { name: "AudioSourceStore" }
   )

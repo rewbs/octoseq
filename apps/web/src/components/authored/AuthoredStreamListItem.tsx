@@ -43,46 +43,56 @@ export function AuthoredStreamListItem({
   const [isRenaming, setIsRenaming] = useState(false);
   const [editName, setEditName] = useState(stream.name);
 
-  const handleStartRename = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditName(stream.name);
-    setIsRenaming(true);
-  }, [stream.name]);
+  const handleStartRename = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setEditName(stream.name);
+      setIsRenaming(true);
+    },
+    [stream.name]
+  );
 
-  const handleConfirmRename = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (editName.trim() && editName.trim() !== stream.name) {
-      onRename(editName.trim());
-    }
-    setIsRenaming(false);
-  }, [editName, stream.name, onRename]);
-
-  const handleCancelRename = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditName(stream.name);
-    setIsRenaming(false);
-  }, [stream.name]);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    e.stopPropagation();
-    if (e.key === "Enter") {
+  const handleConfirmRename = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
       if (editName.trim() && editName.trim() !== stream.name) {
         onRename(editName.trim());
       }
       setIsRenaming(false);
-    } else if (e.key === "Escape") {
+    },
+    [editName, stream.name, onRename]
+  );
+
+  const handleCancelRename = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
       setEditName(stream.name);
       setIsRenaming(false);
-    }
-  }, [editName, stream.name, onRename]);
+    },
+    [stream.name]
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      e.stopPropagation();
+      if (e.key === "Enter") {
+        if (editName.trim() && editName.trim() !== stream.name) {
+          onRename(editName.trim());
+        }
+        setIsRenaming(false);
+      } else if (e.key === "Escape") {
+        setEditName(stream.name);
+        setIsRenaming(false);
+      }
+    },
+    [editName, stream.name, onRename]
+  );
 
   return (
     <div
       className={cn(
         "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
-        isInspected
-          ? "bg-zinc-200 dark:bg-zinc-700"
-          : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
+        isInspected ? "bg-zinc-200 dark:bg-zinc-700" : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
         !stream.isVisible && "opacity-50"
       )}
       onClick={onInspect}
@@ -108,20 +118,10 @@ export function AuthoredStreamListItem({
               className="h-6 text-sm px-1"
               autoFocus
             />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-5 w-5"
-              onClick={handleConfirmRename}
-            >
+            <Button variant="ghost" size="icon" className="h-5 w-5" onClick={handleConfirmRename}>
               <Check className="h-3 w-3" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-5 w-5"
-              onClick={handleCancelRename}
-            >
+            <Button variant="ghost" size="icon" className="h-5 w-5" onClick={handleCancelRename}>
               <X className="h-3 w-3" />
             </Button>
           </div>
@@ -131,9 +131,7 @@ export function AuthoredStreamListItem({
             <div className="text-xs text-zinc-500 dark:text-zinc-400">
               {stream.events.length} events
               {stream.source.kind !== "manual" && (
-                <span className="ml-1">
-                  &middot; {getSourceDescription(stream)}
-                </span>
+                <span className="ml-1">&middot; {getSourceDescription(stream)}</span>
               )}
             </div>
           </>

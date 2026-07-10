@@ -35,7 +35,10 @@ fn api_property_to_map(p: &ApiProperty) -> Map {
 fn api_method_to_map(method: &ApiMethod) -> Map {
     let mut m = Map::new();
     m.insert("name".into(), Dynamic::from(method.name.clone()));
-    m.insert("description".into(), Dynamic::from(method.description.clone()));
+    m.insert(
+        "description".into(),
+        Dynamic::from(method.description.clone()),
+    );
 
     let mut params = Array::new();
     for p in &method.params {
@@ -175,12 +178,19 @@ fn help_for_type(t: &ApiType) -> String {
     out
 }
 
-fn doc_lookup(path: &str, types: &HashMap<&str, &ApiType>, globals: &HashMap<&str, &ApiGlobal>) -> Map {
+fn doc_lookup(
+    path: &str,
+    types: &HashMap<&str, &ApiType>,
+    globals: &HashMap<&str, &ApiGlobal>,
+) -> Map {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         let mut m = Map::new();
         m.insert("kind".into(), Dynamic::from("error"));
-        m.insert("message".into(), Dynamic::from("doc() requires a non-empty string"));
+        m.insert(
+            "message".into(),
+            Dynamic::from("doc() requires a non-empty string"),
+        );
         return m;
     }
 

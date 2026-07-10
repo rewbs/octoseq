@@ -88,10 +88,7 @@ export class Decimator {
 
       // Calculate average point of next bucket (for triangle calculation)
       const nextBucketStart = Math.floor((i + 1) * bucketSize) + 1 + startIdx;
-      const nextBucketEnd = Math.min(
-        Math.floor((i + 2) * bucketSize) + 1 + startIdx,
-        endIdx
-      );
+      const nextBucketEnd = Math.min(Math.floor((i + 2) * bucketSize) + 1 + startIdx, endIdx);
 
       let avgX = 0;
       let avgY = 0;
@@ -170,10 +167,7 @@ export class Decimator {
 
     for (let i = 0; i < numBuckets; i++) {
       const bucketStart = Math.floor(i * bucketSize) + startIdx;
-      const bucketEnd = Math.min(
-        Math.floor((i + 1) * bucketSize) + startIdx,
-        endIdx
-      );
+      const bucketEnd = Math.min(Math.floor((i + 1) * bucketSize) + startIdx, endIdx);
 
       if (bucketStart >= bucketEnd) continue;
 

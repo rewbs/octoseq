@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/visualiser
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Validate Prisma schema
+        run: pnpm --filter web exec prisma validate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test TypeScript
+        run: pnpm test
+
+      - name: Check Rust formatting
+        working-directory: packages/visualiser
+        run: cargo fmt --all --check
+
+      - name: Lint Rust
+        working-directory: packages/visualiser
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Test Rust
+        working-directory: packages/visualiser
+        run: cargo test --all-targets
+
+      - name: Build workspace
+        env:
+          SKIP_ENV_VALIDATION: "1"
+        run: pnpm build
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level high

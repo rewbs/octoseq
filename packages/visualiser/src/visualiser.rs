@@ -5,16 +5,16 @@
 //! - Input signal processing
 //! - Frame updates
 
-use std::collections::{HashMap, HashSet};
 use crate::debug_markers::DebugMarkerLayer;
 use crate::feedback::FeedbackConfig;
 use crate::input::{BandSignalMap, SharedSignal, SignalMap};
 use crate::mesh_asset::MeshAssetRegistry;
 use crate::musical_time::MusicalTimeStructure;
-use crate::script_diagnostics::ScriptDiagnostic;
-use crate::scripting::{ScriptEngine, get_script_debug_options, reset_script_debug_options};
 use crate::scene_graph::{EntityId, SceneGraph};
+use crate::script_diagnostics::ScriptDiagnostic;
+use crate::scripting::{get_script_debug_options, reset_script_debug_options, ScriptEngine};
 use crate::signal_explorer::{ScriptSignalInfo, SignalChainAnalysis};
+use std::collections::{HashMap, HashSet};
 
 /// Frame budget for limiting processing time in web preview.
 ///
@@ -292,7 +292,9 @@ impl VisualiserState {
     }
 
     /// Get a reference to the particle systems for rendering.
-    pub fn particle_systems(&self) -> &std::collections::HashMap<u64, crate::particle::ParticleSystem> {
+    pub fn particle_systems(
+        &self,
+    ) -> &std::collections::HashMap<u64, crate::particle::ParticleSystem> {
         &self.script_engine.particle_systems
     }
 
@@ -421,7 +423,8 @@ impl VisualiserState {
 
         // Update debug marker layer (processes pending marker requests from scripts)
         let current_beat = self.time * self.current_bpm / 60.0;
-        self.debug_marker_layer.update(current_beat, self.current_bpm);
+        self.debug_marker_layer
+            .update(current_beat, self.current_bpm);
     }
 
     /// Update the visualiser state with a frame budget.
@@ -526,7 +529,8 @@ impl VisualiserState {
 
         // Update debug marker layer
         let current_beat = self.time * self.current_bpm / 60.0;
-        self.debug_marker_layer.update(current_beat, self.current_bpm);
+        self.debug_marker_layer
+            .update(current_beat, self.current_bpm);
 
         FrameResult::Completed
     }

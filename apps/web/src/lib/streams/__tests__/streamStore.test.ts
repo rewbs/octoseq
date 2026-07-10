@@ -81,7 +81,11 @@ describe("bands", () => {
       label: "Kick region",
       frequencyShape: [makeSegment()],
     });
-    expect(store().getBands(stem).map((b) => b.id)).toEqual([id]);
+    expect(
+      store()
+        .getBands(stem)
+        .map((b) => b.id)
+    ).toEqual([id]);
     expect(store().getBands(MIXDOWN_STREAM_ID)).toHaveLength(0);
   });
 
@@ -145,7 +149,11 @@ describe("rename and reorder", () => {
     const b = store().addStem({ label: "B", audio: makeAudioRef() });
     const c = store().addStem({ label: "C", audio: makeAudioRef() });
     store().reorderStreams([c, a, b]);
-    expect(store().getStems().map((s) => s.id)).toEqual([c, a, b]);
+    expect(
+      store()
+        .getStems()
+        .map((s) => s.id)
+    ).toEqual([c, a, b]);
   });
 });
 
@@ -153,8 +161,16 @@ describe("removeStream", () => {
   it("cascades from a stem to its dependent bands and returns all removed", () => {
     store().initializeMixdown({ audio: makeAudioRef() });
     const stem = store().addStem({ label: "Drums", audio: makeAudioRef() });
-    const band1 = store().addBand({ parentId: stem, label: "Kick", frequencyShape: [makeSegment()] });
-    const band2 = store().addBand({ parentId: stem, label: "Snare", frequencyShape: [makeSegment()] });
+    const band1 = store().addBand({
+      parentId: stem,
+      label: "Kick",
+      frequencyShape: [makeSegment()],
+    });
+    const band2 = store().addBand({
+      parentId: stem,
+      label: "Snare",
+      frequencyShape: [makeSegment()],
+    });
     const mixBand = store().addBand({
       parentId: MIXDOWN_STREAM_ID,
       label: "Bass",

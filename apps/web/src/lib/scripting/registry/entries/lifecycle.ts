@@ -132,7 +132,8 @@ export const LIFECYCLE_ENTRIES: RegistryEntry[] = [
     kind: "namespace",
     name: "particles",
     path: "particles",
-    description: "Particle system factory namespace. Create event-driven or continuous particle emitters.",
+    description:
+      "Particle system factory namespace. Create event-driven or continuous particle emitters.",
     properties: [],
     methods: [
       {
@@ -153,7 +154,8 @@ export const LIFECYCLE_ENTRIES: RegistryEntry[] = [
         ],
         returns: "ParticleSystemHandle",
         chainsTo: "ParticleSystemHandle",
-        example: 'let ps = particles.from_events(events, #{ lifetime_beats: 1.0, color: #{ r: 1.0, g: 0.5, b: 0.0, a: 1.0 } });',
+        example:
+          "let ps = particles.from_events(events, #{ lifetime_beats: 1.0, color: #{ r: 1.0, g: 0.5, b: 0.0, a: 1.0 } });",
       },
       {
         name: "stream",
@@ -173,7 +175,7 @@ export const LIFECYCLE_ENTRIES: RegistryEntry[] = [
         ],
         returns: "ParticleSystemHandle",
         chainsTo: "ParticleSystemHandle",
-        example: 'let ps = particles.stream(inputs.amplitude, #{ rate_per_beat: 10.0 });',
+        example: "let ps = particles.stream(inputs.amplitude, #{ rate_per_beat: 10.0 });",
       },
     ],
   },

@@ -192,8 +192,7 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
     <Modal title="Re-attach Audio Files" open={open} onOpenChange={onOpenChange}>
       <div className="space-y-4">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Select replacement files for audio that could not be loaded from their original
-          locations.
+          Select replacement files for audio that could not be loaded from their original locations.
         </p>
 
         <div className="space-y-2 max-h-80 overflow-y-auto">
@@ -219,7 +218,7 @@ export function AudioReattachModal({ open, onOpenChange }: AudioReattachModalPro
                     {ref.audio.origin.kind === "file"
                       ? ref.audio.origin.fileName
                       : ref.audio.origin.kind === "url"
-                        ? ref.audio.origin.fileName ?? ref.audio.origin.url
+                        ? (ref.audio.origin.fileName ?? ref.audio.origin.url)
                         : "Unknown source"}
                   </div>
                   <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">

@@ -109,9 +109,7 @@ export function InspectorDrawer() {
 
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-zinc-100 dark:border-zinc-800">
-        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          Inspector
-        </span>
+        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Inspector</span>
         <Button
           variant="ghost"
           size="icon"

@@ -63,9 +63,6 @@ export function useAutosave(options: UseAutosaveOptions = {}): UseAutosaveReturn
   const recoveryChecked = useRef(false);
 
   // Store selectors
-  const isDirty = useProjectStore((s) => s.isDirty);
-  const activeProject = useProjectStore((s) => s.activeProject);
-  const exportToJson = useProjectStore((s) => s.exportToJson);
   const importFromJson = useProjectStore((s) => s.importFromJson);
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
 
@@ -117,35 +114,33 @@ export function useAutosave(options: UseAutosaveOptions = {}): UseAutosaveReturn
     }
 
     // Subscribe to dirty state changes
-    const unsubscribe = useProjectStore.subscribe(
-      (state, prevState) => {
-        // Trigger autosave when project becomes dirty
-        if (state.isDirty && !prevState.isDirty) {
-          triggerAutosave(
-            buildAutosaveRecord,
-            () => setStatus("saving"),
-            (timestamp) => setSaved(timestamp),
-            (error) => {
-              setError(error.message);
-              onError?.(error);
-            }
-          );
-        }
-
-        // Also trigger on any project mutation (even if already dirty)
-        if (state.activeProject !== prevState.activeProject && state.isDirty) {
-          triggerAutosave(
-            buildAutosaveRecord,
-            () => setStatus("saving"),
-            (timestamp) => setSaved(timestamp),
-            (error) => {
-              setError(error.message);
-              onError?.(error);
-            }
-          );
-        }
+    const unsubscribe = useProjectStore.subscribe((state, prevState) => {
+      // Trigger autosave when project becomes dirty
+      if (state.isDirty && !prevState.isDirty) {
+        triggerAutosave(
+          buildAutosaveRecord,
+          () => setStatus("saving"),
+          (timestamp) => setSaved(timestamp),
+          (error) => {
+            setError(error.message);
+            onError?.(error);
+          }
+        );
       }
-    );
+
+      // Also trigger on any project mutation (even if already dirty)
+      if (state.activeProject !== prevState.activeProject && state.isDirty) {
+        triggerAutosave(
+          buildAutosaveRecord,
+          () => setStatus("saving"),
+          (timestamp) => setSaved(timestamp),
+          (error) => {
+            setError(error.message);
+            onError?.(error);
+          }
+        );
+      }
+    });
 
     return () => {
       unsubscribe();
@@ -205,11 +200,6 @@ export function useAutosave(options: UseAutosaveOptions = {}): UseAutosaveReturn
       setActiveProject(project);
       setRecovered(project.name);
 
-      // Mark the record as recovered (for UI indication)
-      const updatedRecord: AutosaveRecord = {
-        ...record,
-        wasRecovered: true,
-      };
       pendingRecovery.current = null;
 
       // Re-enable autosave

@@ -68,14 +68,15 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
   );
 
   // Search store actions
-  const { setAddMissingMode, setLoopCandidate, setAutoPlayOnNavigate, setAdvanceToNextBest } = useSearchStore(
-    useShallow((s) => ({
-      setAddMissingMode: s.setAddMissingMode,
-      setLoopCandidate: s.setLoopCandidate,
-      setAutoPlayOnNavigate: s.setAutoPlayOnNavigate,
-      setAdvanceToNextBest: s.setAdvanceToNextBest,
-    }))
-  );
+  const { setAddMissingMode, setLoopCandidate, setAutoPlayOnNavigate, setAdvanceToNextBest } =
+    useSearchStore(
+      useShallow((s) => ({
+        setAddMissingMode: s.setAddMissingMode,
+        setLoopCandidate: s.setLoopCandidate,
+        setAutoPlayOnNavigate: s.setAutoPlayOnNavigate,
+        setAdvanceToNextBest: s.setAdvanceToNextBest,
+      }))
+    );
 
   // Derived state
   const activeCandidate = useActiveCandidate();
@@ -156,7 +157,9 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
   return (
     <div className="rounded-md border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-950">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">Search Refinement</div>
+        <div className="text-sm font-medium text-zinc-800 dark:text-zinc-100">
+          Search Refinement
+        </div>
 
         <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
           <span className="tabular-nums">
@@ -173,10 +176,11 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
             return (
               <button
                 key={f.id}
-                className={`rounded-md px-2 py-1 text-xs ${active
-                  ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black"
-                  : "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100"
-                  }`}
+                className={`rounded-md px-2 py-1 text-xs ${
+                  active
+                    ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-black"
+                    : "bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100"
+                }`}
                 onClick={() => handleFilterChange(f.id)}
                 disabled={disabled}
               >
@@ -334,8 +338,8 @@ export function SearchRefinementPanel({ playerRef }: SearchRefinementPanelProps)
           </div>
 
           <div className="text-[11px] text-zinc-500">
-            Shortcuts: J/K prev/next · A accept · R reject · B best unreviewed · Space play/stop · Q play query · M add
-            mode · Delete removes manual
+            Shortcuts: J/K prev/next · A accept · R reject · B best unreviewed · Space play/stop · Q
+            play query · M add mode · Delete removes manual
           </div>
         </div>
       </div>

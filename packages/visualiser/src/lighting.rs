@@ -209,8 +209,10 @@ mod tests {
 
     #[test]
     fn test_direction_normalization() {
-        let mut config = LightingConfig::default();
-        config.direction = Vec3Signal::new(2.0, 0.0, 0.0); // Not normalized
+        let config = LightingConfig {
+            direction: Vec3Signal::new(2.0, 0.0, 0.0),
+            ..Default::default()
+        };
 
         let input_signals = HashMap::new();
         let band_signals = HashMap::new();

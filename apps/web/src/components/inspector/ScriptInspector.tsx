@@ -76,11 +76,7 @@ export function ScriptInspector({ nodeId }: ScriptInspectorProps) {
   };
 
   if (!script) {
-    return (
-      <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
-        Script not found.
-      </div>
-    );
+    return <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">Script not found.</div>;
   }
 
   return (
@@ -102,10 +98,20 @@ export function ScriptInspector({ nodeId }: ScriptInspectorProps) {
                 if (e.key === "Escape") handleCancelEdit();
               }}
             />
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleSaveName}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={handleSaveName}
+            >
               <Check className="h-4 w-4" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={handleCancelEdit}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={handleCancelEdit}
+            >
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -156,14 +162,21 @@ export function ScriptInspector({ nodeId }: ScriptInspectorProps) {
         </label>
         <div className="flex flex-col gap-1">
           {!isActiveScript && (
-            <Button variant="outline" size="sm" className="w-full justify-start" onClick={handleActivate}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start"
+              onClick={handleActivate}
+            >
               <Play className="h-4 w-4 mr-2" />
               Activate Script
             </Button>
           )}
           {isConfirmingDelete ? (
             <div className="flex items-center gap-1">
-              <span className="text-xs text-red-600 dark:text-red-400 mr-2">Delete this script?</span>
+              <span className="text-xs text-red-600 dark:text-red-400 mr-2">
+                Delete this script?
+              </span>
               <Button
                 variant="outline"
                 size="sm"
@@ -172,11 +185,7 @@ export function ScriptInspector({ nodeId }: ScriptInspectorProps) {
               >
                 <Check className="h-4 w-4" />
               </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsConfirmingDelete(false)}
-              >
+              <Button variant="outline" size="sm" onClick={() => setIsConfirmingDelete(false)}>
                 <X className="h-4 w-4" />
               </Button>
             </div>

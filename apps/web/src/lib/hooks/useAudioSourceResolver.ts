@@ -45,10 +45,7 @@ export function useAudioSourceResolver(): void {
     }
 
     // Source already ready or failed - no resolution needed
-    if (
-      currentAudioSource.status === "ready" ||
-      currentAudioSource.status === "failed"
-    ) {
+    if (currentAudioSource.status === "ready" || currentAudioSource.status === "failed") {
       currentSourceIdRef.current = currentAudioSource.id;
       return;
     }
@@ -123,8 +120,7 @@ export function useAudioSourceResolver(): void {
         }
 
         // Update store with error
-        const errorMessage =
-          err instanceof Error ? err.message : "Unknown error";
+        const errorMessage = err instanceof Error ? err.message : "Unknown error";
         console.error("[AudioSourceResolver] Resolution failed:", errorMessage);
         updateAudioSourceStatus("failed", undefined, errorMessage);
       }

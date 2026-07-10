@@ -4,12 +4,7 @@ import { useMemo } from "react";
 import { ChevronDown, ChevronRight, X } from "lucide-react";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
 import { mirTabDefinitions } from "@/lib/stores/mirStore";
-import {
-  useStreamStore,
-  useViewStore,
-  type AnalysisId,
-  type Stream,
-} from "@/lib/streams";
+import { useStreamStore, useViewStore, type AnalysisId, type Stream } from "@/lib/streams";
 import { buildStreamColorMap, MIXDOWN_COLOR_HEX } from "./comparisonColors";
 import { ComparisonRow } from "./ComparisonRow";
 
@@ -27,9 +22,7 @@ export type ComparisonPanelProps = {
 };
 
 /** Analyses offered by the picker: 1d + events kinds (2d/tempo excluded). */
-const COMPARABLE_ANALYSES = mirTabDefinitions.filter(
-  (t) => t.kind === "1d" || t.kind === "events"
-);
+const COMPARABLE_ANALYSES = mirTabDefinitions.filter((t) => t.kind === "1d" || t.kind === "events");
 
 /**
  * Comparison panel — stacked, viewport-synced signal rows for any set of
@@ -65,8 +58,7 @@ export function ComparisonPanel({
 
   const colorById = useMemo(() => buildStreamColorMap(streams), [streams]);
 
-  const analysisLabel =
-    COMPARABLE_ANALYSES.find((t) => t.id === analysisId)?.label ?? analysisId;
+  const analysisLabel = COMPARABLE_ANALYSES.find((t) => t.id === analysisId)?.label ?? analysisId;
 
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">

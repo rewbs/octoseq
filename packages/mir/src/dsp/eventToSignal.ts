@@ -32,8 +32,7 @@ export interface DiscreteEvent {
  * Window specification for event aggregation.
  */
 export type EventWindowSpec =
-  | { kind: "seconds"; windowSize: number }
-  | { kind: "samples"; windowSize: number };
+  { kind: "seconds"; windowSize: number } | { kind: "samples"; windowSize: number };
 
 /**
  * Envelope shape for event-to-signal conversion.
@@ -431,23 +430,29 @@ export function eventEnvelope(
         }
         continue;
 
-      case "gaussian":
+      case "gaussian": {
         const widthSamples = (shape.widthMs / 1000) * sampleRate;
         envelope = generateGaussianEnvelope(eventSample, widthSamples, numSamples);
         break;
+      }
 
-      case "attackDecay":
+      case "attackDecay": {
         const attackSamples = (shape.attackMs / 1000) * sampleRate;
         const decaySamples = (shape.decayMs / 1000) * sampleRate;
-        envelope = generateAttackDecayEnvelope(eventSample, attackSamples, decaySamples, numSamples);
+        envelope = generateAttackDecayEnvelope(
+          eventSample,
+          attackSamples,
+          decaySamples,
+          numSamples
+        );
         break;
+      }
 
-      case "gate":
-        const durationSamples = event.duration
-          ? event.duration * sampleRate
-          : sampleRate * 0.1; // Default 100ms
+      case "gate": {
+        const durationSamples = event.duration ? event.duration * sampleRate : sampleRate * 0.1; // Default 100ms
         envelope = generateGateEnvelope(eventSample, durationSamples, numSamples);
         break;
+      }
 
       default:
         continue;
@@ -490,7 +495,8 @@ export function eventEnvelope(
 /**
  * Convert events to signal using specified reducer.
  */
-export type EventReducer = "eventCount" | "eventDensity" | "weightedSum" | "weightedMean" | "envelope";
+export type EventReducer =
+  "eventCount" | "eventDensity" | "weightedSum" | "weightedMean" | "envelope";
 
 export interface EventToSignalParams {
   /** Reducer algorithm. */

@@ -6,14 +6,11 @@ import type {
   DerivedSignalResult,
   DerivedSignalStructure,
   DerivedSignalSource,
-  TransformChain,
-  StabilizationSettings,
   DerivedSignalStatus,
 } from "./types/derivedSignal";
 import {
   assertDerivedSignalStructureVersion,
   createEmptyDerivedSignalStructure,
-  getDefaultStabilizationSettings,
   createDefault2DSignal,
 } from "./types/derivedSignal";
 
@@ -246,10 +243,7 @@ interface DerivedSignalActions {
   ) => string | null;
 
   /** Update an existing signal. Returns false if would create cycle. */
-  updateSignal: (
-    id: string,
-    updates: Partial<Omit<DerivedSignalDefinition, "id">>
-  ) => boolean;
+  updateSignal: (id: string, updates: Partial<Omit<DerivedSignalDefinition, "id">>) => boolean;
 
   /** Remove a signal by ID. */
   removeSignal: (id: string) => void;
@@ -357,16 +351,13 @@ export const useDerivedSignalStore = create<DerivedSignalState & DerivedSignalAc
           stabilization: partial.stabilization ?? defaults.stabilization,
           autoRecompute: partial.autoRecompute ?? defaults.autoRecompute,
           enabled: partial.enabled ?? defaults.enabled,
-          sortOrder: partial.sortOrder ?? (get().structure?.signals.length ?? 0),
+          sortOrder: partial.sortOrder ?? get().structure?.signals.length ?? 0,
           createdAt: now,
           modifiedAt: now,
         };
 
         // Check for cycles if this references another derived signal
-        if (
-          signal.source.kind === "1d" &&
-          signal.source.signalRef.type === "derived"
-        ) {
+        if (signal.source.kind === "1d" && signal.source.signalRef.type === "derived") {
           const sourceId = signal.source.signalRef.signalId;
           if (get().dependencyGraph.wouldCreateCycle(id, sourceId)) {
             console.warn(
@@ -435,9 +426,7 @@ export const useDerivedSignalStore = create<DerivedSignalState & DerivedSignalAc
         set((state) => {
           if (!state.structure) return state;
 
-          const signals = state.structure.signals.map((s) =>
-            s.id === id ? updatedSignal : s
-          );
+          const signals = state.structure.signals.map((s) => (s.id === id ? updatedSignal : s));
 
           // Update dependency graph
           state.dependencyGraph.updateSignal(updatedSignal);
@@ -520,9 +509,7 @@ export const useDerivedSignalStore = create<DerivedSignalState & DerivedSignalAc
       getEnabledSignals: () => {
         const structure = get().structure;
         if (!structure) return [];
-        return structure.signals
-          .filter((s) => s.enabled)
-          .sort((a, b) => a.sortOrder - b.sortOrder);
+        return structure.signals.filter((s) => s.enabled).sort((a, b) => a.sortOrder - b.sortOrder);
       },
 
       getAllSignals: () => {

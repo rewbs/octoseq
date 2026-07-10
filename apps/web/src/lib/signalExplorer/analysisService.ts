@@ -5,11 +5,7 @@
  */
 
 import { useSignalExplorerStore } from "../stores/signalExplorerStore";
-import type {
-  AnalysisResult,
-  ScriptSignalInfo,
-  SignalChainAnalysis,
-} from "./types";
+import type { AnalysisResult, ScriptSignalInfo, SignalChainAnalysis } from "./types";
 import { isAnalysisError } from "./types";
 
 /** Debounce delay in milliseconds */
@@ -145,18 +141,12 @@ export function updateScriptSignals(visualiser: WasmVisualiser): void {
  * Refresh analysis for the current signal if one is selected.
  * Useful after script recompilation.
  */
-export function refreshCurrentSignal(
-  visualiser: WasmVisualiser,
-  centerTime: number
-): void {
+export function refreshCurrentSignal(visualiser: WasmVisualiser, centerTime: number): void {
   const store = useSignalExplorerStore.getState();
   const { lastValidSignalName, scriptSignals } = store;
 
   // Check if current signal still exists
-  if (
-    lastValidSignalName &&
-    scriptSignals.find((s) => s.name === lastValidSignalName)
-  ) {
+  if (lastValidSignalName && scriptSignals.find((s) => s.name === lastValidSignalName)) {
     requestSignalAnalysis(visualiser, lastValidSignalName, centerTime);
   }
 }
@@ -176,13 +166,11 @@ function parseAnalysisResult(json: string): AnalysisResult {
     // Convert to typed result
     const analysis: SignalChainAnalysis = {
       steps: raw.steps,
-      samples: raw.samples.map(
-        (s: { times: number[]; values: number[]; stats: unknown }) => ({
-          times: s.times,
-          values: s.values,
-          stats: s.stats,
-        })
-      ),
+      samples: raw.samples.map((s: { times: number[]; values: number[]; stats: unknown }) => ({
+        times: s.times,
+        values: s.values,
+        stats: s.stats,
+      })),
       time_range: raw.time_range,
     };
 

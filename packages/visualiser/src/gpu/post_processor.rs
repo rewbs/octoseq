@@ -3,13 +3,13 @@
 //! Handles intermediate render targets and effect chain execution.
 //! Also includes frame feedback for temporal visual memory (V7).
 
+use bytemuck::{Pod, Zeroable};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
-use bytemuck::{Pod, Zeroable};
 
 use crate::feedback::{FeedbackConfig, FeedbackSamplingMode, FeedbackUniforms};
-use crate::gpu::bloom_processor::{BloomProcessor, BloomParams};
-use crate::post_processing::{PostProcessingChain, PostEffectRegistry, EffectParamValue};
+use crate::gpu::bloom_processor::{BloomParams, BloomProcessor};
+use crate::post_processing::{EffectParamValue, PostEffectRegistry, PostProcessingChain};
 
 /// Maximum size for effect uniform buffer (in bytes).
 const MAX_EFFECT_UNIFORM_SIZE: u64 = 128;
@@ -23,7 +23,8 @@ struct QuadVertex {
 }
 
 impl QuadVertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2];
+    const ATTRIBS: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2];
 
     fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
@@ -36,12 +37,30 @@ impl QuadVertex {
 
 /// Fullscreen quad vertices (two triangles covering NDC).
 const QUAD_VERTICES: &[QuadVertex] = &[
-    QuadVertex { position: [-1.0, -1.0], uv: [0.0, 1.0] },
-    QuadVertex { position: [ 1.0, -1.0], uv: [1.0, 1.0] },
-    QuadVertex { position: [ 1.0,  1.0], uv: [1.0, 0.0] },
-    QuadVertex { position: [-1.0, -1.0], uv: [0.0, 1.0] },
-    QuadVertex { position: [ 1.0,  1.0], uv: [1.0, 0.0] },
-    QuadVertex { position: [-1.0,  1.0], uv: [0.0, 0.0] },
+    QuadVertex {
+        position: [-1.0, -1.0],
+        uv: [0.0, 1.0],
+    },
+    QuadVertex {
+        position: [1.0, -1.0],
+        uv: [1.0, 1.0],
+    },
+    QuadVertex {
+        position: [1.0, 1.0],
+        uv: [1.0, 0.0],
+    },
+    QuadVertex {
+        position: [-1.0, -1.0],
+        uv: [0.0, 1.0],
+    },
+    QuadVertex {
+        position: [1.0, 1.0],
+        uv: [1.0, 0.0],
+    },
+    QuadVertex {
+        position: [-1.0, 1.0],
+        uv: [0.0, 0.0],
+    },
 ];
 
 /// GPU resources for a single effect.
@@ -176,78 +195,81 @@ impl PostProcessor {
         });
 
         // Texture bind group layout (for input texture + sampler)
-        let texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Post-Process Texture Bind Group Layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Post-Process Texture Bind Group Layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
 
         // Uniform bind group layout (for effect parameters)
-        let uniform_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Post-Process Uniform Bind Group Layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-
-        // Feedback texture bind group layout (current + feedback textures + sampler)
-        let feedback_texture_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("Feedback Texture Bind Group Layout"),
-            entries: &[
-                // Binding 0: current frame texture
-                wgpu::BindGroupLayoutEntry {
+        let uniform_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Post-Process Uniform Bind Group Layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
                     count: None,
-                },
-                // Binding 1: feedback (previous frame) texture
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+                }],
+            });
+
+        // Feedback texture bind group layout (current + feedback textures + sampler)
+        let feedback_texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("Feedback Texture Bind Group Layout"),
+                entries: &[
+                    // Binding 0: current frame texture
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                // Binding 2: sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
+                    // Binding 1: feedback (previous frame) texture
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    // Binding 2: sampler
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
 
         // Create blit pipeline
         let blit_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -312,11 +334,15 @@ impl PostProcessor {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader_post_feedback.wgsl").into()),
         });
 
-        let feedback_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Feedback Pipeline Layout"),
-            bind_group_layouts: &[&feedback_texture_bind_group_layout, &uniform_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let feedback_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Feedback Pipeline Layout"),
+                bind_group_layouts: &[
+                    &feedback_texture_bind_group_layout,
+                    &uniform_bind_group_layout,
+                ],
+                push_constant_ranges: &[],
+            });
 
         let feedback_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Feedback Pipeline"),
@@ -407,7 +433,11 @@ impl PostProcessor {
     }
 
     /// Create GPU resources for an effect.
-    fn create_effect_pipeline(&mut self, device: &wgpu::Device, effect_id: &str) -> Result<(), String> {
+    fn create_effect_pipeline(
+        &mut self,
+        device: &wgpu::Device,
+        effect_id: &str,
+    ) -> Result<(), String> {
         let shader_source = match effect_id {
             "bloom" => include_str!("shader_post_bloom.wgsl"),
             "color_grade" => include_str!("shader_post_color_grade.wgsl"),
@@ -428,7 +458,10 @@ impl PostProcessor {
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some(&format!("Effect Pipeline Layout: {}", effect_id)),
-            bind_group_layouts: &[&self.texture_bind_group_layout, &self.uniform_bind_group_layout],
+            bind_group_layouts: &[
+                &self.texture_bind_group_layout,
+                &self.uniform_bind_group_layout,
+            ],
             push_constant_ranges: &[],
         });
 
@@ -545,16 +578,27 @@ impl PostProcessor {
         self.scene_texture = create_texture("Scene Texture");
         self.feedback_texture = create_feedback_texture();
 
-        self.intermediate_views[0] = self.intermediate_textures[0].create_view(&wgpu::TextureViewDescriptor::default());
-        self.intermediate_views[1] = self.intermediate_textures[1].create_view(&wgpu::TextureViewDescriptor::default());
-        self.scene_view = self.scene_texture.create_view(&wgpu::TextureViewDescriptor::default());
-        self.feedback_view = self.feedback_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.intermediate_views[0] =
+            self.intermediate_textures[0].create_view(&wgpu::TextureViewDescriptor::default());
+        self.intermediate_views[1] =
+            self.intermediate_textures[1].create_view(&wgpu::TextureViewDescriptor::default());
+        self.scene_view = self
+            .scene_texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.feedback_view = self
+            .feedback_texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         // Mark feedback texture as needing clear (new texture has undefined contents)
         self.feedback_needs_clear = true;
 
         // Resize bloom processor with default downsample
-        self.bloom_processor.resize(device, self.width, self.height, self.bloom_processor.current_downsample());
+        self.bloom_processor.resize(
+            device,
+            self.width,
+            self.height,
+            self.bloom_processor.current_downsample(),
+        );
 
         // Recreate blit bind group with new scene view
         self.blit_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -612,7 +656,12 @@ impl PostProcessor {
                 });
                 self.blit(encoder, initial_input_view, output_view, &blit_bind_group);
             } else {
-                self.blit(encoder, initial_input_view, output_view, &self.blit_bind_group);
+                self.blit(
+                    encoder,
+                    initial_input_view,
+                    output_view,
+                    &self.blit_bind_group,
+                );
             }
             return;
         }
@@ -620,7 +669,11 @@ impl PostProcessor {
         // Process effects in chain order
         let mut current_input_view = initial_input_view;
         // If feedback was applied, intermediate[0] is already used, start ping-pong at 1
-        let mut ping = if self.feedback_applied_this_frame { 1 } else { 0 };
+        let mut ping = if self.feedback_applied_this_frame {
+            1
+        } else {
+            0
+        };
 
         for (i, effect) in enabled_effects.iter().enumerate() {
             let is_last = i == enabled_effects.len() - 1;
@@ -634,7 +687,7 @@ impl PostProcessor {
             if effect.effect_id == "bloom" {
                 // Extract bloom parameters
                 let bloom_params = if let Some(params) = evaluated_params.get(&effect.effect_id) {
-                    let threshold = params.get(0).map(|p| p.as_float()).unwrap_or(0.8);
+                    let threshold = params.first().map(|p| p.as_float()).unwrap_or(0.8);
                     let intensity = params.get(1).map(|p| p.as_float()).unwrap_or(0.5);
                     let radius = params.get(2).map(|p| p.as_float()).unwrap_or(4.0);
                     let downsample = params.get(3).map(|p| p.as_float() as u32).unwrap_or(2);
@@ -757,7 +810,12 @@ impl PostProcessor {
         render_pass.draw(0..6, 0..1);
     }
 
-    fn update_effect_uniforms(&self, queue: &wgpu::Queue, effect_id: &str, params: &[EffectParamValue]) {
+    fn update_effect_uniforms(
+        &self,
+        queue: &wgpu::Queue,
+        effect_id: &str,
+        params: &[EffectParamValue],
+    ) {
         if let Some(resources) = self.effect_resources.get(effect_id) {
             let mut data = Vec::new();
             for param in params {
@@ -817,7 +875,11 @@ impl PostProcessor {
         }
 
         // Update feedback uniforms (already evaluated, just write to GPU)
-        queue.write_buffer(&self.feedback_uniform_buffer, 0, bytemuck::bytes_of(uniforms));
+        queue.write_buffer(
+            &self.feedback_uniform_buffer,
+            0,
+            bytemuck::bytes_of(uniforms),
+        );
 
         // Create texture bind group for this frame
         // Bindings: 0 = current (scene), 1 = feedback (previous), 2 = sampler
@@ -959,7 +1021,14 @@ impl PostProcessor {
             FeedbackSamplingMode::PreFx => {
                 // Default: feedback samples scene, then post-FX is applied
                 self.process_feedback(device, encoder, queue, feedback_config, feedback_uniforms);
-                self.process(device, encoder, queue, output_view, post_chain, evaluated_params);
+                self.process(
+                    device,
+                    encoder,
+                    queue,
+                    output_view,
+                    post_chain,
+                    evaluated_params,
+                );
             }
             FeedbackSamplingMode::PostFx => {
                 // Post-FX first, then feedback samples the processed result
@@ -1001,14 +1070,26 @@ impl PostProcessor {
         // Handle trivial cases
         if !has_effects && !has_feedback {
             // Nothing to do - just blit scene to output
-            self.blit(encoder, &self.scene_view, output_view, &self.blit_bind_group);
+            self.blit(
+                encoder,
+                &self.scene_view,
+                output_view,
+                &self.blit_bind_group,
+            );
             return;
         }
 
         if !has_feedback {
             // No feedback, just run post-FX normally
             // Note: feedback_applied_this_frame is already false
-            self.process(device, encoder, queue, output_view, post_chain, evaluated_params);
+            self.process(
+                device,
+                encoder,
+                queue,
+                output_view,
+                post_chain,
+                evaluated_params,
+            );
             return;
         }
 
@@ -1028,7 +1109,11 @@ impl PostProcessor {
         }
 
         // Update feedback uniforms
-        queue.write_buffer(&self.feedback_uniform_buffer, 0, bytemuck::bytes_of(feedback_uniforms));
+        queue.write_buffer(
+            &self.feedback_uniform_buffer,
+            0,
+            bytemuck::bytes_of(feedback_uniforms),
+        );
 
         // Create texture bind group for feedback pass
         // Bindings: 0 = post-FX result (or scene), 1 = feedback (previous), 2 = sampler
@@ -1143,7 +1228,12 @@ impl PostProcessor {
                 },
             ],
         });
-        self.blit(encoder, &self.intermediate_views[0], output_view, &blit_bind_group);
+        self.blit(
+            encoder,
+            &self.intermediate_views[0],
+            output_view,
+            &blit_bind_group,
+        );
 
         self.feedback_applied_this_frame = true;
     }
@@ -1175,13 +1265,17 @@ impl PostProcessor {
             // This ensures each effect reads from a different texture than it writes to.
             // Pattern (from end): last->target, second-to-last->other, third-to-last->target, etc.
             let k = num_effects - 1 - i; // distance from end
-            let output_idx = if k % 2 == 0 { target_intermediate } else { other_intermediate };
+            let output_idx = if k % 2 == 0 {
+                target_intermediate
+            } else {
+                other_intermediate
+            };
             let output = &self.intermediate_views[output_idx];
 
             // Check if this is a bloom effect
             if effect.effect_id == "bloom" {
                 let bloom_params = if let Some(params) = evaluated_params.get(&effect.effect_id) {
-                    let threshold = params.get(0).map(|p| p.as_float()).unwrap_or(0.8);
+                    let threshold = params.first().map(|p| p.as_float()).unwrap_or(0.8);
                     let intensity = params.get(1).map(|p| p.as_float()).unwrap_or(0.5);
                     let radius = params.get(2).map(|p| p.as_float()).unwrap_or(4.0);
                     let downsample = params.get(3).map(|p| p.as_float() as u32).unwrap_or(2);

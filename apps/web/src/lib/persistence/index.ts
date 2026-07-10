@@ -54,9 +54,4 @@ export {
 } from "./assetRegistry";
 
 // Asset Hashing
-export {
-  computeContentHash,
-  hashFile,
-  hashesEqual,
-  truncateHash,
-} from "./assetHashing";
+export { computeContentHash, hashFile, hashesEqual, truncateHash } from "./assetHashing";

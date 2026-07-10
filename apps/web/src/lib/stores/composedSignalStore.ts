@@ -118,10 +118,7 @@ interface ComposedSignalActions {
 
   // CRUD operations - Nodes
   /** Add a node to a signal. Returns the new node ID. */
-  addNode: (
-    signalId: string,
-    node: Omit<ComposedSignalNode, "id">
-  ) => string | null;
+  addNode: (signalId: string, node: Omit<ComposedSignalNode, "id">) => string | null;
 
   /** Update a node in a signal. */
   updateNode: (
@@ -198,10 +195,7 @@ interface ComposedSignalActions {
   offsetSelectedNodes: (signalId: string, delta: number) => void;
 
   /** Set interpolation for selected nodes. */
-  setSelectedNodesInterpolation: (
-    signalId: string,
-    interp: InterpolationType
-  ) => void;
+  setSelectedNodesInterpolation: (signalId: string, interp: InterpolationType) => void;
 
   // Structure management
   /** Clear all signals. */
@@ -240,9 +234,7 @@ const initialState: ComposedSignalState = {
 // STORE IMPLEMENTATION
 // ============================================================================
 
-export const useComposedSignalStore = create<
-  ComposedSignalState & ComposedSignalActions
->()(
+export const useComposedSignalStore = create<ComposedSignalState & ComposedSignalActions>()(
   devtools(
     (set, get) => ({
       ...initialState,
@@ -262,7 +254,7 @@ export const useComposedSignalStore = create<
           domain: "beats",
           nodes: partial?.nodes ?? defaults.nodes,
           enabled: partial?.enabled ?? defaults.enabled,
-          sortOrder: partial?.sortOrder ?? (get().structure?.signals.length ?? 0),
+          sortOrder: partial?.sortOrder ?? get().structure?.signals.length ?? 0,
           valueMin: partial?.valueMin ?? defaults.valueMin,
           valueMax: partial?.valueMax ?? defaults.valueMax,
           createdAt: now,
@@ -296,9 +288,7 @@ export const useComposedSignalStore = create<
           (state) => {
             if (!state.structure) return state;
 
-            const signalIndex = state.structure.signals.findIndex(
-              (s) => s.id === id
-            );
+            const signalIndex = state.structure.signals.findIndex((s) => s.id === id);
             if (signalIndex === -1) return state;
 
             const updatedSignals = [...state.structure.signals];
@@ -326,9 +316,7 @@ export const useComposedSignalStore = create<
           (state) => {
             if (!state.structure) return state;
 
-            const updatedSignals = state.structure.signals.filter(
-              (s) => s.id !== id
-            );
+            const updatedSignals = state.structure.signals.filter((s) => s.id !== id);
 
             return {
               structure: {
@@ -336,8 +324,7 @@ export const useComposedSignalStore = create<
                 signals: updatedSignals,
                 modifiedAt: new Date().toISOString(),
               },
-              selectedSignalId:
-                state.selectedSignalId === id ? null : state.selectedSignalId,
+              selectedSignalId: state.selectedSignalId === id ? null : state.selectedSignalId,
               selectedNodeIds: new Set(),
             };
           },
@@ -376,9 +363,7 @@ export const useComposedSignalStore = create<
           (state) => {
             if (!state.structure) return state;
 
-            const signalIndex = state.structure.signals.findIndex(
-              (s) => s.id === signalId
-            );
+            const signalIndex = state.structure.signals.findIndex((s) => s.id === signalId);
             if (signalIndex === -1) return state;
 
             const signal = state.structure.signals[signalIndex]!;
@@ -416,9 +401,7 @@ export const useComposedSignalStore = create<
           (state) => {
             if (!state.structure) return state;
 
-            const signalIndex = state.structure.signals.findIndex(
-              (s) => s.id === signalId
-            );
+            const signalIndex = state.structure.signals.findIndex((s) => s.id === signalId);
             if (signalIndex === -1) return state;
 
             const signal = state.structure.signals[signalIndex]!;
@@ -463,9 +446,7 @@ export const useComposedSignalStore = create<
           (state) => {
             if (!state.structure) return state;
 
-            const signalIndex = state.structure.signals.findIndex(
-              (s) => s.id === signalId
-            );
+            const signalIndex = state.structure.signals.findIndex((s) => s.id === signalId);
             if (signalIndex === -1) return state;
 
             const signal = state.structure.signals[signalIndex]!;
@@ -503,15 +484,11 @@ export const useComposedSignalStore = create<
           (state) => {
             if (!state.structure) return state;
 
-            const signalIndex = state.structure.signals.findIndex(
-              (s) => s.id === signalId
-            );
+            const signalIndex = state.structure.signals.findIndex((s) => s.id === signalId);
             if (signalIndex === -1) return state;
 
             const signal = state.structure.signals[signalIndex]!;
-            const updatedNodes = signal.nodes.filter(
-              (n) => !nodeIds.has(n.id)
-            );
+            const updatedNodes = signal.nodes.filter((n) => !nodeIds.has(n.id));
 
             const updatedSignals = [...state.structure.signals];
             updatedSignals[signalIndex] = {
@@ -548,9 +525,7 @@ export const useComposedSignalStore = create<
           (state) => {
             if (!state.structure) return state;
 
-            const signalIndex = state.structure.signals.findIndex(
-              (s) => s.id === signalId
-            );
+            const signalIndex = state.structure.signals.findIndex((s) => s.id === signalId);
             if (signalIndex === -1) return state;
 
             const signal = state.structure.signals[signalIndex]!;
@@ -596,11 +571,7 @@ export const useComposedSignalStore = create<
       // ----------------------------
 
       selectSignal: (id) => {
-        set(
-          { selectedSignalId: id, selectedNodeIds: new Set() },
-          false,
-          "selectSignal"
-        );
+        set({ selectedSignalId: id, selectedNodeIds: new Set() }, false, "selectSignal");
       },
 
       // ----------------------------
@@ -715,9 +686,7 @@ export const useComposedSignalStore = create<
           (state) => {
             if (!state.structure) return state;
 
-            const signalIndex = state.structure.signals.findIndex(
-              (s) => s.id === signalId
-            );
+            const signalIndex = state.structure.signals.findIndex((s) => s.id === signalId);
             if (signalIndex === -1) return state;
 
             const signal = state.structure.signals[signalIndex]!;
@@ -759,9 +728,7 @@ export const useComposedSignalStore = create<
           (state) => {
             if (!state.structure) return state;
 
-            const signalIndex = state.structure.signals.findIndex(
-              (s) => s.id === signalId
-            );
+            const signalIndex = state.structure.signals.findIndex((s) => s.id === signalId);
             if (signalIndex === -1) return state;
 
             const signal = state.structure.signals[signalIndex]!;
@@ -803,9 +770,7 @@ export const useComposedSignalStore = create<
           (state) => {
             if (!state.structure) return state;
 
-            const signalIndex = state.structure.signals.findIndex(
-              (s) => s.id === signalId
-            );
+            const signalIndex = state.structure.signals.findIndex((s) => s.id === signalId);
             if (signalIndex === -1) return state;
 
             const signal = state.structure.signals[signalIndex]!;

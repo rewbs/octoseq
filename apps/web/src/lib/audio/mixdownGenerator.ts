@@ -89,10 +89,7 @@ export function generateMixdownFromStems(
  * Create a blob URL from an AudioBufferLike for playback.
  * Encodes to WAV format.
  */
-export function createBlobUrlFromBuffer(
-  buffer: AudioBufferLike,
-  sampleRate: number
-): string {
+export function createBlobUrlFromBuffer(buffer: AudioBufferLike, sampleRate: number): string {
   const data = buffer.getChannelData(0);
   const wavBuffer = encodeWav(data, sampleRate);
   const blob = new Blob([wavBuffer], { type: "audio/wav" });

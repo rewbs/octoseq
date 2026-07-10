@@ -17,8 +17,6 @@ const getScrollContainer = (ws: WaveSurfer | null) => {
   return wrapper?.parentElement ?? null;
 };
 
-
-
 import type { WaveSurferViewport } from "./types";
 
 export type SyncedWaveSurferSignalProps = {
@@ -70,14 +68,17 @@ export function SyncedWaveSurferSignal({
   const startYRef = useRef(0);
   const startHeightRef = useRef(0);
 
-  const handleResizeStart = useCallback((e: ReactMouseEvent) => {
-    e.preventDefault();
-    isResizingRef.current = true;
-    startYRef.current = e.clientY;
-    startHeightRef.current = panelHeight;
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-  }, [panelHeight]);
+  const handleResizeStart = useCallback(
+    (e: ReactMouseEvent) => {
+      e.preventDefault();
+      isResizingRef.current = true;
+      startYRef.current = e.clientY;
+      startHeightRef.current = panelHeight;
+      document.body.style.cursor = "ns-resize";
+      document.body.style.userSelect = "none";
+    },
+    [panelHeight]
+  );
 
   useEffect(() => {
     const handleMouseMove = (e: globalThis.MouseEvent) => {
@@ -90,21 +91,19 @@ export function SyncedWaveSurferSignal({
     const handleMouseUp = () => {
       if (isResizingRef.current) {
         isResizingRef.current = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
       }
     };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
     };
   }, []);
-
-
 
   // Lint rule in this repo discourages setState within effects.
   // This component doesn't need to re-render on readiness, so we track it in a ref.
@@ -177,7 +176,10 @@ export function SyncedWaveSurferSignal({
       return;
     }
     if (data.length !== times.length) {
-      console.warn("[MIR-1D] data/times length mismatch", { data: data.length, times: times.length });
+      console.warn("[MIR-1D] data/times length mismatch", {
+        data: data.length,
+        times: times.length,
+      });
       return;
     }
 
@@ -231,7 +233,8 @@ export function SyncedWaveSurferSignal({
     // mark not ready until load completes to avoid zoom() errors.
     readyRef.current = false;
 
-    void ws.loadBlob(dummyBlob, peaks, duration)
+    void ws
+      .loadBlob(dummyBlob, peaks, duration)
       .then(() => {
         console.debug("[MIR-1D] ws.loadBlob(peaks) ready", {
           decodedDuration: ws.getDuration(),
@@ -314,8 +317,6 @@ export function SyncedWaveSurferSignal({
       ws.setTime(Math.min(duration, Math.max(0, cursorTimeSec)));
     }
   }, [cursorTimeSec]);
-
-
 
   return (
     <div className="w-full">

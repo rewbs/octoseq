@@ -56,7 +56,10 @@ function trimRight(text: string): string {
   return text.slice(0, end);
 }
 
-function parseStringLiteralBackward(text: string, endIndex: number): { value: string; startIndex: number } | null {
+function parseStringLiteralBackward(
+  text: string,
+  endIndex: number
+): { value: string; startIndex: number } | null {
   const quote = text[endIndex];
   if (quote !== '"' && quote !== "'") return null;
   let i = endIndex - 1;
@@ -130,10 +133,7 @@ function parseChainFromExpression(text: string): ChainSegment[] | null {
  * Parse variable declarations from code and resolve their types.
  * Returns a map of variable name -> type name.
  */
-function parseLocalVariableTypes(
-  code: string,
-  api: ScriptApiIndex
-): Map<string, string> {
+function parseLocalVariableTypes(code: string, api: ScriptApiIndex): Map<string, string> {
   const varTypes = new Map<string, string>();
 
   // Pattern: let varName = expression; or let varName = expression\n
@@ -219,7 +219,11 @@ function parseChainBeforeDot(textUntilPosition: string): ChainSegment[] | null {
 
   while (i >= 0) {
     const ch = text[i]!;
-    if (DEBUG_CHAIN_PARSING) console.log(`[parseChain] i=${i}, ch='${ch}', segments so far:`, JSON.stringify(segmentsReversed));
+    if (DEBUG_CHAIN_PARSING)
+      console.log(
+        `[parseChain] i=${i}, ch='${ch}', segments so far:`,
+        JSON.stringify(segmentsReversed)
+      );
 
     if (ch === ")") {
       // Parse a method call segment: `name(...)`
@@ -239,16 +243,20 @@ function parseChainBeforeDot(textUntilPosition: string): ChainSegment[] | null {
       // Parse ["..."] style string index.
       i--; // before ]
       while (i >= 0 && isWhitespace(text[i]!)) i--;
-      if (DEBUG_CHAIN_PARSING) console.log(`[parseChain] parsing string index, i=${i}, char='${text[i]}'`);
+      if (DEBUG_CHAIN_PARSING)
+        console.log(`[parseChain] parsing string index, i=${i}, char='${text[i]}'`);
       const str = parseStringLiteralBackward(text, i);
       if (!str) {
-        if (DEBUG_CHAIN_PARSING) console.log("[parseChain] parseStringLiteralBackward returned null");
+        if (DEBUG_CHAIN_PARSING)
+          console.log("[parseChain] parseStringLiteralBackward returned null");
         return null;
       }
-      if (DEBUG_CHAIN_PARSING) console.log(`[parseChain] parsed string: "${str.value}", startIndex=${str.startIndex}`);
+      if (DEBUG_CHAIN_PARSING)
+        console.log(`[parseChain] parsed string: "${str.value}", startIndex=${str.startIndex}`);
       i = str.startIndex - 1; // before opening quote
       while (i >= 0 && isWhitespace(text[i]!)) i--;
-      if (DEBUG_CHAIN_PARSING) console.log(`[parseChain] looking for '[', i=${i}, char='${text[i]}'`);
+      if (DEBUG_CHAIN_PARSING)
+        console.log(`[parseChain] looking for '[', i=${i}, char='${text[i]}'`);
       if (i < 0 || text[i] !== "[") {
         if (DEBUG_CHAIN_PARSING) console.log("[parseChain] expected '[' but got:", text[i]);
         return null;
@@ -258,7 +266,8 @@ function parseChainBeforeDot(textUntilPosition: string): ChainSegment[] | null {
       // After an index, continue directly to parse the identifier before '[' (e.g., 'bands' in 'bands["..."]')
       // Skip the dot check since '[' connects directly to the identifier
       while (i >= 0 && isWhitespace(text[i]!)) i--;
-      if (DEBUG_CHAIN_PARSING) console.log(`[parseChain] after index, continuing at i=${i}, char='${text[i]}'`);
+      if (DEBUG_CHAIN_PARSING)
+        console.log(`[parseChain] after index, continuing at i=${i}, char='${text[i]}'`);
       continue;
     } else if (isIdentChar(ch)) {
       const end = i + 1;
@@ -385,7 +394,9 @@ function findCallContext(textUntilPosition: string): CallContext | null {
  * Parse the method name from text ending just before an opening paren.
  * Returns the chain segments and the method name being called.
  */
-function parseMethodCall(textBeforeOpen: string): { chain: ChainSegment[]; methodName: string } | null {
+function parseMethodCall(
+  textBeforeOpen: string
+): { chain: ChainSegment[]; methodName: string } | null {
   const text = trimRight(textBeforeOpen);
   if (text.length === 0) return null;
 
@@ -408,7 +419,8 @@ function parseMethodCall(textBeforeOpen: string): { chain: ChainSegment[]; metho
     const chainText = text.slice(0, j + 1); // include the dot
     const chain = parseChainBeforeDot(chainText);
     if (chain) {
-      if (DEBUG_SIGNATURE_HELP) console.log("[parseMethodCall] method:", methodName, "chain:", JSON.stringify(chain));
+      if (DEBUG_SIGNATURE_HELP)
+        console.log("[parseMethodCall] method:", methodName, "chain:", JSON.stringify(chain));
       return { chain, methodName };
     }
   }
@@ -655,17 +667,20 @@ function resolveChainTypeWithLocals(
   const localType = localVarTypes.get(root.name);
   if (localType) {
     rootTypeName = localType;
-    if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] found local var:", root.name, "->", localType);
+    if (DEBUG_CHAIN_PARSING)
+      console.log("[resolveChain] found local var:", root.name, "->", localType);
   } else {
     const global = api.globalsByName.get(root.name);
     if (global) {
       rootTypeName = global.type_name;
-      if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] found global:", root.name, "->", global.type_name);
+      if (DEBUG_CHAIN_PARSING)
+        console.log("[resolveChain] found global:", root.name, "->", global.type_name);
     }
   }
 
   if (!rootTypeName) {
-    if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] root not found in locals or globals:", root.name);
+    if (DEBUG_CHAIN_PARSING)
+      console.log("[resolveChain] root not found in locals or globals:", root.name);
     return null;
   }
 
@@ -686,7 +701,8 @@ function resolveChainTypeWithLocals(
       // Only the Bands namespace supports string indexing (bands["Bass"]).
       if (current.name === "Bands") {
         current = api.typesByName.get("BandSignals") ?? null;
-        if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] index on Bands -> BandSignals:", current?.name);
+        if (DEBUG_CHAIN_PARSING)
+          console.log("[resolveChain] index on Bands -> BandSignals:", current?.name);
         continue;
       }
       if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] index on non-Bands type:", current.name);
@@ -696,7 +712,8 @@ function resolveChainTypeWithLocals(
     if (seg.kind === "call") {
       const method = current.methods.find((m) => m.name === seg.name);
       if (!method) {
-        if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] method not found:", seg.name, "on", current.name);
+        if (DEBUG_CHAIN_PARSING)
+          console.log("[resolveChain] method not found:", seg.name, "on", current.name);
         return null;
       }
       current = findTypeNameInRef(method.returns, api.typesByName);
@@ -707,7 +724,15 @@ function resolveChainTypeWithLocals(
     // Property traversal.
     const prop = current.properties.find((p) => p.name === seg.name);
     if (!prop) {
-      if (DEBUG_CHAIN_PARSING) console.log("[resolveChain] property not found:", seg.name, "on", current.name, "available:", current.properties.map(p => p.name));
+      if (DEBUG_CHAIN_PARSING)
+        console.log(
+          "[resolveChain] property not found:",
+          seg.name,
+          "on",
+          current.name,
+          "available:",
+          current.properties.map((p) => p.name)
+        );
       return null;
     }
     current = findTypeNameInRef(prop.type_name, api.typesByName);
@@ -986,7 +1011,12 @@ export function createRhaiHoverProvider(
         const title = `**${global.name}**`;
         const extra = type ? `\n\nType: \`${type.name}\`` : "";
         return {
-          range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+          range: new monaco.Range(
+            position.lineNumber,
+            word.startColumn,
+            position.lineNumber,
+            word.endColumn
+          ),
           contents: [{ value: [title, "", global.description, extra].join("\n") }],
         };
       }
@@ -1004,21 +1034,31 @@ export function createRhaiHoverProvider(
         if (schema) {
           const param = schema.params.find((p) => p.key === wordText);
           if (param) {
-            const docParts: string[] = [`**${param.key}**: \`${param.type}\``, "", param.description];
+            const docParts: string[] = [
+              `**${param.key}**: \`${param.type}\``,
+              "",
+              param.description,
+            ];
             if (param.default !== undefined) {
-              const defaultStr = typeof param.default === "object"
-                ? JSON.stringify(param.default)
-                : String(param.default);
+              const defaultStr =
+                typeof param.default === "object"
+                  ? JSON.stringify(param.default)
+                  : String(param.default);
               docParts.push("", `Default: \`${defaultStr}\``);
             }
             if (param.range) {
               docParts.push(`Range: ${param.range.min} – ${param.range.max}`);
             }
             if (param.enumValues) {
-              docParts.push(`Values: ${param.enumValues.map(v => `"${v}"`).join(", ")}`);
+              docParts.push(`Values: ${param.enumValues.map((v) => `"${v}"`).join(", ")}`);
             }
             return {
-              range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+              range: new monaco.Range(
+                position.lineNumber,
+                word.startColumn,
+                position.lineNumber,
+                word.endColumn
+              ),
               contents: [{ value: docParts.join("\n") }],
             };
           }
@@ -1046,7 +1086,12 @@ export function createRhaiHoverProvider(
             const prop = parentType.properties.find((p) => p.name === wordText);
             if (prop) {
               return {
-                range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+                range: new monaco.Range(
+                  position.lineNumber,
+                  word.startColumn,
+                  position.lineNumber,
+                  word.endColumn
+                ),
                 contents: [
                   { value: `**${wordText}**: \`${prop.type_name}\`` },
                   { value: prop.description },
@@ -1064,7 +1109,12 @@ export function createRhaiHoverProvider(
                 .filter(Boolean)
                 .join("\n\n");
               return {
-                range: new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn),
+                range: new monaco.Range(
+                  position.lineNumber,
+                  word.startColumn,
+                  position.lineNumber,
+                  word.endColumn
+                ),
                 contents: [
                   { value: `**${wordText}**` },
                   { value: [signatures, "", docs].filter(Boolean).join("\n") },
@@ -1137,8 +1187,12 @@ export function createRhaiCompletionProvider(
         const quoteChar = textUntilPosition.trimEnd().endsWith("['") ? "'" : '"';
         const suggestions: MonacoCompletionItem[] = bands.flatMap((band) => {
           const closing = quoteChar === "'" ? "']" : '"]';
-          const labelInsert = hasQuote ? `${band.label}${closing}` : `${quoteChar}${band.label}${quoteChar}]`;
-          const idInsert = hasQuote ? `${band.id}${closing}` : `${quoteChar}${band.id}${quoteChar}]`;
+          const labelInsert = hasQuote
+            ? `${band.label}${closing}`
+            : `${quoteChar}${band.label}${quoteChar}]`;
+          const idInsert = hasQuote
+            ? `${band.id}${closing}`
+            : `${quoteChar}${band.id}${quoteChar}]`;
           const out: MonacoCompletionItem[] = [
             {
               label: band.label,
@@ -1173,18 +1227,23 @@ export function createRhaiCompletionProvider(
             .filter((param) => !configMapCtx.existingKeys.includes(param.key))
             .map((param) => {
               // Build documentation with default and range info
-              const docParts: string[] = [`**${param.key}**: \`${param.type}\``, "", param.description];
+              const docParts: string[] = [
+                `**${param.key}**: \`${param.type}\``,
+                "",
+                param.description,
+              ];
               if (param.default !== undefined) {
-                const defaultStr = typeof param.default === "object"
-                  ? JSON.stringify(param.default)
-                  : String(param.default);
+                const defaultStr =
+                  typeof param.default === "object"
+                    ? JSON.stringify(param.default)
+                    : String(param.default);
                 docParts.push("", `Default: \`${defaultStr}\``);
               }
               if (param.range) {
                 docParts.push(`Range: ${param.range.min} – ${param.range.max}`);
               }
               if (param.enumValues) {
-                docParts.push(`Values: ${param.enumValues.map(v => `"${v}"`).join(", ")}`);
+                docParts.push(`Values: ${param.enumValues.map((v) => `"${v}"`).join(", ")}`);
               }
 
               return {
@@ -1201,7 +1260,9 @@ export function createRhaiCompletionProvider(
       }
 
       // Parse local variable types from code up to cursor
-      const localVarTypes = api ? parseLocalVariableTypes(textUntilPosition, api) : new Map<string, string>();
+      const localVarTypes = api
+        ? parseLocalVariableTypes(textUntilPosition, api)
+        : new Map<string, string>();
       if (DEBUG_LOCAL_VARS && localVarTypes.size > 0) {
         console.log("[completions] local vars:", Object.fromEntries(localVarTypes));
       }
@@ -1239,7 +1300,10 @@ export function createRhaiCompletionProvider(
         if (!api) return { suggestions: [] };
         const suggestions = api.meta.globals.map((g) => ({
           label: g.name,
-          kind: g.kind === "function" ? monaco.languages.CompletionItemKind.Function : monaco.languages.CompletionItemKind.Module,
+          kind:
+            g.kind === "function"
+              ? monaco.languages.CompletionItemKind.Function
+              : monaco.languages.CompletionItemKind.Module,
           insertText: g.kind === "function" ? `${g.name}(` : g.name,
           detail: g.type_name,
           documentation: g.description,
@@ -1341,7 +1405,12 @@ export function createRhaiSignatureHelpProvider(
         if (parentType) {
           methods = parentType.methods.filter((m) => m.name === methodName);
           if (DEBUG_SIGNATURE_HELP) {
-            console.log("[signatureHelp] parent type:", parentType.name, "methods found:", methods.length);
+            console.log(
+              "[signatureHelp] parent type:",
+              parentType.name,
+              "methods found:",
+              methods.length
+            );
           }
         }
       }
@@ -1360,7 +1429,9 @@ export function createRhaiSignatureHelpProvider(
           return {
             label: paramLabel,
             documentation: {
-              value: p.description + (p.default !== undefined ? `\n\nDefault: \`${JSON.stringify(p.default)}\`` : ""),
+              value:
+                p.description +
+                (p.default !== undefined ? `\n\nDefault: \`${JSON.stringify(p.default)}\`` : ""),
             },
           };
         });
@@ -1399,7 +1470,14 @@ export function createRhaiSignatureHelpProvider(
       );
 
       if (DEBUG_SIGNATURE_HELP) {
-        console.log("[signatureHelp] returning", signatures.length, "signatures, active:", activeSignature, "param:", activeParameter);
+        console.log(
+          "[signatureHelp] returning",
+          signatures.length,
+          "signatures, active:",
+          activeSignature,
+          "param:",
+          activeParameter
+        );
       }
 
       return {

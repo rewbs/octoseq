@@ -36,9 +36,7 @@ export const DERIVED_SIGNAL_SCHEMA_VERSION = 2;
  * Version 1 structures used provenance-shaped source references and are
  * intentionally NOT migrated — they fail loudly here.
  */
-export function assertDerivedSignalStructureVersion(
-  structure: DerivedSignalStructure
-): void {
+export function assertDerivedSignalStructureVersion(structure: DerivedSignalStructure): void {
   if (structure.version !== DERIVED_SIGNAL_SCHEMA_VERSION) {
     throw new Error(
       `Unsupported derived signal schema version ${structure.version} ` +
@@ -56,12 +54,7 @@ export function assertDerivedSignalStructureVersion(
  * Available 2D source functions that can be reduced to 1D.
  */
 export type Source2DFunctionId =
-  | "melSpectrogram"
-  | "hpssHarmonic"
-  | "hpssPercussive"
-  | "mfcc"
-  | "mfccDelta"
-  | "mfccDeltaDelta";
+  "melSpectrogram" | "hpssHarmonic" | "hpssPercussive" | "mfcc" | "mfccDelta" | "mfccDeltaDelta";
 
 /**
  * Reduction algorithm identifiers for 2D -> 1D conversion.
@@ -173,8 +166,7 @@ export type ReducerEventAlgorithmId =
  * Window specification for event aggregation.
  */
 export type EventWindow =
-  | { kind: "seconds"; windowSize: number }
-  | { kind: "beats"; windowSize: number }; // Requires beat grid
+  { kind: "seconds"; windowSize: number } | { kind: "beats"; windowSize: number }; // Requires beat grid
 
 /**
  * Envelope shape for event-to-signal conversion.
@@ -507,9 +499,7 @@ export function getDefaultStabilizationSettings(): StabilizationSettings {
 /**
  * Create default 2D reducer params for a given algorithm.
  */
-export function getDefaultReducer2DParams(
-  algorithm: Reducer2DAlgorithmId
-): Reducer2DParams {
+export function getDefaultReducer2DParams(algorithm: Reducer2DAlgorithmId): Reducer2DParams {
   switch (algorithm) {
     case "onsetStrength":
       return {
@@ -736,23 +726,15 @@ export const ENVELOPE_MODE_LABELS: Record<EnvelopeMode, string> = {
  * Whether the source supports frequency range selection.
  * MFCC bins are coefficients, not frequencies.
  */
-export function source2DSupportsFrequencyRange(
-  source: Source2DFunctionId
-): boolean {
-  return (
-    source !== "mfcc" && source !== "mfccDelta" && source !== "mfccDeltaDelta"
-  );
+export function source2DSupportsFrequencyRange(source: Source2DFunctionId): boolean {
+  return source !== "mfcc" && source !== "mfccDelta" && source !== "mfccDeltaDelta";
 }
 
 /**
  * Whether the source uses coefficient indices (MFCC-based).
  */
-export function source2DUsesCoefficientRange(
-  source: Source2DFunctionId
-): boolean {
-  return (
-    source === "mfcc" || source === "mfccDelta" || source === "mfccDeltaDelta"
-  );
+export function source2DUsesCoefficientRange(source: Source2DFunctionId): boolean {
+  return source === "mfcc" || source === "mfccDelta" || source === "mfccDeltaDelta";
 }
 
 /**

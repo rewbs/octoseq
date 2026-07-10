@@ -12,13 +12,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::debug_collector::debug_emit;
-use crate::signal::SignalId;
 use crate::input::{BandSignalMap, InputSignal, SignalMap};
 use crate::musical_time::{MusicalTimeSegment, MusicalTimeStructure, DEFAULT_BPM};
+use crate::signal::SignalId;
 use crate::signal::{
-    EasingFunction, EnvelopeShape, GateParams, GeneratorNode, NormaliseParams, NoiseType,
-    OverlapMode, SamplingConfig, SamplingStrategy, SamplingWindow, SelectBuilder, Signal,
-    SignalNode, SmoothParams, TimeUnit, ToSignalOptions, WindowDirection,
+    EasingFunction, EnvelopeShape, GateParams, GeneratorNode, NoiseType, NormaliseParams,
+    OverlapMode, SamplingConfig, SamplingStrategy, SamplingWindow, Signal, SignalNode,
+    SmoothParams, TimeUnit, ToSignalOptions, WindowDirection,
 };
 use crate::signal_state::SignalState;
 use crate::signal_stats::StatisticsCache;
@@ -247,7 +247,10 @@ impl Signal {
                     0.0
                 }),
 
-            SignalNode::CustomSignalInput { signal_id, sampling } => ctx
+            SignalNode::CustomSignalInput {
+                signal_id,
+                sampling,
+            } => ctx
                 .custom_signals
                 .get(signal_id)
                 .map(|sig| self.sample_with_config(sig, *sampling, ctx))
@@ -322,12 +325,22 @@ impl Signal {
                 self.evaluate_event_distance_to_next(events, *unit, ctx)
             }
 
-            SignalNode::EventCountInWindow { events, window_size, unit, direction } => {
+            SignalNode::EventCountInWindow {
+                events,
+                window_size,
+                unit,
+                direction,
+            } => {
                 let window = window_size.evaluate(ctx);
                 self.evaluate_event_count_in_window(events, window, *unit, *direction, ctx)
             }
 
-            SignalNode::EventDensityInWindow { events, window_size, unit, direction } => {
+            SignalNode::EventDensityInWindow {
+                events,
+                window_size,
+                unit,
+                direction,
+            } => {
                 let window = window_size.evaluate(ctx);
                 self.evaluate_event_density_in_window(events, window, *unit, *direction, ctx)
             }
@@ -505,13 +518,21 @@ impl Signal {
                 }
             }
 
-            SignalNode::Smoothstep { source, edge0, edge1 } => {
+            SignalNode::Smoothstep {
+                source,
+                edge0,
+                edge1,
+            } => {
                 let x = source.evaluate(ctx);
                 let e0 = edge0.evaluate(ctx);
                 let e1 = edge1.evaluate(ctx);
                 let range = e1 - e0;
                 if range.abs() < 1e-10 {
-                    if x < e0 { 0.0 } else { 1.0 }
+                    if x < e0 {
+                        0.0
+                    } else {
+                        1.0
+                    }
                 } else {
                     let t = ((x - e0) / range).clamp(0.0, 1.0);
                     t * t * (3.0 - 2.0 * t)
@@ -528,7 +549,10 @@ impl Signal {
             // === Rate and Accumulation ===
             SignalNode::Diff { source } => self.evaluate_diff(source, ctx),
 
-            SignalNode::Integrate { source, decay_beats } => {
+            SignalNode::Integrate {
+                source,
+                decay_beats,
+            } => {
                 let decay = decay_beats.evaluate(ctx);
                 self.evaluate_integrate(source, decay, ctx)
             }
@@ -548,57 +572,93 @@ impl Signal {
             SignalNode::Lt(a, b) => {
                 let va = a.evaluate(ctx);
                 let vb = b.evaluate(ctx);
-                if va < vb { 1.0 } else { 0.0 }
+                if va < vb {
+                    1.0
+                } else {
+                    0.0
+                }
             }
 
             SignalNode::Gt(a, b) => {
                 let va = a.evaluate(ctx);
                 let vb = b.evaluate(ctx);
-                if va > vb { 1.0 } else { 0.0 }
+                if va > vb {
+                    1.0
+                } else {
+                    0.0
+                }
             }
 
             SignalNode::Le(a, b) => {
                 let va = a.evaluate(ctx);
                 let vb = b.evaluate(ctx);
-                if va <= vb { 1.0 } else { 0.0 }
+                if va <= vb {
+                    1.0
+                } else {
+                    0.0
+                }
             }
 
             SignalNode::Ge(a, b) => {
                 let va = a.evaluate(ctx);
                 let vb = b.evaluate(ctx);
-                if va >= vb { 1.0 } else { 0.0 }
+                if va >= vb {
+                    1.0
+                } else {
+                    0.0
+                }
             }
 
             SignalNode::Eq(a, b) => {
                 let va = a.evaluate(ctx);
                 let vb = b.evaluate(ctx);
                 // Use epsilon for float comparison
-                if (va - vb).abs() < 1e-6 { 1.0 } else { 0.0 }
+                if (va - vb).abs() < 1e-6 {
+                    1.0
+                } else {
+                    0.0
+                }
             }
 
             SignalNode::Ne(a, b) => {
                 let va = a.evaluate(ctx);
                 let vb = b.evaluate(ctx);
                 // Use epsilon for float comparison
-                if (va - vb).abs() >= 1e-6 { 1.0 } else { 0.0 }
+                if (va - vb).abs() >= 1e-6 {
+                    1.0
+                } else {
+                    0.0
+                }
             }
 
             // === Logical Operations ===
             SignalNode::And(a, b) => {
                 let va = a.evaluate(ctx);
                 let vb = b.evaluate(ctx);
-                if va > 0.0 && vb > 0.0 { 1.0 } else { 0.0 }
+                if va > 0.0 && vb > 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
             }
 
             SignalNode::Or(a, b) => {
                 let va = a.evaluate(ctx);
                 let vb = b.evaluate(ctx);
-                if va > 0.0 || vb > 0.0 { 1.0 } else { 0.0 }
+                if va > 0.0 || vb > 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
             }
 
             SignalNode::Not { source } => {
                 let v = source.evaluate(ctx);
-                if v <= 0.0 { 1.0 } else { 0.0 }
+                if v <= 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
             }
 
             // === Conditional Selection ===
@@ -794,7 +854,7 @@ impl Signal {
             SmoothParams::MovingAverage { window_beats } => {
                 let window_secs = ctx.beats_to_seconds(*window_beats);
                 let capacity = (window_secs / ctx.dt).ceil() as usize;
-                let capacity = capacity.max(1).min(10000); // Clamp to reasonable range
+                let capacity = capacity.clamp(1, 10000);
 
                 let buffer = ctx.state.get_ma_buffer(self.id, capacity);
 
@@ -835,21 +895,19 @@ impl Signal {
                 // Get the underlying input signal name if this is an Input node
                 let input_name = self.find_root_input_name(source);
 
-                if let Some((_name, input)) = input_name.and_then(|n| {
-                    ctx.input_signals.get(&n).map(|sig| (n, sig))
-                }) {
+                if let Some((_name, input)) =
+                    input_name.and_then(|n| ctx.input_signals.get(&n).map(|sig| (n, sig)))
+                {
                     // Sample at multiple points with Gaussian weights
                     let num_samples = 7;
                     let mut sum = 0.0;
                     let mut weight_sum = 0.0;
 
                     for i in 0..num_samples {
-                        let offset =
-                            (i as f32 / (num_samples - 1) as f32 - 0.5) * 2.0 * window;
+                        let offset = (i as f32 / (num_samples - 1) as f32 - 0.5) * 2.0 * window;
                         let sample_time = (ctx.time + offset).max(0.0);
 
-                        let weight =
-                            (-offset.powi(2) / (2.0 * sigma_secs.powi(2))).exp();
+                        let weight = (-offset.powi(2) / (2.0 * sigma_secs.powi(2))).exp();
 
                         let value = input.sample(sample_time);
                         sum += value * weight;
@@ -927,12 +985,7 @@ impl Signal {
     }
 
     /// Evaluate gating.
-    fn evaluate_gate(
-        &self,
-        source: &Signal,
-        params: &GateParams,
-        ctx: &mut EvalContext,
-    ) -> f32 {
+    fn evaluate_gate(&self, source: &Signal, params: &GateParams, ctx: &mut EvalContext) -> f32 {
         let value = source.evaluate(ctx);
 
         match params {
@@ -1044,7 +1097,11 @@ impl Signal {
                     0.0
                 } else if dt < attack_sec {
                     // Attack phase
-                    let t = if attack_sec > 0.0 { dt / attack_sec } else { 1.0 };
+                    let t = if attack_sec > 0.0 {
+                        dt / attack_sec
+                    } else {
+                        1.0
+                    };
                     weight * apply_easing(t, options.easing)
                 } else {
                     // Decay phase
@@ -1063,7 +1120,11 @@ impl Signal {
                     0.0
                 } else if dt < attack_sec {
                     // Attack: 0 → 1
-                    let t = if attack_sec > 0.0 { dt / attack_sec } else { 1.0 };
+                    let t = if attack_sec > 0.0 {
+                        dt / attack_sec
+                    } else {
+                        1.0
+                    };
                     weight * apply_easing(t, options.easing)
                 } else if dt < attack_sec + decay_sec {
                     // Decay: 1 → sustain_level
@@ -1147,7 +1208,11 @@ impl Signal {
                 hi = mid;
             }
         }
-        if lo > 0 { Some(lo - 1) } else { None }
+        if lo > 0 {
+            Some(lo - 1)
+        } else {
+            None
+        }
     }
 
     /// Binary search to find the index of the event just after the given time.
@@ -1167,7 +1232,11 @@ impl Signal {
                 hi = mid;
             }
         }
-        if lo < events.len() { Some(lo) } else { None }
+        if lo < events.len() {
+            Some(lo)
+        } else {
+            None
+        }
     }
 
     /// Convert time difference (in seconds) to the specified unit.
@@ -1271,7 +1340,8 @@ impl Signal {
         };
 
         // Count events in range [start, end)
-        events.iter()
+        events
+            .iter()
             .filter(|e| e.time >= start && e.time < end)
             .count() as f32
     }
@@ -1320,9 +1390,9 @@ impl Signal {
                     (time - prev_time) / interval
                 }
             }
-            (None, Some(_)) => 0.0,  // Before first event
-            (Some(_), None) => 1.0,  // After last event
-            (None, None) => 0.0,     // Should not happen if events is non-empty
+            (None, Some(_)) => 0.0, // Before first event
+            (Some(_), None) => 1.0, // After last event
+            (None, None) => 0.0,    // Should not happen if events is non-empty
         }
     }
 
@@ -1346,12 +1416,7 @@ impl Signal {
     }
 
     /// Evaluate integrate (cumulative sum with optional decay).
-    fn evaluate_integrate(
-        &self,
-        source: &Signal,
-        decay_beats: f32,
-        ctx: &mut EvalContext,
-    ) -> f32 {
+    fn evaluate_integrate(&self, source: &Signal, decay_beats: f32, ctx: &mut EvalContext) -> f32 {
         let current = source.evaluate(ctx);
         let accumulated = ctx.state.get_integrate(self.id, 0.0);
 
@@ -1381,7 +1446,7 @@ impl Signal {
         }
 
         let delay_sec = ctx.beats_to_seconds(beats);
-        let buffer_size = ((delay_sec / ctx.dt).ceil() as usize).max(1).min(10000);
+        let buffer_size = ((delay_sec / ctx.dt).ceil() as usize).clamp(1, 10000);
 
         let buffer = ctx.state.get_delay_buffer(self.id, buffer_size);
 
@@ -1491,6 +1556,7 @@ fn apply_easing(t: f32, easing: EasingFunction) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::signal::SelectBuilder;
 
     fn make_test_context<'a>(
         time: f32,
@@ -1503,7 +1569,20 @@ mod tests {
         statistics: &'a StatisticsCache,
         state: &'a mut SignalState,
     ) -> EvalContext<'a> {
-        EvalContext::new(time, dt, 0, None, input_signals, band_signals, stem_signals, custom_signals, composed_signals, statistics, state, None)
+        EvalContext::new(
+            time,
+            dt,
+            0,
+            None,
+            input_signals,
+            band_signals,
+            stem_signals,
+            custom_signals,
+            composed_signals,
+            statistics,
+            state,
+            None,
+        )
     }
 
     #[test]
@@ -1515,7 +1594,17 @@ mod tests {
         let composed_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.0,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         let signal = Signal::constant(42.0);
         assert!((signal.evaluate(&mut ctx) - 42.0).abs() < 0.001);
@@ -1535,7 +1624,17 @@ mod tests {
         let composed_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.5,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         let signal = Signal::input("energy");
         assert!((signal.evaluate(&mut ctx) - 0.5).abs() < 0.001);
@@ -1563,7 +1662,17 @@ mod tests {
         let composed_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.5,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         // Access by label
         let bass_energy = Signal::band_input("Bass", "energy");
@@ -1597,7 +1706,17 @@ mod tests {
         );
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.5,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         // Composed input reads the composed map, not the custom map.
         let composed = Signal::composed_input("intensity");
@@ -1610,7 +1729,10 @@ mod tests {
         // Unknown composed signal returns 0 and warns once.
         let unknown = Signal::composed_input("unknown");
         assert!((unknown.evaluate(&mut ctx) - 0.0).abs() < 0.001);
-        assert!(ctx.state.warned_missing_composed_signals.contains("unknown"));
+        assert!(ctx
+            .state
+            .warned_missing_composed_signals
+            .contains("unknown"));
     }
 
     #[test]
@@ -1622,7 +1744,17 @@ mod tests {
         let composed_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.0,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         let a = Signal::constant(3.0);
         let b = Signal::constant(4.0);
@@ -1653,7 +1785,17 @@ mod tests {
         let composed_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.0,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         let high = Signal::constant(0.8);
         let low = Signal::constant(0.2);
@@ -1674,7 +1816,17 @@ mod tests {
         let composed_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.0,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         let mid = Signal::constant(0.5).sigmoid(10.0);
         assert!((mid.evaluate(&mut ctx) - 0.5).abs() < 0.01);
@@ -1697,7 +1849,17 @@ mod tests {
         let mut state = SignalState::new();
 
         // At time 0, beat position 0, sin(0) = 0
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.0,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
         let sin = Signal::generator(GeneratorNode::Sin {
             freq_beats: 1.0,
             phase: 0.0,
@@ -1706,7 +1868,17 @@ mod tests {
 
         // At beat position 0.25, sin(0.25 * 2pi) = 1
         // With default 120 BPM, beat 0.25 is at 0.125 seconds
-        let mut ctx = make_test_context(0.125, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.125,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
         let value = sin.evaluate(&mut ctx);
         assert!((value - 1.0).abs() < 0.1);
     }
@@ -1720,7 +1892,17 @@ mod tests {
         let composed_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let ctx = make_test_context(1.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let ctx = make_test_context(
+            1.0,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         // At 120 BPM, 1 second = 2 beats
         assert!((ctx.beat_position() - 2.0).abs() < 0.001);
@@ -1735,7 +1917,17 @@ mod tests {
         let composed_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let ctx = make_test_context(
+            0.0,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         // At default 120 BPM, 1 beat = 0.5 seconds
         assert!((ctx.beats_to_seconds(1.0) - 0.5).abs() < 0.001);
@@ -1759,7 +1951,17 @@ mod tests {
         let composed_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.5, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.5,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         // Access by ID
         let drums_energy = Signal::stem_input("drums", "energy");
@@ -1783,7 +1985,17 @@ mod tests {
         let composed_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.0,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         let a = Signal::constant(0.3);
         let b = Signal::constant(0.7);
@@ -1824,7 +2036,17 @@ mod tests {
         let composed_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.0,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         let truthy = Signal::constant(1.0);
         let falsy = Signal::constant(0.0);
@@ -1852,7 +2074,17 @@ mod tests {
         let composed_signals = HashMap::new();
         let stats = StatisticsCache::new();
         let mut state = SignalState::new();
-        let mut ctx = make_test_context(0.0, 0.016, &inputs, &band_signals, &stem_signals, &custom_signals, &composed_signals, &stats, &mut state);
+        let mut ctx = make_test_context(
+            0.0,
+            0.016,
+            &inputs,
+            &band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+        );
 
         // Test: first condition true
         let cond1 = Signal::constant(1.0); // truthy

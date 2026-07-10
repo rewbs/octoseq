@@ -76,10 +76,7 @@ function findSimilarNames(name: string, candidates: string[], maxDistance = 2): 
 /**
  * Parse config-map contexts from code and validate keys.
  */
-function validateConfigMapKeys(
-  code: string,
-  monaco: MonacoInstance
-): Diagnostic[] {
+function validateConfigMapKeys(code: string, monaco: MonacoInstance): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
   // Pattern to find config-map usages: functionPath(#{ key: value, ... })
@@ -113,9 +110,10 @@ function validateConfigMapKeys(
 
         // Find similar keys for suggestion
         const similarKeys = findSimilarNames(key, Array.from(validKeys));
-        const suggestion = similarKeys.length > 0
-          ? ` Did you mean: ${similarKeys.map((k) => `"${k}"`).join(", ")}?`
-          : "";
+        const suggestion =
+          similarKeys.length > 0
+            ? ` Did you mean: ${similarKeys.map((k) => `"${k}"`).join(", ")}?`
+            : "";
 
         diagnostics.push({
           startLineNumber: position.line,
@@ -136,10 +134,7 @@ function validateConfigMapKeys(
 /**
  * Convert a character offset to line and column numbers.
  */
-function getLineColumnFromOffset(
-  code: string,
-  offset: number
-): { line: number; column: number } {
+function getLineColumnFromOffset(code: string, offset: number): { line: number; column: number } {
   let line = 1;
   let column = 1;
 
@@ -158,10 +153,7 @@ function getLineColumnFromOffset(
 /**
  * Validate method calls on known types.
  */
-function validateMethodCalls(
-  code: string,
-  monaco: MonacoInstance
-): Diagnostic[] {
+function validateMethodCalls(code: string, monaco: MonacoInstance): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const registry = getApiRegistry();
 
@@ -196,9 +188,10 @@ function validateMethodCalls(
       const similarNames = findSimilarNames(methodName, [...allMethods, ...allProps]);
 
       const position = getLineColumnFromOffset(code, methodOffset);
-      const suggestion = similarNames.length > 0
-        ? ` Did you mean: ${similarNames.map((n) => `"${n}"`).join(", ")}?`
-        : "";
+      const suggestion =
+        similarNames.length > 0
+          ? ` Did you mean: ${similarNames.map((n) => `"${n}"`).join(", ")}?`
+          : "";
 
       diagnostics.push({
         startLineNumber: position.line,
@@ -218,10 +211,7 @@ function validateMethodCalls(
 /**
  * Run all diagnostics on the code.
  */
-export function runDiagnostics(
-  code: string,
-  monaco: MonacoInstance
-): Diagnostic[] {
+export function runDiagnostics(code: string, monaco: MonacoInstance): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
   try {

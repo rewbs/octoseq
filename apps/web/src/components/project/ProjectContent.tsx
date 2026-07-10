@@ -62,21 +62,11 @@ export function ProjectContent() {
     };
   }, [activeProject]);
 
-  const {
-    createProject,
-    saveProject,
-    loadProjectFromFile,
-    resetProject,
-    renameProject,
-  } = useProjectActions();
+  const { createProject, saveProject, loadProjectFromFile, resetProject, renameProject } =
+    useProjectActions();
 
-  const {
-    showConfirm,
-    requireConfirm,
-    handleConfirm,
-    handleCancel,
-    setShowConfirm,
-  } = useConfirmDiscard();
+  const { showConfirm, requireConfirm, handleConfirm, handleCancel, setShowConfirm } =
+    useConfirmDiscard();
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
@@ -151,25 +141,13 @@ export function ProjectContent() {
   if (!activeProject) {
     return (
       <div className="p-4 space-y-4">
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          No project loaded.
-        </p>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">No project loaded.</p>
         <div className="flex flex-col gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="justify-start"
-            onClick={handleNewProject}
-          >
+          <Button variant="outline" size="sm" className="justify-start" onClick={handleNewProject}>
             <Plus className="h-4 w-4 mr-2" />
             New Project
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="justify-start"
-            onClick={handleLoadClick}
-          >
+          <Button variant="outline" size="sm" className="justify-start" onClick={handleLoadClick}>
             <FolderOpen className="h-4 w-4 mr-2" />
             Open Project...
           </Button>
@@ -229,12 +207,7 @@ export function ProjectContent() {
               {isDirty && <span className="text-amber-500 ml-1">*</span>}
             </span>
             <AutosaveIndicator />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={handleStartEdit}
-            >
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleStartEdit}>
               <Edit2 className="h-3 w-3" />
             </Button>
           </div>
@@ -256,7 +229,11 @@ export function ProjectContent() {
       {/* Stats */}
       <div className="grid grid-cols-2 gap-2">
         <StatCard icon={<Layers className="h-4 w-4" />} label="Bands" value={stats.bandCount} />
-        <StatCard icon={<Zap className="h-4 w-4" />} label="Event Streams" value={stats.eventStreamCount} />
+        <StatCard
+          icon={<Zap className="h-4 w-4" />}
+          label="Event Streams"
+          value={stats.eventStreamCount}
+        />
         <StatCard icon={<Music2 className="h-4 w-4" />} label="Events" value={stats.eventCount} />
         <StatCard icon={<Code className="h-4 w-4" />} label="Scripts" value={stats.scriptCount} />
       </div>
@@ -264,32 +241,17 @@ export function ProjectContent() {
       {/* Actions */}
       <div className="pt-2 space-y-2 border-t border-zinc-200 dark:border-zinc-800">
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1"
-            onClick={saveProject}
-          >
+          <Button variant="outline" size="sm" className="flex-1" onClick={saveProject}>
             <Save className="h-4 w-4 mr-2" />
             Save
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1"
-            onClick={handleLoadClick}
-          >
+          <Button variant="outline" size="sm" className="flex-1" onClick={handleLoadClick}>
             <FolderOpen className="h-4 w-4 mr-2" />
             Open
           </Button>
         </div>
         <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1"
-            onClick={handleNewProject}
-          >
+          <Button variant="outline" size="sm" className="flex-1" onClick={handleNewProject}>
             <Plus className="h-4 w-4 mr-2" />
             New
           </Button>
@@ -345,9 +307,7 @@ function StatCard({ icon, label, value }: StatCardProps) {
     <div className="flex items-center gap-2 p-2 rounded-md bg-zinc-50 dark:bg-zinc-800/50">
       <div className="text-zinc-400 dark:text-zinc-500">{icon}</div>
       <div>
-        <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-          {value}
-        </div>
+        <div className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{value}</div>
         <div className="text-xs text-zinc-500 dark:text-zinc-400">{label}</div>
       </div>
     </div>

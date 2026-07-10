@@ -6,7 +6,8 @@
  */
 
 import type { ColorConfig } from "../types.js";
-import { colorMapValue, COLOR_MAPS } from "../utils.js";
+import type { COLOR_MAPS } from "../utils.js";
+import { colorMapValue } from "../utils.js";
 
 export interface HeatStripRenderOptions {
   color: ColorConfig;
@@ -29,12 +30,7 @@ export function renderHeatStrip(
 ): void {
   if (normalizedValues.length === 0) return;
 
-  const {
-    color,
-    canvasHeight,
-    stripHeight = canvasHeight,
-    stripOffsetY = 0,
-  } = options;
+  const { color, canvasHeight, stripHeight = canvasHeight, stripOffsetY = 0 } = options;
 
   const colorMap = color.colorMap ?? "viridis";
   const opacity = color.opacity ?? 1;

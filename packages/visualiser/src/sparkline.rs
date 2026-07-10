@@ -35,8 +35,12 @@ impl Sparkline {
         }
 
         // Update current stats
-        if value < self.current_min { self.current_min = value; }
-        if value > self.current_max { self.current_max = value; }
+        if value < self.current_min {
+            self.current_min = value;
+        }
+        if value > self.current_max {
+            self.current_max = value;
+        }
 
         self.data[self.cursor] = value;
         self.cursor += 1;

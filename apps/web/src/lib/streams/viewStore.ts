@@ -79,8 +79,7 @@ export const useViewStore = create<ViewState & ViewActions>()(
           "toggleCompared"
         ),
 
-      setCompared: (ids) =>
-        set({ comparedStreamIds: new Set(ids) }, false, "setCompared"),
+      setCompared: (ids) => set({ comparedStreamIds: new Set(ids) }, false, "setCompared"),
 
       removeCompared: (id) =>
         set(
@@ -102,8 +101,7 @@ export const useViewStore = create<ViewState & ViewActions>()(
       setStreamManagerOpen: (streamManagerOpen) =>
         set({ streamManagerOpen }, false, "setStreamManagerOpen"),
 
-      setComparisonOpen: (comparisonOpen) =>
-        set({ comparisonOpen }, false, "setComparisonOpen"),
+      setComparisonOpen: (comparisonOpen) => set({ comparisonOpen }, false, "setComparisonOpen"),
 
       savePreset: (name) => {
         const id = nanoid();

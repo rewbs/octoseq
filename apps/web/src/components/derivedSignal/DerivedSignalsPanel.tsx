@@ -29,15 +29,11 @@ import {
  */
 export function DerivedSignalsPanel() {
   const selectedNodeId = useInterpretationTreeStore((s) => s.selectedNodeId);
-  const selectedNodeType = useMemo(
-    () => getInspectorNodeType(selectedNodeId),
-    [selectedNodeId]
-  );
+  const selectedNodeType = useMemo(() => getInspectorNodeType(selectedNodeId), [selectedNodeId]);
 
   // Only show when derived signals section or signal is selected
   const isVisible =
-    selectedNodeType === "derived-signals-section" ||
-    selectedNodeType === "derived-signal";
+    selectedNodeType === "derived-signals-section" || selectedNodeType === "derived-signal";
 
   const signals = useDerivedSignals();
   const selectedSignalId = useDerivedSignalStore((s) => s.selectedSignalId);
@@ -91,7 +87,10 @@ export function DerivedSignalsPanel() {
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       if (selectedSignal) {
         updateSignal(selectedSignal.id, {
-          stabilization: { ...selectedSignal.stabilization, mode: e.target.value as StabilizationMode },
+          stabilization: {
+            ...selectedSignal.stabilization,
+            mode: e.target.value as StabilizationMode,
+          },
         });
       }
     },
@@ -102,7 +101,10 @@ export function DerivedSignalsPanel() {
     (e: React.ChangeEvent<HTMLSelectElement>) => {
       if (selectedSignal) {
         updateSignal(selectedSignal.id, {
-          stabilization: { ...selectedSignal.stabilization, envelopeMode: e.target.value as EnvelopeMode },
+          stabilization: {
+            ...selectedSignal.stabilization,
+            envelopeMode: e.target.value as EnvelopeMode,
+          },
         });
       }
     },
@@ -182,9 +184,7 @@ export function DerivedSignalsPanel() {
             {signals.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 p-4 text-center">
                 <Activity className="h-8 w-8 text-zinc-400 dark:text-zinc-600" />
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  No signals yet
-                </p>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">No signals yet</p>
                 <Button size="sm" onClick={() => handleAddSignal("2d")}>
                   <Plus className="mr-1 h-4 w-4" />
                   Add
@@ -200,23 +200,25 @@ export function DerivedSignalsPanel() {
                   return (
                     <div
                       key={signal.id}
-                      className={`cursor-pointer rounded-md border p-2 text-sm transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800 ${isSelected
-                        ? "border-blue-500 bg-blue-50 dark:bg-blue-950/20"
-                        : "border-zinc-200 dark:border-zinc-700"
-                        } ${!signal.enabled ? "opacity-50" : ""}`}
+                      className={`cursor-pointer rounded-md border p-2 text-sm transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+                        isSelected
+                          ? "border-blue-500 bg-blue-50 dark:bg-blue-950/20"
+                          : "border-zinc-200 dark:border-zinc-700"
+                      } ${!signal.enabled ? "opacity-50" : ""}`}
                       onClick={() => selectSignal(signal.id)}
                     >
                       <div className="flex items-center justify-between">
                         <span className="truncate font-medium">{signal.name}</span>
                         <span
-                          className={`ml-1 flex h-2 w-2 shrink-0 rounded-full ${isSignalComputing
-                            ? "animate-pulse bg-yellow-500"
-                            : result?.status === "computed"
-                              ? "bg-green-500"
-                              : result?.status === "error"
-                                ? "bg-red-500"
-                                : "bg-zinc-400"
-                            }`}
+                          className={`ml-1 flex h-2 w-2 shrink-0 rounded-full ${
+                            isSignalComputing
+                              ? "animate-pulse bg-yellow-500"
+                              : result?.status === "computed"
+                                ? "bg-green-500"
+                                : result?.status === "error"
+                                  ? "bg-red-500"
+                                  : "bg-zinc-400"
+                          }`}
                         />
                       </div>
                       <div className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
@@ -279,30 +281,33 @@ export function DerivedSignalsPanel() {
               <div className="space-y-3">
                 <div className="grid grid-cols-3 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
                   <button
-                    className={`flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors ${activeTab === "2d"
-                      ? "bg-white shadow dark:bg-zinc-700"
-                      : "hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                      }`}
+                    className={`flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors ${
+                      activeTab === "2d"
+                        ? "bg-white shadow dark:bg-zinc-700"
+                        : "hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                    }`}
                     onClick={() => handleTabChange("2d")}
                   >
                     <Grid3X3 className="h-3.5 w-3.5" />
                     2D
                   </button>
                   <button
-                    className={`flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors ${activeTab === "1d"
-                      ? "bg-white shadow dark:bg-zinc-700"
-                      : "hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                      }`}
+                    className={`flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors ${
+                      activeTab === "1d"
+                        ? "bg-white shadow dark:bg-zinc-700"
+                        : "hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                    }`}
                     onClick={() => handleTabChange("1d")}
                   >
                     <TrendingUp className="h-3.5 w-3.5" />
                     1D
                   </button>
                   <button
-                    className={`flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors ${activeTab === "events"
-                      ? "bg-white shadow dark:bg-zinc-700"
-                      : "hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                      }`}
+                    className={`flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-sm transition-colors ${
+                      activeTab === "events"
+                        ? "bg-white shadow dark:bg-zinc-700"
+                        : "hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                    }`}
                     onClick={() => handleTabChange("events")}
                   >
                     <Zap className="h-3.5 w-3.5" />
@@ -312,13 +317,22 @@ export function DerivedSignalsPanel() {
 
                 <div className="rounded-md border border-zinc-200 p-3 dark:border-zinc-700">
                   {selectedSignal.source.kind === "2d" && (
-                    <Source2DSelector source={selectedSignal.source} onChange={handleSourceChange} />
+                    <Source2DSelector
+                      source={selectedSignal.source}
+                      onChange={handleSourceChange}
+                    />
                   )}
                   {selectedSignal.source.kind === "1d" && (
-                    <Source1DSelector source={selectedSignal.source} onChange={handleSourceChange} />
+                    <Source1DSelector
+                      source={selectedSignal.source}
+                      onChange={handleSourceChange}
+                    />
                   )}
                   {selectedSignal.source.kind === "events" && (
-                    <SourceEventSelector source={selectedSignal.source} onChange={handleSourceChange} />
+                    <SourceEventSelector
+                      source={selectedSignal.source}
+                      onChange={handleSourceChange}
+                    />
                   )}
                 </div>
               </div>
@@ -345,11 +359,13 @@ export function DerivedSignalsPanel() {
                       onChange={handleStabilizationChange}
                       className="w-32 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-600 dark:bg-zinc-800"
                     >
-                      {(Object.keys(STABILIZATION_MODE_LABELS) as StabilizationMode[]).map((mode) => (
-                        <option key={mode} value={mode}>
-                          {STABILIZATION_MODE_LABELS[mode]}
-                        </option>
-                      ))}
+                      {(Object.keys(STABILIZATION_MODE_LABELS) as StabilizationMode[]).map(
+                        (mode) => (
+                          <option key={mode} value={mode}>
+                            {STABILIZATION_MODE_LABELS[mode]}
+                          </option>
+                        )
+                      )}
                     </select>
                   </div>
 
@@ -408,14 +424,16 @@ export function DerivedSignalsPanel() {
                     <div className="flex justify-between">
                       <span className="text-zinc-500 dark:text-zinc-400">Range</span>
                       <span>
-                        {selectedResult.valueRange.min.toFixed(3)} – {selectedResult.valueRange.max.toFixed(3)}
+                        {selectedResult.valueRange.min.toFixed(3)} –{" "}
+                        {selectedResult.valueRange.max.toFixed(3)}
                       </span>
                     </div>
                     {selectedResult.percentileRange && (
                       <div className="flex justify-between">
                         <span className="text-zinc-500 dark:text-zinc-400">P5–P95</span>
                         <span>
-                          {selectedResult.percentileRange.p5.toFixed(3)} – {selectedResult.percentileRange.p95.toFixed(3)}
+                          {selectedResult.percentileRange.p5.toFixed(3)} –{" "}
+                          {selectedResult.percentileRange.p95.toFixed(3)}
                         </span>
                       </div>
                     )}

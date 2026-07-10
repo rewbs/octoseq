@@ -25,10 +25,9 @@ const streams = () => useStreamStore.getState();
 const analyses = () => useAnalysisStore.getState();
 
 function seedResult(streamId: StreamId): void {
-  analyses().setResult(
-    analysisKey(streamId, "onsetEnvelope"),
-    { kind: "1d" } as unknown as AnalysisResult
-  );
+  analyses().setResult(analysisKey(streamId, "onsetEnvelope"), {
+    kind: "1d",
+  } as unknown as AnalysisResult);
 }
 
 function hasResult(streamId: StreamId): boolean {
@@ -89,8 +88,16 @@ describe("replaceStreamAudio", () => {
 describe("updateBandShape", () => {
   it("invalidates only that band", () => {
     loadMixdown({ audio: makeAudioRef(), buffer: makeBuffer() });
-    const band1 = addBand({ parentId: MIXDOWN_STREAM_ID, label: "Bass", frequencyShape: [makeSegment()] });
-    const band2 = addBand({ parentId: MIXDOWN_STREAM_ID, label: "Highs", frequencyShape: [makeSegment()] });
+    const band1 = addBand({
+      parentId: MIXDOWN_STREAM_ID,
+      label: "Bass",
+      frequencyShape: [makeSegment()],
+    });
+    const band2 = addBand({
+      parentId: MIXDOWN_STREAM_ID,
+      label: "Highs",
+      frequencyShape: [makeSegment()],
+    });
     seedResult(MIXDOWN_STREAM_ID);
     seedResult(band1);
     seedResult(band2);
@@ -162,7 +169,11 @@ describe("band editing state pruning", () => {
     loadMixdown({ audio: makeAudioRef(), buffer: makeBuffer() });
     const stem = addStemWithAudio({ label: "Drums", audio: makeAudioRef(), buffer: makeBuffer() });
     const band1 = addBand({ parentId: stem, label: "Kick", frequencyShape: [makeSegment()] });
-    const band2 = addBand({ parentId: MIXDOWN_STREAM_ID, label: "Bass", frequencyShape: [makeSegment()] });
+    const band2 = addBand({
+      parentId: MIXDOWN_STREAM_ID,
+      label: "Bass",
+      frequencyShape: [makeSegment()],
+    });
 
     const editing = useBandEditingStore.getState();
     editing.setSoloedBand(band1);
@@ -182,7 +193,11 @@ describe("band editing state pruning", () => {
   it("resetAllStreams clears all band-editing stream refs", async () => {
     const { useBandEditingStore } = await import("../bandEditingStore");
     loadMixdown({ audio: makeAudioRef(), buffer: makeBuffer() });
-    const band = addBand({ parentId: MIXDOWN_STREAM_ID, label: "Bass", frequencyShape: [makeSegment()] });
+    const band = addBand({
+      parentId: MIXDOWN_STREAM_ID,
+      label: "Bass",
+      frequencyShape: [makeSegment()],
+    });
     useBandEditingStore.getState().setSoloedBand(band);
     useBandEditingStore.getState().toggleMutedBand(band);
 

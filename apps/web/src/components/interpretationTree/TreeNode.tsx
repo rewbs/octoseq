@@ -71,9 +71,7 @@ export function TreeNode({
       <div
         className={cn(
           "group flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer transition-colors text-sm",
-          isSelected
-            ? "bg-zinc-200 dark:bg-zinc-700"
-            : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
+          isSelected ? "bg-zinc-200 dark:bg-zinc-700" : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
           isDisabled && "opacity-50 cursor-not-allowed"
         )}
         style={{ paddingLeft: `${8 + level * 16}px` }}
@@ -122,19 +120,11 @@ export function TreeNode({
         )}
 
         {/* Badge */}
-        {badge && (
-          <div className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">
-            {badge}
-          </div>
-        )}
+        {badge && <div className="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">{badge}</div>}
       </div>
 
       {/* Children (when expanded) */}
-      {hasChildren && isExpanded && children && (
-        <div className="relative">
-          {children}
-        </div>
-      )}
+      {hasChildren && isExpanded && children && <div className="relative">{children}</div>}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
   normaliseForWaveform,
   spectralCentroid,
   spectralFlux,
-  spectrogram
+  spectrogram,
 } from "../src/index";
 
 describe("@octoseq/mir", () => {
@@ -27,7 +27,7 @@ describe("@octoseq/mir", () => {
     const audio = {
       sampleRate,
       numberOfChannels: 1,
-      getChannelData: () => ch0
+      getChannelData: () => ch0,
     };
 
     const spec = await spectrogram(audio, { fftSize: 1024, hopSize: 256, window: "hann" });

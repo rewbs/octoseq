@@ -151,7 +151,8 @@ function formatMethodDoc(method: RegistryMethod): string {
     parts.push("");
     for (const p of method.params) {
       const opt = p.optional ? " *(optional)*" : "";
-      const defaultVal = p.default !== undefined ? ` (default: \`${JSON.stringify(p.default)}\`)` : "";
+      const defaultVal =
+        p.default !== undefined ? ` (default: \`${JSON.stringify(p.default)}\`)` : "";
       parts.push(`- \`${p.name}: ${p.type}\`${opt}${defaultVal} — ${p.description}`);
     }
   }
@@ -268,7 +269,9 @@ function getBandKeyCompletions(
     }
 
     const closing = hasQuote ? '"]' : `${quoteChar}]`;
-    const labelInsert = hasQuote ? `${band.label}${closing}` : `${quoteChar}${band.label}${quoteChar}]`;
+    const labelInsert = hasQuote
+      ? `${band.label}${closing}`
+      : `${quoteChar}${band.label}${quoteChar}]`;
 
     suggestions.push({
       label: band.label,
@@ -325,7 +328,9 @@ function getStemKeyCompletions(
     }
 
     const closing = hasQuote ? '"]' : `${quoteChar}]`;
-    const labelInsert = hasQuote ? `${stem.label}${closing}` : `${quoteChar}${stem.label}${quoteChar}]`;
+    const labelInsert = hasQuote
+      ? `${stem.label}${closing}`
+      : `${quoteChar}${stem.label}${quoteChar}]`;
 
     suggestions.push({
       label: stem.label,
@@ -382,7 +387,9 @@ function getCustomEventsKeyCompletions(
     }
 
     const closing = hasQuote ? '"]' : `${quoteChar}]`;
-    const labelInsert = hasQuote ? `${event.label}${closing}` : `${quoteChar}${event.label}${quoteChar}]`;
+    const labelInsert = hasQuote
+      ? `${event.label}${closing}`
+      : `${quoteChar}${event.label}${quoteChar}]`;
 
     suggestions.push({
       label: event.label,
@@ -565,7 +572,12 @@ export function createCompletionProvider(
 
         case "in-custom-events-key":
           return {
-            suggestions: getCustomEventsKeyCompletions(monaco, range, context, getAvailableCustomEvents),
+            suggestions: getCustomEventsKeyCompletions(
+              monaco,
+              range,
+              context,
+              getAvailableCustomEvents
+            ),
           };
 
         case "in-config-map":

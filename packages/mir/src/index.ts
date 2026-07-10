@@ -100,42 +100,42 @@ export { amplitudeEnvelope, spectralCentroid, spectralFlux } from "./dsp/spectra
 // ----------------------------
 
 export type {
-    OnsetEnvelope,
-    OnsetEnvelopeResult,
-    OnsetDiagnostics,
-    OnsetEnvelopeOptions,
-    OnsetEnvelopeGpuResult,
-    SilenceGateConfig,
-    BinGateConfig,
-    SilenceGateResult,
+  OnsetEnvelope,
+  OnsetEnvelopeResult,
+  OnsetDiagnostics,
+  OnsetEnvelopeOptions,
+  OnsetEnvelopeGpuResult,
+  SilenceGateConfig,
+  BinGateConfig,
+  SilenceGateResult,
 } from "./dsp/onset";
-export { onsetEnvelopeFromSpectrogram, onsetEnvelopeFromMel, onsetEnvelopeFromMelGpu } from "./dsp/onset";
+export {
+  onsetEnvelopeFromSpectrogram,
+  onsetEnvelopeFromMel,
+  onsetEnvelopeFromMelGpu,
+} from "./dsp/onset";
 
 export {
-    computeFrameEnergyFromMel,
-    computeFrameEnergyFromSpectrogram,
-    computeSilenceGating,
-    estimateNoiseFloor,
-    buildActivityMask,
-    withSilenceGateDefaults,
-    withBinGateDefaults,
+  computeFrameEnergyFromMel,
+  computeFrameEnergyFromSpectrogram,
+  computeSilenceGating,
+  estimateNoiseFloor,
+  buildActivityMask,
+  withSilenceGateDefaults,
+  withBinGateDefaults,
 } from "./dsp/silenceGating";
 
 // ----------------------------
 // Activity Signal
 // ----------------------------
 
-export type {
-    ActivitySignal,
-    ActivityConfig,
-    ActivityDiagnostics,
-} from "./dsp/activity";
+export type { ActivitySignal, ActivityConfig, ActivityDiagnostics } from "./dsp/activity";
 export {
-    computeActivityFromMel,
-    computeActivityFromSpectrogram,
-    computeActivityFromAudio,
-    applyActivityGating,
-    interpolateActivity,
+  computeActivityFromMel,
+  computeActivityFromSpectrogram,
+  computeActivityFromAudio,
+  applyActivityGating,
+  interpolateActivity,
 } from "./dsp/activity";
 
 export type { PeakPickEvent, PeakPickOptions } from "./dsp/peakPick";
@@ -145,7 +145,11 @@ export { peakPick } from "./dsp/peakPick";
 // Beat Candidates
 // ----------------------------
 
-export type { BeatCandidatesOptions, BeatCandidatesOutput, BeatSalienceSignal } from "./dsp/beatCandidates";
+export type {
+  BeatCandidatesOptions,
+  BeatCandidatesOutput,
+  BeatSalienceSignal,
+} from "./dsp/beatCandidates";
 export { detectBeatCandidates, beatSalienceFromMel } from "./dsp/beatCandidates";
 
 // ----------------------------
@@ -166,15 +170,15 @@ export { computePhaseHypotheses, generateBeatTimes } from "./dsp/phaseAlignment"
 // ----------------------------
 
 export {
-    pickPeaks,
-    pickPeaksAdaptive,
-    computeAdaptiveThreshold,
-    applyHysteresisGate,
-    DEFAULT_PEAK_PICKING_PARAMS,
-    type PeakPickingParams,
-    type PeakPickingResult,
-    type AdaptivePeakPickingResult,
-    type HysteresisGateParams,
+  pickPeaks,
+  pickPeaksAdaptive,
+  computeAdaptiveThreshold,
+  applyHysteresisGate,
+  DEFAULT_PEAK_PICKING_PARAMS,
+  type PeakPickingParams,
+  type PeakPickingResult,
+  type AdaptivePeakPickingResult,
+  type HysteresisGateParams,
 } from "./dsp/peakPicking";
 
 // ----------------------------
@@ -182,16 +186,16 @@ export {
 // ----------------------------
 
 export {
-    findSegmentAtTime,
-    computeBeatPosition,
-    computeBeatPositionFromStructure,
-    generateSegmentId,
-    createSegmentFromGrid,
-    createMusicalTimeStructure,
-    validateSegments,
-    sortSegments,
-    splitSegment,
-    generateSegmentBeatTimes,
+  findSegmentAtTime,
+  computeBeatPosition,
+  computeBeatPositionFromStructure,
+  generateSegmentId,
+  createSegmentFromGrid,
+  createMusicalTimeStructure,
+  validateSegments,
+  sortSegments,
+  splitSegment,
+  generateSegmentBeatTimes,
 } from "./dsp/musicalTime";
 
 // ----------------------------
@@ -199,38 +203,38 @@ export {
 // ----------------------------
 
 export {
-    // ID generation
-    generateBandId,
-    // Validation
-    validateFrequencySegments,
-    validateFrequencyBand,
-    validateBandStructure,
-    // Creation
-    createBandStructure,
-    createConstantBand,
-    createSectionedBand,
-    createStandardBands,
-    // Queries
-    bandsActiveAt,
-    frequencyBoundsAt,
-    allFrequencyBoundsAt,
-    findBandById,
-    // Sorting
-    sortBands,
-    sortFrequencySegments,
-    // Modification
-    touchStructure,
-    addBandToStructure,
-    removeBandFromStructure,
-    updateBandInStructure,
-    // Keyframe Helpers (F2)
-    keyframesFromBand,
-    segmentsFromKeyframes,
-    splitBandSegmentAt,
-    mergeAdjacentSegments,
-    removeKeyframe,
-    updateKeyframe,
-    moveKeyframeTime,
+  // ID generation
+  generateBandId,
+  // Validation
+  validateFrequencySegments,
+  validateFrequencyBand,
+  validateBandStructure,
+  // Creation
+  createBandStructure,
+  createConstantBand,
+  createSectionedBand,
+  createStandardBands,
+  // Queries
+  bandsActiveAt,
+  frequencyBoundsAt,
+  allFrequencyBoundsAt,
+  findBandById,
+  // Sorting
+  sortBands,
+  sortFrequencySegments,
+  // Modification
+  touchStructure,
+  addBandToStructure,
+  removeBandFromStructure,
+  updateBandInStructure,
+  // Keyframe Helpers (F2)
+  keyframesFromBand,
+  segmentsFromKeyframes,
+  splitBandSegmentAt,
+  mergeAdjacentSegments,
+  removeKeyframe,
+  updateKeyframe,
+  moveKeyframeTime,
 } from "./dsp/frequencyBand";
 
 // ----------------------------
@@ -239,22 +243,22 @@ export {
 
 export type { BandMaskOptions, MaskedSpectrogram } from "./dsp/bandMask";
 export {
-    binToHz,
-    hzToBin,
-    computeBandMaskAtTime,
-    applyBandMaskToSpectrogram,
-    computeFrameEnergy,
-    computeFrameAmplitude,
+  binToHz,
+  hzToBin,
+  computeBandMaskAtTime,
+  applyBandMaskToSpectrogram,
+  computeFrameEnergy,
+  computeFrameAmplitude,
 } from "./dsp/bandMask";
 
 export type { BandMirOptions, BandMirBatchRequest, BandMirBatchResult } from "./dsp/bandMir";
 export {
-    bandAmplitudeEnvelope,
-    bandOnsetStrength,
-    bandSpectralFlux,
-    bandSpectralCentroid,
-    runBandMirBatch,
-    getBandMirFunctionLabel,
+  bandAmplitudeEnvelope,
+  bandOnsetStrength,
+  bandSpectralFlux,
+  bandSpectralCentroid,
+  runBandMirBatch,
+  getBandMirFunctionLabel,
 } from "./dsp/bandMir";
 
 // ----------------------------
@@ -262,16 +266,16 @@ export {
 // ----------------------------
 
 export type {
-    BandOnsetPeaksOptions,
-    BandBeatCandidatesOptions,
-    BandEventsBatchRequest,
-    BandEventsBatchResult,
+  BandOnsetPeaksOptions,
+  BandBeatCandidatesOptions,
+  BandEventsBatchRequest,
+  BandEventsBatchResult,
 } from "./dsp/bandEvents";
 export {
-    bandOnsetPeaks,
-    bandBeatCandidates,
-    runBandEventsBatch,
-    getBandEventFunctionLabel,
+  bandOnsetPeaks,
+  bandBeatCandidates,
+  runBandEventsBatch,
+  getBandEventFunctionLabel,
 } from "./dsp/bandEvents";
 
 // ----------------------------
@@ -279,18 +283,18 @@ export {
 // ----------------------------
 
 export type {
-    BandCqtOptions,
-    MaskedCqtSpectrogram,
-    BandCqtBatchRequest,
-    BandCqtBatchResult,
+  BandCqtOptions,
+  MaskedCqtSpectrogram,
+  BandCqtBatchRequest,
+  BandCqtBatchResult,
 } from "./dsp/bandCqt";
 export {
-    applyBandMaskToCqt,
-    bandCqtHarmonicEnergy,
-    bandCqtBassPitchMotion,
-    bandCqtTonalStability,
-    runBandCqtBatch,
-    getBandCqtFunctionLabel,
+  applyBandMaskToCqt,
+  bandCqtHarmonicEnergy,
+  bandCqtBassPitchMotion,
+  bandCqtTonalStability,
+  runBandCqtBatch,
+  getBandCqtFunctionLabel,
 } from "./dsp/bandCqt";
 
 // ----------------------------
@@ -320,23 +324,23 @@ export { melSpectrogram, hzToMel, melToHz, hzToFeatureIndex, featureIndexToHz } 
 
 export type { CqtOptions } from "./dsp/cqt";
 export {
-    cqtSpectrogram,
-    computeCqt,
-    cqtBinToHz,
-    hzToCqtBin,
-    getNumOctaves,
-    getNumBins,
-    getCqtBinFrequencies,
-    withCqtDefaults,
-    CQT_DEFAULTS,
+  cqtSpectrogram,
+  computeCqt,
+  cqtBinToHz,
+  hzToCqtBin,
+  getNumOctaves,
+  getNumBins,
+  getCqtBinFrequencies,
+  withCqtDefaults,
+  CQT_DEFAULTS,
 } from "./dsp/cqt";
 
 export {
-    harmonicEnergy,
-    bassPitchMotion,
-    tonalStability,
-    computeCqtSignal,
-    computeAllCqtSignals,
+  harmonicEnergy,
+  bassPitchMotion,
+  tonalStability,
+  computeCqtSignal,
+  computeAllCqtSignals,
 } from "./dsp/cqtSignals";
 
 // ----------------------------
@@ -358,31 +362,31 @@ export { generateBandProposals } from "./dsp/bandProposal";
 // ----------------------------
 
 export type {
-    ReductionInput,
-    ReductionAlgorithmId,
-    BinRangeOptions,
-    OnsetStrengthOptions,
-    SpectralFluxOptions,
-    ReductionOptions,
-    ReductionResult,
-    // Polarity
-    PolarityMode,
-    // Stabilization
-    StabilizationMode,
-    EnvelopeMode,
-    StabilizationOptions,
+  ReductionInput,
+  ReductionAlgorithmId,
+  BinRangeOptions,
+  OnsetStrengthOptions,
+  SpectralFluxOptions,
+  ReductionOptions,
+  ReductionResult,
+  // Polarity
+  PolarityMode,
+  // Stabilization
+  StabilizationMode,
+  EnvelopeMode,
+  StabilizationOptions,
 } from "./dsp/customSignalReduction";
 export {
-    reduce2DToSignal,
-    getReductionAlgorithmLabel,
-    getReductionAlgorithmDescription,
-    // Polarity
-    applyPolarity,
-    // Stabilization
-    stabilizeSignal,
-    // Statistics
-    computePercentiles,
-    computeLocalStats,
+  reduce2DToSignal,
+  getReductionAlgorithmLabel,
+  getReductionAlgorithmDescription,
+  // Polarity
+  applyPolarity,
+  // Stabilization
+  stabilizeSignal,
+  // Statistics
+  computePercentiles,
+  computeLocalStats,
 } from "./dsp/customSignalReduction";
 
 // ----------------------------
@@ -390,21 +394,21 @@ export {
 // ----------------------------
 
 export type {
-    DiscreteEvent,
-    EventWindowSpec,
-    EnvelopeShape,
-    EventToSignalOptions,
-    EventSignalResult,
-    EventReducer,
-    EventToSignalParams,
+  DiscreteEvent,
+  EventWindowSpec,
+  EnvelopeShape,
+  EventToSignalOptions,
+  EventSignalResult,
+  EventReducer,
+  EventToSignalParams,
 } from "./dsp/eventToSignal";
 export {
-    eventCount,
-    eventDensity,
-    weightedSum,
-    weightedMean,
-    eventEnvelope,
-    eventsToSignal,
+  eventCount,
+  eventDensity,
+  weightedSum,
+  weightedMean,
+  eventEnvelope,
+  eventsToSignal,
 } from "./dsp/eventToSignal";
 
 // ----------------------------
@@ -412,27 +416,27 @@ export {
 // ----------------------------
 
 export type {
-    TransformSmoothMovingAverage,
-    TransformSmoothExponential,
-    TransformSmoothGaussian,
-    TransformSmooth,
-    TransformNormalizeMinMax,
-    TransformNormalizeRobust,
-    TransformNormalizeZScore,
-    TransformNormalize,
-    TransformScale,
-    TransformPolarity,
-    TransformClamp,
-    TransformRemap,
-    TransformStep,
-    TransformChain,
-    TransformContext,
+  TransformSmoothMovingAverage,
+  TransformSmoothExponential,
+  TransformSmoothGaussian,
+  TransformSmooth,
+  TransformNormalizeMinMax,
+  TransformNormalizeRobust,
+  TransformNormalizeZScore,
+  TransformNormalize,
+  TransformScale,
+  TransformPolarity,
+  TransformClamp,
+  TransformRemap,
+  TransformStep,
+  TransformChain,
+  TransformContext,
 } from "./dsp/signalTransforms";
 export {
-    applyTransformStep,
-    applyTransformChain,
-    getTransformLabel,
-    createDefaultTransform,
+  applyTransformStep,
+  applyTransformChain,
+  getTransformLabel,
+  createDefaultTransform,
 } from "./dsp/signalTransforms";
 
 // ----------------------------
@@ -466,10 +470,19 @@ export { fingerprintV1 } from "./search/fingerprintV1";
 export type { MirFingerprintVectorWeights } from "./search/similarity";
 export { fingerprintToVectorV1, similarityFingerprintV1 } from "./search/similarity";
 
-export type { MirSearchCandidate, MirSearchOptionsV1, MirSearchResultV1 } from "./search/searchTrackV1";
+export type {
+  MirSearchCandidate,
+  MirSearchOptionsV1,
+  MirSearchResultV1,
+} from "./search/searchTrackV1";
 export { searchTrackV1 } from "./search/searchTrackV1";
 
-export type { MirRefinementCandidateLabelV1, MirSearchCurveKindV1, MirSearchGuidedOptionsV1, MirSearchResultV1Guided } from "./search/searchTrackV1Guided";
+export type {
+  MirRefinementCandidateLabelV1,
+  MirSearchCurveKindV1,
+  MirSearchGuidedOptionsV1,
+  MirSearchResultV1Guided,
+} from "./search/searchTrackV1Guided";
 export { searchTrackV1Guided } from "./search/searchTrackV1Guided";
 
 /**

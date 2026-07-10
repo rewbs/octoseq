@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { decimator } from "./decimator.js";
+import { SignalLayer } from "./layer.js";
 import { normalizer } from "./normalizer.js";
 import { clamp } from "./utils.js";
 import type { ContinuousSignal } from "./types.js";
@@ -47,5 +48,22 @@ describe("decimator", () => {
     const out = decimator.decimate(times, values, 0, 10, 200);
     expect(out.times.length).toBeGreaterThan(0);
     expect(out.times.length).toBeLessThan(n / 4);
+  });
+});
+
+describe("SignalLayer", () => {
+  it("finds the nearest sparse event without scanning the full signal", () => {
+    const layer = new SignalLayer({
+      id: "events",
+      mode: "markers",
+      signal: {
+        kind: "sparse",
+        times: new Float32Array([0.1, 5, 10, 15]),
+        strengths: new Float32Array([0.1, 0.5, 0.75, 1]),
+      },
+    });
+
+    expect(layer.getValueAt(9.98)).toBeCloseTo(0.75);
+    expect(layer.getValueAt(9.9)).toBeNull();
   });
 });

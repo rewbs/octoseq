@@ -28,9 +28,7 @@ export function useAuthoredEventActions() {
 
       const candidateStream = candidateStore.getStream(candidateStreamId);
       if (!candidateStream) {
-        console.warn(
-          `[AuthoredEvents] Candidate stream not found: ${candidateStreamId}`
-        );
+        console.warn(`[AuthoredEvents] Candidate stream not found: ${candidateStreamId}`);
         return null;
       }
 
@@ -65,9 +63,7 @@ export function useAuthoredEventActions() {
       if (options?.targetStreamId) {
         const targetStream = authoredStore.getStream(options.targetStreamId);
         if (!targetStream) {
-          console.warn(
-            `[AuthoredEvents] Target stream not found: ${options.targetStreamId}`
-          );
+          console.warn(`[AuthoredEvents] Target stream not found: ${options.targetStreamId}`);
           return null;
         }
 
@@ -122,9 +118,7 @@ export function useAuthoredEventActions() {
 
       const candidateStream = candidateStore.getStream(candidateStreamId);
       if (!candidateStream) {
-        console.warn(
-          `[AuthoredEvents] Candidate stream not found: ${candidateStreamId}`
-        );
+        console.warn(`[AuthoredEvents] Candidate stream not found: ${candidateStreamId}`);
         return null;
       }
 
@@ -166,19 +160,16 @@ export function useAuthoredEventActions() {
    * @param description - Optional description
    * @returns The ID of the new stream
    */
-  const createManualStream = useCallback(
-    (name: string, description?: string): string => {
-      const authoredStore = useAuthoredEventStore.getState();
+  const createManualStream = useCallback((name: string, description?: string): string => {
+    const authoredStore = useAuthoredEventStore.getState();
 
-      const source: AuthoredStreamSource = {
-        kind: "manual",
-        description,
-      };
+    const source: AuthoredStreamSource = {
+      kind: "manual",
+      description,
+    };
 
-      return authoredStore.addStream(name, source);
-    },
-    []
-  );
+    return authoredStore.addStream(name, source);
+  }, []);
 
   /**
    * Add an event at a specific time to a stream.
@@ -227,13 +218,10 @@ export function useAuthoredEventActions() {
    * @param streamId - ID of the stream
    * @param eventIds - Set of event IDs to delete
    */
-  const deleteSelectedEvents = useCallback(
-    (streamId: string, eventIds: Set<string>): void => {
-      const authoredStore = useAuthoredEventStore.getState();
-      authoredStore.removeEvents(streamId, Array.from(eventIds));
-    },
-    []
-  );
+  const deleteSelectedEvents = useCallback((streamId: string, eventIds: Set<string>): void => {
+    const authoredStore = useAuthoredEventStore.getState();
+    authoredStore.removeEvents(streamId, Array.from(eventIds));
+  }, []);
 
   /**
    * Duplicate selected events with a time offset.

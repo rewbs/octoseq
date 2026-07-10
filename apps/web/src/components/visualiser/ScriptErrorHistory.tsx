@@ -63,7 +63,10 @@ function ErrorEntry({ entry, isExpanded, onToggle }: ErrorEntryProps) {
       {isExpanded && (
         <div className="pl-7 pr-2 pb-2 space-y-1">
           {entry.diagnostics.map((d, i) => (
-            <div key={i} className="text-[11px] font-mono text-red-200 bg-zinc-900/50 p-1.5 rounded">
+            <div
+              key={i}
+              className="text-[11px] font-mono text-red-200 bg-zinc-900/50 p-1.5 rounded"
+            >
               <div className="flex items-center gap-2 mb-0.5">
                 {formatDiagnosticLocation(d) && (
                   <span className="text-zinc-500">{formatDiagnosticLocation(d)}</span>
@@ -168,9 +171,7 @@ export function ScriptErrorHistory({ className }: ScriptErrorHistoryProps) {
         type="button"
         onClick={() => setHistoryOpen(!isHistoryOpen)}
         className={`inline-flex items-center gap-1 text-xs transition-colors ${
-          hasErrors
-            ? "text-red-500 hover:text-red-400"
-            : "text-zinc-500 hover:text-zinc-400"
+          hasErrors ? "text-red-500 hover:text-red-400" : "text-zinc-500 hover:text-zinc-400"
         } ${className ?? ""}`}
         title={`${hasErrors ? "Script error" : "View error history"} (${errorHistory.length} in history)`}
       >

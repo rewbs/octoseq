@@ -24,9 +24,9 @@ const SOURCE_COLORS = [
   { stroke: "rgb(249, 115, 22)", fill: "rgba(249, 115, 22, 0.3)" }, // orange
   { stroke: "rgb(168, 85, 247)", fill: "rgba(168, 85, 247, 0.3)" }, // purple
   { stroke: "rgb(236, 72, 153)", fill: "rgba(236, 72, 153, 0.3)" }, // pink
-  { stroke: "rgb(234, 179, 8)", fill: "rgba(234, 179, 8, 0.3)" },   // yellow
+  { stroke: "rgb(234, 179, 8)", fill: "rgba(234, 179, 8, 0.3)" }, // yellow
   { stroke: "rgb(20, 184, 166)", fill: "rgba(20, 184, 166, 0.3)" }, // teal
-  { stroke: "rgb(239, 68, 68)", fill: "rgba(239, 68, 68, 0.3)" },   // red
+  { stroke: "rgb(239, 68, 68)", fill: "rgba(239, 68, 68, 0.3)" }, // red
 ];
 
 const DEFAULT_COLOR = { stroke: "rgb(59, 130, 246)", fill: "rgba(59, 130, 246, 0.3)" };
@@ -74,7 +74,7 @@ export function ComparisonInspector({
 
   // Build list of all sources to compare
   const sources = useMemo(() => {
-    const result: Array<{ id: string; label: string; color: typeof SOURCE_COLORS[0] }> = [];
+    const result: Array<{ id: string; label: string; color: (typeof SOURCE_COLORS)[0] }> = [];
 
     // Mixdown first
     const mixdown = streams.get(MIXDOWN_STREAM_ID);
@@ -194,10 +194,7 @@ export function ComparisonInspector({
       <div className="flex flex-wrap gap-3 px-1">
         {sources.map((source) => (
           <div key={source.id} className="flex items-center gap-1.5 text-xs">
-            <div
-              className="w-3 h-3 rounded-sm"
-              style={{ backgroundColor: source.color.stroke }}
-            />
+            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: source.color.stroke }} />
             <span className="text-zinc-600 dark:text-zinc-400">{source.label}</span>
           </div>
         ))}

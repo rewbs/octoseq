@@ -110,10 +110,7 @@ export async function saveProjectFile(
  * @param projectName - The project name (used for suggested filename)
  * @returns SaveResult with success status and file handle if available
  */
-export async function saveProjectFileAs(
-  json: string,
-  projectName: string
-): Promise<SaveResult> {
+export async function saveProjectFileAs(json: string, projectName: string): Promise<SaveResult> {
   return saveProjectFile(json, projectName, null);
 }
 

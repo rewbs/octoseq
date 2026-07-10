@@ -69,11 +69,7 @@ fn classify_message(message: &str) -> ScriptDiagnosticKind {
     ScriptDiagnosticKind::RuntimeError
 }
 
-fn map_position_to_user(
-    line: u32,
-    column: u32,
-    user_line_offset: usize,
-) -> Option<ScriptLocation> {
+fn map_position_to_user(line: u32, column: u32, user_line_offset: usize) -> Option<ScriptLocation> {
     let offset = user_line_offset as u32;
     if line == 0 {
         return None;
@@ -87,10 +83,7 @@ fn map_position_to_user(
     })
 }
 
-pub fn from_parse_error(
-    err: &rhai::ParseError,
-    user_line_offset: usize,
-) -> ScriptDiagnostic {
+pub fn from_parse_error(err: &rhai::ParseError, user_line_offset: usize) -> ScriptDiagnostic {
     let raw = err.to_string();
 
     // Rhai's ParseError exposes a Position.

@@ -72,9 +72,7 @@ export function useStemImport(): { importStemFiles: (files: File[]) => Promise<v
               onComplete: (cloudAssetId) => {
                 const stream = useStreamStore.getState().getStream(stemId);
                 if (stream && isAudioStream(stream)) {
-                  useStreamStore
-                    .getState()
-                    .updateAudio(stemId, { ...stream.audio, cloudAssetId });
+                  useStreamStore.getState().updateAudio(stemId, { ...stream.audio, cloudAssetId });
                 }
                 rawFileCache.delete(stemId);
               },

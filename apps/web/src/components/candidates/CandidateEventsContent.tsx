@@ -1,15 +1,12 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Sparkles, Trash2, Info, Loader2, ChevronDown, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useStreamStore } from "@/lib/streams";
-import {
-  useCandidateEventStore,
-  type CandidateEventType,
-} from "@/lib/stores/candidateEventStore";
+import { useCandidateEventStore, type CandidateEventType } from "@/lib/stores/candidateEventStore";
 import { useCandidateEventActions } from "@/lib/stores/hooks/useCandidateEventActions";
 import { CandidateStreamListItem } from "./CandidateStreamListItem";
 
@@ -46,38 +43,27 @@ export function CandidateEventsContent({ audioDuration }: CandidateEventsContent
   const hasAudio = audioDuration > 0;
   const hasInputs = useStreamStore((s) => s.streams.size > 0);
 
-  const {
-    generateAll,
-    generateAllSourcesForType,
-    clearAll,
-    toggleStreamVisibility,
-    inspectStream,
-    setEventTypeVisibility,
-    hasAnalysisFor,
-  } = useCandidateEventActions();
+  const { generateAll, clearAll, toggleStreamVisibility, inspectStream, setEventTypeVisibility } =
+    useCandidateEventActions();
 
   const clearStream = useCandidateEventStore((s) => s.clearStream);
   const setEventTypeFilter = useCandidateEventStore((s) => s.setEventTypeFilter);
 
   // Convert streams Map to array and filter by event type
-  const streamArray = Array.from(streams.values());
+  const streamArray = useMemo(() => Array.from(streams.values()), [streams]);
   const filteredStreams = eventTypeFilter
     ? streamArray.filter((s) => s.eventType === eventTypeFilter)
     : streamArray;
 
   // Group streams by event type for display
-  const streamsByType: Record<CandidateEventType, typeof streamArray> = {
-    onset: streamArray.filter((s) => s.eventType === "onset"),
-    beat: streamArray.filter((s) => s.eventType === "beat"),
-    flux: streamArray.filter((s) => s.eventType === "flux"),
-  };
-
-  // Check if any source has analysis available
-  const hasAnyAnalysis = useCallback(() => {
-    if (!hasInputs) return false;
-    const mixdownId = "mixdown";
-    return EVENT_TYPES.some((type) => hasAnalysisFor(mixdownId, type));
-  }, [hasInputs, hasAnalysisFor]);
+  const streamsByType: Record<CandidateEventType, typeof streamArray> = useMemo(
+    () => ({
+      onset: streamArray.filter((s) => s.eventType === "onset"),
+      beat: streamArray.filter((s) => s.eventType === "beat"),
+      flux: streamArray.filter((s) => s.eventType === "flux"),
+    }),
+    [streamArray]
+  );
 
   const handleGenerateAll = useCallback(() => {
     if (!isGenerating) {
@@ -202,14 +188,13 @@ export function CandidateEventsContent({ audioDuration }: CandidateEventsContent
                       size="sm"
                       className={cn(
                         "h-6 px-2 text-xs",
-                        isActive && "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
+                        isActive &&
+                          "bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
                       )}
                       onClick={() => handleEventTypeFilterClick(eventType)}
                     >
                       {EVENT_TYPE_LABELS[eventType]}
-                      {count > 0 && (
-                        <span className="ml-1 text-zinc-400">({count})</span>
-                      )}
+                      {count > 0 && <span className="ml-1 text-zinc-400">({count})</span>}
                     </Button>
                     {count > 0 && (
                       <Button
@@ -219,11 +204,7 @@ export function CandidateEventsContent({ audioDuration }: CandidateEventsContent
                         onClick={() => handleToggleEventTypeVisibility(eventType)}
                         title={allVisible ? "Hide all" : "Show all"}
                       >
-                        {allVisible ? (
-                          <Eye className="h-3 w-3" />
-                        ) : (
-                          <EyeOff className="h-3 w-3" />
-                        )}
+                        {allVisible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                       </Button>
                     )}
                   </div>
@@ -259,9 +240,7 @@ export function CandidateEventsContent({ audioDuration }: CandidateEventsContent
               key={stream.id}
               stream={stream}
               isInspected={stream.id === inspectedStreamId}
-              onInspect={() =>
-                inspectStream(stream.id === inspectedStreamId ? null : stream.id)
-              }
+              onInspect={() => inspectStream(stream.id === inspectedStreamId ? null : stream.id)}
               onToggleVisibility={() => toggleStreamVisibility(stream.id)}
               onClear={() => clearStream(stream.id)}
             />

@@ -43,7 +43,8 @@ fn wrap_snippet_for_execution(snippet: &str) -> String {
     // Some docs blocks assume a non-empty EventStream and index into the span array.
     // In playback mode, `pick.events()` yields an empty stream, so we provide a tiny
     // fake `events` object only for those snippets to avoid out-of-bounds errors.
-    let needs_non_empty_events = snippet.contains("events.time_span()") && snippet.contains("span[0]");
+    let needs_non_empty_events =
+        snippet.contains("events.time_span()") && snippet.contains("span[0]");
 
     let events_binding = if needs_non_empty_events {
         r#"
@@ -98,11 +99,13 @@ let sig2 = timing.time;
 fn test_all_rhai_blocks_parse() {
     // Read the scripting.md file
     let scripting_md_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../scripting.md");
-    let content = fs::read_to_string(scripting_md_path)
-        .expect("Failed to read scripting.md");
+    let content = fs::read_to_string(scripting_md_path).expect("Failed to read scripting.md");
 
     let blocks = extract_rhai_blocks(&content);
-    assert!(!blocks.is_empty(), "No Rhai code blocks found in scripting.md");
+    assert!(
+        !blocks.is_empty(),
+        "No Rhai code blocks found in scripting.md"
+    );
 
     let mut errors = Vec::new();
 
@@ -145,7 +148,10 @@ fn test_all_rhai_blocks_parse() {
 
         // Try to load the script (this compiles and validates it)
         if !engine.load_script(&script) {
-            let error_msg = engine.last_error.clone().unwrap_or("Unknown error".to_string());
+            let error_msg = engine
+                .last_error
+                .clone()
+                .unwrap_or("Unknown error".to_string());
             errors.push(format!(
                 "Block starting at line {} failed to parse:\n{}\nError: {}",
                 line_num,

@@ -72,7 +72,7 @@ impl InputSignal {
 
         // If indices are out of bounds or invalid
         if end_idx < 0 || start_idx >= self.samples.len() as isize || start_idx > end_idx {
-             return 0.0;
+            return 0.0;
         }
 
         // Clamp indices
@@ -97,7 +97,9 @@ impl InputSignal {
     }
 
     pub fn apply_sigmoid(&self, val: f32, k: f32) -> f32 {
-        if k == 0.0 { return val; }
+        if k == 0.0 {
+            return val;
+        }
 
         // Sigmoid centered at 0.5
         // f(x) = 1 / (1 + exp(-k * (x - 0.5)))

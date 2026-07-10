@@ -118,9 +118,7 @@ export function BandListItem({
     <div
       className={cn(
         "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
-        isSelected
-          ? "bg-zinc-200 dark:bg-zinc-700"
-          : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
+        isSelected ? "bg-zinc-200 dark:bg-zinc-700" : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
         !enabled && "opacity-50"
       )}
       onClick={onSelect}
@@ -183,21 +181,14 @@ export function BandListItem({
         <Button
           variant="ghost"
           size="icon"
-          className={cn(
-            "h-6 w-6",
-            isMuted && "bg-red-500/20 text-red-600 dark:text-red-400"
-          )}
+          className={cn("h-6 w-6", isMuted && "bg-red-500/20 text-red-600 dark:text-red-400")}
           onClick={(e) => {
             e.stopPropagation();
             onToggleMute();
           }}
           title="Mute (hide from overlay)"
         >
-          {isMuted ? (
-            <VolumeX className="h-3.5 w-3.5" />
-          ) : (
-            <Volume2 className="h-3.5 w-3.5" />
-          )}
+          {isMuted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
         </Button>
 
         {/* Enable/Disable button */}
@@ -211,11 +202,7 @@ export function BandListItem({
           }}
           title={enabled ? "Disable band" : "Enable band"}
         >
-          {enabled ? (
-            <Eye className="h-3.5 w-3.5" />
-          ) : (
-            <EyeOff className="h-3.5 w-3.5" />
-          )}
+          {enabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
         </Button>
 
         {/* Delete button */}
@@ -354,7 +341,10 @@ export type FrequencyBandContentProps = {
  * The inner content of the frequency band panel.
  * Can be embedded in the interpretation tree or used standalone.
  */
-export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: FrequencyBandContentProps) {
+export function FrequencyBandContent({
+  audioDuration,
+  sourceId = "mixdown",
+}: FrequencyBandContentProps) {
   // Band definitions and selection live in the unified stream store
   const { streams, selectedBandId, selectBand, renameStream, setStreamEnabled } = useStreamStore(
     useShallow((s) => ({
@@ -405,12 +395,8 @@ export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: Fr
   );
 
   // Band proposal actions
-  const {
-    computeProposals,
-    promoteProposal,
-    dismissProposal,
-    inspectProposal,
-  } = useBandProposalActions();
+  const { computeProposals, promoteProposal, dismissProposal, inspectProposal } =
+    useBandProposalActions();
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [discoverExpanded, setDiscoverExpanded] = useState(true);
@@ -613,9 +599,7 @@ export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: Fr
           >
             <div className="flex items-center gap-1.5">
               <Sparkles className="h-3.5 w-3.5 text-orange-500" />
-              <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
-                Discover
-              </span>
+              <span className="text-sm font-medium text-zinc-600 dark:text-zinc-400">Discover</span>
               {proposals.length > 0 && (
                 <span className="text-xs text-orange-500 bg-orange-100 dark:bg-orange-900/30 px-1.5 py-0.5 rounded-full">
                   {proposals.length}
@@ -659,9 +643,7 @@ export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: Fr
 
               {/* Error message */}
               {proposalError && (
-                <div className="text-xs text-red-600 dark:text-red-400 px-1">
-                  {proposalError}
-                </div>
+                <div className="text-xs text-red-600 dark:text-red-400 px-1">{proposalError}</div>
               )}
 
               {/* Proposals list */}
@@ -673,11 +655,7 @@ export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: Fr
                       proposal={proposal}
                       isInspected={proposal.id === inspectedProposalId}
                       onInspect={() =>
-                        inspectProposal(
-                          proposal.id === inspectedProposalId
-                            ? null
-                            : proposal.id
-                        )
+                        inspectProposal(proposal.id === inspectedProposalId ? null : proposal.id)
                       }
                       onPromote={() => promoteProposal(proposal.id, sourceId)}
                       onDismiss={() => dismissProposal(proposal.id)}
@@ -691,7 +669,8 @@ export function FrequencyBandContent({ audioDuration, sourceId = "mixdown" }: Fr
                 <div className="flex items-start gap-2 px-1 py-2 text-xs text-zinc-500 dark:text-zinc-400">
                   <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                   <span>
-                    Click &quot;Discover Bands&quot; to find interesting frequency regions in your audio.
+                    Click &quot;Discover Bands&quot; to find interesting frequency regions in your
+                    audio.
                   </span>
                 </div>
               )}

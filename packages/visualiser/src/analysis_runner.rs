@@ -47,7 +47,10 @@ impl AnalysisConfig {
 
     /// Create config with specified duration and time step.
     pub fn new(duration: f32, time_step: f32) -> Self {
-        Self { duration, time_step }
+        Self {
+            duration,
+            time_step,
+        }
     }
 }
 
@@ -168,7 +171,17 @@ pub fn run_analysis_with_bands(
         }
 
         // Call update (scene graph changes are ignored)
-        engine.update(time, dt, &sampled, signals, band_signals, &stem_signals, &custom_signals, &composed_signals, musical_time);
+        engine.update(
+            time,
+            dt,
+            &sampled,
+            signals,
+            band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            musical_time,
+        );
     }
 
     // Collect results
@@ -179,7 +192,10 @@ pub fn run_analysis_with_bands(
         "Analysis complete: {} steps, {} signals, {} total emissions",
         step_count,
         debug_signals.len(),
-        debug_signals.values().map(|s| s.emissions.len()).sum::<usize>()
+        debug_signals
+            .values()
+            .map(|s| s.emissions.len())
+            .sum::<usize>()
     );
 
     Ok(AnalysisResult {
@@ -221,7 +237,15 @@ pub fn run_analysis_with_events(
     collect_event_debug: bool,
 ) -> Result<ExtendedAnalysisResult, String> {
     // Call the extended version with empty bands and band signals
-    run_analysis_with_events_and_bands(script, signals, &[], &HashMap::new(), musical_time, config, collect_event_debug)
+    run_analysis_with_events_and_bands(
+        script,
+        signals,
+        &[],
+        &HashMap::new(),
+        musical_time,
+        config,
+        collect_event_debug,
+    )
 }
 
 /// Run script in analysis mode with event extraction and band support.
@@ -311,7 +335,17 @@ pub fn run_analysis_with_events_and_bands(
         }
 
         // Call update
-        engine.update(time, dt, &sampled, signals, band_signals, &stem_signals, &custom_signals, &composed_signals, musical_time);
+        engine.update(
+            time,
+            dt,
+            &sampled,
+            signals,
+            band_signals,
+            &stem_signals,
+            &custom_signals,
+            &composed_signals,
+            musical_time,
+        );
     }
 
     // Collect debug signals
@@ -350,7 +384,11 @@ pub fn run_analysis_with_events_and_bands(
                 }
             }
             Err(e) => {
-                log::warn!("Event extraction failed for {}: {}", pending_extraction.name, e);
+                log::warn!(
+                    "Event extraction failed for {}: {}",
+                    pending_extraction.name,
+                    e
+                );
             }
         }
     }

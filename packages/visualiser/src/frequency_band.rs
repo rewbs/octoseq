@@ -154,7 +154,9 @@ impl FrequencyBand {
 
     /// Find the segment containing a given time.
     pub fn segment_at(&self, time: f32) -> Option<&FrequencySegment> {
-        self.frequency_shape.iter().find(|seg| seg.contains_time(time))
+        self.frequency_shape
+            .iter()
+            .find(|seg| seg.contains_time(time))
     }
 }
 
@@ -203,13 +205,14 @@ impl FrequencyBandStructure {
         self.bands
             .iter()
             .filter_map(|band| {
-                band.frequency_bounds_at(time).map(|(low, high)| FrequencyBoundsAtTime {
-                    band_id: band.id.clone(),
-                    label: band.label.clone(),
-                    low_hz: low,
-                    high_hz: high,
-                    enabled: band.enabled,
-                })
+                band.frequency_bounds_at(time)
+                    .map(|(low, high)| FrequencyBoundsAtTime {
+                        band_id: band.id.clone(),
+                        label: band.label.clone(),
+                        low_hz: low,
+                        high_hz: high,
+                        enabled: band.enabled,
+                    })
             })
             .collect()
     }

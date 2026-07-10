@@ -10,8 +10,18 @@ export type UiMirResult =
   | { kind: "none" }
   | { kind: "1d"; fn: MirFunctionId; times: Float32Array; values: Float32Array }
   | { kind: "2d"; fn: MirFunctionId; raw: TimeAlignedHeatmapData }
-  | { kind: "events"; fn: MirFunctionId; times: Float32Array; events: Array<{ time: number; strength: number; index: number }> }
-  | { kind: "tempoHypotheses"; fn: MirFunctionId; hypotheses: TempoHypothesis[]; inputCandidateCount: number };
+  | {
+      kind: "events";
+      fn: MirFunctionId;
+      times: Float32Array;
+      events: Array<{ time: number; strength: number; index: number }>;
+    }
+  | {
+      kind: "tempoHypotheses";
+      fn: MirFunctionId;
+      hypotheses: TempoHypothesis[];
+      inputCandidateCount: number;
+    };
 
 /**
  * Search result from similarity search.

@@ -43,14 +43,9 @@ export function StemListItem({
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(label);
 
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: stemId });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: stemId,
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -87,9 +82,7 @@ export function StemListItem({
       style={style}
       className={cn(
         "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
-        isSelected
-          ? "bg-zinc-200 dark:bg-zinc-700"
-          : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
+        isSelected ? "bg-zinc-200 dark:bg-zinc-700" : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
         isDragging && "shadow-lg z-10",
         isDeleting && "opacity-50"
       )}

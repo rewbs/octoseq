@@ -5,9 +5,11 @@ This collection showcases the full capabilities of the Octoseq Rhai scripting en
 ## Scripts
 
 ### 1. Spectral Flower (`01-spectral-flower.rhai`)
+
 A blooming flower visualization driven by frequency bands.
 
 **Features:**
+
 - Radial wave primitives
 - Frequency band signals (bass, mids, highs)
 - Event extraction and envelope generation
@@ -21,9 +23,11 @@ A blooming flower visualization driven by frequency bands.
 ---
 
 ### 2. Particle Storm (`02-particle-storm.rhai`)
+
 Dynamic particle bursts with warping feedback trails.
 
 **Features:**
+
 - Event-driven particle systems
 - Point cloud primitives
 - Multi-stage feedback warping (radial + noise)
@@ -37,9 +41,11 @@ Dynamic particle bursts with warping feedback trails.
 ---
 
 ### 3. Audio Ribbon Dance (`03-audio-ribbon-dance.rhai`)
+
 Flowing ribbons trace multiple signals through 3D space.
 
 **Features:**
+
 - Line ribbons (tube mode with twist)
 - Line traces for 2D signal visualization
 - Signal composition (weighted combination)
@@ -53,9 +59,11 @@ Flowing ribbons trace multiple signals through 3D space.
 ---
 
 ### 4. Frequency Reactor (`04-frequency-reactor.rhai`)
+
 Multi-layered frequency visualization with hierarchical organization.
 
 **Features:**
+
 - Scene groups
 - Entity instancing
 - Signal time-shifting (delay/anticipate)
@@ -69,9 +77,11 @@ Multi-layered frequency visualization with hierarchical organization.
 ---
 
 ### 5. Psychedelic Feedback Tunnel (`05-psychedelic-feedback-tunnel.rhai`)
+
 Warped feedback with extensive post-processing layers.
 
 **Features:**
+
 - Multi-stage feedback warping (spiral + noise + shear)
 - Feedback sampling after effects (accumulating bloom)
 - Color posterization in feedback
@@ -92,50 +102,50 @@ Warped feedback with extensive post-processing layers.
 
 ## Features Coverage
 
-| Feature | Script 1 | Script 2 | Script 3 | Script 4 | Script 5 |
-|---------|----------|----------|----------|----------|----------|
-| **Primitives** |
-| mesh.sphere/cube/plane | ✓ | ✓ | ✓ | ✓ | ✓ |
-| radial.wave/ring | ✓ | | | | |
-| line.ribbon | | | ✓ | | |
-| line.trace | | | ✓ | | ✓ |
-| points.cloud | | ✓ | | | |
-| particles.from_events | | ✓ | | | |
-| **Signals** |
-| Frequency bands | ✓ | | ✓ | ✓ | |
-| Event extraction | ✓ | ✓ | | ✓ | ✓ |
-| Signal smoothing | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Signal composition | | | ✓ | | |
-| Time shifting (delay) | | | | ✓ | |
-| Generated signals | | | | | ✓ |
-| Beat density | | | | | ✓ |
-| **Scene** |
-| Groups | | | | ✓ | |
-| Instancing | | | | ✓ | |
-| **Materials** |
-| emissive | ✓ | ✓ | ✓ | ✓ | ✓ |
-| gradient | ✓ | | | ✓ | |
-| wire_glow | | | | ✓ | |
-| soft_additive | | ✓ | | ✓ | |
-| **Lighting** |
-| Global lighting | ✓ | | ✓ | ✓ | |
-| Audio-reactive lighting | | | | ✓ | |
-| Rim lighting | ✓ | | ✓ | | |
-| Blob shadows | ✓ | | ✓ | ✓ | |
-| **Feedback** |
-| Warp effects | | ✓ | | | ✓ |
-| Color effects | | ✓ | | | ✓ |
-| Multi-stage warping | | ✓ | | | ✓ |
-| Sample after effects | | | | | ✓ |
-| **Post-Processing** |
-| Bloom | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Vignette | ✓ | | | ✓ | |
-| Color grading | | | ✓ | | ✓ |
-| Chromatic aberration | | ✓ | | | ✓ |
-| Radial blur | | ✓ | | | |
-| Directional blur | | | | | ✓ |
-| Zoom wrap | | | | | ✓ |
-| Grain | | | | | ✓ |
+| Feature                 | Script 1 | Script 2 | Script 3 | Script 4 | Script 5 |
+| ----------------------- | -------- | -------- | -------- | -------- | -------- |
+| **Primitives**          |
+| mesh.sphere/cube/plane  | ✓        | ✓        | ✓        | ✓        | ✓        |
+| radial.wave/ring        | ✓        |          |          |          |          |
+| line.ribbon             |          |          | ✓        |          |          |
+| line.trace              |          |          | ✓        |          | ✓        |
+| points.cloud            |          | ✓        |          |          |          |
+| particles.from_events   |          | ✓        |          |          |          |
+| **Signals**             |
+| Frequency bands         | ✓        |          | ✓        | ✓        |          |
+| Event extraction        | ✓        | ✓        |          | ✓        | ✓        |
+| Signal smoothing        | ✓        | ✓        | ✓        | ✓        | ✓        |
+| Signal composition      |          |          | ✓        |          |          |
+| Time shifting (delay)   |          |          |          | ✓        |          |
+| Generated signals       |          |          |          |          | ✓        |
+| Beat density            |          |          |          |          | ✓        |
+| **Scene**               |
+| Groups                  |          |          |          | ✓        |          |
+| Instancing              |          |          |          | ✓        |          |
+| **Materials**           |
+| emissive                | ✓        | ✓        | ✓        | ✓        | ✓        |
+| gradient                | ✓        |          |          | ✓        |          |
+| wire_glow               |          |          |          | ✓        |          |
+| soft_additive           |          | ✓        |          | ✓        |          |
+| **Lighting**            |
+| Global lighting         | ✓        |          | ✓        | ✓        |          |
+| Audio-reactive lighting |          |          |          | ✓        |          |
+| Rim lighting            | ✓        |          | ✓        |          |          |
+| Blob shadows            | ✓        |          | ✓        | ✓        |          |
+| **Feedback**            |
+| Warp effects            |          | ✓        |          |          | ✓        |
+| Color effects           |          | ✓        |          |          | ✓        |
+| Multi-stage warping     |          | ✓        |          |          | ✓        |
+| Sample after effects    |          |          |          |          | ✓        |
+| **Post-Processing**     |
+| Bloom                   | ✓        | ✓        | ✓        | ✓        | ✓        |
+| Vignette                | ✓        |          |          | ✓        |          |
+| Color grading           |          |          | ✓        |          | ✓        |
+| Chromatic aberration    |          | ✓        |          |          | ✓        |
+| Radial blur             |          | ✓        |          |          |          |
+| Directional blur        |          |          |          |          | ✓        |
+| Zoom wrap               |          |          |          |          | ✓        |
+| Grain                   |          |          |          |          | ✓        |
 
 ## Usage
 
@@ -155,6 +165,7 @@ Warped feedback with extensive post-processing layers.
 ## Customization
 
 All scripts use the declarative Signal API extensively. Try modifying:
+
 - Smoothing parameters (attack/decay times)
 - Event extraction thresholds
 - Material parameters

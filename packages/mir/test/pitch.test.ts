@@ -8,7 +8,11 @@ describe("Pitch detection (YIN)", () => {
   /**
    * Generate a pure sine wave at a given frequency.
    */
-  function generateSine(freqHz: number, durationSec: number, sr: number = sampleRate): Float32Array {
+  function generateSine(
+    freqHz: number,
+    durationSec: number,
+    sr: number = sampleRate
+  ): Float32Array {
     const samples = new Float32Array(Math.floor(sr * durationSec));
     for (let i = 0; i < samples.length; i++) {
       samples[i] = Math.sin((2 * Math.PI * freqHz * i) / sr);

@@ -13,8 +13,7 @@ import {
 } from "./synthetic-signals.js";
 
 // Demo audio URL (a short sample)
-const DEMO_AUDIO_URL =
-  "https://upload.wikimedia.org/wikipedia/commons/c/c8/Example.ogg";
+const DEMO_AUDIO_URL = "https://upload.wikimedia.org/wikipedia/commons/c/c8/Example.ogg";
 
 async function main() {
   // Generate synthetic signals
@@ -38,9 +37,7 @@ async function main() {
   });
 
   // Register SignalViewer plugin
-  let signalViewer: Awaited<
-    ReturnType<typeof wavesurfer.registerPluginV8>
-  > | null = null;
+  let signalViewer: Awaited<ReturnType<typeof wavesurfer.registerPluginV8>> | null = null;
   let currentLayout: "overlay" | "stacked" = "overlay";
   let currentRenderMode: RenderMode = "filled";
 
@@ -58,11 +55,11 @@ async function main() {
         onHover: (time, values) => {
           document.getElementById("hoverTime")!.textContent = `${time.toFixed(3)}s`;
           document.getElementById("hoverSine")!.textContent =
-            values["sine"] !== null ? values["sine"]?.toFixed(3) ?? "--" : "--";
+            values["sine"] !== null ? (values["sine"]?.toFixed(3) ?? "--") : "--";
           document.getElementById("hoverEnvelope")!.textContent =
-            values["envelope"] !== null ? values["envelope"]?.toFixed(3) ?? "--" : "--";
+            values["envelope"] !== null ? (values["envelope"]?.toFixed(3) ?? "--") : "--";
           document.getElementById("hoverNoise")!.textContent =
-            values["noise"] !== null ? values["noise"]?.toFixed(3) ?? "--" : "--";
+            values["noise"] !== null ? (values["noise"]?.toFixed(3) ?? "--") : "--";
         },
         layers: [
           {
@@ -99,6 +96,17 @@ async function main() {
               stroke: "#10b981",
               fill: "rgba(16, 185, 129, 0.3)",
               strokeWidth: 1.5,
+            },
+          },
+          {
+            id: "events",
+            signal: sparseSignal,
+            mode: "markers",
+            baseline: "bottom",
+            normalization: "fixed",
+            color: {
+              stroke: "#ef4444",
+              strokeWidth: 2,
             },
           },
         ],
@@ -141,7 +149,8 @@ async function main() {
     currentRenderMode = (e.target as HTMLSelectElement).value as RenderMode;
 
     if (signalViewer) {
-      const actions = (signalViewer as unknown as { instance: SignalViewerPluginInstance }).instance.actions;
+      const actions = (signalViewer as unknown as { instance: SignalViewerPluginInstance }).instance
+        .actions;
       actions.updateLayer("sine", { mode: currentRenderMode });
       actions.updateLayer("envelope", { mode: currentRenderMode });
       actions.updateLayer("noise", { mode: currentRenderMode });

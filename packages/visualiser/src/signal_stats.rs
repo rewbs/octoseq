@@ -32,11 +32,7 @@ impl SignalStatistics {
         }
 
         // Filter out NaN and Inf values
-        let valid_samples: Vec<f32> = samples
-            .iter()
-            .copied()
-            .filter(|v| v.is_finite())
-            .collect();
+        let valid_samples: Vec<f32> = samples.iter().copied().filter(|v| v.is_finite()).collect();
 
         if valid_samples.is_empty() {
             return Self::default();

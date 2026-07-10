@@ -1,12 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import {
-  analysisKey,
-  toDisplaySignal,
-  useAnalysisStore,
-  useStreamStore,
-} from "@/lib/streams";
+import { analysisKey, toDisplaySignal, useAnalysisStore, useStreamStore } from "@/lib/streams";
 import { getBandColorHex } from "@/lib/bandColors";
 import type { BandMir1DResult } from "@octoseq/mir";
 
@@ -69,9 +64,7 @@ export function BandAmplitudeSelector({
           </option>
         ))}
       </select>
-      {isLoading && (
-        <span className="text-xs text-zinc-400 animate-pulse">...</span>
-      )}
+      {isLoading && <span className="text-xs text-zinc-400 animate-pulse">...</span>}
     </div>
   );
 }

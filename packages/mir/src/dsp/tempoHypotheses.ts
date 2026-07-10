@@ -4,43 +4,43 @@ import type { BeatCandidate, TempoHypothesis, TempoHypothesisEvidence } from "..
  * Configuration for tempo hypothesis generation.
  */
 export type TempoHypothesesOptions = {
-    /** Minimum BPM to consider. Default: 24. */
-    minBpm?: number;
-    /** Maximum BPM to consider. Default: 300. */
-    maxBpm?: number;
-    /** Histogram bin size in BPM. Default: 1.0. */
-    binSizeBpm?: number;
-    /** Maximum hypotheses to return. Default: 10. */
-    maxHypotheses?: number;
-    /** Minimum confidence threshold (0-1). Default: 0.05. */
-    minConfidence?: number;
-    /** Weight IOIs by candidate strength. Default: true. */
-    weightByStrength?: boolean;
-    /** Include histogram data in output. Default: false. */
-    includeHistogram?: boolean;
+  /** Minimum BPM to consider. Default: 24. */
+  minBpm?: number;
+  /** Maximum BPM to consider. Default: 300. */
+  maxBpm?: number;
+  /** Histogram bin size in BPM. Default: 1.0. */
+  binSizeBpm?: number;
+  /** Maximum hypotheses to return. Default: 10. */
+  maxHypotheses?: number;
+  /** Minimum confidence threshold (0-1). Default: 0.05. */
+  minConfidence?: number;
+  /** Weight IOIs by candidate strength. Default: true. */
+  weightByStrength?: boolean;
+  /** Include histogram data in output. Default: false. */
+  includeHistogram?: boolean;
 };
 
 export type TempoHypothesesOutput = {
-    hypotheses: TempoHypothesis[];
-    inputCandidateCount: number;
-    histogram?: {
-        bpmBins: Float32Array;
-        counts: Float32Array;
-    };
+  hypotheses: TempoHypothesis[];
+  inputCandidateCount: number;
+  histogram?: {
+    bpmBins: Float32Array;
+    counts: Float32Array;
+  };
 };
 
 /**
  * Convert interval (seconds) to BPM.
  */
 function intervalToBpm(intervalSec: number): number {
-    return 60.0 / intervalSec;
+  return 60.0 / intervalSec;
 }
 
 /**
  * Convert BPM to interval (seconds).
  */
 function bpmToInterval(bpm: number): number {
-    return 60.0 / bpm;
+  return 60.0 / bpm;
 }
 
 type IOI = { intervalSec: number; weight: number };
@@ -53,30 +53,28 @@ type IOI = { intervalSec: number; weight: number };
  * @returns Array of { intervalSec, weight } pairs
  */
 function computeIOIs(candidates: BeatCandidate[], weightByStrength: boolean): IOI[] {
-    if (candidates.length < 2) return [];
+  if (candidates.length < 2) return [];
 
-    const iois: IOI[] = [];
+  const iois: IOI[] = [];
 
-    // Sort candidates by time (should already be sorted, but be defensive)
-    const sorted = [...candidates].sort((a, b) => a.time - b.time);
+  // Sort candidates by time (should already be sorted, but be defensive)
+  const sorted = [...candidates].sort((a, b) => a.time - b.time);
 
-    for (let i = 1; i < sorted.length; i++) {
-        const prev = sorted[i - 1]!;
-        const curr = sorted[i]!;
-        const interval = curr.time - prev.time;
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1]!;
+    const curr = sorted[i]!;
+    const interval = curr.time - prev.time;
 
-        // Skip invalid intervals
-        if (interval <= 0) continue;
+    // Skip invalid intervals
+    if (interval <= 0) continue;
 
-        // Weight is geometric mean of adjacent strengths, or 1.0 if not weighting
-        const weight = weightByStrength
-            ? Math.sqrt(prev.strength * curr.strength)
-            : 1.0;
+    // Weight is geometric mean of adjacent strengths, or 1.0 if not weighting
+    const weight = weightByStrength ? Math.sqrt(prev.strength * curr.strength) : 1.0;
 
-        iois.push({ intervalSec: interval, weight });
-    }
+    iois.push({ intervalSec: interval, weight });
+  }
 
-    return iois;
+  return iois;
 }
 
 /**
@@ -89,37 +87,37 @@ function computeIOIs(candidates: BeatCandidate[], weightByStrength: boolean): IO
  * @returns { bins: center BPM of each bin, counts: weighted counts }
  */
 function buildBpmHistogram(
-    iois: IOI[],
-    minBpm: number,
-    maxBpm: number,
-    binSizeBpm: number
+  iois: IOI[],
+  minBpm: number,
+  maxBpm: number,
+  binSizeBpm: number
 ): { bpmBins: Float32Array; counts: Float32Array } {
-    const numBins = Math.ceil((maxBpm - minBpm) / binSizeBpm);
-    const counts = new Float32Array(numBins);
-    const bpmBins = new Float32Array(numBins);
+  const numBins = Math.ceil((maxBpm - minBpm) / binSizeBpm);
+  const counts = new Float32Array(numBins);
+  const bpmBins = new Float32Array(numBins);
 
-    // Initialize bin centers
-    for (let i = 0; i < numBins; i++) {
-        bpmBins[i] = minBpm + (i + 0.5) * binSizeBpm;
+  // Initialize bin centers
+  for (let i = 0; i < numBins; i++) {
+    bpmBins[i] = minBpm + (i + 0.5) * binSizeBpm;
+  }
+
+  // Convert interval range to BPM range
+  const minInterval = bpmToInterval(maxBpm);
+  const maxInterval = bpmToInterval(minBpm);
+
+  for (const { intervalSec, weight } of iois) {
+    // Filter to plausible range
+    if (intervalSec < minInterval || intervalSec > maxInterval) continue;
+
+    const bpm = intervalToBpm(intervalSec);
+    const binIndex = Math.floor((bpm - minBpm) / binSizeBpm);
+
+    if (binIndex >= 0 && binIndex < numBins) {
+      counts[binIndex] = (counts[binIndex] ?? 0) + weight;
     }
+  }
 
-    // Convert interval range to BPM range
-    const minInterval = bpmToInterval(maxBpm);
-    const maxInterval = bpmToInterval(minBpm);
-
-    for (const { intervalSec, weight } of iois) {
-        // Filter to plausible range
-        if (intervalSec < minInterval || intervalSec > maxInterval) continue;
-
-        const bpm = intervalToBpm(intervalSec);
-        const binIndex = Math.floor((bpm - minBpm) / binSizeBpm);
-
-        if (binIndex >= 0 && binIndex < numBins) {
-            counts[binIndex] = (counts[binIndex] ?? 0) + weight;
-        }
-    }
-
-    return { bpmBins, counts };
+  return { bpmBins, counts };
 }
 
 /**
@@ -130,34 +128,34 @@ function buildBpmHistogram(
  * @returns Array of peak indices sorted by height descending
  */
 function findHistogramPeaks(counts: Float32Array, minHeight: number): number[] {
-    const peaks: Array<{ index: number; height: number }> = [];
+  const peaks: Array<{ index: number; height: number }> = [];
 
-    for (let i = 1; i < counts.length - 1; i++) {
-        const curr = counts[i]!;
-        const prev = counts[i - 1]!;
-        const next = counts[i + 1]!;
+  for (let i = 1; i < counts.length - 1; i++) {
+    const curr = counts[i]!;
+    const prev = counts[i - 1]!;
+    const next = counts[i + 1]!;
 
-        // Local maximum
-        if (curr > prev && curr > next && curr >= minHeight) {
-            peaks.push({ index: i, height: curr });
-        }
+    // Local maximum
+    if (curr > prev && curr > next && curr >= minHeight) {
+      peaks.push({ index: i, height: curr });
     }
+  }
 
-    // Also check boundary bins if they're high enough
-    if (counts.length > 0 && counts[0]! >= minHeight && counts[0]! > (counts[1] ?? 0)) {
-        peaks.push({ index: 0, height: counts[0]! });
+  // Also check boundary bins if they're high enough
+  if (counts.length > 0 && counts[0]! >= minHeight && counts[0]! > (counts[1] ?? 0)) {
+    peaks.push({ index: 0, height: counts[0]! });
+  }
+  if (counts.length > 1) {
+    const last = counts.length - 1;
+    if (counts[last]! >= minHeight && counts[last]! > (counts[last - 1] ?? 0)) {
+      peaks.push({ index: last, height: counts[last]! });
     }
-    if (counts.length > 1) {
-        const last = counts.length - 1;
-        if (counts[last]! >= minHeight && counts[last]! > (counts[last - 1] ?? 0)) {
-            peaks.push({ index: last, height: counts[last]! });
-        }
-    }
+  }
 
-    // Sort by height descending
-    peaks.sort((a, b) => b.height - a.height);
+  // Sort by height descending
+  peaks.sort((a, b) => b.height - a.height);
 
-    return peaks.map((p) => p.index);
+  return peaks.map((p) => p.index);
 }
 
 /**
@@ -165,41 +163,41 @@ function findHistogramPeaks(counts: Float32Array, minHeight: number): number[] {
  * Uses weighted centroid of adjacent bins.
  */
 function refinePeakBpm(
-    peakIndex: number,
-    bpmBins: Float32Array,
-    counts: Float32Array,
-    binSizeBpm: number
+  peakIndex: number,
+  bpmBins: Float32Array,
+  counts: Float32Array,
+  binSizeBpm: number
 ): { bpm: number; peakHeight: number; binRange: [number, number]; totalWeight: number } {
-    // Consider the peak bin and immediate neighbors
-    let totalWeight = 0;
-    let weightedBpm = 0;
-    let minBinBpm = bpmBins[peakIndex]! - binSizeBpm / 2;
-    let maxBinBpm = bpmBins[peakIndex]! + binSizeBpm / 2;
+  // Consider the peak bin and immediate neighbors
+  let totalWeight = 0;
+  let weightedBpm = 0;
+  let minBinBpm = bpmBins[peakIndex]! - binSizeBpm / 2;
+  let maxBinBpm = bpmBins[peakIndex]! + binSizeBpm / 2;
 
-    for (let offset = -1; offset <= 1; offset++) {
-        const idx = peakIndex + offset;
-        if (idx < 0 || idx >= bpmBins.length) continue;
+  for (let offset = -1; offset <= 1; offset++) {
+    const idx = peakIndex + offset;
+    if (idx < 0 || idx >= bpmBins.length) continue;
 
-        const w = counts[idx]!;
-        const bpm = bpmBins[idx]!;
+    const w = counts[idx]!;
+    const bpm = bpmBins[idx]!;
 
-        totalWeight += w;
-        weightedBpm += w * bpm;
+    totalWeight += w;
+    weightedBpm += w * bpm;
 
-        if (w > 0) {
-            minBinBpm = Math.min(minBinBpm, bpm - binSizeBpm / 2);
-            maxBinBpm = Math.max(maxBinBpm, bpm + binSizeBpm / 2);
-        }
+    if (w > 0) {
+      minBinBpm = Math.min(minBinBpm, bpm - binSizeBpm / 2);
+      maxBinBpm = Math.max(maxBinBpm, bpm + binSizeBpm / 2);
     }
+  }
 
-    const refinedBpm = totalWeight > 0 ? weightedBpm / totalWeight : bpmBins[peakIndex]!;
+  const refinedBpm = totalWeight > 0 ? weightedBpm / totalWeight : bpmBins[peakIndex]!;
 
-    return {
-        bpm: refinedBpm,
-        peakHeight: counts[peakIndex]!,
-        binRange: [minBinBpm, maxBinBpm],
-        totalWeight,
-    };
+  return {
+    bpm: refinedBpm,
+    peakHeight: counts[peakIndex]!,
+    binRange: [minBinBpm, maxBinBpm],
+    totalWeight,
+  };
 }
 
 /**
@@ -207,17 +205,17 @@ function refinePeakBpm(
  * Returns the harmonic ratio if related, null otherwise.
  */
 function getHarmonicRatio(bpm1: number, bpm2: number, tolerance: number = 0.03): number | null {
-    const ratios = [0.5, 1 / 3, 2 / 3, 1.0, 1.5, 2.0, 3.0];
+  const ratios = [0.5, 1 / 3, 2 / 3, 1.0, 1.5, 2.0, 3.0];
 
-    for (const ratio of ratios) {
-        const expected = bpm1 * ratio;
-        const relativeError = Math.abs(bpm2 - expected) / expected;
-        if (relativeError <= tolerance) {
-            return ratio;
-        }
+  for (const ratio of ratios) {
+    const expected = bpm1 * ratio;
+    const relativeError = Math.abs(bpm2 - expected) / expected;
+    if (relativeError <= tolerance) {
+      return ratio;
     }
+  }
 
-    return null;
+  return null;
 }
 
 /**
@@ -227,47 +225,47 @@ function getHarmonicRatio(bpm1: number, bpm2: number, tolerance: number = 0.03):
  * Uses deterministic family IDs based on the root BPM.
  */
 function assignHarmonicFamilies(hypotheses: TempoHypothesis[]): void {
-    if (hypotheses.length === 0) return;
+  if (hypotheses.length === 0) return;
 
-    const families: Map<string, { rootBpm: number; members: TempoHypothesis[] }> = new Map();
+  const families: Map<string, { rootBpm: number; members: TempoHypothesis[] }> = new Map();
 
-    for (const hyp of hypotheses) {
-        let foundFamily = false;
+  for (const hyp of hypotheses) {
+    let foundFamily = false;
 
-        for (const [familyId, family] of families) {
-            const ratio = getHarmonicRatio(family.rootBpm, hyp.bpm);
-            if (ratio !== null) {
-                hyp.familyId = familyId;
-                hyp.harmonicRatio = ratio;
-                family.members.push(hyp);
-                foundFamily = true;
-                break;
-            }
-        }
-
-        if (!foundFamily) {
-            // Create new family with this hypothesis as root
-            // Use deterministic family ID based on root BPM
-            const familyId = `fam-${Math.round(hyp.bpm)}`;
-            hyp.familyId = familyId;
-            hyp.harmonicRatio = 1.0;
-            families.set(familyId, { rootBpm: hyp.bpm, members: [hyp] });
-        }
+    for (const [familyId, family] of families) {
+      const ratio = getHarmonicRatio(family.rootBpm, hyp.bpm);
+      if (ratio !== null) {
+        hyp.familyId = familyId;
+        hyp.harmonicRatio = ratio;
+        family.members.push(hyp);
+        foundFamily = true;
+        break;
+      }
     }
+
+    if (!foundFamily) {
+      // Create new family with this hypothesis as root
+      // Use deterministic family ID based on root BPM
+      const familyId = `fam-${Math.round(hyp.bpm)}`;
+      hyp.familyId = familyId;
+      hyp.harmonicRatio = 1.0;
+      families.set(familyId, { rootBpm: hyp.bpm, members: [hyp] });
+    }
+  }
 }
 
 /**
  * Normalize confidence scores to [0, 1] range.
  */
 function normalizeConfidence(hypotheses: TempoHypothesis[]): void {
-    if (hypotheses.length === 0) return;
+  if (hypotheses.length === 0) return;
 
-    const maxHeight = Math.max(...hypotheses.map((h) => h.evidence.peakHeight));
-    if (maxHeight <= 0) return;
+  const maxHeight = Math.max(...hypotheses.map((h) => h.evidence.peakHeight));
+  if (maxHeight <= 0) return;
 
-    for (const hyp of hypotheses) {
-        hyp.confidence = hyp.evidence.peakHeight / maxHeight;
-    }
+  for (const hyp of hypotheses) {
+    hyp.confidence = hyp.evidence.peakHeight / maxHeight;
+  }
 }
 
 /**
@@ -287,109 +285,109 @@ function normalizeConfidence(hypotheses: TempoHypothesis[]): void {
  * @returns Tempo hypotheses with confidence and family groupings
  */
 export function generateTempoHypotheses(
-    candidates: BeatCandidate[],
-    options?: TempoHypothesesOptions
+  candidates: BeatCandidate[],
+  options?: TempoHypothesesOptions
 ): TempoHypothesesOutput {
-    const minBpm = options?.minBpm ?? 24;
-    const maxBpm = options?.maxBpm ?? 300;
-    const binSizeBpm = options?.binSizeBpm ?? 1.0;
-    const maxHypotheses = options?.maxHypotheses ?? 10;
-    const minConfidence = options?.minConfidence ?? 0.05;
-    const weightByStrength = options?.weightByStrength ?? true;
-    const includeHistogram = options?.includeHistogram ?? false;
+  const minBpm = options?.minBpm ?? 24;
+  const maxBpm = options?.maxBpm ?? 300;
+  const binSizeBpm = options?.binSizeBpm ?? 1.0;
+  const maxHypotheses = options?.maxHypotheses ?? 10;
+  const minConfidence = options?.minConfidence ?? 0.05;
+  const weightByStrength = options?.weightByStrength ?? true;
+  const includeHistogram = options?.includeHistogram ?? false;
 
-    // Early return if insufficient candidates
-    if (candidates.length < 2) {
-        return {
-            hypotheses: [],
-            inputCandidateCount: candidates.length,
-            histogram: includeHistogram
-                ? {
-                      bpmBins: new Float32Array(0),
-                      counts: new Float32Array(0),
-                  }
-                : undefined,
-        };
-    }
-
-    // Step 1: Compute IOIs
-    const iois = computeIOIs(candidates, weightByStrength);
-
-    if (iois.length === 0) {
-        return {
-            hypotheses: [],
-            inputCandidateCount: candidates.length,
-            histogram: includeHistogram
-                ? {
-                      bpmBins: new Float32Array(0),
-                      counts: new Float32Array(0),
-                  }
-                : undefined,
-        };
-    }
-
-    // Step 2-3: Build histogram (filtering happens during binning)
-    const { bpmBins, counts } = buildBpmHistogram(iois, minBpm, maxBpm, binSizeBpm);
-
-    // Calculate minimum height threshold based on minConfidence
-    const maxCount = Math.max(...counts);
-    const minHeight = maxCount * minConfidence;
-
-    // Step 4: Find peaks
-    const peakIndices = findHistogramPeaks(counts, minHeight);
-
-    // Step 5: Create hypotheses with refined BPM
-    const hypotheses: TempoHypothesis[] = [];
-
-    for (const peakIndex of peakIndices.slice(0, maxHypotheses * 2)) {
-        // Get extra for filtering
-        const { bpm, peakHeight, binRange, totalWeight } = refinePeakBpm(
-            peakIndex,
-            bpmBins,
-            counts,
-            binSizeBpm
-        );
-
-        // Skip if below confidence threshold
-        if (maxCount > 0 && peakHeight / maxCount < minConfidence) continue;
-
-        const evidence: TempoHypothesisEvidence = {
-            supportingIntervalCount: Math.round(totalWeight),
-            weightedSupport: totalWeight,
-            peakHeight,
-            binRange,
-        };
-
-        hypotheses.push({
-            id: "", // Will be assigned after sorting
-            bpm: Math.round(bpm * 10) / 10, // Round to 0.1 BPM precision
-            confidence: 0, // Will be normalized
-            evidence,
-            familyId: "", // Will be assigned
-            harmonicRatio: 1.0, // Will be assigned
-        });
-    }
-
-    // Step 6: Group into harmonic families
-    assignHarmonicFamilies(hypotheses);
-
-    // Step 7: Normalize confidence
-    normalizeConfidence(hypotheses);
-
-    // Filter by minConfidence and sort by confidence descending
-    const filtered = hypotheses
-        .filter((h) => h.confidence >= minConfidence)
-        .sort((a, b) => b.confidence - a.confidence)
-        .slice(0, maxHypotheses);
-
-    // Assign deterministic IDs based on rank
-    for (let i = 0; i < filtered.length; i++) {
-        filtered[i]!.id = `hyp-${i}`;
-    }
-
+  // Early return if insufficient candidates
+  if (candidates.length < 2) {
     return {
-        hypotheses: filtered,
-        inputCandidateCount: candidates.length,
-        histogram: includeHistogram ? { bpmBins, counts } : undefined,
+      hypotheses: [],
+      inputCandidateCount: candidates.length,
+      histogram: includeHistogram
+        ? {
+            bpmBins: new Float32Array(0),
+            counts: new Float32Array(0),
+          }
+        : undefined,
     };
+  }
+
+  // Step 1: Compute IOIs
+  const iois = computeIOIs(candidates, weightByStrength);
+
+  if (iois.length === 0) {
+    return {
+      hypotheses: [],
+      inputCandidateCount: candidates.length,
+      histogram: includeHistogram
+        ? {
+            bpmBins: new Float32Array(0),
+            counts: new Float32Array(0),
+          }
+        : undefined,
+    };
+  }
+
+  // Step 2-3: Build histogram (filtering happens during binning)
+  const { bpmBins, counts } = buildBpmHistogram(iois, minBpm, maxBpm, binSizeBpm);
+
+  // Calculate minimum height threshold based on minConfidence
+  const maxCount = Math.max(...counts);
+  const minHeight = maxCount * minConfidence;
+
+  // Step 4: Find peaks
+  const peakIndices = findHistogramPeaks(counts, minHeight);
+
+  // Step 5: Create hypotheses with refined BPM
+  const hypotheses: TempoHypothesis[] = [];
+
+  for (const peakIndex of peakIndices.slice(0, maxHypotheses * 2)) {
+    // Get extra for filtering
+    const { bpm, peakHeight, binRange, totalWeight } = refinePeakBpm(
+      peakIndex,
+      bpmBins,
+      counts,
+      binSizeBpm
+    );
+
+    // Skip if below confidence threshold
+    if (maxCount > 0 && peakHeight / maxCount < minConfidence) continue;
+
+    const evidence: TempoHypothesisEvidence = {
+      supportingIntervalCount: Math.round(totalWeight),
+      weightedSupport: totalWeight,
+      peakHeight,
+      binRange,
+    };
+
+    hypotheses.push({
+      id: "", // Will be assigned after sorting
+      bpm: Math.round(bpm * 10) / 10, // Round to 0.1 BPM precision
+      confidence: 0, // Will be normalized
+      evidence,
+      familyId: "", // Will be assigned
+      harmonicRatio: 1.0, // Will be assigned
+    });
+  }
+
+  // Step 6: Group into harmonic families
+  assignHarmonicFamilies(hypotheses);
+
+  // Step 7: Normalize confidence
+  normalizeConfidence(hypotheses);
+
+  // Filter by minConfidence and sort by confidence descending
+  const filtered = hypotheses
+    .filter((h) => h.confidence >= minConfidence)
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, maxHypotheses);
+
+  // Assign deterministic IDs based on rank
+  for (let i = 0; i < filtered.length; i++) {
+    filtered[i]!.id = `hyp-${i}`;
+  }
+
+  return {
+    hypotheses: filtered,
+    inputCandidateCount: candidates.length,
+    histogram: includeHistogram ? { bpmBins, counts } : undefined,
+  };
 }

@@ -7,12 +7,7 @@
 
 import { getDB, isIndexedDBAvailable } from "./db";
 import { computeContentHash } from "./assetHashing";
-import type {
-  AssetRecord,
-  AssetRecordWithoutData,
-  AssetType,
-  AssetAudioMetadata,
-} from "./types";
+import type { AssetRecord, AssetRecordWithoutData, AssetType, AssetAudioMetadata } from "./types";
 import type { AudioInputOrigin } from "./types";
 
 // ----------------------------
@@ -127,9 +122,7 @@ export async function hasAsset(assetId: string): Promise<boolean> {
  * @param contentHash - The SHA-256 hash to search for
  * @returns Promise resolving to the asset record, or null if not found
  */
-export async function findByContentHash(
-  contentHash: string
-): Promise<AssetRecord | null> {
+export async function findByContentHash(contentHash: string): Promise<AssetRecord | null> {
   if (!isIndexedDBAvailable()) {
     return null;
   }
@@ -150,9 +143,7 @@ export async function findByContentHash(
  * @param projectId - The project ID
  * @returns Promise resolving to array of asset records without data
  */
-export async function getProjectAssets(
-  projectId: string
-): Promise<AssetRecordWithoutData[]> {
+export async function getProjectAssets(projectId: string): Promise<AssetRecordWithoutData[]> {
   if (!isIndexedDBAvailable()) {
     return [];
   }

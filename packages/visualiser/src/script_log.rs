@@ -213,6 +213,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_stringify_float() {
         let value = rhai::Dynamic::from(3.14_f32);
         assert_eq!(stringify_dynamic(&value), "3.14");
@@ -226,9 +227,7 @@ mod tests {
 
     #[test]
     fn test_stringify_array() {
-        let mut arr = rhai::Array::new();
-        arr.push(rhai::Dynamic::from("energy"));
-        arr.push(rhai::Dynamic::from(0.5_f32));
+        let arr = vec![rhai::Dynamic::from("energy"), rhai::Dynamic::from(0.5_f32)];
         let value = rhai::Dynamic::from(arr);
         assert_eq!(stringify_dynamic(&value), "energy 0.5");
     }

@@ -28,9 +28,47 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  quality:
+    name: Required Quality Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.23.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm --filter web exec prisma validate
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - working-directory: packages/visualiser
+        run: cargo fmt --all --check
+      - working-directory: packages/visualiser
+        run: cargo clippy --all-targets -- -D warnings
+      - working-directory: packages/visualiser
+        run: cargo test --all-targets
+      - env:
+          SKIP_ENV_VALIDATION: "1"
+        run: pnpm build
+      - run: pnpm audit --prod --audit-level high
+
   build-visualiser:
     name: Build Visualiser (WASM)
     runs-on: ubuntu-latest
+    needs: quality
     outputs:
       package_name: ${{ steps.version.outputs.package_name }}
       package_version: ${{ steps.version.outputs.package_version }}
@@ -143,6 +181,7 @@ jobs:
   build-mir:
     name: Build MIR (TypeScript)
     runs-on: ubuntu-latest
+    needs: quality
     outputs:
       package_name: ${{ steps.version.outputs.package_name }}
       package_version: ${{ steps.version.outputs.package_version }}
@@ -230,6 +269,7 @@ jobs:
   build-wavesurfer-signalviewer:
     name: Build Wavesurfer SignalViewer (TypeScript)
     runs-on: ubuntu-latest
+    needs: quality
     outputs:
       package_name: ${{ steps.version.outputs.package_name }}
       package_version: ${{ steps.version.outputs.package_version }}

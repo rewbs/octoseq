@@ -1,15 +1,34 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Eye, Copy, Cloud, CloudOff, Check, Loader2, AlertCircle, Upload, FolderOpen } from 'lucide-react';
-import Link from 'next/link';
-import { SignedOut, SignInButton, SignedIn, UserButton, ClerkLoading, ClerkLoaded } from '@clerk/nextjs';
-import { Button } from '@/components/ui/button';
-import { cloneProject, createProject } from '@/lib/actions/project';
-import { MyProjectsModal } from './MyProjectsModal';
-import { DemoProjectsModal } from '@/components/DemoProjectsModal';
-import type { ServerAutosaveStatus } from '@/lib/hooks/useServerAutosave';
-import Image from 'next/image';
+import { useState } from "react";
+import {
+  Eye,
+  Copy,
+  Cloud,
+  CloudOff,
+  Check,
+  Loader2,
+  AlertCircle,
+  Upload,
+  FolderOpen,
+  Globe,
+  Lock,
+} from "lucide-react";
+import Link from "next/link";
+import {
+  SignedOut,
+  SignInButton,
+  SignedIn,
+  UserButton,
+  ClerkLoading,
+  ClerkLoaded,
+} from "@clerk/nextjs";
+import { Button } from "@/components/ui/button";
+import { cloneProject, createProject, updateProjectVisibility } from "@/lib/actions/project";
+import { MyProjectsModal } from "./MyProjectsModal";
+import { DemoProjectsModal } from "@/components/DemoProjectsModal";
+import type { ServerAutosaveStatus } from "@/lib/hooks/useServerAutosave";
+import Image from "next/image";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -21,6 +40,8 @@ interface LoadedProject {
   ownerId: string;
   isPublic: boolean;
   workingState: Record<string, unknown> | null;
+  workingStateRevision: number;
+  canEdit: boolean;
 }
 
 interface ProjectHeaderProps {
@@ -34,8 +55,12 @@ interface ProjectHeaderProps {
   serverStatus: ServerAutosaveStatus;
   /** Last saved timestamp */
   lastSavedAt: string | null;
+  /** Last autosave error. */
+  serverError: string | null;
   /** Backend project ID (for cloning) */
   backendProjectId: string | null;
+  /** Current server visibility. */
+  isPublic: boolean;
   /** Whether user is signed in */
   isSignedIn: boolean;
   /** Callback when project is cloned */
@@ -46,6 +71,60 @@ interface ProjectHeaderProps {
   onLoadProject?: (project: LoadedProject) => void;
   /** Callback when a demo project is cloned */
   onDemoProjectCloned?: (project: { id: string; name: string }) => void;
+  /** Called after visibility changes. */
+  onVisibilityChanged?: (isPublic: boolean) => void;
+}
+
+function VisibilityButton({
+  projectId,
+  isPublic,
+  onVisibilityChanged,
+}: {
+  projectId: string;
+  isPublic: boolean;
+  onVisibilityChanged?: (isPublic: boolean) => void;
+}) {
+  const [updating, setUpdating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const updateVisibility = async () => {
+    setUpdating(true);
+    setError(null);
+    try {
+      const result = await updateProjectVisibility({ projectId, isPublic: !isPublic });
+      if (result?.data?.project) {
+        onVisibilityChanged?.(result.data.project.isPublic);
+      } else {
+        setError(result?.serverError ?? "Failed to update visibility");
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Failed to update visibility");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 text-xs"
+        disabled={updating}
+        onClick={() => void updateVisibility()}
+      >
+        {updating ? (
+          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+        ) : isPublic ? (
+          <Globe className="h-3.5 w-3.5 mr-1.5" />
+        ) : (
+          <Lock className="h-3.5 w-3.5 mr-1.5" />
+        )}
+        {isPublic ? "Public" : "Private"}
+      </Button>
+      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+    </div>
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -56,7 +135,12 @@ function SaveStatusIndicator({
   isOwner,
   isServerSyncEnabled,
   serverStatus,
-}: Pick<ProjectHeaderProps, 'isOwner' | 'isServerSyncEnabled' | 'serverStatus'>) {
+  lastSavedAt,
+  serverError,
+}: Pick<
+  ProjectHeaderProps,
+  "isOwner" | "isServerSyncEnabled" | "serverStatus" | "lastSavedAt" | "serverError"
+>) {
   if (!isServerSyncEnabled) {
     return (
       <div className="flex items-center gap-1.5 text-xs text-zinc-500">
@@ -76,23 +160,29 @@ function SaveStatusIndicator({
   }
 
   switch (serverStatus) {
-    case 'saving':
+    case "saving":
       return (
         <div className="flex items-center gap-1.5 text-xs text-zinc-500">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           <span>Saving...</span>
         </div>
       );
-    case 'saved':
+    case "saved":
       return (
-        <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+        <div
+          className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400"
+          title={lastSavedAt ? `Saved ${new Date(lastSavedAt).toLocaleString()}` : undefined}
+        >
           <Check className="h-3.5 w-3.5" />
           <span>Saved</span>
         </div>
       );
-    case 'error':
+    case "error":
       return (
-        <div className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400">
+        <div
+          className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400"
+          title={serverError ?? undefined}
+        >
           <AlertCircle className="h-3.5 w-3.5" />
           <span>Save failed</span>
         </div>
@@ -137,7 +227,7 @@ function SaveToCloudButton({
         setError(result.serverError);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save');
+      setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setIsSaving(false);
     }
@@ -157,7 +247,7 @@ function SaveToCloudButton({
         ) : (
           <Upload className="h-3.5 w-3.5 mr-1.5" />
         )}
-        {isSaving ? 'Saving...' : 'Save Project'}
+        {isSaving ? "Saving..." : "Save Project"}
       </Button>
       {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
     </div>
@@ -171,7 +261,7 @@ function SaveToCloudButton({
 function ReadOnlyBanner({
   backendProjectId,
   onCloned,
-}: Pick<ProjectHeaderProps, 'backendProjectId' | 'onCloned'>) {
+}: Pick<ProjectHeaderProps, "backendProjectId" | "onCloned">) {
   const [isCloning, setIsCloning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -193,7 +283,7 @@ function ReadOnlyBanner({
         setError(result.serverError);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to clone');
+      setError(err instanceof Error ? err.message : "Failed to clone");
     } finally {
       setIsCloning(false);
     }
@@ -201,7 +291,6 @@ function ReadOnlyBanner({
 
   return (
     <div className="flex items-center gap-3 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
-
       <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
         <Eye className="h-4 w-4" />
         <span className="text-sm font-medium">Viewing read-only project</span>
@@ -218,7 +307,7 @@ function ReadOnlyBanner({
         ) : (
           <Copy className="h-4 w-4 mr-1.5" />
         )}
-        {isCloning ? 'Cloning...' : 'Clone to edit'}
+        {isCloning ? "Cloning..." : "Clone to edit"}
       </Button>
       {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
     </div>
@@ -234,12 +323,16 @@ export function ProjectHeader({
   isOwner,
   isServerSyncEnabled,
   serverStatus,
+  lastSavedAt,
+  serverError,
   backendProjectId,
+  isPublic,
   isSignedIn,
   onCloned,
   onSaveToCloud,
   onLoadProject,
   onDemoProjectCloned,
+  onVisibilityChanged,
 }: ProjectHeaderProps) {
   const [showMyProjects, setShowMyProjects] = useState(false);
 
@@ -275,7 +368,7 @@ export function ProjectHeader({
 
         <div className="flex items-center gap-3">
           {/* Load project button - only for signed in users */}
-          {(
+          {
             <Button
               size="sm"
               variant="outline"
@@ -285,22 +378,32 @@ export function ProjectHeader({
               <FolderOpen className="h-3.5 w-3.5 mr-1.5" />
               Load Project
             </Button>
-          )}
+          }
 
           {showSaveToCloud ? (
             <SaveToCloudButton projectName={projectName} onSaveToCloud={onSaveToCloud} />
           ) : (
-            <SaveStatusIndicator
-              isOwner={isOwner}
-              isServerSyncEnabled={isServerSyncEnabled}
-              serverStatus={serverStatus}
-            />
+            <div className="flex items-center gap-2">
+              {isServerSyncEnabled && isOwner && backendProjectId ? (
+                <VisibilityButton
+                  projectId={backendProjectId}
+                  isPublic={isPublic}
+                  onVisibilityChanged={onVisibilityChanged}
+                />
+              ) : null}
+              <SaveStatusIndicator
+                isOwner={isOwner}
+                isServerSyncEnabled={isServerSyncEnabled}
+                serverStatus={serverStatus}
+                lastSavedAt={lastSavedAt}
+                serverError={serverError}
+              />
+            </div>
           )}
         </div>
 
         {/* Demo projects loader */}
         {onDemoProjectCloned && <DemoProjectsModal onProjectCloned={onDemoProjectCloned} />}
-
 
         {/* Right side: About and Auth */}
         <div className="flex items-center gap-2 ml-auto">
@@ -310,12 +413,16 @@ export function ProjectHeader({
             </Button>
           </Link>
           <ClerkLoading>
-            <Button size="sm" variant="outline" disabled>Sign In</Button>
+            <Button size="sm" variant="outline" disabled>
+              Sign In
+            </Button>
           </ClerkLoading>
           <ClerkLoaded>
             <SignedOut>
               <SignInButton>
-                <Button size="sm" className="bg-blue-400 dark:bg-blue-700">Sign In</Button>
+                <Button size="sm" className="bg-blue-400 dark:bg-blue-700">
+                  Sign In
+                </Button>
               </SignInButton>
             </SignedOut>
             <SignedIn>

@@ -4,3 +4,9 @@ out
 dist
 .turbo
 pnpm-lock.yaml
+.claude
+**/target
+**/pkg
+**/src/generated/**
+apps/web/src/lib/generated/demo-audio-list.json
+packages/visualiser/tests/fixtures/interpretation-package-v1.json

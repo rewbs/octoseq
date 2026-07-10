@@ -1,7 +1,18 @@
 "use client";
 
 import { useCallback, useState, useRef, useEffect, useMemo } from "react";
-import { GripHorizontal, Plus, Copy, Trash2, Hand, MousePointerClick, Eye, EyeOff, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  GripHorizontal,
+  Plus,
+  Copy,
+  Trash2,
+  Hand,
+  MousePointerClick,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
 import { useTimingStore } from "@/lib/stores/timingStore";
 import type { TempoHypothesis, PhaseHypothesis } from "@octoseq/mir";
 import type { WaveSurferViewport } from "@/components/wavesurfer/types";
@@ -128,7 +139,7 @@ export type TempoHypothesesViewerProps = {
 function familyIdToHue(familyId: string): number {
   let hash = 0;
   for (let i = 0; i < familyId.length; i++) {
-    hash = ((hash << 5) - hash) + familyId.charCodeAt(i);
+    hash = (hash << 5) - hash + familyId.charCodeAt(i);
     hash = hash & hash;
   }
   return Math.abs(hash) % 360;
@@ -258,14 +269,17 @@ export function TempoHypothesesViewer({
     return allHypotheses.find((h) => h.id === selectedHypothesisId) ?? null;
   }, [allHypotheses, selectedHypothesisId]);
 
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizingRef.current = true;
-    startYRef.current = e.clientY;
-    startHeightRef.current = panelHeight;
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-  }, [panelHeight]);
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      isResizingRef.current = true;
+      startYRef.current = e.clientY;
+      startHeightRef.current = panelHeight;
+      document.body.style.cursor = "ns-resize";
+      document.body.style.userSelect = "none";
+    },
+    [panelHeight]
+  );
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -278,24 +292,27 @@ export function TempoHypothesesViewer({
     const handleMouseUp = () => {
       if (isResizingRef.current) {
         isResizingRef.current = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
       }
     };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
     };
   }, []);
 
   // Check if a family is expanded (all families expanded by default unless manually collapsed)
-  const isFamilyExpanded = useCallback((familyId: string) => {
-    return !collapsedFamilies.has(familyId);
-  }, [collapsedFamilies]);
+  const isFamilyExpanded = useCallback(
+    (familyId: string) => {
+      return !collapsedFamilies.has(familyId);
+    },
+    [collapsedFamilies]
+  );
 
   const toggleFamily = useCallback((familyId: string) => {
     setCollapsedFamilies((prev) => {
@@ -320,18 +337,21 @@ export function TempoHypothesesViewer({
   }, [manualBpmInput, onCreateManualHypothesis]);
 
   // Handle BPM adjustment (fine/coarse)
-  const handleBpmAdjust = useCallback((delta: number) => {
-    if (!selectedHypothesis) return;
+  const handleBpmAdjust = useCallback(
+    (delta: number) => {
+      if (!selectedHypothesis) return;
 
-    // If it's a manual/edited hypothesis, update it directly
-    if (selectedHypothesis.source === "manual" || selectedHypothesis.source === "edited") {
-      const newBpm = Math.max(20, Math.min(400, selectedHypothesis.bpm + delta));
-      onUpdateHypothesisBpm?.(selectedHypothesis.id, newBpm);
-    } else {
-      // For algorithmic hypotheses, duplicate first then adjust on next interaction
-      onDuplicateHypothesis?.(selectedHypothesis);
-    }
-  }, [selectedHypothesis, onUpdateHypothesisBpm, onDuplicateHypothesis]);
+      // If it's a manual/edited hypothesis, update it directly
+      if (selectedHypothesis.source === "manual" || selectedHypothesis.source === "edited") {
+        const newBpm = Math.max(20, Math.min(400, selectedHypothesis.bpm + delta));
+        onUpdateHypothesisBpm?.(selectedHypothesis.id, newBpm);
+      } else {
+        // For algorithmic hypotheses, duplicate first then adjust on next interaction
+        onDuplicateHypothesis?.(selectedHypothesis);
+      }
+    },
+    [selectedHypothesis, onUpdateHypothesisBpm, onDuplicateHypothesis]
+  );
 
   // Handle tap-to-nudge
   const handleTap = useCallback(() => {
@@ -445,7 +465,9 @@ export function TempoHypothesesViewer({
           <button
             type="button"
             onClick={handleManualBpmSubmit}
-            disabled={!manualBpmInput || parseFloat(manualBpmInput) < 20 || parseFloat(manualBpmInput) > 400}
+            disabled={
+              !manualBpmInput || parseFloat(manualBpmInput) < 20 || parseFloat(manualBpmInput) > 400
+            }
             className="px-2 py-1 text-xs rounded bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
           >
             <Plus className="w-3 h-3" />
@@ -461,10 +483,11 @@ export function TempoHypothesesViewer({
               type="button"
               onClick={onStartBeatMarking}
               disabled={beatMarkingActive}
-              className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${beatMarkingActive
-                ? "bg-blue-600 text-white"
-                : "bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300"
-                }`}
+              className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
+                beatMarkingActive
+                  ? "bg-blue-600 text-white"
+                  : "bg-blue-100 dark:bg-blue-900/30 hover:bg-blue-200 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300"
+              }`}
               title="Click two beats on the waveform to set tempo"
             >
               <MousePointerClick className="w-3 h-3" />
@@ -520,17 +543,25 @@ export function TempoHypothesesViewer({
           </div>
 
           {/* Signal viewer with beat grid overlay */}
-          {signalViewerExpanded && selectedSignalId && viewport && audioDuration && (
+          {signalViewerExpanded &&
+            selectedSignalId &&
+            viewport &&
+            audioDuration &&
             (() => {
               const selectedSignal = signalOptions.find((opt) => opt.id === selectedSignalId);
               if (!selectedSignal?.data) return null;
 
               return (
                 <SignalViewer
-                  signal={createContinuousSignal(selectedSignal.data.times, selectedSignal.data.values)}
+                  signal={createContinuousSignal(
+                    selectedSignal.data.times,
+                    selectedSignal.data.values
+                  )}
                   viewport={viewport}
                   cursorTimeSec={cursorTimeSec}
-                  onCursorTimeChange={onCursorTimeChange ? (t) => t !== null && onCursorTimeChange(t) : undefined}
+                  onCursorTimeChange={
+                    onCursorTimeChange ? (t) => t !== null && onCursorTimeChange(t) : undefined
+                  }
                   initialHeight={signalViewerHeight}
                   resizable={false}
                   label={selectedSignal.label}
@@ -538,23 +569,20 @@ export function TempoHypothesesViewer({
                   audioDuration={audioDuration}
                 />
               );
-            })()
-          )}
+            })()}
         </div>
       )}
 
-      <div
-        className="p-2 space-y-3 overflow-y-auto"
-        style={{ height: panelHeight }}
-      >
+      <div className="p-2 space-y-3 overflow-y-auto" style={{ height: panelHeight }}>
         <div className="text-xs text-zinc-500 dark:text-zinc-400">
-          {allHypotheses.length} hypotheses ({hypotheses.length} algorithmic, {manualHypotheses.length} manual/edited) from {inputCandidateCount} beat candidates
+          {allHypotheses.length} hypotheses ({hypotheses.length} algorithmic,{" "}
+          {manualHypotheses.length} manual/edited) from {inputCandidateCount} beat candidates
         </div>
 
         {allHypotheses.length === 0 ? (
           <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
-            No tempo hypotheses found. Enter a manual tempo above or run analysis
-            with audio that has clear rhythmic content.
+            No tempo hypotheses found. Enter a manual tempo above or run analysis with audio that
+            has clear rhythmic content.
           </div>
         ) : (
           sortedFamilies.map(([familyId, members]) => {
@@ -578,15 +606,11 @@ export function TempoHypothesesViewer({
                     className="w-3 h-3 rounded-full shrink-0"
                     style={{ backgroundColor: familyColor }}
                   />
-                  <span className="font-medium text-sm">
-                    ~{rootHyp.bpm.toFixed(1)} BPM family
-                  </span>
+                  <span className="font-medium text-sm">~{rootHyp.bpm.toFixed(1)} BPM family</span>
                   <span className="text-xs text-zinc-500 ml-auto">
                     {members.length} hypothesis{members.length > 1 ? "es" : ""}
                   </span>
-                  <span className="text-xs text-zinc-400">
-                    {isExpanded ? "\u25BC" : "\u25B6"}
-                  </span>
+                  <span className="text-xs text-zinc-400">{isExpanded ? "\u25BC" : "\u25B6"}</span>
                 </button>
 
                 {/* Family members */}
@@ -602,10 +626,11 @@ export function TempoHypothesesViewer({
                         return (
                           <div
                             key={hyp.id}
-                            className={`px-3 py-2 transition-colors ${isSelected
-                              ? "bg-blue-50 dark:bg-blue-900/30"
-                              : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
-                              }`}
+                            className={`px-3 py-2 transition-colors ${
+                              isSelected
+                                ? "bg-blue-50 dark:bg-blue-900/30"
+                                : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                            }`}
                           >
                             <button
                               type="button"
@@ -660,9 +685,7 @@ export function TempoHypothesesViewer({
                               {/* Evidence details */}
                               {hyp.source === "algorithmic" && (
                                 <div className="mt-1 text-xs text-zinc-400 flex gap-4">
-                                  <span>
-                                    {hyp.evidence.supportingIntervalCount} intervals
-                                  </span>
+                                  <span>{hyp.evidence.supportingIntervalCount} intervals</span>
                                   <span>
                                     {hyp.evidence.binRange[0].toFixed(0)}-
                                     {hyp.evidence.binRange[1].toFixed(0)} BPM range
@@ -680,11 +703,16 @@ export function TempoHypothesesViewer({
                                   e.stopPropagation();
                                   toggleHypothesisVisibility(hyp.id);
                                 }}
-                                className={`px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1 ${visibleHypothesisIds.has(hyp.id)
+                                className={`px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1 ${
+                                  visibleHypothesisIds.has(hyp.id)
                                     ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
                                     : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-500"
-                                  }`}
-                                title={visibleHypothesisIds.has(hyp.id) ? "Hide grid preview" : "Show grid preview"}
+                                }`}
+                                title={
+                                  visibleHypothesisIds.has(hyp.id)
+                                    ? "Hide grid preview"
+                                    : "Show grid preview"
+                                }
                               >
                                 {visibleHypothesisIds.has(hyp.id) ? (
                                   <Eye className="w-3 h-3" />
@@ -770,20 +798,22 @@ export function TempoHypothesesViewer({
               <button
                 type="button"
                 onClick={onToggleVisibility}
-                className={`px-2 py-1 text-xs rounded transition-colors ${beatGrid.isVisible
-                  ? "bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300"
-                  : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-500"
-                  }`}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  beatGrid.isVisible
+                    ? "bg-zinc-200 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300"
+                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-500"
+                }`}
               >
                 {beatGrid.isVisible ? "Visible" : "Hidden"}
               </button>
               <button
                 type="button"
                 onClick={onToggleLock}
-                className={`px-2 py-1 text-xs rounded transition-colors ${beatGrid.isLocked
-                  ? "bg-green-200 dark:bg-green-800/50 text-green-800 dark:text-green-200"
-                  : "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300"
-                  }`}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  beatGrid.isLocked
+                    ? "bg-green-200 dark:bg-green-800/50 text-green-800 dark:text-green-200"
+                    : "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300"
+                }`}
               >
                 {beatGrid.isLocked ? "Locked" : "Provisional"}
               </button>
@@ -791,81 +821,83 @@ export function TempoHypothesesViewer({
           </div>
 
           {/* BPM Adjustment Controls */}
-          {selectedHypothesis && (selectedHypothesis.source === "manual" || selectedHypothesis.source === "edited") && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-zinc-500 dark:text-zinc-400 w-12">Tempo:</span>
-              <button
-                type="button"
-                onClick={() => handleBpmAdjust(-1)}
-                className="px-2 py-0.5 text-xs bg-zinc-100 dark:bg-zinc-800 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-              >
-                -1
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBpmAdjust(-0.1)}
-                className="px-2 py-0.5 text-xs bg-zinc-100 dark:bg-zinc-800 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-              >
-                -0.1
-              </button>
-              {isEditingBpm ? (
-                <input
-                  type="number"
-                  value={editBpmValue}
-                  onChange={(e) => setEditBpmValue(e.target.value)}
-                  onBlur={handleFinishEditBpm}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      handleFinishEditBpm();
-                    } else if (e.key === "Escape") {
-                      setIsEditingBpm(false);
-                    }
-                  }}
-                  className="w-20 px-1 py-0.5 text-xs font-mono text-center rounded border border-blue-500 focus:outline-none"
-                  autoFocus
-                />
-              ) : (
+          {selectedHypothesis &&
+            (selectedHypothesis.source === "manual" || selectedHypothesis.source === "edited") && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-zinc-500 dark:text-zinc-400 w-12">Tempo:</span>
                 <button
                   type="button"
-                  onClick={handleStartEditBpm}
-                  className="w-20 px-1 py-0.5 text-xs font-mono text-center text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
-                  title="Click to edit"
+                  onClick={() => handleBpmAdjust(-1)}
+                  className="px-2 py-0.5 text-xs bg-zinc-100 dark:bg-zinc-800 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
                 >
-                  {selectedHypothesis.bpm.toFixed(1)} BPM
+                  -1
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={() => handleBpmAdjust(0.1)}
-                className="px-2 py-0.5 text-xs bg-zinc-100 dark:bg-zinc-800 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-              >
-                +0.1
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBpmAdjust(1)}
-                className="px-2 py-0.5 text-xs bg-zinc-100 dark:bg-zinc-800 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-              >
-                +1
-              </button>
+                <button
+                  type="button"
+                  onClick={() => handleBpmAdjust(-0.1)}
+                  className="px-2 py-0.5 text-xs bg-zinc-100 dark:bg-zinc-800 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                >
+                  -0.1
+                </button>
+                {isEditingBpm ? (
+                  <input
+                    type="number"
+                    value={editBpmValue}
+                    onChange={(e) => setEditBpmValue(e.target.value)}
+                    onBlur={handleFinishEditBpm}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handleFinishEditBpm();
+                      } else if (e.key === "Escape") {
+                        setIsEditingBpm(false);
+                      }
+                    }}
+                    className="w-20 px-1 py-0.5 text-xs font-mono text-center rounded border border-blue-500 focus:outline-none"
+                    autoFocus
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleStartEditBpm}
+                    className="w-20 px-1 py-0.5 text-xs font-mono text-center text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
+                    title="Click to edit"
+                  >
+                    {selectedHypothesis.bpm.toFixed(1)} BPM
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleBpmAdjust(0.1)}
+                  className="px-2 py-0.5 text-xs bg-zinc-100 dark:bg-zinc-800 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                >
+                  +0.1
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBpmAdjust(1)}
+                  className="px-2 py-0.5 text-xs bg-zinc-100 dark:bg-zinc-800 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                >
+                  +1
+                </button>
 
-              {/* Tap-to-nudge button */}
-              {onRecordTap && (
-                <button
-                  type="button"
-                  onClick={handleTap}
-                  className={`ml-2 px-3 py-1 text-xs rounded transition-all flex items-center gap-1 ${isTapping
-                    ? "bg-orange-500 text-white scale-95"
-                    : "bg-orange-100 dark:bg-orange-900/30 hover:bg-orange-200 dark:hover:bg-orange-900/50 text-orange-700 dark:text-orange-300"
+                {/* Tap-to-nudge button */}
+                {onRecordTap && (
+                  <button
+                    type="button"
+                    onClick={handleTap}
+                    className={`ml-2 px-3 py-1 text-xs rounded transition-all flex items-center gap-1 ${
+                      isTapping
+                        ? "bg-orange-500 text-white scale-95"
+                        : "bg-orange-100 dark:bg-orange-900/30 hover:bg-orange-200 dark:hover:bg-orange-900/50 text-orange-700 dark:text-orange-300"
                     }`}
-                  title="Tap in time with the music to nudge the BPM"
-                >
-                  <Hand className="w-3 h-3" />
-                  Tap
-                </button>
-              )}
-            </div>
-          )}
+                    title="Tap in time with the music to nudge the BPM"
+                  >
+                    <Hand className="w-3 h-3" />
+                    Tap
+                  </button>
+                )}
+              </div>
+            )}
 
           {/* Phase cycling controls */}
           {beatGrid.phaseHypotheses.length > 1 && (
@@ -889,7 +921,8 @@ export function TempoHypothesesViewer({
                 Next
               </button>
               <span className="text-xs text-zinc-400 dark:text-zinc-500 ml-2">
-                (score: {(beatGrid.phaseHypotheses[beatGrid.activePhaseIndex]?.score ?? 0).toFixed(2)})
+                (score:{" "}
+                {(beatGrid.phaseHypotheses[beatGrid.activePhaseIndex]?.score ?? 0).toFixed(2)})
               </span>
             </div>
           )}
@@ -944,7 +977,10 @@ export function TempoHypothesesViewer({
             <div className="flex items-center justify-between">
               <div className="text-xs text-zinc-500 dark:text-zinc-400">
                 {musicalTimeSegmentCount !== undefined && musicalTimeSegmentCount > 0 ? (
-                  <span>{musicalTimeSegmentCount} segment{musicalTimeSegmentCount !== 1 ? "s" : ""} authored</span>
+                  <span>
+                    {musicalTimeSegmentCount} segment{musicalTimeSegmentCount !== 1 ? "s" : ""}{" "}
+                    authored
+                  </span>
                 ) : (
                   <span>No musical time authored yet</span>
                 )}
@@ -957,10 +993,11 @@ export function TempoHypothesesViewer({
                     onPromote(0, audioDuration);
                   }
                 }}
-                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${canPromote
-                  ? "bg-blue-600 hover:bg-blue-700 text-white"
-                  : "bg-zinc-200 dark:bg-zinc-700 text-zinc-400 dark:text-zinc-500 cursor-not-allowed"
-                  }`}
+                className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                  canPromote
+                    ? "bg-blue-600 hover:bg-blue-700 text-white"
+                    : "bg-zinc-200 dark:bg-zinc-700 text-zinc-400 dark:text-zinc-500 cursor-not-allowed"
+                }`}
                 title={
                   canPromote
                     ? "Promote this locked grid to authoritative musical time"

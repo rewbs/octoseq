@@ -6,7 +6,6 @@
  */
 
 import { getApiRegistry } from "./index";
-import type { RegistryEntry, RegistryMethod, RegistryProperty } from "./types";
 
 export interface ValidationIssue {
   severity: "error" | "warning";

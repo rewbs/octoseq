@@ -63,7 +63,7 @@ function hashDefinition(definition: object): string {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
+    hash = (hash << 5) - hash + char;
     hash = hash & hash; // Convert to 32bit integer
   }
   return Math.abs(hash).toString(36);
@@ -192,9 +192,7 @@ export async function getCachedResult(
           ...entry.result,
           values: new Float32Array(entry.result.values),
           times: new Float32Array(entry.result.times),
-          rawValues: entry.result.rawValues
-            ? new Float32Array(entry.result.rawValues)
-            : undefined,
+          rawValues: entry.result.rawValues ? new Float32Array(entry.result.rawValues) : undefined,
         };
 
         resolve(result);
@@ -262,10 +260,7 @@ export async function setCachedResult(
 /**
  * Invalidate cache entries for a specific signal.
  */
-export async function invalidateSignal(
-  projectId: string,
-  signalId: string
-): Promise<void> {
+export async function invalidateSignal(projectId: string, signalId: string): Promise<void> {
   try {
     const db = await getDB();
 

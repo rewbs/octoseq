@@ -62,12 +62,12 @@ AnalysisKey = `${streamId}::${analysisId}::${paramsHash}`
 Invalidation rules (enforced by the coordinated actions layer, not by store-to-store
 subscriptions):
 
-| Mutation                       | Invalidates                                  |
-| ------------------------------ | -------------------------------------------- |
-| Band shape/timeScope edit      | that band stream                             |
-| Stream audio replaced          | that stream + all bands with parentId = it   |
-| Stream removed                 | that stream + dependent bands (cascade)      |
-| Band label/color/enabled edit  | nothing (no recompute needed)                |
+| Mutation                      | Invalidates                                |
+| ----------------------------- | ------------------------------------------ |
+| Band shape/timeScope edit     | that band stream                           |
+| Stream audio replaced         | that stream + all bands with parentId = it |
+| Stream removed                | that stream + dependent bands (cascade)    |
+| Band label/color/enabled edit | nothing (no recompute needed)              |
 
 ## Signal & event addressing (task 5)
 
@@ -84,17 +84,18 @@ project-scoped (curves over the beat grid, not tied to audio).
 
 ## Target store layout (~7 stores, from 23)
 
-| Store              | Contents                                                            | Persisted |
-| ------------------ | ------------------------------------------------------------------- | --------- |
-| `streamStore`      | Stream collection (mixdown/stems/bands incl. band defs), selection | yes       |
-| `analysisStore`    | Unified analysis cache: results/pending/errors                      | no (derived) |
-| `signalStore`      | Derived + composed signal definitions, unified addresses            | yes       |
-| `eventStore`       | Authored + candidate event streams                                  | yes (authored) |
-| `timingStore`      | Beat grid / musical time / manual tempo (merger of 3 stores)        | yes       |
-| `playbackStore`    | Transport, viewport (kept largely as-is)                            | no        |
-| `projectStore`     | Project lifecycle, schema v2 serialization, autosave                | —         |
+| Store           | Contents                                                           | Persisted      |
+| --------------- | ------------------------------------------------------------------ | -------------- |
+| `streamStore`   | Stream collection (mixdown/stems/bands incl. band defs), selection | yes            |
+| `analysisStore` | Unified analysis cache: results/pending/errors                     | no (derived)   |
+| `signalStore`   | Derived + composed signal definitions, unified addresses           | yes            |
+| `eventStore`    | Authored + candidate event streams                                 | yes (authored) |
+| `timingStore`   | Beat grid / musical time / manual tempo (merger of 3 stores)       | yes            |
+| `playbackStore` | Transport, viewport (kept largely as-is)                           | no             |
+| `projectStore`  | Project lifecycle, schema v2 serialization, autosave               | —              |
 
 Non-reactive companions (not Zustand):
+
 - `audioCache` — decoded PCM keyed by StreamId. Large buffers stay out of reactive
   state and devtools serialization.
 

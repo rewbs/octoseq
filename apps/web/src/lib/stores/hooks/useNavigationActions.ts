@@ -117,7 +117,8 @@ export function useNavigationActions({ playerRef }: NavigationActionsOptions) {
     (status: "accepted" | "rejected") => {
       const searchStore = useSearchStore.getState();
       const playbackStore = usePlaybackStore.getState();
-      const { refinement, candidateFilter, loopCandidate, autoPlayOnNavigate, advanceToNextBest } = searchStore;
+      const { refinement, candidateFilter, loopCandidate, autoPlayOnNavigate, advanceToNextBest } =
+        searchStore;
 
       if (!refinement.activeCandidateId) return;
       const current = refinement.candidates.find((c) => c.id === refinement.activeCandidateId);
@@ -153,7 +154,8 @@ export function useNavigationActions({ playerRef }: NavigationActionsOptions) {
         const updated = prevState.candidates.map((c) =>
           c.id === current.id ? { ...c, status } : c
         );
-        const nextActive = candidateFilter === "all" ? next?.id ?? current.id : next?.id ?? null;
+        const nextActive =
+          candidateFilter === "all" ? (next?.id ?? current.id) : (next?.id ?? null);
         return {
           ...prevState,
           candidates: updated,
@@ -208,7 +210,7 @@ export function useNavigationActions({ playerRef }: NavigationActionsOptions) {
 
     searchStore.setRefinement((prevState) => {
       const updated = prevState.candidates.filter((c) => c.id !== id);
-      const nextActive = next?.id ?? (candidateFilter === "all" ? updated[0]?.id ?? null : null);
+      const nextActive = next?.id ?? (candidateFilter === "all" ? (updated[0]?.id ?? null) : null);
       return {
         ...prevState,
         candidates: updated,

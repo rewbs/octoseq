@@ -7,12 +7,7 @@ import { GripVertical, Headphones, Volume2, VolumeX, Waves, X } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getBandColorHex } from "@/lib/bandColors";
-import {
-  useBandEditingStore,
-  useStreamStore,
-  useViewStore,
-  type BandStream,
-} from "@/lib/streams";
+import { useBandEditingStore, useStreamStore, useViewStore, type BandStream } from "@/lib/streams";
 import { AnalysisStatusChip } from "./AnalysisStatusChip";
 import { InlineRenameLabel } from "./InlineRenameLabel";
 

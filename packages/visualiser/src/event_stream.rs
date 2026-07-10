@@ -69,7 +69,11 @@ impl EventStream {
         options: PickEventsOptions,
     ) -> Self {
         // Ensure events are sorted by time
-        events.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+        events.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Self {
             id: EventStreamId::new(),
@@ -111,7 +115,9 @@ impl EventStream {
 
     /// Find events within a time range.
     pub fn events_in_range(&self, start: f32, end: f32) -> impl Iterator<Item = &Event> {
-        self.events.iter().filter(move |e| e.time >= start && e.time < end)
+        self.events
+            .iter()
+            .filter(move |e| e.time >= start && e.time < end)
     }
 
     /// Find the nearest event to a given time.
@@ -266,7 +272,10 @@ impl EventStream {
     // =========================================================================
 
     /// Count events in the previous N beats.
-    pub fn count_prev_beats(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+    pub fn count_prev_beats(
+        &self,
+        window: impl Into<crate::signal::SignalParam>,
+    ) -> crate::signal::Signal {
         crate::signal::Signal::from_events_count_in_window(
             self.events.clone(),
             window,
@@ -276,7 +285,10 @@ impl EventStream {
     }
 
     /// Count events in the next N beats.
-    pub fn count_next_beats(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+    pub fn count_next_beats(
+        &self,
+        window: impl Into<crate::signal::SignalParam>,
+    ) -> crate::signal::Signal {
         crate::signal::Signal::from_events_count_in_window(
             self.events.clone(),
             window,
@@ -286,7 +298,10 @@ impl EventStream {
     }
 
     /// Count events in the previous N seconds.
-    pub fn count_prev_seconds(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+    pub fn count_prev_seconds(
+        &self,
+        window: impl Into<crate::signal::SignalParam>,
+    ) -> crate::signal::Signal {
         crate::signal::Signal::from_events_count_in_window(
             self.events.clone(),
             window,
@@ -296,7 +311,10 @@ impl EventStream {
     }
 
     /// Count events in the next N seconds.
-    pub fn count_next_seconds(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+    pub fn count_next_seconds(
+        &self,
+        window: impl Into<crate::signal::SignalParam>,
+    ) -> crate::signal::Signal {
         crate::signal::Signal::from_events_count_in_window(
             self.events.clone(),
             window,
@@ -306,7 +324,10 @@ impl EventStream {
     }
 
     /// Count events in the previous N frames.
-    pub fn count_prev_frames(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+    pub fn count_prev_frames(
+        &self,
+        window: impl Into<crate::signal::SignalParam>,
+    ) -> crate::signal::Signal {
         crate::signal::Signal::from_events_count_in_window(
             self.events.clone(),
             window,
@@ -316,7 +337,10 @@ impl EventStream {
     }
 
     /// Count events in the next N frames.
-    pub fn count_next_frames(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+    pub fn count_next_frames(
+        &self,
+        window: impl Into<crate::signal::SignalParam>,
+    ) -> crate::signal::Signal {
         crate::signal::Signal::from_events_count_in_window(
             self.events.clone(),
             window,
@@ -330,7 +354,10 @@ impl EventStream {
     // =========================================================================
 
     /// Event density (events per beat) in the previous N beats.
-    pub fn density_prev_beats(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+    pub fn density_prev_beats(
+        &self,
+        window: impl Into<crate::signal::SignalParam>,
+    ) -> crate::signal::Signal {
         crate::signal::Signal::from_events_density_in_window(
             self.events.clone(),
             window,
@@ -340,7 +367,10 @@ impl EventStream {
     }
 
     /// Event density (events per beat) in the next N beats.
-    pub fn density_next_beats(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+    pub fn density_next_beats(
+        &self,
+        window: impl Into<crate::signal::SignalParam>,
+    ) -> crate::signal::Signal {
         crate::signal::Signal::from_events_density_in_window(
             self.events.clone(),
             window,
@@ -350,7 +380,10 @@ impl EventStream {
     }
 
     /// Event density (events per second) in the previous N seconds.
-    pub fn density_prev_seconds(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+    pub fn density_prev_seconds(
+        &self,
+        window: impl Into<crate::signal::SignalParam>,
+    ) -> crate::signal::Signal {
         crate::signal::Signal::from_events_density_in_window(
             self.events.clone(),
             window,
@@ -360,7 +393,10 @@ impl EventStream {
     }
 
     /// Event density (events per second) in the next N seconds.
-    pub fn density_next_seconds(&self, window: impl Into<crate::signal::SignalParam>) -> crate::signal::Signal {
+    pub fn density_next_seconds(
+        &self,
+        window: impl Into<crate::signal::SignalParam>,
+    ) -> crate::signal::Signal {
         crate::signal::Signal::from_events_density_in_window(
             self.events.clone(),
             window,
@@ -397,7 +433,10 @@ impl EventStream {
         EventStream {
             id: EventStreamId::new(),
             events: Arc::new(filtered),
-            source_description: format!("{} [time {:.2}-{:.2}]", self.source_description, start, end),
+            source_description: format!(
+                "{} [time {:.2}-{:.2}]",
+                self.source_description, start, end
+            ),
             options: self.options.clone(),
         }
     }
@@ -569,7 +608,7 @@ pub enum WeightMode {
 /// Debug data for the event extraction pipeline.
 ///
 /// This provides visibility into each stage of the pipeline for tuning and trust.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Default)]
 pub struct EventExtractionDebug {
     /// Raw candidates before any filtering.
     pub raw_candidates: Vec<Event>,
@@ -588,19 +627,6 @@ pub struct EventExtractionDebug {
 
     /// Events merged/rejected by similarity clustering.
     pub rejected_similarity: Vec<Event>,
-}
-
-impl Default for EventExtractionDebug {
-    fn default() -> Self {
-        Self {
-            raw_candidates: Vec::new(),
-            post_hysteresis: Vec::new(),
-            clusters: Vec::new(),
-            accepted: Vec::new(),
-            rejected_density: Vec::new(),
-            rejected_similarity: Vec::new(),
-        }
-    }
 }
 
 /// A cluster of similar events.
@@ -648,9 +674,7 @@ mod tests {
 
     #[test]
     fn test_event_builder_methods() {
-        let event = Event::new(1.0, 0.5)
-            .with_cluster(42)
-            .with_source("peak");
+        let event = Event::new(1.0, 0.5).with_cluster(42).with_source("peak");
 
         assert_eq!(event.cluster_id, Some(42));
         assert_eq!(event.source, Some("peak".to_string()));
@@ -683,11 +707,7 @@ mod tests {
             Event::new(1.0, 0.6),
         ];
 
-        let stream = EventStream::new(
-            events,
-            "test".to_string(),
-            PickEventsOptions::default(),
-        );
+        let stream = EventStream::new(events, "test".to_string(), PickEventsOptions::default());
 
         // Should be sorted by time
         assert!((stream.get(0).unwrap().time - 0.5).abs() < 0.001);
@@ -713,11 +733,7 @@ mod tests {
             Event::new(2.0, 0.7),
         ];
 
-        let stream = EventStream::new(
-            events,
-            "test".to_string(),
-            PickEventsOptions::default(),
-        );
+        let stream = EventStream::new(events, "test".to_string(), PickEventsOptions::default());
 
         let in_range: Vec<_> = stream.events_in_range(0.8, 1.8).collect();
         assert_eq!(in_range.len(), 2);
@@ -733,11 +749,7 @@ mod tests {
             Event::new(2.0, 0.9),
         ];
 
-        let stream = EventStream::new(
-            events,
-            "test".to_string(),
-            PickEventsOptions::default(),
-        );
+        let stream = EventStream::new(events, "test".to_string(), PickEventsOptions::default());
 
         let nearest = stream.nearest_event(0.6).unwrap();
         assert!((nearest.time - 0.5).abs() < 0.001);
@@ -754,11 +766,7 @@ mod tests {
             Event::new(2.5, 0.9),
         ];
 
-        let stream = EventStream::new(
-            events,
-            "test".to_string(),
-            PickEventsOptions::default(),
-        );
+        let stream = EventStream::new(events, "test".to_string(), PickEventsOptions::default());
 
         let (start, end) = stream.time_span().unwrap();
         assert!((start - 0.5).abs() < 0.001);
@@ -773,11 +781,7 @@ mod tests {
             Event::new(1.5, 0.6),
         ];
 
-        let stream = EventStream::new(
-            events,
-            "test".to_string(),
-            PickEventsOptions::default(),
-        );
+        let stream = EventStream::new(events, "test".to_string(), PickEventsOptions::default());
 
         assert!((stream.max_weight().unwrap() - 0.9).abs() < 0.001);
         assert!((stream.min_weight().unwrap() - 0.3).abs() < 0.001);

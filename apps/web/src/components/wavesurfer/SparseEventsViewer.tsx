@@ -6,7 +6,11 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { GripHorizontal } from "lucide-react";
 
 import { HeatmapPlayheadOverlay } from "@/components/heatmap/HeatmapPlayheadOverlay";
-import { ViewportOverlayMarkers, type OverlayEvent, type OverlayMarkerVariant } from "./ViewportOverlayMarkers";
+import {
+  ViewportOverlayMarkers,
+  type OverlayEvent,
+  type OverlayMarkerVariant,
+} from "./ViewportOverlayMarkers";
 import { GenericBeatGridOverlay } from "@/components/beatGrid/GenericBeatGridOverlay";
 import type { WaveSurferViewport } from "./types";
 
@@ -145,7 +149,12 @@ export function SparseEventsViewer({
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
         >
-          <ViewportOverlayMarkers viewport={viewport} events={events} height={panelHeight} variant={variant} />
+          <ViewportOverlayMarkers
+            viewport={viewport}
+            events={events}
+            height={panelHeight}
+            variant={variant}
+          />
           {showBeatGrid && audioDuration > 0 && (
             <GenericBeatGridOverlay
               viewport={viewport}

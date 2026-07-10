@@ -1,10 +1,9 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { FolderOpen, Loader2, Calendar, Globe, Lock } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Modal } from '@/components/ui/modal';
-import { listMyProjects, loadProjectWorkingState } from '@/lib/actions/project';
+import { useState, useEffect } from "react";
+import { FolderOpen, Loader2, Calendar, Globe, Lock } from "lucide-react";
+import { Modal } from "@/components/ui/modal";
+import { listMyProjects, loadProjectWorkingState } from "@/lib/actions/project";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -27,6 +26,8 @@ interface LoadedProject {
   ownerId: string;
   isPublic: boolean;
   workingState: Record<string, unknown> | null;
+  workingStateRevision: number;
+  canEdit: boolean;
 }
 
 interface MyProjectsModalProps {
@@ -57,7 +58,7 @@ export function MyProjectsModal({ open, onOpenChange, onProjectLoaded }: MyProje
       setError(null);
 
       try {
-        const result = await listMyProjects();
+        const result = await listMyProjects({ limit: 50 });
 
         if (result?.data?.projects) {
           setProjects(result.data.projects as MyProject[]);
@@ -65,7 +66,7 @@ export function MyProjectsModal({ open, onOpenChange, onProjectLoaded }: MyProje
           setError(result.serverError);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load projects');
+        setError(err instanceof Error ? err.message : "Failed to load projects");
       } finally {
         setLoading(false);
       }
@@ -89,12 +90,14 @@ export function MyProjectsModal({ open, onOpenChange, onProjectLoaded }: MyProje
           ownerId: result.data.project.ownerId,
           isPublic: result.data.project.isPublic,
           workingState: result.data.workingState as Record<string, unknown> | null,
+          workingStateRevision: result.data.workingStateRevision,
+          canEdit: result.data.canEdit,
         });
       } else if (result?.serverError) {
         setError(result.serverError);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load project');
+      setError(err instanceof Error ? err.message : "Failed to load project");
     } finally {
       setLoadingProject(null);
     }
@@ -102,11 +105,11 @@ export function MyProjectsModal({ open, onOpenChange, onProjectLoaded }: MyProje
 
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
@@ -114,14 +117,12 @@ export function MyProjectsModal({ open, onOpenChange, onProjectLoaded }: MyProje
     if (project.workingState?.updatedAt) {
       return formatDate(project.workingState.updatedAt);
     }
-    return 'Never saved';
+    return "Never saved";
   };
 
   return (
     <Modal title="My Projects" open={open} onOpenChange={onOpenChange}>
-      <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">
-        Select a project to load:
-      </p>
+      <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">Select a project to load:</p>
 
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-sm">
@@ -174,7 +175,7 @@ export function MyProjectsModal({ open, onOpenChange, onProjectLoaded }: MyProje
                 </div>
               </div>
               <span className="text-xs text-zinc-400 ml-2 shrink-0">
-                {loadingProject === project.id ? 'Loading...' : 'Load'}
+                {loadingProject === project.id ? "Loading..." : "Load"}
               </span>
             </button>
           ))}

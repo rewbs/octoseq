@@ -3,7 +3,7 @@
 import { X } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
-import { useConfigStore, useMirStore, useTabResult, useDisplayedHeatmap } from "@/lib/stores";
+import { useConfigStore, useTabResult, useDisplayedHeatmap } from "@/lib/stores";
 import { useAnalysisStore } from "@/lib/streams";
 
 /**
@@ -68,11 +68,7 @@ export function DebugPanel() {
 
         <div className="grid grid-cols-1 gap-1.5 text-sm">
           <label className="inline-flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={debug}
-              onChange={(e) => setDebug(e.target.checked)}
-            />
+            <input type="checkbox" checked={debug} onChange={(e) => setDebug(e.target.checked)} />
             <span className="text-zinc-700 dark:text-zinc-200">Verbose worker logs</span>
           </label>
           <label className="inline-flex items-center gap-2">
@@ -89,7 +85,9 @@ export function DebugPanel() {
               checked={enableGpu}
               onChange={(e) => setEnableGpu(e.target.checked)}
             />
-            <span className="text-zinc-700 dark:text-zinc-200">Enable WebGPU stage (mel projection + onset envelope)</span>
+            <span className="text-zinc-700 dark:text-zinc-200">
+              Enable WebGPU stage (mel projection + onset envelope)
+            </span>
           </label>
           <label className="inline-flex items-center gap-2">
             <input
@@ -105,7 +103,9 @@ export function DebugPanel() {
               checked={wasmProfiling}
               onChange={(e) => setWasmProfiling(e.target.checked)}
             />
-            <span className="text-zinc-700 dark:text-zinc-200">WASM performance profiling (console)</span>
+            <span className="text-zinc-700 dark:text-zinc-200">
+              WASM performance profiling (console)
+            </span>
           </label>
 
           <div className="mt-1.5 text-xs text-zinc-600 dark:text-zinc-300">

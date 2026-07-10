@@ -67,7 +67,7 @@ function InspectionContextBadge() {
   const viewMode = useInspectionStore((s) => s.viewMode);
   const selectedStreamId = useStreamStore((s) => s.selectedStreamId);
   const selectedStream = useStreamStore((s) =>
-    s.selectedStreamId ? s.streams.get(s.selectedStreamId) ?? null : null
+    s.selectedStreamId ? (s.streams.get(s.selectedStreamId) ?? null) : null
   );
 
   const contextLabel = useMemo(() => {
@@ -87,7 +87,8 @@ function InspectionContextBadge() {
 
   return (
     <div className="text-xs text-zinc-500 dark:text-zinc-400">
-      Inspecting: <span className="font-medium text-zinc-700 dark:text-zinc-300">{contextLabel}</span>
+      Inspecting:{" "}
+      <span className="font-medium text-zinc-700 dark:text-zinc-300">{contextLabel}</span>
     </div>
   );
 }

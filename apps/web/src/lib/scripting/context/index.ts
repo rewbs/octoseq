@@ -12,13 +12,12 @@
 
 import type {
   CursorContext,
-  CursorContextKind,
   ChainSegment,
   ChainParseResult,
   CallContext,
   ConfigMapContext,
 } from "./types";
-import { getApiRegistry, resolveChain } from "../registry";
+import { resolveChain } from "../registry";
 
 // Re-export types
 export * from "./types";
@@ -138,7 +137,11 @@ export function parseChainBeforeDot(textUntilPosition: string): ChainParseResult
         while (i >= 0 && isWhitespace(text[i]!)) i--;
 
         if (i < 0 || !isIdentChar(text[i]!)) {
-          return { segments: segmentsReversed.reverse(), valid: false, error: "Expected identifier before paren" };
+          return {
+            segments: segmentsReversed.reverse(),
+            valid: false,
+            error: "Expected identifier before paren",
+          };
         }
         const end = i + 1;
         let start = i;
@@ -152,7 +155,11 @@ export function parseChainBeforeDot(textUntilPosition: string): ChainParseResult
         while (i >= 0 && isWhitespace(text[i]!)) i--;
         const str = parseStringLiteralBackward(text, i);
         if (!str) {
-          return { segments: segmentsReversed.reverse(), valid: false, error: "Invalid string in bracket" };
+          return {
+            segments: segmentsReversed.reverse(),
+            valid: false,
+            error: "Invalid string in bracket",
+          };
         }
         i = str.startIndex - 1;
         while (i >= 0 && isWhitespace(text[i]!)) i--;
@@ -316,7 +323,11 @@ function parseMethodFromTextBeforeOpen(
     const chainResult = parseChainBeforeDot(chainText);
     if (chainResult.valid && chainResult.segments.length > 0) {
       // Try to resolve the owner type
-      const resolution = resolveChain(chainResult.segments.map((s) => s.kind === "ident" ? s.name : s.kind === "call" ? s.name : ""));
+      const resolution = resolveChain(
+        chainResult.segments.map((s) =>
+          s.kind === "ident" ? s.name : s.kind === "call" ? s.name : ""
+        )
+      );
       return {
         chain: chainResult.segments,
         methodName,

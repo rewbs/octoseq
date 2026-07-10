@@ -158,7 +158,12 @@ export function fingerprintV1(params: {
   const melWindow = findFrameWindow(mel.times, tt0, tt1);
   // Be careful not to slice/copy excessively, but here we need array of arrays for helper
   // melBands is Array<Float32Array>
-  const melStats = weightedStats(mel.melBands, melWindow.startFrame, melWindow.endFrameExclusive, melDimHint);
+  const melStats = weightedStats(
+    mel.melBands,
+    melWindow.startFrame,
+    melWindow.endFrameExclusive,
+    melDimHint
+  );
 
   // --- Onset stats (1D)
   // NOTE: onsetEnvelope times should align with mel.times (as computed today), but
@@ -208,7 +213,12 @@ export function fingerprintV1(params: {
       mfccFramesSliced.push(full.subarray(start, end));
     }
 
-    const s = weightedStats(mfccFramesSliced, 0, mfccFramesSliced.length, mfccDimHint ? Math.max(0, mfccDimHint - 1) : 0);
+    const s = weightedStats(
+      mfccFramesSliced,
+      0,
+      mfccFramesSliced.length,
+      mfccDimHint ? Math.max(0, mfccDimHint - 1) : 0
+    );
     mfccStats = { mean: s.mean, variance: s.variance };
   }
 

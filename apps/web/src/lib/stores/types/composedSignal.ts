@@ -21,13 +21,7 @@ export const COMPOSED_SIGNAL_SCHEMA_VERSION = 1;
  * These match the easing functions available in the visualiser.
  */
 export type InterpolationType =
-  | "linear"
-  | "ease_in"
-  | "ease_out"
-  | "ease_in_out"
-  | "exponential_in"
-  | "exponential_out"
-  | "hold";
+  "linear" | "ease_in" | "ease_out" | "ease_in_out" | "exponential_in" | "exponential_out" | "hold";
 
 /**
  * Single keyframe node in a composed signal.

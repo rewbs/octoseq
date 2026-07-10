@@ -152,9 +152,9 @@ pub fn create_sphere_geometry() -> (Vec<Vertex>, Vec<u16>) {
 
             // Interpolate: equator (warm orange) -> poles (cool blue)
             let color = [
-                1.0 - equator_dist * 0.7,  // R: high at equator, lower at poles
-                0.4 + equator_dist * 0.4,  // G: medium everywhere
-                0.2 + equator_dist * 0.8,  // B: low at equator, high at poles
+                1.0 - equator_dist * 0.7, // R: high at equator, lower at poles
+                0.4 + equator_dist * 0.4, // G: medium everywhere
+                0.2 + equator_dist * 0.8, // B: low at equator, high at poles
             ];
 
             vertices.push(Vertex::new(position, normal, color));
@@ -185,23 +185,21 @@ pub fn create_sphere_geometry() -> (Vec<Vertex>, Vec<u16>) {
 /// Order: 4 corners on Z- face, then 4 corners on Z+ face.
 pub const DEBUG_CUBE_VERTICES: [[f32; 3]; 8] = [
     [-0.5, -0.5, -0.5], // 0: left-bottom-back
-    [ 0.5, -0.5, -0.5], // 1: right-bottom-back
-    [ 0.5,  0.5, -0.5], // 2: right-top-back
-    [-0.5,  0.5, -0.5], // 3: left-top-back
-    [-0.5, -0.5,  0.5], // 4: left-bottom-front
-    [ 0.5, -0.5,  0.5], // 5: right-bottom-front
-    [ 0.5,  0.5,  0.5], // 6: right-top-front
-    [-0.5,  0.5,  0.5], // 7: left-top-front
+    [0.5, -0.5, -0.5],  // 1: right-bottom-back
+    [0.5, 0.5, -0.5],   // 2: right-top-back
+    [-0.5, 0.5, -0.5],  // 3: left-top-back
+    [-0.5, -0.5, 0.5],  // 4: left-bottom-front
+    [0.5, -0.5, 0.5],   // 5: right-bottom-front
+    [0.5, 0.5, 0.5],    // 6: right-top-front
+    [-0.5, 0.5, 0.5],   // 7: left-top-front
 ];
 
 /// 12 edges of a cube as vertex index pairs (24 indices for LineList topology).
 /// Edges: 4 on back face, 4 on front face, 4 connecting front to back.
 pub const DEBUG_CUBE_EDGES: [u16; 24] = [
     // Back face (Z-)
-    0, 1, 1, 2, 2, 3, 3, 0,
-    // Front face (Z+)
-    4, 5, 5, 6, 6, 7, 7, 4,
-    // Connecting edges
+    0, 1, 1, 2, 2, 3, 3, 0, // Front face (Z+)
+    4, 5, 5, 6, 6, 7, 7, 4, // Connecting edges
     0, 4, 1, 5, 2, 6, 3, 7,
 ];
 
@@ -209,7 +207,7 @@ pub const DEBUG_CUBE_EDGES: [u16; 24] = [
 /// Returns vertices (with yellow color for visibility) and edge indices.
 pub fn create_debug_cube_geometry() -> (Vec<Vertex>, Vec<u16>) {
     let color = [1.0, 0.9, 0.0]; // Yellow for debug bounds
-    // Debug cube is for wireframe only; use a default normal
+                                 // Debug cube is for wireframe only; use a default normal
     let default_normal = [0.0, 1.0, 0.0];
     let vertices: Vec<Vertex> = DEBUG_CUBE_VERTICES
         .iter()

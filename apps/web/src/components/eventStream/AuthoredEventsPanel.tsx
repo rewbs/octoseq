@@ -29,7 +29,10 @@ import {
 import { getAuthoredStreamId, getInspectorNodeType } from "@/lib/nodeTypes";
 import { SignalViewer, createContinuousSignal } from "@/components/wavesurfer/SignalViewer";
 import { EventStreamEditor } from "./EventStreamEditor";
-import type { AuthoredEventProvenance, AuthoredEventStream } from "@/lib/stores/types/authoredEvent";
+import type {
+  AuthoredEventProvenance,
+  AuthoredEventStream,
+} from "@/lib/stores/types/authoredEvent";
 import { cn } from "@/lib/utils";
 
 // ============================================================================
@@ -126,7 +129,12 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
         minDistance: gatingMode === "hysteresis" ? 0 : minDistance, // Hysteresis handles min distance itself
       };
 
-      let result: { times: Float32Array; strengths: Float32Array; thresholdCurve?: Float32Array; thresholdTimes?: Float32Array };
+      let result: {
+        times: Float32Array;
+        strengths: Float32Array;
+        thresholdCurve?: Float32Array;
+        thresholdTimes?: Float32Array;
+      };
 
       if (algorithm === "adaptive") {
         const windowSamples = Math.max(5, Math.round(adaptiveWindow * 100));
@@ -166,7 +174,15 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
       setPeakResult(result);
       setIsDetecting(false);
     });
-  }, [signalData, algorithm, threshold, minDistance, adaptiveWindow, gatingMode, hysteresisOffThreshold]);
+  }, [
+    signalData,
+    algorithm,
+    threshold,
+    minDistance,
+    adaptiveWindow,
+    gatingMode,
+    hysteresisOffThreshold,
+  ]);
 
   // Auto-detect with debounce
   useEffect(() => {
@@ -185,7 +201,17 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
         clearTimeout(detectTimeoutRef.current);
       }
     };
-  }, [autoDetect, signalData, algorithm, threshold, minDistance, adaptiveWindow, gatingMode, hysteresisOffThreshold, runDetection]);
+  }, [
+    autoDetect,
+    signalData,
+    algorithm,
+    threshold,
+    minDistance,
+    adaptiveWindow,
+    gatingMode,
+    hysteresisOffThreshold,
+    runDetection,
+  ]);
 
   // Handle source selection
   const handleSourceChange = useCallback((ref: SignalSourceRef | null) => {
@@ -272,7 +298,12 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
 
   // Generate adaptive threshold curve path for SVG visualization
   const adaptiveThresholdPath = useMemo(() => {
-    if (algorithm !== "adaptive" || !peakResult?.thresholdCurve || !peakResult?.thresholdTimes || !viewport) {
+    if (
+      algorithm !== "adaptive" ||
+      !peakResult?.thresholdCurve ||
+      !peakResult?.thresholdTimes ||
+      !viewport
+    ) {
       return null;
     }
 
@@ -343,17 +374,15 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
                   </p>
                 ) : (
                   <p>
-                    <strong>Adaptive:</strong> Uses a sliding window to compute local mean
-                    and standard deviation, then finds peaks that exceed mean + threshold × std.
-                    Better for signals with varying amplitude over time.
+                    <strong>Adaptive:</strong> Uses a sliding window to compute local mean and
+                    standard deviation, then finds peaks that exceed mean + threshold × std. Better
+                    for signals with varying amplitude over time.
                   </p>
                 )}
               </div>
             </div>
             <span className="text-zinc-400">→</span>
-            <span className="text-amber-600 dark:text-amber-400 font-medium">
-              Events
-            </span>
+            <span className="text-amber-600 dark:text-amber-400 font-medium">Events</span>
           </>
         )}
       </div>
@@ -407,9 +436,13 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
                 <HelpCircle className="h-3 w-3 text-zinc-400" />
               </label>
               <div className="absolute left-0 top-full mt-1 z-10 hidden group-hover:block w-56 p-2 text-xs bg-zinc-800 text-zinc-200 rounded shadow-lg">
-                <p className="mb-1"><strong>Simple:</strong> Only min gap between peaks.</p>
-                <p><strong>Hysteresis:</strong> Signal must drop below off-threshold before
-                  a new peak can trigger. Prevents retriggering during sustained high values.</p>
+                <p className="mb-1">
+                  <strong>Simple:</strong> Only min gap between peaks.
+                </p>
+                <p>
+                  <strong>Hysteresis:</strong> Signal must drop below off-threshold before a new
+                  peak can trigger. Prevents retriggering during sustained high values.
+                </p>
               </div>
             </div>
             <select
@@ -518,7 +551,13 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
             {/* Threshold line overlay */}
             {viewport && (
               <div className="absolute inset-0 pointer-events-none">
-                <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible">
+                <svg
+                  width="100%"
+                  height="100%"
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                  className="overflow-visible"
+                >
                   {/* Adaptive threshold curve OR fixed threshold line */}
                   {algorithm === "adaptive" && adaptiveThresholdPath ? (
                     <>
@@ -532,13 +571,7 @@ function SignalImportPanel({ streamId, stream, children }: SignalImportPanelProp
                         vectorEffect="non-scaling-stroke"
                       />
                       {/* Label */}
-                      <text
-                        x="1"
-                        y="5"
-                        fill="rgb(168, 85, 247)"
-                        fontSize="3"
-                        opacity={0.8}
-                      >
+                      <text x="1" y="5" fill="rgb(168, 85, 247)" fontSize="3" opacity={0.8}>
                         adaptive threshold
                       </text>
                     </>
@@ -710,16 +743,11 @@ export function AuthoredEventsPanel() {
   const beatGridVisible = useTimingStore((s) => s.isVisible);
   const mirroredCursorTimeSec = useMirroredCursorTime();
 
-  const streams = useAuthoredEventStore(
-    useShallow((s) => Array.from(s.streams.values()))
-  );
+  const streams = useAuthoredEventStore(useShallow((s) => Array.from(s.streams.values())));
   const { createManualStream } = useAuthoredEventActions();
 
   // Get the node type and stream ID
-  const nodeType = useMemo(
-    () => getInspectorNodeType(selectedNodeId),
-    [selectedNodeId]
-  );
+  const nodeType = useMemo(() => getInspectorNodeType(selectedNodeId), [selectedNodeId]);
   const streamId = useMemo(
     () => (selectedNodeId ? getAuthoredStreamId(selectedNodeId) : null),
     [selectedNodeId]
@@ -732,8 +760,7 @@ export function AuthoredEventsPanel() {
 
   // Determine what to show
   const isEventStreamsSection =
-    selectedNodeId === "event-streams" ||
-    selectedNodeId === "event-streams:authored";
+    selectedNodeId === "event-streams" || selectedNodeId === "event-streams:authored";
   const isStreamSelected = nodeType === "authored-stream" && streamId && selectedStream;
 
   // Don't render if not relevant
@@ -765,8 +792,8 @@ export function AuthoredEventsPanel() {
 
         {streams.length === 0 ? (
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
-            Event streams let you mark specific moments in time. Create a stream
-            and add events manually or import them from 1D signals using peak detection.
+            Event streams let you mark specific moments in time. Create a stream and add events
+            manually or import them from 1D signals using peak detection.
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
@@ -784,9 +811,7 @@ export function AuthoredEventsPanel() {
                 )}
               >
                 {stream.name}
-                <span className="ml-1.5 text-zinc-400">
-                  ({stream.events.length})
-                </span>
+                <span className="ml-1.5 text-zinc-400">({stream.events.length})</span>
               </button>
             ))}
           </div>
@@ -805,9 +830,7 @@ export function AuthoredEventsPanel() {
           <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
             {selectedStream.name}
           </span>
-          <span className="text-xs text-zinc-400">
-            {selectedStream.events.length} events
-          </span>
+          <span className="text-xs text-zinc-400">{selectedStream.events.length} events</span>
         </div>
 
         {/* Signal import panel with EventStreamEditor as child (renders between signal preview and controls) */}

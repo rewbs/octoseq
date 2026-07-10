@@ -38,6 +38,14 @@ interface MeshAssetActions {
   /** Update the cloud asset ID for an asset after upload completes. */
   setCloudAssetId: (id: string, cloudAssetId: string) => void;
 
+  /** Hydrate file content without changing the asset's stable project identity. */
+  hydrateAssetContent: (
+    id: string,
+    fileName: string,
+    objContent: string,
+    cloudAssetId: string
+  ) => boolean;
+
   /** Clear the rawBytes after upload completes to free memory. */
   clearRawBytes: (id: string) => void;
 
@@ -154,6 +162,28 @@ export const useMeshAssetStore = create<MeshAssetState & MeshAssetActions>()(
         });
       },
 
+      hydrateAssetContent: (id, fileName, objContent, cloudAssetId) => {
+        const metadata = parseObjMetadata(objContent);
+        let updated = false;
+        set((state) => {
+          if (!state.structure) return state;
+          const assets = state.structure.assets.map((asset) => {
+            if (asset.id !== id) return asset;
+            updated = true;
+            return {
+              ...asset,
+              fileName,
+              objContent,
+              cloudAssetId,
+              vertexCount: metadata.vertexCount,
+              faceCount: metadata.faceCount,
+            };
+          });
+          return updated ? { structure: { ...state.structure, assets } } : state;
+        });
+        return updated;
+      },
+
       clearRawBytes: (id) => {
         set((state) => {
           if (!state.structure) return state;
@@ -177,9 +207,7 @@ export const useMeshAssetStore = create<MeshAssetState & MeshAssetActions>()(
         set((state) => {
           if (!state.structure) return state;
 
-          const assets = state.structure.assets.map((a) =>
-            a.id === id ? { ...a, name } : a
-          );
+          const assets = state.structure.assets.map((a) => (a.id === id ? { ...a, name } : a));
 
           return {
             structure: {
@@ -294,7 +322,7 @@ export function useMeshAssetCount(): number {
  * Get all mesh assets.
  */
 export function useMeshAssets(): MeshAsset[] {
-  return useMeshAssetStore(useShallow((state) => state.structure?.assets ?? []))
+  return useMeshAssetStore(useShallow((state) => state.structure?.assets ?? []));
 }
 
 /**

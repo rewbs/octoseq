@@ -55,23 +55,17 @@ export function StemManagementContent() {
   } | null>(null);
   const [isGeneratingMixdown, setIsGeneratingMixdown] = useState(false);
 
-  const {
-    streams,
-    selectedStreamId,
-    renameStream,
-    reorderStreams,
-    restoreStreams,
-    selectStream,
-  } = useStreamStore(
-    useShallow((s) => ({
-      streams: s.streams,
-      selectedStreamId: s.selectedStreamId,
-      renameStream: s.renameStream,
-      reorderStreams: s.reorderStreams,
-      restoreStreams: s.restoreStreams,
-      selectStream: s.selectStream,
-    }))
-  );
+  const { streams, selectedStreamId, renameStream, reorderStreams, restoreStreams, selectStream } =
+    useStreamStore(
+      useShallow((s) => ({
+        streams: s.streams,
+        selectedStreamId: s.selectedStreamId,
+        renameStream: s.renameStream,
+        reorderStreams: s.reorderStreams,
+        restoreStreams: s.restoreStreams,
+        selectStream: s.selectStream,
+      }))
+    );
   const setCurrentSource = useAudioSourceStore((s) => s.setCurrentSource);
 
   // Cloud upload
@@ -379,10 +373,7 @@ export function StemManagementContent() {
             collisionDetection={closestCenter}
             onDragEnd={handleDragEnd}
           >
-            <SortableContext
-              items={stems.map((s) => s.id)}
-              strategy={verticalListSortingStrategy}
-            >
+            <SortableContext items={stems.map((s) => s.id)} strategy={verticalListSortingStrategy}>
               {stems.map((stem, index) => (
                 <StemListItem
                   key={stem.id}

@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useState } from 'react';
-import { getProjectAssetStatuses } from '@/lib/actions/project';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { getProjectAssetStatuses } from "@/lib/actions/project";
 import type {
   AssetResolutionInfo,
   AssetResolutionStatus,
   ProjectAssetSummary,
-} from '@/lib/assets/types';
-import { emptyProjectAssetSummary } from '@/lib/assets/types';
+} from "@/lib/assets/types";
+import { emptyProjectAssetSummary } from "@/lib/assets/types";
 
 // -----------------------------------------------------------------------------
 // useProjectAssets Hook
@@ -48,8 +48,9 @@ export function useProjectAssets({
   const [error, setError] = useState<Error | null>(null);
 
   // Build a lookup map for quick access
-  const assetMap = new Map<string, AssetResolutionInfo>(
-    summary.assets.map((a) => [a.assetId, a])
+  const assetMap = useMemo(
+    () => new Map<string, AssetResolutionInfo>(summary.assets.map((a) => [a.assetId, a])),
+    [summary.assets]
   );
 
   const refresh = useCallback(async () => {
@@ -74,10 +75,10 @@ export function useProjectAssets({
       } else if (result?.serverError) {
         setError(new Error(result.serverError));
       } else if (result?.validationErrors) {
-        setError(new Error('Validation error'));
+        setError(new Error("Validation error"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err : new Error('Failed to fetch asset statuses'));
+      setError(err instanceof Error ? err : new Error("Failed to fetch asset statuses"));
     } finally {
       setIsLoading(false);
     }
@@ -112,7 +113,7 @@ export function useProjectAssets({
 
   const isAssetResolved = useCallback(
     (assetId: string): boolean => {
-      return assetMap.get(assetId)?.status === 'resolved';
+      return assetMap.get(assetId)?.status === "resolved";
     },
     [assetMap]
   );
@@ -163,7 +164,7 @@ export function useAssetsNeedingAttention(projectId: string | null): {
   const { summary, isLoading } = useProjectAssets({ projectId });
 
   const problemAssets = summary.assets.filter(
-    (a) => a.status === 'failed' || a.status === 'missing'
+    (a) => a.status === "failed" || a.status === "missing"
   );
 
   return {

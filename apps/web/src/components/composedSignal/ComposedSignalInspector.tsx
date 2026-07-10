@@ -2,15 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import {
-  Plus,
-  Trash2,
-  Copy,
-  Music,
-  Spline,
-  ToggleLeft,
-  ToggleRight,
-} from "lucide-react";
+import { Plus, Trash2, Copy, Music, Spline, ToggleLeft, ToggleRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useComposedSignalStore } from "@/lib/stores/composedSignalStore";
@@ -72,22 +64,12 @@ export function ComposedSignalInspector({ nodeId }: ComposedSignalInspectorProps
 
   // Section view - show list of signals
   if (isSection) {
-    return (
-      <SectionView
-        signals={signals}
-        onAddSignal={addSignal}
-        onSelectSignal={selectSignal}
-      />
-    );
+    return <SectionView signals={signals} onAddSignal={addSignal} onSelectSignal={selectSignal} />;
   }
 
   // Signal not found
   if (!signal) {
-    return (
-      <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
-        Signal not found.
-      </div>
-    );
+    return <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">Signal not found.</div>;
   }
 
   // Signal detail view
@@ -109,9 +91,7 @@ function BpmRequiredMessage() {
   return (
     <div className="flex flex-col items-center justify-center p-6 text-center">
       <Music className="h-10 w-10 text-zinc-400 dark:text-zinc-600 mb-3" />
-      <p className="font-medium text-zinc-900 dark:text-zinc-100 mb-1">
-        Beat grid required
-      </p>
+      <p className="font-medium text-zinc-900 dark:text-zinc-100 mb-1">Beat grid required</p>
       <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-3">
         Select a tempo hypothesis to enable composed signal editing.
       </p>
@@ -169,9 +149,7 @@ function SectionView({
             >
               <Spline
                 className={`h-4 w-4 ${
-                  signal.enabled
-                    ? "text-blue-500"
-                    : "text-zinc-400 dark:text-zinc-600"
+                  signal.enabled ? "text-blue-500" : "text-zinc-400 dark:text-zinc-600"
                 }`}
               />
               <span
@@ -193,8 +171,8 @@ function SectionView({
 
       <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700">
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          Composed signals are human-authored interpretation curves. They define
-          subjective qualities like intensity or emotion over musical time (beats).
+          Composed signals are human-authored interpretation curves. They define subjective
+          qualities like intensity or emotion over musical time (beats).
         </p>
       </div>
     </div>
@@ -239,11 +217,7 @@ function SignalDetailView({
       {/* Header */}
       <div className="space-y-2">
         <div className="flex items-center gap-2">
-          <Spline
-            className={`h-5 w-5 ${
-              signal.enabled ? "text-blue-500" : "text-zinc-400"
-            }`}
-          />
+          <Spline className={`h-5 w-5 ${signal.enabled ? "text-blue-500" : "text-zinc-400"}`} />
           {isEditing ? (
             <Input
               value={editName}

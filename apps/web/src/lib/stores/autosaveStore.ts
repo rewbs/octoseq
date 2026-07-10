@@ -59,35 +59,18 @@ export const useAutosaveStore = create<AutosaveStore>()(
       ...initialState,
 
       setStatus: (status) =>
-        set(
-          { status, error: status !== "error" ? null : undefined },
-          false,
-          "setStatus"
-        ),
+        set({ status, error: status !== "error" ? null : undefined }, false, "setStatus"),
 
       setSaved: (timestamp) =>
-        set(
-          { status: "saved", lastSavedAt: timestamp, error: null },
-          false,
-          "setSaved"
-        ),
+        set({ status: "saved", lastSavedAt: timestamp, error: null }, false, "setSaved"),
 
-      setError: (error) =>
-        set({ status: "error", error }, false, "setError"),
+      setError: (error) => set({ status: "error", error }, false, "setError"),
 
       setRecovered: (projectName) =>
-        set(
-          { wasRecovered: true, recoveredProjectName: projectName },
-          false,
-          "setRecovered"
-        ),
+        set({ wasRecovered: true, recoveredProjectName: projectName }, false, "setRecovered"),
 
       clearRecovered: () =>
-        set(
-          { wasRecovered: false, recoveredProjectName: null },
-          false,
-          "clearRecovered"
-        ),
+        set({ wasRecovered: false, recoveredProjectName: null }, false, "clearRecovered"),
 
       reset: () => set(initialState, false, "reset"),
     }),

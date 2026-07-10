@@ -2,22 +2,18 @@
 
 # Check if DATABASE_URL is set
 if [[ -z "$DATABASE_URL" ]]; then
-  echo "Error: DATABASE_URL is not set. Please set it to the connection string for staging."
+  echo "Error: DATABASE_URL is not set. Set it to the database you intend to migrate."
   exit 1
 fi
 
-# Check if DATABASE_URL contains the required substring
-REQUIRED_SUBSTRING="ep-withered-union-af7o38dv"
-if [[ "$DATABASE_URL" == *"$REQUIRED_SUBSTRING"* ]]; then
-  echo "DATABASE_URL contains the required substring. Running Prisma migrations..."
-  pnpx prisma migrate deploy
-  if [[ $? -eq 0 ]]; then
-    echo "Prisma migrations deployed successfully."
-  else
-    echo "Error: Prisma migrations failed to deploy."
-    exit 1
-  fi
-else
-  echo "DATABASE_URL does not contain the required substring for staging. Skipping Prisma migrations."
+if [[ "$ALLOW_PRODUCTION_MIGRATIONS" != "true" ]]; then
+  echo "Error: set ALLOW_PRODUCTION_MIGRATIONS=true after verifying DATABASE_URL."
+  exit 1
 fi
 
+if [[ "$PRISMA_BASELINE_EXISTING_DATABASE" == "true" ]]; then
+  echo "Marking the pre-migration schema as an applied baseline..."
+  pnpm exec prisma migrate resolve --applied 20260710000000_baseline
+fi
+
+pnpm exec prisma migrate deploy

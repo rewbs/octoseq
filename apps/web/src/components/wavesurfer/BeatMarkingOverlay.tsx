@@ -167,8 +167,10 @@ export function BeatMarkingOverlay({
       const x = e.clientX - rect.left;
 
       // Check if clicking near an existing marker (within 10px)
-      const beat1Px = beat1TimeSec !== null ? timeToPixel(beat1TimeSec, viewport, containerWidth) : null;
-      const beat2Px = beat2TimeSec !== null ? timeToPixel(beat2TimeSec, viewport, containerWidth) : null;
+      const beat1Px =
+        beat1TimeSec !== null ? timeToPixel(beat1TimeSec, viewport, containerWidth) : null;
+      const beat2Px =
+        beat2TimeSec !== null ? timeToPixel(beat2TimeSec, viewport, containerWidth) : null;
 
       if (beat1Px !== null && Math.abs(x - beat1Px) < 10) {
         setDragging(1);
@@ -209,8 +211,10 @@ export function BeatMarkingOverlay({
 
   if (!isActive) return null;
 
-  const beat1Px = beat1TimeSec !== null && viewport ? timeToPixel(beat1TimeSec, viewport, containerWidth) : null;
-  const beat2Px = beat2TimeSec !== null && viewport ? timeToPixel(beat2TimeSec, viewport, containerWidth) : null;
+  const beat1Px =
+    beat1TimeSec !== null && viewport ? timeToPixel(beat1TimeSec, viewport, containerWidth) : null;
+  const beat2Px =
+    beat2TimeSec !== null && viewport ? timeToPixel(beat2TimeSec, viewport, containerWidth) : null;
 
   // Determine instruction text based on state
   let instructionText: string;

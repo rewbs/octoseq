@@ -39,10 +39,7 @@ export interface ResolveResult {
  * Resolve a local file to a blob URL.
  * Creates an object URL from the File object.
  */
-async function resolveLocalSource(
-  file: File,
-  options: ResolveOptions
-): Promise<ResolveResult> {
+async function resolveLocalSource(file: File, options: ResolveOptions): Promise<ResolveResult> {
   options.onStatusChange?.("resolving");
 
   // Check for cancellation
@@ -159,9 +156,10 @@ export async function resolveAudioSource(
     case "generated":
       return resolveGeneratedSource(source, options);
 
-    default:
+    default: {
       // TypeScript exhaustiveness check
       const _exhaustive: never = source;
       throw new Error(`Unknown source type: ${(_exhaustive as AudioSource).type}`);
+    }
   }
 }

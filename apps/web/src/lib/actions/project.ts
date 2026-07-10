@@ -1,16 +1,16 @@
-'use server';
+"use server";
 
-import { z } from 'zod';
-import { prisma, AssetStatus } from '@/lib/db';
+import { z } from "zod";
+import { prisma, AssetStatus } from "@/lib/db";
 import {
   assertCanRead,
   assertOwnership,
   authActionLenient,
   authActionModerate,
   authActionStrict,
-  publicAction,
-} from '@/lib/safe-action';
-import { getDbUser } from '@/lib/auth/syncUser';
+  publicActionModerate,
+} from "@/lib/safe-action";
+import { getDbUser } from "@/lib/auth/syncUser";
 
 // -----------------------------------------------------------------------------
 // Schemas
@@ -18,6 +18,16 @@ import { getDbUser } from '@/lib/auth/syncUser';
 
 const createProjectSchema = z.object({
   name: z.string().min(1).max(255),
+});
+
+const listProjectsSchema = z.object({
+  cursor: z.string().min(1).optional(),
+  limit: z.number().int().min(1).max(100).default(50),
+});
+
+const updateProjectVisibilitySchema = z.object({
+  projectId: z.string().min(1),
+  isPublic: z.boolean(),
 });
 
 const projectIdSchema = z.object({
@@ -40,8 +50,11 @@ const jsonValueSchema: z.ZodType<
 
 const autosaveSchema = z.object({
   projectId: z.string().min(1),
+  expectedRevision: z.number().int().nonnegative(),
   workingJson: z.record(z.string(), jsonValueSchema), // Loosely typed JSON object
 });
+
+class SaveConflictError extends Error {}
 
 // -----------------------------------------------------------------------------
 // createProject
@@ -58,7 +71,7 @@ export const createProject = authActionStrict
       data: {
         name,
         ownerId: user.id,
-        isPublic: true, // Default to public
+        isPublic: false,
       },
     });
 
@@ -70,7 +83,7 @@ export const createProject = authActionStrict
 // Loads the working state for a project (public projects readable by anyone)
 // -----------------------------------------------------------------------------
 
-export const loadProjectWorkingState = publicAction
+export const loadProjectWorkingState = publicActionModerate
   .schema(projectIdSchema)
   .action(async ({ parsedInput }) => {
     const { projectId } = parsedInput;
@@ -84,12 +97,12 @@ export const loadProjectWorkingState = publicAction
     });
 
     if (!project) {
-      throw new Error('Project not found');
+      throw new Error("Project not found");
     }
 
     // Check read permission
     const user = await getDbUser();
-    assertCanRead(user, project.ownerId, project.isPublic, 'project');
+    assertCanRead(user, project.ownerId, project.isPublic, "project");
 
     return {
       project: {
@@ -101,7 +114,9 @@ export const loadProjectWorkingState = publicAction
         updatedAt: project.updatedAt,
       },
       workingState: project.workingState?.workingJson ?? null,
+      workingStateRevision: project.workingState?.revision ?? 0,
       workingStateUpdatedAt: project.workingState?.updatedAt ?? null,
+      canEdit: user?.id === project.ownerId,
     };
   });
 
@@ -113,7 +128,7 @@ export const loadProjectWorkingState = publicAction
 export const autosaveProjectWorkingState = authActionLenient
   .schema(autosaveSchema)
   .action(async ({ parsedInput, ctx }) => {
-    const { projectId, workingJson } = parsedInput;
+    const { projectId, workingJson, expectedRevision } = parsedInput;
     const { user } = ctx;
 
     // Get the project to check ownership
@@ -122,29 +137,85 @@ export const autosaveProjectWorkingState = authActionLenient
     });
 
     if (!project) {
-      throw new Error('Project not found');
+      throw new Error("Project not found");
     }
 
-    assertOwnership(user, project.ownerId, 'project');
+    assertOwnership(user, project.ownerId, "project");
 
     // Upsert the working state
     // Cast to Prisma-compatible JSON type - the schema already validated structure
     const jsonData = workingJson as Parameters<
       typeof prisma.projectWorkingState.create
-    >[0]['data']['workingJson'];
-    const workingState = await prisma.projectWorkingState.upsert({
-      where: { projectId },
-      update: {
-        workingJson: jsonData,
-      },
-      create: {
-        projectId,
-        workingJson: jsonData,
-      },
-    });
+    >[0]["data"]["workingJson"];
+    const assetIds = extractAssetIds(workingJson);
+    const uniqueAssetIds = [...new Set(assetIds)];
+
+    const readableAssets = uniqueAssetIds.length
+      ? await prisma.asset.findMany({
+          where: {
+            id: { in: uniqueAssetIds },
+            status: AssetStatus.UPLOADED,
+            OR: [
+              { ownerId: user.id },
+              { projects: { some: { project: { ownerId: user.id } } } },
+              { projects: { some: { project: { isPublic: true } } } },
+              { snapshots: { some: { snapshot: { project: { ownerId: user.id } } } } },
+              { snapshots: { some: { snapshot: { project: { isPublic: true } } } } },
+            ],
+          },
+          select: { id: true },
+        })
+      : [];
+
+    if (readableAssets.length !== uniqueAssetIds.length) {
+      throw new Error("Project references an unavailable asset");
+    }
+
+    let workingState;
+    try {
+      workingState = await prisma.$transaction(async (tx) => {
+        const existing = await tx.projectWorkingState.findUnique({ where: { projectId } });
+        if (existing) {
+          const update = await tx.projectWorkingState.updateMany({
+            where: { projectId, revision: expectedRevision },
+            data: { workingJson: jsonData, revision: { increment: 1 } },
+          });
+          if (update.count !== 1) {
+            throw new SaveConflictError("Project changed on the server");
+          }
+        } else {
+          if (expectedRevision !== 0) {
+            throw new SaveConflictError("Project changed on the server");
+          }
+          await tx.projectWorkingState.create({
+            data: { projectId, workingJson: jsonData, revision: 1 },
+          });
+        }
+
+        await tx.projectAsset.deleteMany({ where: { projectId } });
+        if (uniqueAssetIds.length > 0) {
+          await tx.projectAsset.createMany({
+            data: uniqueAssetIds.map((assetId) => ({ projectId, assetId })),
+            skipDuplicates: true,
+          });
+        }
+
+        return tx.projectWorkingState.findUniqueOrThrow({ where: { projectId } });
+      });
+    } catch (error) {
+      if (!(error instanceof SaveConflictError)) throw error;
+      const current = await prisma.projectWorkingState.findUnique({ where: { projectId } });
+      return {
+        updatedAt: current?.updatedAt ?? null,
+        revision: current?.revision ?? 0,
+        conflict: true,
+      };
+    }
 
     return {
       updatedAt: workingState.updatedAt,
+      revision: workingState.revision,
+      conflict: false,
     };
   });
 
@@ -153,64 +224,93 @@ export const autosaveProjectWorkingState = authActionLenient
 // Lists all public projects (no auth required)
 // -----------------------------------------------------------------------------
 
-export const listPublicProjects = publicAction.action(async () => {
-  const projects = await prisma.project.findMany({
-    where: { isPublic: true },
-    orderBy: { updatedAt: 'desc' },
-    select: {
-      id: true,
-      name: true,
-      ownerId: true,
-      createdAt: true,
-      updatedAt: true,
-      owner: {
-        select: {
-          firstName: true,
-          lastName: true,
-          imageUrl: true,
+export const listPublicProjects = publicActionModerate
+  .schema(listProjectsSchema)
+  .action(async ({ parsedInput }) => {
+    const { cursor, limit } = parsedInput;
+    const projects = await prisma.project.findMany({
+      where: { isPublic: true },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      select: {
+        id: true,
+        name: true,
+        ownerId: true,
+        createdAt: true,
+        updatedAt: true,
+        owner: {
+          select: {
+            firstName: true,
+            lastName: true,
+            imageUrl: true,
+          },
         },
       },
-    },
-  });
+    });
 
-  return { projects };
-});
+    const hasMore = projects.length > limit;
+    const page = hasMore ? projects.slice(0, limit) : projects;
+    return { projects: page, nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null };
+  });
 
 // -----------------------------------------------------------------------------
 // listMyProjects
 // Lists all projects owned by the authenticated user
 // -----------------------------------------------------------------------------
 
-export const listMyProjects = authActionLenient.action(async ({ ctx }) => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { user } = ctx;
+export const listMyProjects = authActionLenient
+  .schema(listProjectsSchema)
+  .action(async ({ parsedInput, ctx }) => {
+    const { cursor, limit } = parsedInput;
+    const { user } = ctx;
 
-  const projects = await prisma.project.findMany({
-    //where: { ownerId: user.id },
-    orderBy: { updatedAt: 'desc' },
-    select: {
-      id: true,
-      name: true,
-      isPublic: true,
-      createdAt: true,
-      updatedAt: true,
-      workingState: {
-        select: {
-          updatedAt: true,
+    const projects = await prisma.project.findMany({
+      where: { ownerId: user.id },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      select: {
+        id: true,
+        name: true,
+        isPublic: true,
+        createdAt: true,
+        updatedAt: true,
+        workingState: {
+          select: {
+            updatedAt: true,
+          },
         },
       },
-    },
+    });
+
+    const hasMore = projects.length > limit;
+    const page = hasMore ? projects.slice(0, limit) : projects;
+    return { projects: page, nextCursor: hasMore ? (page.at(-1)?.id ?? null) : null };
   });
 
-  return { projects };
-});
+export const updateProjectVisibility = authActionModerate
+  .schema(updateProjectVisibilitySchema)
+  .action(async ({ parsedInput, ctx }) => {
+    const { projectId, isPublic } = parsedInput;
+    const project = await prisma.project.findUnique({ where: { id: projectId } });
+    if (!project) throw new Error("Project not found");
+    assertOwnership(ctx.user, project.ownerId, "project");
+
+    const updated = await prisma.project.update({
+      where: { id: projectId },
+      data: { isPublic },
+      select: { id: true, isPublic: true, updatedAt: true },
+    });
+    return { project: updated };
+  });
 
 // -----------------------------------------------------------------------------
 // getProjectMetadata
 // Gets project metadata (public projects readable by anyone)
 // -----------------------------------------------------------------------------
 
-export const getProjectMetadata = publicAction
+export const getProjectMetadata = publicActionModerate
   .schema(projectIdSchema)
   .action(async ({ parsedInput }) => {
     const { projectId } = parsedInput;
@@ -235,12 +335,12 @@ export const getProjectMetadata = publicAction
     });
 
     if (!project) {
-      throw new Error('Project not found');
+      throw new Error("Project not found");
     }
 
     // Check read permission
     const user = await getDbUser();
-    assertCanRead(user, project.ownerId, project.isPublic, 'project');
+    assertCanRead(user, project.ownerId, project.isPublic, "project");
 
     return { project };
   });
@@ -267,10 +367,10 @@ function extractAssetIds(workingJson: Record<string, unknown>): string[] {
     const streams = project.streams as Array<Record<string, unknown>> | undefined;
     if (Array.isArray(streams)) {
       for (const stream of streams) {
-        if (stream?.kind !== 'mixdown' && stream?.kind !== 'stem') continue;
+        if (stream?.kind !== "mixdown" && stream?.kind !== "stem") continue;
         const audio = stream.audio as Record<string, unknown> | undefined;
         const assetId = audio?.cloudAssetId ?? audio?.assetId;
-        if (assetId && typeof assetId === 'string') {
+        if (assetId && typeof assetId === "string") {
           assetIds.push(assetId);
         }
       }
@@ -282,8 +382,9 @@ function extractAssetIds(workingJson: Record<string, unknown>): string[] {
       const assets = meshAssets.assets as Array<Record<string, unknown>> | undefined;
       if (Array.isArray(assets)) {
         for (const mesh of assets) {
-          if (mesh?.assetId && typeof mesh.assetId === 'string') {
-            assetIds.push(mesh.assetId);
+          const assetId = mesh?.cloudAssetId ?? mesh?.assetId;
+          if (assetId && typeof assetId === "string") {
+            assetIds.push(assetId);
           }
         }
       }
@@ -310,14 +411,14 @@ export const createProjectSnapshot = authActionModerate
     });
 
     if (!project) {
-      throw new Error('Project not found');
+      throw new Error("Project not found");
     }
 
-    assertOwnership(user, project.ownerId, 'project');
+    assertOwnership(user, project.ownerId, "project");
 
     // Must have a working state to create a snapshot
     if (!project.workingState) {
-      throw new Error('No working state to snapshot');
+      throw new Error("No working state to snapshot");
     }
 
     const workingJson = project.workingState.workingJson as Record<string, unknown>;
@@ -330,7 +431,13 @@ export const createProjectSnapshot = authActionModerate
       const assets = await prisma.asset.findMany({
         where: {
           id: { in: assetIds },
-          ownerId: user.id,
+          OR: [
+            { ownerId: user.id },
+            { projects: { some: { project: { ownerId: user.id } } } },
+            { projects: { some: { project: { isPublic: true } } } },
+            { snapshots: { some: { snapshot: { project: { ownerId: user.id } } } } },
+            { snapshots: { some: { snapshot: { project: { isPublic: true } } } } },
+          ],
         },
         select: {
           id: true,
@@ -350,21 +457,31 @@ export const createProjectSnapshot = authActionModerate
       // Check for non-uploaded assets
       const pendingAssets = assets.filter((a) => a.status !== AssetStatus.UPLOADED);
       if (pendingAssets.length > 0) {
-        const statuses = pendingAssets.map((a) => `${a.id}: ${a.status}`).join(', ');
+        const statuses = pendingAssets.map((a) => `${a.id}: ${a.status}`).join(", ");
         throw new Error(
           `Cannot create snapshot: ${pendingAssets.length} asset(s) not fully uploaded (${statuses})`
         );
       }
     }
 
-    // Create the snapshot (immutable copy of working state)
-    const snapshot = await prisma.projectSnapshot.create({
-      data: {
-        projectId,
-        snapshotJson: workingJson as Parameters<
-          typeof prisma.projectSnapshot.create
-        >[0]['data']['snapshotJson'],
-      },
+    // Create the snapshot and retain its asset references atomically.
+    const uniqueAssetIds = [...new Set(assetIds)];
+    const snapshot = await prisma.$transaction(async (tx) => {
+      const created = await tx.projectSnapshot.create({
+        data: {
+          projectId,
+          snapshotJson: workingJson as Parameters<
+            typeof tx.projectSnapshot.create
+          >[0]["data"]["snapshotJson"],
+        },
+      });
+      if (uniqueAssetIds.length > 0) {
+        await tx.projectSnapshotAsset.createMany({
+          data: uniqueAssetIds.map((assetId) => ({ snapshotId: created.id, assetId })),
+          skipDuplicates: true,
+        });
+      }
+      return created;
     });
 
     return {
@@ -398,32 +515,39 @@ export const cloneProject = authActionStrict
       where: { id: sourceProjectId },
       include: {
         snapshots: {
-          orderBy: { createdAt: 'desc' },
+          orderBy: { createdAt: "desc" },
           take: 1,
+          include: { assets: { select: { assetId: true } } },
         },
         workingState: true,
+        assets: { select: { assetId: true } },
       },
     });
 
     if (!sourceProject) {
-      throw new Error('Source project not found');
+      throw new Error("Source project not found");
     }
 
     // Check read permission (public projects can be cloned by anyone)
-    assertCanRead(user, sourceProject.ownerId, sourceProject.isPublic, 'project');
+    assertCanRead(user, sourceProject.ownerId, sourceProject.isPublic, "project");
 
     // Determine the source JSON: prefer latest snapshot, fall back to working state
     let sourceJson: Record<string, unknown> | null = null;
 
     const latestSnapshot = sourceProject.snapshots[0];
+    let sourceAssetIds: string[];
     if (latestSnapshot) {
       sourceJson = latestSnapshot.snapshotJson as Record<string, unknown>;
+      sourceAssetIds = latestSnapshot.assets.map(({ assetId }) => assetId);
     } else if (sourceProject.workingState) {
       sourceJson = sourceProject.workingState.workingJson as Record<string, unknown>;
+      sourceAssetIds = sourceProject.assets.map(({ assetId }) => assetId);
+    } else {
+      sourceAssetIds = [];
     }
 
     if (!sourceJson) {
-      throw new Error('Source project has no content to clone');
+      throw new Error("Source project has no content to clone");
     }
 
     // Generate a name for the cloned project
@@ -449,9 +573,19 @@ export const cloneProject = authActionStrict
           projectId: newProject.id,
           workingJson: clonedJson as Parameters<
             typeof tx.projectWorkingState.create
-          >[0]['data']['workingJson'],
+          >[0]["data"]["workingJson"],
         },
       });
+
+      if (sourceAssetIds.length > 0) {
+        await tx.projectAsset.createMany({
+          data: sourceAssetIds.map((assetId) => ({
+            projectId: newProject.id,
+            assetId,
+          })),
+          skipDuplicates: true,
+        });
+      }
 
       return newProject;
     });
@@ -480,7 +614,7 @@ function updateClonedProjectMetadata(
   const cloned = JSON.parse(JSON.stringify(sourceJson)) as Record<string, unknown>;
 
   // Update project-level metadata if it exists
-  if (cloned.project && typeof cloned.project === 'object') {
+  if (cloned.project && typeof cloned.project === "object") {
     const project = cloned.project as Record<string, unknown>;
     project.id = newProjectId;
     project.name = newName;
@@ -497,7 +631,7 @@ function updateClonedProjectMetadata(
 // Used by UI to show unresolved asset indicators
 // -----------------------------------------------------------------------------
 
-export const getProjectAssetStatuses = publicAction
+export const getProjectAssetStatuses = publicActionModerate
   .schema(projectIdSchema)
   .action(async ({ parsedInput }) => {
     const { projectId } = parsedInput;
@@ -511,12 +645,12 @@ export const getProjectAssetStatuses = publicAction
     });
 
     if (!project) {
-      throw new Error('Project not found');
+      throw new Error("Project not found");
     }
 
     // Check read permission
     const user = await getDbUser();
-    assertCanRead(user, project.ownerId, project.isPublic, 'project');
+    assertCanRead(user, project.ownerId, project.isPublic, "project");
 
     // If no working state, return empty
     if (!project.workingState) {
@@ -562,13 +696,13 @@ export const getProjectAssetStatuses = publicAction
       assetInfos.push({
         assetId: asset.id,
         status:
-          asset.status === 'UPLOADED'
-            ? 'resolved'
-            : asset.status === 'PENDING'
-              ? 'pending'
-              : 'failed',
+          asset.status === "UPLOADED"
+            ? "resolved"
+            : asset.status === "PENDING"
+              ? "pending"
+              : "failed",
         type: asset.type,
-        r2Key: asset.status === 'UPLOADED' ? asset.r2Key : undefined,
+        r2Key: asset.status === "UPLOADED" ? asset.r2Key : undefined,
         error: metadata?.uploadError as string | undefined,
       });
     }
@@ -578,17 +712,17 @@ export const getProjectAssetStatuses = publicAction
       if (!foundIds.has(assetId)) {
         assetInfos.push({
           assetId,
-          status: 'missing' as const,
+          status: "missing" as const,
         });
       }
     }
 
     // Compute counts
     const counts = {
-      resolved: assetInfos.filter((a) => a.status === 'resolved').length,
-      pending: assetInfos.filter((a) => a.status === 'pending').length,
-      failed: assetInfos.filter((a) => a.status === 'failed').length,
-      missing: assetInfos.filter((a) => a.status === 'missing').length,
+      resolved: assetInfos.filter((a) => a.status === "resolved").length,
+      pending: assetInfos.filter((a) => a.status === "pending").length,
+      failed: assetInfos.filter((a) => a.status === "failed").length,
+      missing: assetInfos.filter((a) => a.status === "missing").length,
       total: assetInfos.length,
     };
 

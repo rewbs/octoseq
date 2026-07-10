@@ -211,10 +211,7 @@ export const useInterpretationTreeStore = create<InterpretationTreeStore>()(
         // ----------------------------
 
         setSidebarWidth: (width) => {
-          const clampedWidth = Math.max(
-            SIDEBAR_MIN_WIDTH,
-            Math.min(SIDEBAR_MAX_WIDTH, width)
-          );
+          const clampedWidth = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, width));
           set({ sidebarWidth: clampedWidth }, false, "setSidebarWidth");
         },
 
@@ -222,9 +219,7 @@ export const useInterpretationTreeStore = create<InterpretationTreeStore>()(
           const { sidebarWidth } = get();
           // If currently narrow, expand to default; if expanded, collapse to min
           const newWidth =
-            sidebarWidth <= SIDEBAR_ICON_ONLY_THRESHOLD
-              ? SIDEBAR_DEFAULT_WIDTH
-              : SIDEBAR_MIN_WIDTH;
+            sidebarWidth <= SIDEBAR_ICON_ONLY_THRESHOLD ? SIDEBAR_DEFAULT_WIDTH : SIDEBAR_MIN_WIDTH;
           set({ sidebarWidth: newWidth }, false, "toggleSidebar");
         },
 

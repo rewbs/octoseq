@@ -16,11 +16,7 @@ interface RecoveryBannerProps {
  * Banner indicating a project was recovered from autosave.
  * Shows briefly after successful recovery.
  */
-export function RecoveryBanner({
-  projectName,
-  visible,
-  onDismiss,
-}: RecoveryBannerProps) {
+export function RecoveryBanner({ projectName, visible, onDismiss }: RecoveryBannerProps) {
   if (!visible) return null;
 
   return (

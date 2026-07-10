@@ -52,11 +52,7 @@ export function BandInspector({ nodeId }: BandInspectorProps) {
   }, [bandId]);
 
   if (!band) {
-    return (
-      <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
-        Band not found.
-      </div>
-    );
+    return <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">Band not found.</div>;
   }
 
   // Get frequency range from the band shape
@@ -85,7 +81,9 @@ export function BandInspector({ nodeId }: BandInspectorProps) {
           </div>
           <div className="flex justify-between">
             <span className="text-zinc-500 dark:text-zinc-400">Range</span>
-            <span>{formatHz(lowHz)} - {formatHz(highHz)}</span>
+            <span>
+              {formatHz(lowHz)} - {formatHz(highHz)}
+            </span>
           </div>
           <div className="flex justify-between">
             <span className="text-zinc-500 dark:text-zinc-400">Enabled</span>

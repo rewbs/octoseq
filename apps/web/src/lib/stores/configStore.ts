@@ -1,6 +1,17 @@
 import { create } from "zustand";
-import { devtools, persist } from "zustand/middleware";
+import { createJSONStorage, devtools, persist, type StateStorage } from "zustand/middleware";
 import type { HeatmapColorScheme } from "@/components/heatmap/TimeAlignedHeatmapPixi";
+
+const memoryStorageValues = new Map<string, string>();
+const memoryStorage: StateStorage = {
+  getItem: (name) => memoryStorageValues.get(name) ?? null,
+  setItem: (name, value) => {
+    memoryStorageValues.set(name, value);
+  },
+  removeItem: (name) => {
+    memoryStorageValues.delete(name);
+  },
+};
 
 interface ConfigState {
   // Debug/runtime
@@ -159,12 +170,31 @@ interface ConfigActions {
     smoothMs: number;
     diffMethod: "rectified" | "abs";
     useLog: boolean;
-    silenceGate: { enabled: boolean; enterMargin: number; exitMargin: number; hangoverMs: number; postSilenceSuppressMs: number };
+    silenceGate: {
+      enabled: boolean;
+      enterMargin: number;
+      exitMargin: number;
+      hangoverMs: number;
+      postSilenceSuppressMs: number;
+    };
   };
   getPeakPickConfig: () => { minIntervalSec: number; threshold?: number; adaptiveFactor?: number };
-  getHpssConfig: () => { timeMedian: number; freqMedian: number; spectrogram: { fftSize: number; hopSize: number; window: "hann" } };
-  getMfccConfig: () => { nCoeffs: number; spectrogram: { fftSize: number; hopSize: number; window: "hann" } };
-  getTempoHypothesesConfig: () => { minBpm: number; maxBpm: number; binSizeBpm: number; maxHypotheses: number; weightByStrength: boolean };
+  getHpssConfig: () => {
+    timeMedian: number;
+    freqMedian: number;
+    spectrogram: { fftSize: number; hopSize: number; window: "hann" };
+  };
+  getMfccConfig: () => {
+    nCoeffs: number;
+    spectrogram: { fftSize: number; hopSize: number; window: "hann" };
+  };
+  getTempoHypothesesConfig: () => {
+    minBpm: number;
+    maxBpm: number;
+    binSizeBpm: number;
+    maxHypotheses: number;
+    weightByStrength: boolean;
+  };
   getCqtConfig: () => { binsPerOctave?: number; fMin?: number; fMax?: number };
 }
 
@@ -273,16 +303,22 @@ export const useConfigStore = create<ConfigStore>()(
         setOnsetUseLog: (v) => set({ onsetUseLog: v }, false, "setOnsetUseLog"),
 
         // Silence Gating setters
-        setSilenceGateEnabled: (v) => set({ silenceGateEnabled: v }, false, "setSilenceGateEnabled"),
-        setSilenceGateEnterMargin: (v) => set({ silenceGateEnterMargin: v }, false, "setSilenceGateEnterMargin"),
-        setSilenceGateExitMargin: (v) => set({ silenceGateExitMargin: v }, false, "setSilenceGateExitMargin"),
-        setSilenceGateHangoverMs: (v) => set({ silenceGateHangoverMs: v }, false, "setSilenceGateHangoverMs"),
-        setSilenceGatePostSuppressMs: (v) => set({ silenceGatePostSuppressMs: v }, false, "setSilenceGatePostSuppressMs"),
+        setSilenceGateEnabled: (v) =>
+          set({ silenceGateEnabled: v }, false, "setSilenceGateEnabled"),
+        setSilenceGateEnterMargin: (v) =>
+          set({ silenceGateEnterMargin: v }, false, "setSilenceGateEnterMargin"),
+        setSilenceGateExitMargin: (v) =>
+          set({ silenceGateExitMargin: v }, false, "setSilenceGateExitMargin"),
+        setSilenceGateHangoverMs: (v) =>
+          set({ silenceGateHangoverMs: v }, false, "setSilenceGateHangoverMs"),
+        setSilenceGatePostSuppressMs: (v) =>
+          set({ silenceGatePostSuppressMs: v }, false, "setSilenceGatePostSuppressMs"),
 
         // Peak picking setters
         setPeakMinIntervalMs: (v) => set({ peakMinIntervalMs: v }, false, "setPeakMinIntervalMs"),
         setPeakThreshold: (v) => set({ peakThreshold: v }, false, "setPeakThreshold"),
-        setPeakAdaptiveFactor: (v) => set({ peakAdaptiveFactor: v }, false, "setPeakAdaptiveFactor"),
+        setPeakAdaptiveFactor: (v) =>
+          set({ peakAdaptiveFactor: v }, false, "setPeakAdaptiveFactor"),
 
         // Transient FFT setters
         setTransientFftSize: (v) => set({ transientFftSize: v }, false, "setTransientFftSize"),
@@ -303,8 +339,10 @@ export const useConfigStore = create<ConfigStore>()(
         setTempoMinBpm: (v) => set({ tempoMinBpm: v }, false, "setTempoMinBpm"),
         setTempoMaxBpm: (v) => set({ tempoMaxBpm: v }, false, "setTempoMaxBpm"),
         setTempoBinSize: (v) => set({ tempoBinSize: v }, false, "setTempoBinSize"),
-        setTempoMaxHypotheses: (v) => set({ tempoMaxHypotheses: v }, false, "setTempoMaxHypotheses"),
-        setTempoWeightByStrength: (v) => set({ tempoWeightByStrength: v }, false, "setTempoWeightByStrength"),
+        setTempoMaxHypotheses: (v) =>
+          set({ tempoMaxHypotheses: v }, false, "setTempoMaxHypotheses"),
+        setTempoWeightByStrength: (v) =>
+          set({ tempoWeightByStrength: v }, false, "setTempoWeightByStrength"),
 
         // Display setters
         setShowDcBin: (v) => set({ showDcBin: v }, false, "setShowDcBin"),
@@ -314,7 +352,8 @@ export const useConfigStore = create<ConfigStore>()(
         setIsDebugOpen: (v) => set({ isDebugOpen: v }, false, "setIsDebugOpen"),
 
         // Band MIR (F3) setters
-        setBandMirAutoCompute: (v) => set({ bandMirAutoCompute: v }, false, "setBandMirAutoCompute"),
+        setBandMirAutoCompute: (v) =>
+          set({ bandMirAutoCompute: v }, false, "setBandMirAutoCompute"),
 
         // CQT setters
         setCqtBinsPerOctave: (v) => set({ cqtBinsPerOctave: v }, false, "setCqtBinsPerOctave"),
@@ -424,6 +463,9 @@ export const useConfigStore = create<ConfigStore>()(
       }),
       {
         name: "octoseq-config",
+        storage: createJSONStorage(() =>
+          typeof window === "undefined" ? memoryStorage : window.localStorage
+        ),
         // Only persist certain fields, not UI state like isConfigOpen
         partialize: (state) => ({
           debug: state.debug,

@@ -119,32 +119,32 @@ interface SparseSignal {
 
 ## Render Modes
 
-| Mode | Description | Best for |
-|------|-------------|----------|
-| `line` | Simple polyline | Continuous signals |
-| `filled` | Filled area from baseline | Envelopes, energy |
-| `stepped` | Step function (zero-order hold) | Quantized/discrete values |
-| `impulses` | Vertical lines | Sparse events |
-| `markers` | Dots/circles | Sparse events with precise timing |
-| `heat-strip` | Color-coded horizontal strip | Dense amplitude data |
+| Mode         | Description                     | Best for                          |
+| ------------ | ------------------------------- | --------------------------------- |
+| `line`       | Simple polyline                 | Continuous signals                |
+| `filled`     | Filled area from baseline       | Envelopes, energy                 |
+| `stepped`    | Step function (zero-order hold) | Quantized/discrete values         |
+| `impulses`   | Vertical lines                  | Sparse events                     |
+| `markers`    | Dots/circles                    | Sparse events with precise timing |
+| `heat-strip` | Color-coded horizontal strip    | Dense amplitude data              |
 
 ## Baseline Modes
 
-| Mode | Description |
-|------|-------------|
-| `"bottom"` | Baseline at bottom (for positive-only signals) |
-| `"center"` | Baseline at center (for symmetric signals like waveforms) |
-| `{ y: 0.3 }` | Custom baseline at 30% from bottom |
+| Mode         | Description                                               |
+| ------------ | --------------------------------------------------------- |
+| `"bottom"`   | Baseline at bottom (for positive-only signals)            |
+| `"center"`   | Baseline at center (for symmetric signals like waveforms) |
+| `{ y: 0.3 }` | Custom baseline at 30% from bottom                        |
 
 ## Normalization Modes
 
-| Mode | Description |
-|------|-------------|
-| `"none"` | No normalization (values clipped to canvas) |
-| `"global"` | Min-max over entire signal |
-| `"robust"` | 5th-95th percentile (ignores outliers) |
-| `"fixed"` | Use `meta.domain` from signal |
-| `{ percentile: [10, 90] }` | Custom percentile range |
+| Mode                       | Description                                 |
+| -------------------------- | ------------------------------------------- |
+| `"none"`                   | No normalization (values clipped to canvas) |
+| `"global"`                 | Min-max over entire signal                  |
+| `"robust"`                 | 5th-95th percentile (ignores outliers)      |
+| `"fixed"`                  | Use `meta.domain` from signal               |
+| `{ percentile: [10, 90] }` | Custom percentile range                     |
 
 ## Plugin Options
 

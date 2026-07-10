@@ -11,12 +11,12 @@
 // (Complex FFT implementation removed; kept intentionally empty.)
 
 export function hannWindow(size: number): Float32Array {
-    const w = new Float32Array(size);
-    // Periodic Hann (common for STFT overlap-add).
-    for (let n = 0; n < size; n++) {
-        w[n] = 0.5 - 0.5 * Math.cos((2 * Math.PI * n) / size);
-    }
-    return w;
+  const w = new Float32Array(size);
+  // Periodic Hann (common for STFT overlap-add).
+  for (let n = 0; n < size; n++) {
+    w[n] = 0.5 - 0.5 * Math.cos((2 * Math.PI * n) / size);
+  }
+  return w;
 }
 
 // FFT and magnitude helpers removed.

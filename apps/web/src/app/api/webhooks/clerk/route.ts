@@ -1,40 +1,40 @@
-import { Webhook } from 'svix';
-import { headers } from 'next/headers';
-import type { WebhookEvent } from '@clerk/nextjs/server';
-import { prisma } from '@/lib/db';
-import { env } from '@/lib/env';
+import { Webhook } from "svix";
+import { headers } from "next/headers";
+import type { WebhookEvent } from "@clerk/nextjs/server";
+import { prisma } from "@/lib/db";
+import { env } from "@/lib/env";
 
 export async function POST(req: Request) {
-
   const headerPayload = await headers();
-  const svix_id = headerPayload.get('svix-id');
-  const svix_timestamp = headerPayload.get('svix-timestamp');
-  const svix_signature = headerPayload.get('svix-signature');
+  const svix_id = headerPayload.get("svix-id");
+  const svix_timestamp = headerPayload.get("svix-timestamp");
+  const svix_signature = headerPayload.get("svix-signature");
 
   if (!svix_id || !svix_timestamp || !svix_signature) {
-    return new Response('Missing svix headers', { status: 400 });
+    return new Response("Missing svix headers", { status: 400 });
   }
 
-  const payload = await req.json();
-  const body = JSON.stringify(payload);
+  // Svix signs the exact request bytes. Parsing and re-serializing JSON before
+  // verification can change whitespace, escaping, or number formatting.
+  const body = await req.text();
 
   const wh = new Webhook(env.CLERK_WEBHOOK_SECRET);
   let evt: WebhookEvent;
 
   try {
     evt = wh.verify(body, {
-      'svix-id': svix_id,
-      'svix-timestamp': svix_timestamp,
-      'svix-signature': svix_signature,
+      "svix-id": svix_id,
+      "svix-timestamp": svix_timestamp,
+      "svix-signature": svix_signature,
     }) as WebhookEvent;
   } catch (err) {
-    console.error('Webhook verification failed:', err);
-    return new Response('Webhook verification failed', { status: 400 });
+    console.error("Webhook verification failed:", err);
+    return new Response("Webhook verification failed", { status: 400 });
   }
 
   const eventType = evt.type;
 
-  if (eventType === 'user.created' || eventType === 'user.updated') {
+  if (eventType === "user.created" || eventType === "user.updated") {
     const { id, email_addresses, first_name, last_name, image_url } = evt.data;
 
     const primaryEmail = email_addresses.find(
@@ -42,8 +42,8 @@ export async function POST(req: Request) {
     )?.email_address;
 
     if (!primaryEmail) {
-      console.error('No primary email for user:', id);
-      return new Response('No primary email', { status: 400 });
+      console.error("No primary email for user:", id);
+      return new Response("No primary email", { status: 400 });
     }
 
     await prisma.user.upsert({
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
     });
   }
 
-  if (eventType === 'user.deleted') {
+  if (eventType === "user.deleted") {
     const { id } = evt.data;
 
     if (id) {
@@ -75,10 +75,10 @@ export async function POST(req: Request) {
         })
         .catch(() => {
           // User might not exist in DB yet
-          console.warn('User not found for deletion:', id);
+          console.warn("User not found for deletion:", id);
         });
     }
   }
 
-  return new Response('OK', { status: 200 });
+  return new Response("OK", { status: 200 });
 }

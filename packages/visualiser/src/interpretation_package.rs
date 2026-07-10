@@ -653,7 +653,10 @@ mod tests {
         assert_eq!(pkg.composed_signals.len(), 2);
         let buildup = pkg.composed_signals.get("buildup").expect("buildup signal");
         assert!((buildup.get_duration() - 2.0 / 50.0).abs() < 1e-6);
-        let intensity = pkg.composed_signals.get("Intensity").expect("Intensity signal");
+        let intensity = pkg
+            .composed_signals
+            .get("Intensity")
+            .expect("Intensity signal");
         assert!((intensity.get_duration() - 1.0 / 25.0).abs() < 1e-6);
 
         // Stem signals kept as raw entries for VisualiserState::push_stem_signal.
@@ -769,7 +772,9 @@ mod tests {
         assert!((buildup.get_duration() - 2.0 / 50.0).abs() < 1e-6);
         assert!(Rc::ptr_eq(
             buildup,
-            pkg.composed_signals.get("buildup").expect("buildup in package"),
+            pkg.composed_signals
+                .get("buildup")
+                .expect("buildup in package"),
         ));
         let intensity = state
             .composed_signals()

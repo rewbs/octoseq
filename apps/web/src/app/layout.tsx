@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import {
-  ClerkProvider,
-} from '@clerk/nextjs';
+import { ClerkProvider } from "@clerk/nextjs";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -30,7 +28,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning>
-        <body className={`${geistSans.variable} ${geistMono.variable} antialiased`} >
+        <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
           <ThemeProvider>
             <AutosaveProvider>{children}</AutosaveProvider>
           </ThemeProvider>

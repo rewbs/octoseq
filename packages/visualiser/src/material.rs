@@ -442,7 +442,8 @@ impl Material {
 
     /// Get the default value for a parameter by name.
     pub fn get_default(&self, name: &str) -> Option<&MaterialParamValue> {
-        self.params.iter()
+        self.params
+            .iter()
             .find(|p| p.name == name)
             .map(|p| &p.default_value)
     }
@@ -569,9 +570,11 @@ impl MaterialRegistry {
             Material::builder("default")
                 .name("Default")
                 .description("Basic solid material with color tint")
-                .param(ParamDef::color("base_color", [1.0, 1.0, 1.0, 1.0])
-                    .with_description("Base color multiplied with vertex colors"))
-                .build()
+                .param(
+                    ParamDef::color("base_color", [1.0, 1.0, 1.0, 1.0])
+                        .with_description("Base color multiplied with vertex colors"),
+                )
+                .build(),
         );
 
         // 2. Emissive - glowing material
@@ -579,15 +582,21 @@ impl MaterialRegistry {
             Material::builder("emissive")
                 .name("Emissive")
                 .description("Material with additive emission glow")
-                .param(ParamDef::color("base_color", [1.0, 1.0, 1.0, 1.0])
-                    .with_description("Base color"))
-                .param(ParamDef::color("emission_color", [1.0, 0.5, 0.0, 1.0])
-                    .with_description("Emission color"))
-                .param(ParamDef::float("emission_intensity", 1.0)
-                    .with_range(0.0, 10.0)
-                    .with_description("Emission intensity multiplier"))
+                .param(
+                    ParamDef::color("base_color", [1.0, 1.0, 1.0, 1.0])
+                        .with_description("Base color"),
+                )
+                .param(
+                    ParamDef::color("emission_color", [1.0, 0.5, 0.0, 1.0])
+                        .with_description("Emission color"),
+                )
+                .param(
+                    ParamDef::float("emission_intensity", 1.0)
+                        .with_range(0.0, 10.0)
+                        .with_description("Emission intensity multiplier"),
+                )
                 .blend_mode(BlendMode::AlphaBlend)
-                .build()
+                .build(),
         );
 
         // 3. Wire Glow - wireframe with glow effect
@@ -595,17 +604,23 @@ impl MaterialRegistry {
             Material::builder("wire_glow")
                 .name("Wire Glow")
                 .description("Wireframe material with glow effect")
-                .param(ParamDef::color("core_color", [1.0, 1.0, 1.0, 1.0])
-                    .with_description("Core wire color"))
-                .param(ParamDef::color("glow_color", [0.0, 0.5, 1.0, 1.0])
-                    .with_description("Glow color"))
-                .param(ParamDef::float("glow_intensity", 1.0)
-                    .with_range(0.0, 5.0)
-                    .with_description("Glow intensity"))
+                .param(
+                    ParamDef::color("core_color", [1.0, 1.0, 1.0, 1.0])
+                        .with_description("Core wire color"),
+                )
+                .param(
+                    ParamDef::color("glow_color", [0.0, 0.5, 1.0, 1.0])
+                        .with_description("Glow color"),
+                )
+                .param(
+                    ParamDef::float("glow_intensity", 1.0)
+                        .with_range(0.0, 5.0)
+                        .with_description("Glow intensity"),
+                )
                 .blend_mode(BlendMode::Additive)
                 .cull_mode(None)
                 .topology(MaterialTopology::Lines)
-                .build()
+                .build(),
         );
 
         // 4. Wire - simple wireframe material (no glow)
@@ -613,12 +628,14 @@ impl MaterialRegistry {
             Material::builder("wire")
                 .name("Wire")
                 .description("Simple wireframe material without glow effects")
-                .param(ParamDef::color("wire_color", [1.0, 1.0, 1.0, 1.0])
-                    .with_description("Wire color"))
+                .param(
+                    ParamDef::color("wire_color", [1.0, 1.0, 1.0, 1.0])
+                        .with_description("Wire color"),
+                )
                 .blend_mode(BlendMode::AlphaBlend)
                 .cull_mode(None)
                 .topology(MaterialTopology::Lines)
-                .build()
+                .build(),
         );
 
         // 5. Points - render vertices as points
@@ -626,15 +643,19 @@ impl MaterialRegistry {
             Material::builder("points")
                 .name("Points")
                 .description("Render mesh vertices as points")
-                .param(ParamDef::color("point_color", [1.0, 1.0, 1.0, 1.0])
-                    .with_description("Point color"))
-                .param(ParamDef::float("point_size", 1.0)
-                    .with_range(0.1, 10.0)
-                    .with_description("Point size (visual scaling in shader)"))
+                .param(
+                    ParamDef::color("point_color", [1.0, 1.0, 1.0, 1.0])
+                        .with_description("Point color"),
+                )
+                .param(
+                    ParamDef::float("point_size", 1.0)
+                        .with_range(0.1, 10.0)
+                        .with_description("Point size (visual scaling in shader)"),
+                )
                 .blend_mode(BlendMode::AlphaBlend)
                 .cull_mode(None)
                 .topology(MaterialTopology::Points)
-                .build()
+                .build(),
         );
 
         // 5. Soft Additive - for particles and soft glows
@@ -642,14 +663,18 @@ impl MaterialRegistry {
             Material::builder("soft_additive")
                 .name("Soft Additive")
                 .description("Soft additive blending for particles and glows")
-                .param(ParamDef::color("base_color", [1.0, 1.0, 1.0, 1.0])
-                    .with_description("Base color"))
-                .param(ParamDef::float("softness", 0.5)
-                    .with_range(0.0, 1.0)
-                    .with_description("Blend softness (0 = sharp, 1 = very soft)"))
+                .param(
+                    ParamDef::color("base_color", [1.0, 1.0, 1.0, 1.0])
+                        .with_description("Base color"),
+                )
+                .param(
+                    ParamDef::float("softness", 0.5)
+                        .with_range(0.0, 1.0)
+                        .with_description("Blend softness (0 = sharp, 1 = very soft)"),
+                )
                 .blend_mode(BlendMode::Additive)
                 .cull_mode(None)
-                .build()
+                .build(),
         );
 
         // 5. Gradient - two-tone gradient based on position
@@ -657,16 +682,23 @@ impl MaterialRegistry {
             Material::builder("gradient")
                 .name("Gradient")
                 .description("Two-tone gradient based on world position")
-                .param(ParamDef::color("color_a", [0.0, 0.5, 1.0, 1.0])
-                    .with_description("Start color"))
-                .param(ParamDef::color("color_b", [1.0, 0.5, 0.0, 1.0])
-                    .with_description("End color"))
-                .param(ParamDef::vec3("direction", [0.0, 1.0, 0.0])
-                    .with_description("Gradient direction (normalized)"))
-                .param(ParamDef::float("blend", 0.5)
-                    .with_range(0.0, 1.0)
-                    .with_description("Gradient blend factor"))
-                .build()
+                .param(
+                    ParamDef::color("color_a", [0.0, 0.5, 1.0, 1.0])
+                        .with_description("Start color"),
+                )
+                .param(
+                    ParamDef::color("color_b", [1.0, 0.5, 0.0, 1.0]).with_description("End color"),
+                )
+                .param(
+                    ParamDef::vec3("direction", [0.0, 1.0, 0.0])
+                        .with_description("Gradient direction (normalized)"),
+                )
+                .param(
+                    ParamDef::float("blend", 0.5)
+                        .with_range(0.0, 1.0)
+                        .with_description("Gradient blend factor"),
+                )
+                .build(),
         );
     }
 
@@ -677,12 +709,14 @@ impl MaterialRegistry {
 
     /// Get the default material.
     pub fn default_material(&self) -> Arc<Material> {
-        self.get(&self.default_material).expect("Default material must exist")
+        self.get(&self.default_material)
+            .expect("Default material must exist")
     }
 
     /// Register a new material.
     pub fn register(&mut self, material: Material) {
-        self.materials.insert(material.id.clone(), Arc::new(material));
+        self.materials
+            .insert(material.id.clone(), Arc::new(material));
     }
 
     /// List all registered material IDs.
@@ -825,7 +859,7 @@ mod tests {
         assert!(param.as_static().is_none());
 
         // Evaluate the same param definition on two different frames.
-        let mut eval_at = |time: f32, state: &mut SignalState| -> f32 {
+        let eval_at = |time: f32, state: &mut SignalState| -> f32 {
             let mut ctx = EvalContext::new(
                 time, 0.016, 0, None, &inputs, &bands, &stems, &custom, &composed, &stats, state,
                 None,
@@ -842,7 +876,10 @@ mod tests {
         // Per-frame evaluation: the same param yields different values as the
         // underlying signal changes over time.
         assert_ne!(frame_a, frame_b);
-        assert!(frame_a < 0.5, "early frame should sample the low ramp, got {frame_a}");
+        assert!(
+            frame_a < 0.5,
+            "early frame should sample the low ramp, got {frame_a}"
+        );
         assert!(
             (1.5..=3.0).contains(&frame_b),
             "later frame should sample the high ramp, got {frame_b}"
@@ -858,7 +895,7 @@ mod tests {
         });
         assert!(color.as_static().is_none());
 
-        let mut eval_color_at = |time: f32, state: &mut SignalState| -> [f32; 4] {
+        let eval_color_at = |time: f32, state: &mut SignalState| -> [f32; 4] {
             let mut ctx = EvalContext::new(
                 time, 0.016, 0, None, &inputs, &bands, &stems, &custom, &composed, &stats, state,
                 None,

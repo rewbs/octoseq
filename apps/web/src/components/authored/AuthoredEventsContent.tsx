@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { Plus, Trash2, Info, Undo2, Redo2, CheckCircle } from "lucide-react";
+import { Plus, Info, Undo2, Redo2, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,7 @@ export interface AuthoredEventsContentProps {
  * Content panel for managing authored event streams.
  * Rendered when the "Authored" tree node is expanded.
  */
-export function AuthoredEventsContent({ audioDuration }: AuthoredEventsContentProps) {
+export function AuthoredEventsContent(_props: AuthoredEventsContentProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [newStreamName, setNewStreamName] = useState("");
 
@@ -75,10 +75,7 @@ export function AuthoredEventsContent({ audioDuration }: AuthoredEventsContentPr
 
   const handlePromoteSelected = useCallback(() => {
     if (candidateStreamWithSelection) {
-      promoteSelectedEvents(
-        candidateStreamWithSelection.streamId,
-        selectedCandidateIds
-      );
+      promoteSelectedEvents(candidateStreamWithSelection.streamId, selectedCandidateIds);
       // Clear candidate selection after promotion
       useCandidateEventStore.getState().clearCandidateSelection();
     }
@@ -109,7 +106,9 @@ export function AuthoredEventsContent({ audioDuration }: AuthoredEventsContentPr
               type="text"
               placeholder="Stream name..."
               value={newStreamName}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewStreamName(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setNewStreamName(e.target.value)
+              }
               onKeyDown={handleKeyDown}
               className="h-8 text-sm"
               autoFocus
@@ -169,10 +168,7 @@ export function AuthoredEventsContent({ audioDuration }: AuthoredEventsContentPr
               <Button
                 variant="ghost"
                 size="icon"
-                className={cn(
-                  "h-6 w-6",
-                  !canUndo && "opacity-50 cursor-not-allowed"
-                )}
+                className={cn("h-6 w-6", !canUndo && "opacity-50 cursor-not-allowed")}
                 onClick={undo}
                 disabled={!canUndo}
                 title="Undo"
@@ -182,10 +178,7 @@ export function AuthoredEventsContent({ audioDuration }: AuthoredEventsContentPr
               <Button
                 variant="ghost"
                 size="icon"
-                className={cn(
-                  "h-6 w-6",
-                  !canRedo && "opacity-50 cursor-not-allowed"
-                )}
+                className={cn("h-6 w-6", !canRedo && "opacity-50 cursor-not-allowed")}
                 onClick={redo}
                 disabled={!canRedo}
                 title="Redo"
@@ -218,9 +211,7 @@ export function AuthoredEventsContent({ audioDuration }: AuthoredEventsContentPr
               key={stream.id}
               stream={stream}
               isInspected={stream.id === inspectedStreamId}
-              onInspect={() =>
-                inspectStream(stream.id === inspectedStreamId ? null : stream.id)
-              }
+              onInspect={() => inspectStream(stream.id === inspectedStreamId ? null : stream.id)}
               onToggleVisibility={() => toggleStreamVisibility(stream.id)}
               onDelete={() => deleteStream(stream.id)}
               onRename={(name) => renameStream(stream.id, name)}
@@ -235,7 +226,8 @@ export function AuthoredEventsContent({ audioDuration }: AuthoredEventsContentPr
           <div className="text-xs text-zinc-500 dark:text-zinc-400 italic text-center">
             Authored events persist until you remove them.
             <br />
-            Access via <code className="font-mono">inputs.authored[&quot;name&quot;]</code> in scripts.
+            Access via <code className="font-mono">inputs.authored[&quot;name&quot;]</code> in
+            scripts.
           </div>
         </div>
       )}

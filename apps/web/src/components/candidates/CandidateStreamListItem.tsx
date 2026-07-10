@@ -40,9 +40,7 @@ export function CandidateStreamListItem({
     <div
       className={cn(
         "group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
-        isInspected
-          ? "bg-zinc-200 dark:bg-zinc-700"
-          : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
+        isInspected ? "bg-zinc-200 dark:bg-zinc-700" : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
         !stream.isVisible && "opacity-50"
       )}
       onClick={onInspect}
@@ -87,11 +85,7 @@ export function CandidateStreamListItem({
           }}
           title={stream.isVisible ? "Hide from overlay" : "Show on overlay"}
         >
-          {stream.isVisible ? (
-            <Eye className="h-3.5 w-3.5" />
-          ) : (
-            <EyeOff className="h-3.5 w-3.5" />
-          )}
+          {stream.isVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
         </Button>
 
         {/* Clear button */}

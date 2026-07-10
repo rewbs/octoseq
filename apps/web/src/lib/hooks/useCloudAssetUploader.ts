@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useCallback } from 'react';
-import { useUser } from '@clerk/nextjs';
-import { useAssetUpload, type UploadOptions } from './useAssetUpload';
-import { computeContentHash } from '../persistence/assetHashing';
-import { AssetType } from '@/lib/db';
+import { useCallback } from "react";
+import { useUser } from "@clerk/nextjs";
+import { useAssetUpload, type UploadOptions } from "./useAssetUpload";
+import { computeContentHash } from "../persistence/assetHashing";
+import type { AssetType } from "@/lib/db";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -101,7 +101,7 @@ export function useCloudAssetUploader() {
   const uploadToCloud = useCallback(
     async (request: CloudUploadRequest): Promise<CloudUploadResult | null> => {
       if (!isSignedIn) {
-        console.log('[CloudUpload] User not signed in, skipping cloud upload');
+        console.log("[CloudUpload] User not signed in, skipping cloud upload");
         return null;
       }
 
@@ -116,8 +116,8 @@ export function useCloudAssetUploader() {
 
         // Check if already uploaded (deduplication)
         const existing = getUploadByHash(contentHash);
-        if (existing?.status === 'uploaded' && existing.assetId) {
-          console.log('[CloudUpload] Asset already uploaded:', existing.assetId);
+        if (existing?.status === "uploaded" && existing.assetId) {
+          console.log("[CloudUpload] Asset already uploaded:", existing.assetId);
           onComplete?.(existing.assetId);
           return {
             contentHash,
@@ -139,18 +139,18 @@ export function useCloudAssetUploader() {
           },
           onProgress,
           onComplete: (assetId) => {
-            console.log('[CloudUpload] Upload completed:', assetId);
+            console.log("[CloudUpload] Upload completed:", assetId);
             onComplete?.(assetId);
           },
           onError: (error) => {
-            console.error('[CloudUpload] Upload failed:', error);
+            console.error("[CloudUpload] Upload failed:", error);
             onError?.(error);
           },
         };
 
         // Start upload (runs in background)
         startUpload(uploadOptions).catch((err) => {
-          console.error('[CloudUpload] Failed to start upload:', err);
+          console.error("[CloudUpload] Failed to start upload:", err);
           onError?.(err instanceof Error ? err.message : String(err));
         });
 
@@ -160,8 +160,8 @@ export function useCloudAssetUploader() {
           mimeType: file.type,
         };
       } catch (err) {
-        console.error('[CloudUpload] Error preparing upload:', err);
-        onError?.(err instanceof Error ? err.message : 'Failed to prepare upload');
+        console.error("[CloudUpload] Error preparing upload:", err);
+        onError?.(err instanceof Error ? err.message : "Failed to prepare upload");
         return null;
       }
     },
@@ -179,14 +179,14 @@ export function useCloudAssetUploader() {
         type: AssetType;
         mimeType: string;
         fileName?: string;
-        metadata?: CloudUploadRequest['metadata'];
+        metadata?: CloudUploadRequest["metadata"];
         onComplete?: (cloudAssetId: string) => void;
         onError?: (error: string) => void;
         onProgress?: (progress: number) => void;
       }
     ): Promise<CloudUploadResult | null> => {
       if (!isSignedIn) {
-        console.log('[CloudUpload] User not signed in, skipping cloud upload');
+        console.log("[CloudUpload] User not signed in, skipping cloud upload");
         return null;
       }
 
@@ -198,8 +198,8 @@ export function useCloudAssetUploader() {
 
         // Check if already uploaded (deduplication)
         const existing = getUploadByHash(contentHash);
-        if (existing?.status === 'uploaded' && existing.assetId) {
-          console.log('[CloudUpload] Asset already uploaded:', existing.assetId);
+        if (existing?.status === "uploaded" && existing.assetId) {
+          console.log("[CloudUpload] Asset already uploaded:", existing.assetId);
           onComplete?.(existing.assetId);
           return {
             contentHash,
@@ -221,18 +221,18 @@ export function useCloudAssetUploader() {
           },
           onProgress,
           onComplete: (assetId) => {
-            console.log('[CloudUpload] Upload completed:', assetId);
+            console.log("[CloudUpload] Upload completed:", assetId);
             onComplete?.(assetId);
           },
           onError: (error) => {
-            console.error('[CloudUpload] Upload failed:', error);
+            console.error("[CloudUpload] Upload failed:", error);
             onError?.(error);
           },
         };
 
         // Start upload (runs in background)
         startUpload(uploadOptions).catch((err) => {
-          console.error('[CloudUpload] Failed to start upload:', err);
+          console.error("[CloudUpload] Failed to start upload:", err);
           onError?.(err instanceof Error ? err.message : String(err));
         });
 
@@ -242,8 +242,8 @@ export function useCloudAssetUploader() {
           mimeType,
         };
       } catch (err) {
-        console.error('[CloudUpload] Error preparing upload:', err);
-        onError?.(err instanceof Error ? err.message : 'Failed to prepare upload');
+        console.error("[CloudUpload] Error preparing upload:", err);
+        onError?.(err instanceof Error ? err.message : "Failed to prepare upload");
         return null;
       }
     },

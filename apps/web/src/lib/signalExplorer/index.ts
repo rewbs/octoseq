@@ -13,10 +13,7 @@ export type {
 export { isAnalysisError } from "./types";
 
 // Cursor detection
-export {
-  cursorChangedSignal,
-  detectSignalAtCursor,
-} from "./cursorDetection";
+export { cursorChangedSignal, detectSignalAtCursor } from "./cursorDetection";
 
 // Analysis service
 export {

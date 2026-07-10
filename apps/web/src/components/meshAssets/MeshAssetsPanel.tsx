@@ -1,10 +1,14 @@
 "use client";
 
 import { useRef, useEffect, useCallback, useState, useMemo } from "react";
-import { Plus, Upload, RotateCw, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { Plus, Upload, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useMeshAssetStore, useMeshAssets, useSelectedMeshAsset } from "@/lib/stores/meshAssetStore";
-import { useInterpretationTreeStore, TREE_NODE_IDS } from "@/lib/stores/interpretationTreeStore";
+import {
+  useMeshAssetStore,
+  useMeshAssets,
+  useSelectedMeshAsset,
+} from "@/lib/stores/meshAssetStore";
+import { useInterpretationTreeStore } from "@/lib/stores/interpretationTreeStore";
 import { getInspectorNodeType } from "@/lib/nodeTypes";
 
 /**
@@ -86,11 +90,7 @@ function computeBounds(vertices: number[][]): {
 function rotateY(point: [number, number, number], angle: number): [number, number, number] {
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
-  return [
-    point[0] * cos + point[2] * sin,
-    point[1],
-    -point[0] * sin + point[2] * cos,
-  ];
+  return [point[0] * cos + point[2] * sin, point[1], -point[0] * sin + point[2] * cos];
 }
 
 /**
@@ -99,11 +99,7 @@ function rotateY(point: [number, number, number], angle: number): [number, numbe
 function rotateX(point: [number, number, number], angle: number): [number, number, number] {
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
-  return [
-    point[0],
-    point[1] * cos - point[2] * sin,
-    point[1] * sin + point[2] * cos,
-  ];
+  return [point[0], point[1] * cos - point[2] * sin, point[1] * sin + point[2] * cos];
 }
 
 /**
@@ -168,9 +164,7 @@ function MeshPreview({ objContent, width, height }: MeshPreviewProps) {
     });
 
     // Project to 2D
-    const projectedVertices = transformedVertices.map((v) =>
-      project(v, width, height, zoom)
-    );
+    const projectedVertices = transformedVertices.map((v) => project(v, width, height, zoom));
 
     // Draw edges (wireframe)
     ctx.strokeStyle = "#3b82f6"; // blue-500
@@ -355,9 +349,7 @@ export function MeshAssetsPanel() {
     >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
-        <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-          3D Objects
-        </h2>
+        <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">3D Objects</h2>
         <Button size="sm" variant="outline" onClick={handleAddClick}>
           <Plus className="h-4 w-4 mr-1" />
           Add .obj
@@ -382,12 +374,7 @@ export function MeshAssetsPanel() {
           <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1 text-center">
             Load .obj files to use as mesh assets in your scripts
           </p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="mt-4"
-            onClick={handleAddClick}
-          >
+          <Button size="sm" variant="outline" className="mt-4" onClick={handleAddClick}>
             <Upload className="h-4 w-4 mr-1" />
             Load .obj file
           </Button>
@@ -420,9 +407,7 @@ export function MeshAssetsPanel() {
                   {selectedAsset.vertexCount.toLocaleString()} vertices,{" "}
                   {selectedAsset.faceCount.toLocaleString()} faces
                 </span>
-                <span className="text-xs text-zinc-400">
-                  Drag to rotate, scroll to zoom
-                </span>
+                <span className="text-xs text-zinc-400">Drag to rotate, scroll to zoom</span>
               </div>
               <MeshPreview
                 objContent={selectedAsset.objContent}

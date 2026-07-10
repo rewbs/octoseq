@@ -166,10 +166,7 @@ impl Signal {
     }
 
     /// Create a composed signal input with custom sampling configuration.
-    pub fn composed_input_with_sampling(
-        name: impl Into<String>,
-        sampling: SamplingConfig,
-    ) -> Self {
+    pub fn composed_input_with_sampling(name: impl Into<String>, sampling: SamplingConfig) -> Self {
         Self::new(SignalNode::ComposedInput {
             name: name.into(),
             sampling,
@@ -409,10 +406,7 @@ impl Signal {
     /// Compute arc tangent of y/x, handling all quadrants correctly.
     /// This signal is treated as y, and `x` is the other signal.
     pub fn atan2(&self, x: Signal) -> Signal {
-        Signal::new(SignalNode::Atan2 {
-            y: self.clone(),
-            x,
-        })
+        Signal::new(SignalNode::Atan2 { y: self.clone(), x })
     }
 
     // === Exponential and Logarithmic ===
@@ -507,7 +501,11 @@ impl Signal {
     /// Apply smoothstep interpolation.
     /// Returns 0 when x <= edge0, 1 when x >= edge1, smooth interpolation between.
     /// Edges can be constants or signals.
-    pub fn smoothstep(&self, edge0: impl Into<SignalParam>, edge1: impl Into<SignalParam>) -> Signal {
+    pub fn smoothstep(
+        &self,
+        edge0: impl Into<SignalParam>,
+        edge1: impl Into<SignalParam>,
+    ) -> Signal {
         Signal::new(SignalNode::Smoothstep {
             source: self.clone(),
             edge0: edge0.into(),
@@ -627,7 +625,9 @@ impl Signal {
     /// Logical NOT: returns 1.0 if self <= 0, else 0.0.
     /// Creates a boolean-valued signal.
     pub fn not(&self) -> Signal {
-        Signal::new(SignalNode::Not { source: self.clone() })
+        Signal::new(SignalNode::Not {
+            source: self.clone(),
+        })
     }
 
     // === Utility ===
@@ -899,10 +899,14 @@ impl Signal {
     fn describe_node(&self, node: &SignalNode) -> String {
         match node {
             SignalNode::Input { name, .. } => format!("Input(\"{}\")", name),
-            SignalNode::BandInput { band_key, feature, .. } => {
+            SignalNode::BandInput {
+                band_key, feature, ..
+            } => {
                 format!("BandInput(\"{}\", \"{}\")", band_key, feature)
             }
-            SignalNode::StemInput { stem_id, feature, .. } => {
+            SignalNode::StemInput {
+                stem_id, feature, ..
+            } => {
                 format!("StemInput(\"{}\", \"{}\")", stem_id, feature)
             }
             SignalNode::CustomSignalInput { signal_id, .. } => {
@@ -913,34 +917,72 @@ impl Signal {
             }
             SignalNode::Constant(v) => format!("Constant({})", v),
             SignalNode::Add(a, b) => {
-                format!("{}.Add({})", self.describe_node(&a.node), self.describe_node(&b.node))
+                format!(
+                    "{}.Add({})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node)
+                )
             }
             SignalNode::Sub(a, b) => {
-                format!("{}.Sub({})", self.describe_node(&a.node), self.describe_node(&b.node))
+                format!(
+                    "{}.Sub({})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node)
+                )
             }
             SignalNode::Mul(a, b) => {
-                format!("{}.Mul({})", self.describe_node(&a.node), self.describe_node(&b.node))
+                format!(
+                    "{}.Mul({})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node)
+                )
             }
             SignalNode::Div(a, b) => {
-                format!("{}.Div({})", self.describe_node(&a.node), self.describe_node(&b.node))
+                format!(
+                    "{}.Div({})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node)
+                )
             }
             SignalNode::Scale { source, factor } => {
-                format!("{}.Scale({})", self.describe_node(&source.node), self.describe_param(factor))
+                format!(
+                    "{}.Scale({})",
+                    self.describe_node(&source.node),
+                    self.describe_param(factor)
+                )
             }
             SignalNode::Offset { source, amount } => {
-                format!("{}.Offset({})", self.describe_node(&source.node), self.describe_param(amount))
+                format!(
+                    "{}.Offset({})",
+                    self.describe_node(&source.node),
+                    self.describe_param(amount)
+                )
             }
             SignalNode::Mix { a, b, weight } => {
-                format!("{}.Mix({}, {})", self.describe_node(&a.node), self.describe_node(&b.node), self.describe_param(weight))
+                format!(
+                    "{}.Mix({}, {})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node),
+                    self.describe_param(weight)
+                )
             }
             SignalNode::Neg { source } => {
                 format!("{}.Neg()", self.describe_node(&source.node))
             }
             SignalNode::Pow { source, exponent } => {
-                format!("{}.Pow({})", self.describe_node(&source.node), self.describe_param(exponent))
+                format!(
+                    "{}.Pow({})",
+                    self.describe_node(&source.node),
+                    self.describe_param(exponent)
+                )
             }
             SignalNode::Lerp { a, b, t } => {
-                format!("{}.Lerp({}, {})", self.describe_node(&a.node), self.describe_node(&b.node), self.describe_param(t))
+                format!(
+                    "{}.Lerp({}, {})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node),
+                    self.describe_param(t)
+                )
             }
             SignalNode::Sin { source } => format!("{}.Sin()", self.describe_node(&source.node)),
             SignalNode::Cos { source } => format!("{}.Cos()", self.describe_node(&source.node)),
@@ -949,26 +991,54 @@ impl Signal {
             SignalNode::Acos { source } => format!("{}.Acos()", self.describe_node(&source.node)),
             SignalNode::Atan { source } => format!("{}.Atan()", self.describe_node(&source.node)),
             SignalNode::Atan2 { y, x } => {
-                format!("{}.Atan2({})", self.describe_node(&y.node), self.describe_node(&x.node))
+                format!(
+                    "{}.Atan2({})",
+                    self.describe_node(&y.node),
+                    self.describe_node(&x.node)
+                )
             }
             SignalNode::Sqrt { source } => format!("{}.Sqrt()", self.describe_node(&source.node)),
             SignalNode::Exp { source } => format!("{}.Exp()", self.describe_node(&source.node)),
             SignalNode::Ln { source } => format!("{}.Ln()", self.describe_node(&source.node)),
             SignalNode::Log { source, base } => {
-                format!("{}.Log({})", self.describe_node(&source.node), self.describe_param(base))
+                format!(
+                    "{}.Log({})",
+                    self.describe_node(&source.node),
+                    self.describe_param(base)
+                )
             }
             SignalNode::Mod { source, divisor } => {
-                format!("{}.Mod({})", self.describe_node(&source.node), self.describe_param(divisor))
+                format!(
+                    "{}.Mod({})",
+                    self.describe_node(&source.node),
+                    self.describe_param(divisor)
+                )
             }
             SignalNode::Rem { source, divisor } => {
-                format!("{}.Rem({})", self.describe_node(&source.node), self.describe_param(divisor))
+                format!(
+                    "{}.Rem({})",
+                    self.describe_node(&source.node),
+                    self.describe_param(divisor)
+                )
             }
             SignalNode::Fract { source } => format!("{}.Fract()", self.describe_node(&source.node)),
             SignalNode::Wrap { source, min, max } => {
-                format!("{}.Wrap({}, {})", self.describe_node(&source.node), self.describe_param(min), self.describe_param(max))
+                format!(
+                    "{}.Wrap({}, {})",
+                    self.describe_node(&source.node),
+                    self.describe_param(min),
+                    self.describe_param(max)
+                )
             }
-            SignalNode::Map { source, in_min, in_max, out_min, out_max } => {
-                format!("{}.Map({}, {}, {}, {})",
+            SignalNode::Map {
+                source,
+                in_min,
+                in_max,
+                out_min,
+                out_max,
+            } => {
+                format!(
+                    "{}.Map({}, {}, {}, {})",
                     self.describe_node(&source.node),
                     self.describe_param(in_min),
                     self.describe_param(in_max),
@@ -976,11 +1046,25 @@ impl Signal {
                     self.describe_param(out_max)
                 )
             }
-            SignalNode::Smoothstep { source, edge0, edge1 } => {
-                format!("{}.Smoothstep({}, {})", self.describe_node(&source.node), self.describe_param(edge0), self.describe_param(edge1))
+            SignalNode::Smoothstep {
+                source,
+                edge0,
+                edge1,
+            } => {
+                format!(
+                    "{}.Smoothstep({}, {})",
+                    self.describe_node(&source.node),
+                    self.describe_param(edge0),
+                    self.describe_param(edge1)
+                )
             }
             SignalNode::Clamp { source, min, max } => {
-                format!("{}.Clamp({}, {})", self.describe_node(&source.node), self.describe_param(min), self.describe_param(max))
+                format!(
+                    "{}.Clamp({}, {})",
+                    self.describe_node(&source.node),
+                    self.describe_param(min),
+                    self.describe_param(max)
+                )
             }
             SignalNode::Abs { source } => format!("{}.Abs()", self.describe_node(&source.node)),
             SignalNode::Sign { source } => format!("{}.Sign()", self.describe_node(&source.node)),
@@ -988,79 +1072,127 @@ impl Signal {
             SignalNode::Ceil { source } => format!("{}.Ceil()", self.describe_node(&source.node)),
             SignalNode::Round { source } => format!("{}.Round()", self.describe_node(&source.node)),
             SignalNode::Sigmoid { source, k } => {
-                format!("{}.Sigmoid({})", self.describe_node(&source.node), self.describe_param(k))
+                format!(
+                    "{}.Sigmoid({})",
+                    self.describe_node(&source.node),
+                    self.describe_param(k)
+                )
             }
-            SignalNode::Smooth { source, params } => {
-                match params {
-                    SmoothParams::MovingAverage { window_beats } => {
-                        format!("{}.Smooth.MovingAverage({})", self.describe_node(&source.node), window_beats)
-                    }
-                    SmoothParams::Exponential { attack_beats, release_beats } => {
-                        format!("{}.Smooth.Exponential({}, {})", self.describe_node(&source.node), attack_beats, release_beats)
-                    }
-                    SmoothParams::Gaussian { sigma_beats } => {
-                        format!("{}.Smooth.Gaussian({})", self.describe_node(&source.node), sigma_beats)
-                    }
+            SignalNode::Smooth { source, params } => match params {
+                SmoothParams::MovingAverage { window_beats } => {
+                    format!(
+                        "{}.Smooth.MovingAverage({})",
+                        self.describe_node(&source.node),
+                        window_beats
+                    )
                 }
-            }
-            SignalNode::Normalise { source, params } => {
-                match params {
-                    NormaliseParams::Global => {
-                        format!("{}.Normalise.Global()", self.describe_node(&source.node))
-                    }
-                    NormaliseParams::Robust => {
-                        format!("{}.Normalise.Robust()", self.describe_node(&source.node))
-                    }
-                    NormaliseParams::Range { min, max } => {
-                        format!("{}.Normalise.ToRange({}, {})", self.describe_node(&source.node), min, max)
-                    }
+                SmoothParams::Exponential {
+                    attack_beats,
+                    release_beats,
+                } => {
+                    format!(
+                        "{}.Smooth.Exponential({}, {})",
+                        self.describe_node(&source.node),
+                        attack_beats,
+                        release_beats
+                    )
                 }
-            }
-            SignalNode::Gate { source, params } => {
-                match params {
-                    GateParams::Threshold { threshold } => {
-                        format!("{}.Gate.Threshold({})", self.describe_node(&source.node), threshold)
-                    }
-                    GateParams::Hysteresis { on_threshold, off_threshold } => {
-                        format!("{}.Gate.Hysteresis({}, {})", self.describe_node(&source.node), on_threshold, off_threshold)
-                    }
+                SmoothParams::Gaussian { sigma_beats } => {
+                    format!(
+                        "{}.Smooth.Gaussian({})",
+                        self.describe_node(&source.node),
+                        sigma_beats
+                    )
                 }
-            }
+            },
+            SignalNode::Normalise { source, params } => match params {
+                NormaliseParams::Global => {
+                    format!("{}.Normalise.Global()", self.describe_node(&source.node))
+                }
+                NormaliseParams::Robust => {
+                    format!("{}.Normalise.Robust()", self.describe_node(&source.node))
+                }
+                NormaliseParams::Range { min, max } => {
+                    format!(
+                        "{}.Normalise.ToRange({}, {})",
+                        self.describe_node(&source.node),
+                        min,
+                        max
+                    )
+                }
+            },
+            SignalNode::Gate { source, params } => match params {
+                GateParams::Threshold { threshold } => {
+                    format!(
+                        "{}.Gate.Threshold({})",
+                        self.describe_node(&source.node),
+                        threshold
+                    )
+                }
+                GateParams::Hysteresis {
+                    on_threshold,
+                    off_threshold,
+                } => {
+                    format!(
+                        "{}.Gate.Hysteresis({}, {})",
+                        self.describe_node(&source.node),
+                        on_threshold,
+                        off_threshold
+                    )
+                }
+            },
             SignalNode::Diff { source } => format!("{}.Diff()", self.describe_node(&source.node)),
-            SignalNode::Integrate { source, decay_beats } => {
-                format!("{}.Integrate({})", self.describe_node(&source.node), self.describe_param(decay_beats))
+            SignalNode::Integrate {
+                source,
+                decay_beats,
+            } => {
+                format!(
+                    "{}.Integrate({})",
+                    self.describe_node(&source.node),
+                    self.describe_param(decay_beats)
+                )
             }
             SignalNode::Delay { source, beats } => {
-                format!("{}.Delay({})", self.describe_node(&source.node), self.describe_param(beats))
+                format!(
+                    "{}.Delay({})",
+                    self.describe_node(&source.node),
+                    self.describe_param(beats)
+                )
             }
             SignalNode::Anticipate { source, beats } => {
-                format!("{}.Anticipate({})", self.describe_node(&source.node), self.describe_param(beats))
+                format!(
+                    "{}.Anticipate({})",
+                    self.describe_node(&source.node),
+                    self.describe_param(beats)
+                )
             }
             SignalNode::Debug { source, name } => {
                 format!("{}.Probe(\"{}\")", self.describe_node(&source.node), name)
             }
-            SignalNode::Generator(gen_node) => {
-                match gen_node {
-                    GeneratorNode::Sin { freq_beats, phase } => {
-                        format!("gen.sin({}, {})", freq_beats, phase)
-                    }
-                    GeneratorNode::Square { freq_beats, phase, duty } => {
-                        format!("gen.square({}, {}, {})", freq_beats, phase, duty)
-                    }
-                    GeneratorNode::Triangle { freq_beats, phase } => {
-                        format!("gen.triangle({}, {})", freq_beats, phase)
-                    }
-                    GeneratorNode::Saw { freq_beats, phase } => {
-                        format!("gen.saw({}, {})", freq_beats, phase)
-                    }
-                    GeneratorNode::Noise { noise_type, seed } => {
-                        format!("gen.noise({:?}, {})", noise_type, seed)
-                    }
-                    GeneratorNode::Perlin { scale_beats, seed } => {
-                        format!("gen.perlin({}, {})", scale_beats, seed)
-                    }
+            SignalNode::Generator(gen_node) => match gen_node {
+                GeneratorNode::Sin { freq_beats, phase } => {
+                    format!("gen.sin({}, {})", freq_beats, phase)
                 }
-            }
+                GeneratorNode::Square {
+                    freq_beats,
+                    phase,
+                    duty,
+                } => {
+                    format!("gen.square({}, {}, {})", freq_beats, phase, duty)
+                }
+                GeneratorNode::Triangle { freq_beats, phase } => {
+                    format!("gen.triangle({}, {})", freq_beats, phase)
+                }
+                GeneratorNode::Saw { freq_beats, phase } => {
+                    format!("gen.saw({}, {})", freq_beats, phase)
+                }
+                GeneratorNode::Noise { noise_type, seed } => {
+                    format!("gen.noise({:?}, {})", noise_type, seed)
+                }
+                GeneratorNode::Perlin { scale_beats, seed } => {
+                    format!("gen.perlin({}, {})", scale_beats, seed)
+                }
+            },
             SignalNode::EventStreamSource { events } => {
                 format!("Events(count={})", events.len())
             }
@@ -1073,40 +1205,92 @@ impl Signal {
             SignalNode::EventDistanceToNext { events, unit } => {
                 format!("EventDistanceToNext(count={}, {:?})", events.len(), unit)
             }
-            SignalNode::EventCountInWindow { events, unit, direction, .. } => {
-                format!("EventCountInWindow(count={}, {:?}, {:?})", events.len(), unit, direction)
+            SignalNode::EventCountInWindow {
+                events,
+                unit,
+                direction,
+                ..
+            } => {
+                format!(
+                    "EventCountInWindow(count={}, {:?}, {:?})",
+                    events.len(),
+                    unit,
+                    direction
+                )
             }
-            SignalNode::EventDensityInWindow { events, unit, direction, .. } => {
-                format!("EventDensityInWindow(count={}, {:?}, {:?})", events.len(), unit, direction)
+            SignalNode::EventDensityInWindow {
+                events,
+                unit,
+                direction,
+                ..
+            } => {
+                format!(
+                    "EventDensityInWindow(count={}, {:?}, {:?})",
+                    events.len(),
+                    unit,
+                    direction
+                )
             }
             SignalNode::EventPhaseBetween { events } => {
                 format!("EventPhaseBetween(count={})", events.len())
             }
             // Comparison operations
             SignalNode::Lt(a, b) => {
-                format!("{}.Lt({})", self.describe_node(&a.node), self.describe_node(&b.node))
+                format!(
+                    "{}.Lt({})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node)
+                )
             }
             SignalNode::Gt(a, b) => {
-                format!("{}.Gt({})", self.describe_node(&a.node), self.describe_node(&b.node))
+                format!(
+                    "{}.Gt({})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node)
+                )
             }
             SignalNode::Le(a, b) => {
-                format!("{}.Le({})", self.describe_node(&a.node), self.describe_node(&b.node))
+                format!(
+                    "{}.Le({})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node)
+                )
             }
             SignalNode::Ge(a, b) => {
-                format!("{}.Ge({})", self.describe_node(&a.node), self.describe_node(&b.node))
+                format!(
+                    "{}.Ge({})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node)
+                )
             }
             SignalNode::Eq(a, b) => {
-                format!("{}.Eq({})", self.describe_node(&a.node), self.describe_node(&b.node))
+                format!(
+                    "{}.Eq({})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node)
+                )
             }
             SignalNode::Ne(a, b) => {
-                format!("{}.Ne({})", self.describe_node(&a.node), self.describe_node(&b.node))
+                format!(
+                    "{}.Ne({})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node)
+                )
             }
             // Logical operations
             SignalNode::And(a, b) => {
-                format!("{}.And({})", self.describe_node(&a.node), self.describe_node(&b.node))
+                format!(
+                    "{}.And({})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node)
+                )
             }
             SignalNode::Or(a, b) => {
-                format!("{}.Or({})", self.describe_node(&a.node), self.describe_node(&b.node))
+                format!(
+                    "{}.Or({})",
+                    self.describe_node(&a.node),
+                    self.describe_node(&b.node)
+                )
             }
             SignalNode::Not { source } => {
                 format!("{}.Not()", self.describe_node(&source.node))
@@ -1124,7 +1308,10 @@ impl Signal {
                         self.describe_node(&val.node)
                     ));
                 }
-                desc.push_str(&format!(", otherwise({}))", self.describe_node(&default.node)));
+                desc.push_str(&format!(
+                    ", otherwise({}))",
+                    self.describe_node(&default.node)
+                ));
                 desc
             }
         }
@@ -1256,9 +1443,15 @@ pub enum SignalNode {
 
     // === Transformations ===
     /// Smoothing operation.
-    Smooth { source: Signal, params: SmoothParams },
+    Smooth {
+        source: Signal,
+        params: SmoothParams,
+    },
     /// Normalization operation.
-    Normalise { source: Signal, params: NormaliseParams },
+    Normalise {
+        source: Signal,
+        params: NormaliseParams,
+    },
     /// Gate/threshold operation.
     Gate { source: Signal, params: GateParams },
 
@@ -1270,7 +1463,11 @@ pub enum SignalNode {
     /// Scale a signal by a factor (can be constant or signal).
     Scale { source: Signal, factor: SignalParam },
     /// Mix two signals with a weight (can be constant or signal).
-    Mix { a: Signal, b: Signal, weight: SignalParam },
+    Mix {
+        a: Signal,
+        b: Signal,
+        weight: SignalParam,
+    },
 
     // === Debug ===
     /// Debug probe - emits values during analysis but passes through unchanged.
@@ -1325,15 +1522,17 @@ pub enum SignalNode {
     /// Phase between previous and next event.
     /// Returns 0 at previous event, 1 at next event, linear interpolation between.
     /// Before first event: returns 0. After last event: returns 1.
-    EventPhaseBetween {
-        events: Arc<Vec<Event>>,
-    },
+    EventPhaseBetween { events: Arc<Vec<Event>> },
 
     // === Math Primitives ===
     /// Sigmoid curve centered at 0.5.
     Sigmoid { source: Signal, k: SignalParam },
     /// Clamp signal to a range.
-    Clamp { source: Signal, min: SignalParam, max: SignalParam },
+    Clamp {
+        source: Signal,
+        min: SignalParam,
+        max: SignalParam,
+    },
     /// Floor (round down).
     Floor { source: Signal },
     /// Ceiling (round up).
@@ -1353,7 +1552,10 @@ pub enum SignalNode {
     /// Divide two signals.
     Div(Signal, Signal),
     /// Power: source^exponent.
-    Pow { source: Signal, exponent: SignalParam },
+    Pow {
+        source: Signal,
+        exponent: SignalParam,
+    },
     /// Offset (add constant or signal).
     Offset { source: Signal, amount: SignalParam },
 
@@ -1385,11 +1587,21 @@ pub enum SignalNode {
 
     // === Modular / Periodic ===
     /// Euclidean modulo.
-    Mod { source: Signal, divisor: SignalParam },
+    Mod {
+        source: Signal,
+        divisor: SignalParam,
+    },
     /// Remainder (can be negative).
-    Rem { source: Signal, divisor: SignalParam },
+    Rem {
+        source: Signal,
+        divisor: SignalParam,
+    },
     /// Wrap value to range [min, max).
-    Wrap { source: Signal, min: SignalParam, max: SignalParam },
+    Wrap {
+        source: Signal,
+        min: SignalParam,
+        max: SignalParam,
+    },
     /// Fractional part (x - floor(x)).
     Fract { source: Signal },
 
@@ -1403,15 +1615,26 @@ pub enum SignalNode {
         out_max: SignalParam,
     },
     /// Smoothstep interpolation between edges.
-    Smoothstep { source: Signal, edge0: SignalParam, edge1: SignalParam },
+    Smoothstep {
+        source: Signal,
+        edge0: SignalParam,
+        edge1: SignalParam,
+    },
     /// Linear interpolation between two signals.
-    Lerp { a: Signal, b: Signal, t: SignalParam },
+    Lerp {
+        a: Signal,
+        b: Signal,
+        t: SignalParam,
+    },
 
     // === Rate and Accumulation ===
     /// Rate of change (derivative approximation).
     Diff { source: Signal },
     /// Cumulative sum with optional decay (decay_beats can be constant or signal).
-    Integrate { source: Signal, decay_beats: SignalParam },
+    Integrate {
+        source: Signal,
+        decay_beats: SignalParam,
+    },
 
     // === Time Shifting ===
     /// Delay by N beats (look back in time). Beats can be constant or signal.
@@ -1463,7 +1686,11 @@ pub enum GeneratorNode {
     /// - `freq_beats`: Frequency in cycles per beat.
     /// - `phase`: Initial phase offset (0-1).
     /// - `duty`: Duty cycle (0-1), default 0.5.
-    Square { freq_beats: f32, phase: f32, duty: f32 },
+    Square {
+        freq_beats: f32,
+        phase: f32,
+        duty: f32,
+    },
 
     /// Triangle wave oscillator.
     Triangle { freq_beats: f32, phase: f32 },
@@ -1649,7 +1876,10 @@ pub enum SmoothParams {
     /// Asymmetric exponential smoothing.
     /// - `attack_beats`: Time constant for rising values.
     /// - `release_beats`: Time constant for falling values.
-    Exponential { attack_beats: f32, release_beats: f32 },
+    Exponential {
+        attack_beats: f32,
+        release_beats: f32,
+    },
 
     /// Gaussian smoothing.
     /// - `sigma_beats`: Standard deviation in beats.
@@ -1680,7 +1910,10 @@ pub enum GateParams {
     /// Hysteresis gate to prevent rapid flickering.
     /// - `on_threshold`: Value must exceed this to turn on.
     /// - `off_threshold`: Value must drop below this to turn off.
-    Hysteresis { on_threshold: f32, off_threshold: f32 },
+    Hysteresis {
+        on_threshold: f32,
+        off_threshold: f32,
+    },
 }
 
 /// Sampling strategy for input signals.
@@ -1743,7 +1976,9 @@ impl SmoothBuilder {
 
     /// Apply moving average smoothing over a window of N beats.
     pub fn moving_average(self, beats: f32) -> Signal {
-        self.source.smooth(SmoothParams::MovingAverage { window_beats: beats })
+        self.source.smooth(SmoothParams::MovingAverage {
+            window_beats: beats,
+        })
     }
 
     /// Apply asymmetric exponential smoothing.
@@ -1937,7 +2172,10 @@ mod tests {
             freq_beats: 1.0,
             phase: 0.0,
         });
-        assert!(matches!(&*sin.node, SignalNode::Generator(GeneratorNode::Sin { .. })));
+        assert!(matches!(
+            &*sin.node,
+            SignalNode::Generator(GeneratorNode::Sin { .. })
+        ));
     }
 
     #[test]
@@ -2003,6 +2241,8 @@ mod tests {
             .when(cond2, val2)
             .otherwise(default);
 
-        assert!(matches!(&*selected.node, SignalNode::Select { cases, default: _ } if cases.len() == 2));
+        assert!(
+            matches!(&*selected.node, SignalNode::Select { cases, default: _ } if cases.len() == 2)
+        );
     }
 }

@@ -1,33 +1,32 @@
 import type { MirGPU } from "./context";
 
 import {
-    byteSizeF32,
-    createAndWriteStorageBuffer,
-    createReadbackBuffer,
-    createStorageOutBuffer,
-    createUniformBufferU32x4,
-    submitAndReadback,
-    type GpuDispatchResult,
-    createPooledStorageBuffer,
-    createPooledStorageOutBuffer,
-    createPooledUniformBufferU32x4,
-    createPooledReadbackBuffer,
-    releasePooledBuffers,
-    type PooledBuffer,
+  byteSizeF32,
+  createAndWriteStorageBuffer,
+  createReadbackBuffer,
+  createStorageOutBuffer,
+  createUniformBufferU32x4,
+  submitAndReadback,
+  type GpuDispatchResult,
+  createPooledStorageBuffer,
+  createPooledStorageOutBuffer,
+  createPooledUniformBufferU32x4,
+  createPooledReadbackBuffer,
+  releasePooledBuffers,
 } from "./helpers";
 
 import { melProjectWGSL } from "./kernels/melProject.wgsl";
 
 export type GpuMelProjectInput = {
-    nFrames: number;
-    nBins: number;
-    nMels: number;
-    magsFlat: Float32Array; // length = nFrames*nBins
-    filterFlat: Float32Array; // length = nMels*nBins
+  nFrames: number;
+  nBins: number;
+  nMels: number;
+  magsFlat: Float32Array; // length = nFrames*nBins
+  filterFlat: Float32Array; // length = nMels*nBins
 };
 
 export type GpuMelProjectOutput = {
-    outFlat: Float32Array; // length = nFrames*nMels
+  outFlat: Float32Array; // length = nFrames*nMels
 };
 
 /**
@@ -36,71 +35,77 @@ export type GpuMelProjectOutput = {
  * Returns outFlat plus GPU timing that measures submit->readback.
  */
 export async function gpuMelProjectFlat(
-    gpu: MirGPU,
-    input: GpuMelProjectInput
+  gpu: MirGPU,
+  input: GpuMelProjectInput
 ): Promise<GpuDispatchResult<GpuMelProjectOutput>> {
-    const { device } = gpu;
+  const { device } = gpu;
 
-    const { nFrames, nBins, nMels, magsFlat, filterFlat } = input;
-    if (magsFlat.length !== nFrames * nBins) {
-        throw new Error("@octoseq/mir: magsFlat length mismatch");
-    }
-    if (filterFlat.length !== nMels * nBins) {
-        throw new Error("@octoseq/mir: filterFlat length mismatch");
-    }
+  const { nFrames, nBins, nMels, magsFlat, filterFlat } = input;
+  if (magsFlat.length !== nFrames * nBins) {
+    throw new Error("@octoseq/mir: magsFlat length mismatch");
+  }
+  if (filterFlat.length !== nMels * nBins) {
+    throw new Error("@octoseq/mir: filterFlat length mismatch");
+  }
 
-    const magsBuffer = createAndWriteStorageBuffer(gpu, magsFlat);
-    const filterBuffer = createAndWriteStorageBuffer(gpu, filterFlat);
+  const magsBuffer = createAndWriteStorageBuffer(gpu, magsFlat);
+  const filterBuffer = createAndWriteStorageBuffer(gpu, filterFlat);
 
-    const outByteLen = byteSizeF32(nFrames * nMels);
-    const outBuffer = createStorageOutBuffer(gpu, outByteLen);
-    const readback = createReadbackBuffer(gpu, outByteLen);
+  const outByteLen = byteSizeF32(nFrames * nMels);
+  const outBuffer = createStorageOutBuffer(gpu, outByteLen);
+  const readback = createReadbackBuffer(gpu, outByteLen);
 
-    const shader = device.createShaderModule({ code: melProjectWGSL });
-    const pipeline = device.createComputePipeline({
-        layout: "auto",
-        compute: {
-            module: shader,
-            entryPoint: "main",
-        },
-    });
+  const shader = device.createShaderModule({ code: melProjectWGSL });
+  const pipeline = device.createComputePipeline({
+    layout: "auto",
+    compute: {
+      module: shader,
+      entryPoint: "main",
+    },
+  });
 
-    const params = createUniformBufferU32x4(gpu, new Uint32Array([nBins, nMels, nFrames, 0]));
+  const params = createUniformBufferU32x4(gpu, new Uint32Array([nBins, nMels, nFrames, 0]));
 
-    const bindGroup = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-            { binding: 0, resource: { buffer: magsBuffer } },
-            { binding: 1, resource: { buffer: filterBuffer } },
-            { binding: 2, resource: { buffer: outBuffer } },
-            { binding: 3, resource: { buffer: params } },
-        ],
-    });
+  const bindGroup = device.createBindGroup({
+    layout: pipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: magsBuffer } },
+      { binding: 1, resource: { buffer: filterBuffer } },
+      { binding: 2, resource: { buffer: outBuffer } },
+      { binding: 3, resource: { buffer: params } },
+    ],
+  });
 
-    const encoder = device.createCommandEncoder();
-    const pass = encoder.beginComputePass();
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
+  const encoder = device.createCommandEncoder();
+  const pass = encoder.beginComputePass();
+  pass.setPipeline(pipeline);
+  pass.setBindGroup(0, bindGroup);
 
-    const wgX = Math.ceil(nFrames / 16);
-    const wgY = Math.ceil(nMels / 16);
-    pass.dispatchWorkgroups(wgX, wgY);
-    pass.end();
+  const wgX = Math.ceil(nFrames / 16);
+  const wgY = Math.ceil(nMels / 16);
+  pass.dispatchWorkgroups(wgX, wgY);
+  pass.end();
 
-    const { value: bytes, timing } = await submitAndReadback(gpu, encoder, outBuffer, readback, outByteLen);
+  const { value: bytes, timing } = await submitAndReadback(
+    gpu,
+    encoder,
+    outBuffer,
+    readback,
+    outByteLen
+  );
 
-    // Cleanup (simple; no pooling in v0.1)
-    magsBuffer.destroy();
-    filterBuffer.destroy();
-    outBuffer.destroy();
-    params.destroy();
-    readback.destroy();
+  // Cleanup (simple; no pooling in v0.1)
+  magsBuffer.destroy();
+  filterBuffer.destroy();
+  outBuffer.destroy();
+  params.destroy();
+  readback.destroy();
 
-    const outFlat = new Float32Array(bytes);
-    return {
-        value: { outFlat },
-        timing,
-    };
+  const outFlat = new Float32Array(bytes);
+  return {
+    value: { outFlat },
+    timing,
+  };
 }
 
 /**
@@ -110,72 +115,72 @@ export async function gpuMelProjectFlat(
  * Recommended for production use when calling frequently.
  */
 export async function gpuMelProjectFlatPooled(
-    gpu: MirGPU,
-    input: GpuMelProjectInput
+  gpu: MirGPU,
+  input: GpuMelProjectInput
 ): Promise<GpuDispatchResult<GpuMelProjectOutput>> {
-    const { device } = gpu;
+  const { device } = gpu;
 
-    const { nFrames, nBins, nMels, magsFlat, filterFlat } = input;
-    if (magsFlat.length !== nFrames * nBins) {
-        throw new Error("@octoseq/mir: magsFlat length mismatch");
-    }
-    if (filterFlat.length !== nMels * nBins) {
-        throw new Error("@octoseq/mir: filterFlat length mismatch");
-    }
+  const { nFrames, nBins, nMels, magsFlat, filterFlat } = input;
+  if (magsFlat.length !== nFrames * nBins) {
+    throw new Error("@octoseq/mir: magsFlat length mismatch");
+  }
+  if (filterFlat.length !== nMels * nBins) {
+    throw new Error("@octoseq/mir: filterFlat length mismatch");
+  }
 
-    // Acquire buffers from pool
-    const magsBuffer = createPooledStorageBuffer(gpu, magsFlat);
-    const filterBuffer = createPooledStorageBuffer(gpu, filterFlat);
+  // Acquire buffers from pool
+  const magsBuffer = createPooledStorageBuffer(gpu, magsFlat);
+  const filterBuffer = createPooledStorageBuffer(gpu, filterFlat);
 
-    const outByteLen = byteSizeF32(nFrames * nMels);
-    const outBuffer = createPooledStorageOutBuffer(gpu, outByteLen);
-    const readback = createPooledReadbackBuffer(gpu, outByteLen);
+  const outByteLen = byteSizeF32(nFrames * nMels);
+  const outBuffer = createPooledStorageOutBuffer(gpu, outByteLen);
+  const readback = createPooledReadbackBuffer(gpu, outByteLen);
 
-    const shader = device.createShaderModule({ code: melProjectWGSL });
-    const pipeline = device.createComputePipeline({
-        layout: "auto",
-        compute: {
-            module: shader,
-            entryPoint: "main",
-        },
-    });
+  const shader = device.createShaderModule({ code: melProjectWGSL });
+  const pipeline = device.createComputePipeline({
+    layout: "auto",
+    compute: {
+      module: shader,
+      entryPoint: "main",
+    },
+  });
 
-    const params = createPooledUniformBufferU32x4(gpu, new Uint32Array([nBins, nMels, nFrames, 0]));
+  const params = createPooledUniformBufferU32x4(gpu, new Uint32Array([nBins, nMels, nFrames, 0]));
 
-    const bindGroup = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries: [
-            { binding: 0, resource: { buffer: magsBuffer.buffer } },
-            { binding: 1, resource: { buffer: filterBuffer.buffer } },
-            { binding: 2, resource: { buffer: outBuffer.buffer } },
-            { binding: 3, resource: { buffer: params.buffer } },
-        ],
-    });
+  const bindGroup = device.createBindGroup({
+    layout: pipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: magsBuffer.buffer } },
+      { binding: 1, resource: { buffer: filterBuffer.buffer } },
+      { binding: 2, resource: { buffer: outBuffer.buffer } },
+      { binding: 3, resource: { buffer: params.buffer } },
+    ],
+  });
 
-    const encoder = device.createCommandEncoder();
-    const pass = encoder.beginComputePass();
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
+  const encoder = device.createCommandEncoder();
+  const pass = encoder.beginComputePass();
+  pass.setPipeline(pipeline);
+  pass.setBindGroup(0, bindGroup);
 
-    const wgX = Math.ceil(nFrames / 16);
-    const wgY = Math.ceil(nMels / 16);
-    pass.dispatchWorkgroups(wgX, wgY);
-    pass.end();
+  const wgX = Math.ceil(nFrames / 16);
+  const wgY = Math.ceil(nMels / 16);
+  pass.dispatchWorkgroups(wgX, wgY);
+  pass.end();
 
-    const { value: bytes, timing } = await submitAndReadback(
-        gpu,
-        encoder,
-        outBuffer.buffer,
-        readback.buffer,
-        outByteLen
-    );
+  const { value: bytes, timing } = await submitAndReadback(
+    gpu,
+    encoder,
+    outBuffer.buffer,
+    readback.buffer,
+    outByteLen
+  );
 
-    // Release buffers back to pool (no destroy!)
-    releasePooledBuffers(gpu, [magsBuffer, filterBuffer, outBuffer, params, readback]);
+  // Release buffers back to pool (no destroy!)
+  releasePooledBuffers(gpu, [magsBuffer, filterBuffer, outBuffer, params, readback]);
 
-    const outFlat = new Float32Array(bytes);
-    return {
-        value: { outFlat },
-        timing,
-    };
+  const outFlat = new Float32Array(bytes);
+  return {
+    value: { outFlat },
+    timing,
+  };
 }

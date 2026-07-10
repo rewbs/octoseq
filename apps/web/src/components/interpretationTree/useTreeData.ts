@@ -68,14 +68,14 @@ const bandMirFunctionDefs: Array<{
   label: string;
   iconName: string;
 }> = [
-    { id: "bandAmplitudeEnvelope", label: "Amplitude", iconName: "trending-up" },
-    { id: "bandSpectralCentroid", label: "Spectral Centroid", iconName: "trending-up" },
-    { id: "bandSpectralFlux", label: "Spectral Flux", iconName: "trending-up" },
-    { id: "bandCqtHarmonicEnergy", label: "Harmonic Energy", iconName: "trending-up" },
-    { id: "bandCqtBassPitchMotion", label: "Bass Motion", iconName: "trending-up" },
-    { id: "bandCqtTonalStability", label: "Tonal Stability", iconName: "trending-up" },
-    { id: "bandOnsetStrength", label: "Onset Envelope", iconName: "trending-up" },
-  ];
+  { id: "bandAmplitudeEnvelope", label: "Amplitude", iconName: "trending-up" },
+  { id: "bandSpectralCentroid", label: "Spectral Centroid", iconName: "trending-up" },
+  { id: "bandSpectralFlux", label: "Spectral Flux", iconName: "trending-up" },
+  { id: "bandCqtHarmonicEnergy", label: "Harmonic Energy", iconName: "trending-up" },
+  { id: "bandCqtBassPitchMotion", label: "Bass Motion", iconName: "trending-up" },
+  { id: "bandCqtTonalStability", label: "Tonal Stability", iconName: "trending-up" },
+  { id: "bandOnsetStrength", label: "Onset Envelope", iconName: "trending-up" },
+];
 
 /**
  * Band event function definitions for tree display (event extraction).
@@ -85,9 +85,9 @@ const bandEventFunctionDefs: Array<{
   label: string;
   iconName: string;
 }> = [
-    { id: "bandOnsetPeaks", label: "Onset Peaks", iconName: "scatter-chart" },
-    { id: "bandBeatCandidates", label: "Beat Candidates", iconName: "scatter-chart" },
-  ];
+  { id: "bandOnsetPeaks", label: "Onset Peaks", iconName: "scatter-chart" },
+  { id: "bandBeatCandidates", label: "Beat Candidates", iconName: "scatter-chart" },
+];
 
 /**
  * Build MIR analysis children for a given parent node ID prefix.
@@ -325,14 +325,14 @@ export function useTreeData(): TreeNodeData[] {
       iconName: script.id === activeProject.scripts.activeScriptId ? "file-code" : "file",
       hasChildren: false,
     })) ?? [
-        // Fallback when no project is loaded
-        {
-          id: TREE_NODE_IDS.MAIN_SCRIPT,
-          label: "Main Script",
-          iconName: "file-code",
-          hasChildren: false,
-        },
-      ];
+      // Fallback when no project is loaded
+      {
+        id: TREE_NODE_IDS.MAIN_SCRIPT,
+        label: "Main Script",
+        iconName: "file-code",
+        hasChildren: false,
+      },
+    ];
 
     // Build the sections (children of project)
     const projectChildren: TreeNodeData[] = [
@@ -459,7 +459,17 @@ export function useTreeData(): TreeNodeData[] {
     ];
 
     return tree;
-  }, [streams, candidateStreams, authoredStreams, activeProject, isDirty, analysisResults, derivedSignalStructure, derivedSignalResultCache, composedSignalStructure]);
+  }, [
+    streams,
+    candidateStreams,
+    authoredStreams,
+    activeProject,
+    isDirty,
+    analysisResults,
+    derivedSignalStructure,
+    derivedSignalResultCache,
+    composedSignalStructure,
+  ]);
 }
 
 /**

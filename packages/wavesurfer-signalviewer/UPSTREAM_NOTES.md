@@ -20,6 +20,7 @@ const MyPlugin = createPlugin<MyOptions>(manifest, (context, options) => {
 ```
 
 **Strengths:**
+
 - Clear separation of concerns (manifest vs. initialization)
 - Resource management via `ResourcePool` ensures proper cleanup
 - Reactive store subscriptions with `select()` and `selectMany()`
@@ -30,12 +31,14 @@ const MyPlugin = createPlugin<MyOptions>(manifest, (context, options) => {
 The reactive state store provides everything needed to stay synchronized:
 
 ```typescript
-store.select((state) => ({
-  minPxPerSec: state.view.minPxPerSec,
-  scrollLeft: state.view.scrollLeft,
-  containerWidth: state.view.containerWidth,
-  duration: state.audio.duration,
-})).subscribe((view) => render(view));
+store
+  .select((state) => ({
+    minPxPerSec: state.view.minPxPerSec,
+    scrollLeft: state.view.scrollLeft,
+    containerWidth: state.view.containerWidth,
+    duration: state.audio.duration,
+  }))
+  .subscribe((view) => render(view));
 ```
 
 This allowed us to keep our custom visualizations perfectly aligned with the main waveform during zoom and scroll.
@@ -119,12 +122,7 @@ context.onHover((event) => {
 The v8 plugin types are well-designed but require importing from the main module:
 
 ```typescript
-import type {
-  Plugin,
-  PluginManifest,
-  PluginContext,
-  PluginInstance
-} from "wavesurfer.js";
+import type { Plugin, PluginManifest, PluginContext, PluginInstance } from "wavesurfer.js";
 ```
 
 This works well. For discoverability, it might help to document these prominently in the plugin authoring guide.
@@ -151,6 +149,7 @@ Since our use case (visualizing non-audio signals) is outside WaveSurfer's scope
 - **Configurable baseline** (bottom for positive-only data, center for bipolar)
 
 This worked well because WaveSurfer's plugin architecture gave us:
+
 - Reactive zoom/scroll state to stay synchronized
 - DOM insertion points for positioning
 - Clean resource lifecycle management
@@ -167,4 +166,4 @@ The suggestions above are minor quality-of-life improvements for plugin authors.
 
 ---
 
-*Document created as part of the `@octoseq/wavesurfer-signalviewer` plugin development.*
+_Document created as part of the `@octoseq/wavesurfer-signalviewer` plugin development._

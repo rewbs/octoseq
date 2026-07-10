@@ -57,10 +57,9 @@ export function signalSourceValue(ref: SignalSourceRef): string {
 // ============================================================================
 
 /** Every 1D-displayable analysis, labelled for selection. */
-const ANALYSIS_1D_OPTIONS: ReadonlyArray<{ id: AnalysisId; label: string }> =
-  mirTabDefinitions
-    .filter((t) => t.kind === "1d")
-    .map((t) => ({ id: t.id, label: t.label.replace(" (1D)", "") }));
+const ANALYSIS_1D_OPTIONS: ReadonlyArray<{ id: AnalysisId; label: string }> = mirTabDefinitions
+  .filter((t) => t.kind === "1d")
+  .map((t) => ({ id: t.id, label: t.label.replace(" (1D)", "") }));
 
 /** Mixdown options stay unqualified; stem/band options carry the stream label. */
 function streamSignalLabel(stream: Stream, analysisLabel: string): string {
@@ -75,9 +74,7 @@ function streamSignalLabel(stream: Stream, analysisLabel: string): string {
  * A stream analysis is offered only when a result is present in the unified
  * analysisStore and is 1D-displayable (`toDisplaySignal` at the display edge).
  */
-export function useSignalSourceGroups(options?: {
-  includeDerived?: boolean;
-}): SignalSourceGroup[] {
+export function useSignalSourceGroups(options?: { includeDerived?: boolean }): SignalSourceGroup[] {
   const includeDerived = options?.includeDerived ?? false;
 
   const streams = useStreamStore((s) => s.streams);
@@ -143,7 +140,9 @@ export function useSignalSourceGroups(options?: {
  */
 export function useSignalSourceData(ref: SignalSourceRef | null): DisplaySignal | null {
   const analysisResult = useAnalysisStore((s) =>
-    ref?.kind === "stream" ? (s.results.get(analysisKey(ref.streamId, ref.analysisId)) ?? null) : null
+    ref?.kind === "stream"
+      ? (s.results.get(analysisKey(ref.streamId, ref.analysisId)) ?? null)
+      : null
   );
   const derivedResult = useDerivedSignalStore((s) =>
     ref?.kind === "derived" ? (s.resultCache.get(ref.signalId) ?? null) : null

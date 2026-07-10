@@ -172,9 +172,7 @@ function IconOnlyNode({ node, isSelected, onSelect }: IconOnlyNodeProps) {
       onClick={onSelect}
       className={cn(
         "w-full flex items-center justify-center p-2 rounded-md transition-colors",
-        isSelected
-          ? "bg-zinc-200 dark:bg-zinc-700"
-          : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
+        isSelected ? "bg-zinc-200 dark:bg-zinc-700" : "hover:bg-zinc-100 dark:hover:bg-zinc-800",
         node.isDisabled && "opacity-50 cursor-not-allowed"
       )}
       title={node.label}
@@ -294,7 +292,8 @@ function TreeNodeRenderer({
       hasActiveAction={hasActiveAction}
     >
       {/* Render children when expanded */}
-      {node.hasChildren && isExpanded && (
+      {node.hasChildren &&
+        isExpanded &&
         node.children?.map((child) => (
           <TreeNodeRenderer
             key={child.id}
@@ -309,8 +308,7 @@ function TreeNodeRenderer({
             triggerFileInput={triggerFileInput}
             hasAudio={hasAudio}
           />
-        ))
-      )}
+        ))}
     </TreeNode>
   );
 }
@@ -615,7 +613,16 @@ export function InterpretationTreePanel() {
         }
       }
     },
-    [selectNode, selectAudioInput, setActiveDisplay, setCurrentAudioSource, createSourceFromInput, setActiveScript, setVisualTab, setDisplayContextInputId]
+    [
+      selectNode,
+      selectAudioInput,
+      setActiveDisplay,
+      setCurrentAudioSource,
+      createSourceFromInput,
+      setActiveScript,
+      setVisualTab,
+      setDisplayContextInputId,
+    ]
   );
 
   // Determine if we're in icon-only mode
@@ -679,7 +686,8 @@ export function InterpretationTreePanel() {
   // Calculate heights for tree and inspector sections
   const dividerHeight = 6; // Height of the divider in pixels
   const availableHeight = containerHeight - dividerHeight;
-  const inspectorHeight = selectedNodeId && !isIconOnly ? Math.floor(availableHeight * inspectorSectionRatio) : 0;
+  const inspectorHeight =
+    selectedNodeId && !isIconOnly ? Math.floor(availableHeight * inspectorSectionRatio) : 0;
   const treeHeight = availableHeight - inspectorHeight;
 
   return (
@@ -713,18 +721,17 @@ export function InterpretationTreePanel() {
           onClick={toggleSidebar}
           title={isIconOnly ? "Expand sidebar" : "Collapse sidebar"}
         >
-          {isIconOnly ? (
-            <ChevronRight className="h-4 w-4" />
-          ) : (
-            <ChevronLeft className="h-4 w-4" />
-          )}
+          {isIconOnly ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
         </Button>
       </div>
 
       {/* Tree Content */}
       <div
         className="overflow-y-auto p-1"
-        style={{ height: treeHeight > 0 ? treeHeight : undefined, flex: treeHeight > 0 ? undefined : 1 }}
+        style={{
+          height: treeHeight > 0 ? treeHeight : undefined,
+          flex: treeHeight > 0 ? undefined : 1,
+        }}
       >
         {isIconOnly ? (
           // Icon-only mode: show project and section icons

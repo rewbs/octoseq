@@ -2,7 +2,11 @@
 
 import { useMemo } from "react";
 import { AlertCircle, Play } from "lucide-react";
-import { SignalViewer, createContinuousSignal, createSparseSignal } from "@/components/wavesurfer/SignalViewer";
+import {
+  SignalViewer,
+  createContinuousSignal,
+  createSparseSignal,
+} from "@/components/wavesurfer/SignalViewer";
 import { Button } from "@/components/ui/button";
 import { mirTabDefinitions } from "@/lib/stores/mirStore";
 import {
@@ -66,7 +70,8 @@ export function SingleSignalInspector({
 
   // Get the input label for display
   const stream = useStreamStore((s) => s.streams.get(inputId));
-  const displayLabel = label ?? stream?.label ?? (inputId === MIXDOWN_STREAM_ID ? "Mixdown" : inputId);
+  const displayLabel =
+    label ?? stream?.label ?? (inputId === MIXDOWN_STREAM_ID ? "Mixdown" : inputId);
 
   // Get the (raw) analysis result for this input and function
   const result = useAnalysisStore((s) => s.results.get(analysisKey(inputId, functionId)));

@@ -37,12 +37,7 @@ export function renderLine(
 ): void {
   if (points.length === 0) return;
 
-  const {
-    color,
-    baseline,
-    mode,
-    canvasHeight,
-  } = options;
+  const { color, baseline, mode, canvasHeight } = options;
 
   const stroke = color.stroke ?? "#3b82f6";
   const fill = color.fill ?? "rgba(59, 130, 246, 0.3)";

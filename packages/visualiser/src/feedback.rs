@@ -279,7 +279,10 @@ impl WarpParams {
             strength: self.strength.evaluate(ctx),
             scale: self.scale.evaluate(ctx),
             rotation: self.rotation.evaluate(ctx),
-            translate: [self.translate[0].evaluate(ctx), self.translate[1].evaluate(ctx)],
+            translate: [
+                self.translate[0].evaluate(ctx),
+                self.translate[1].evaluate(ctx),
+            ],
             frequency: self.frequency.evaluate(ctx),
             falloff: self.falloff.evaluate(ctx),
             seed: self.seed,
@@ -448,7 +451,8 @@ impl FeedbackConfig {
     /// Clears any existing warp chain and sets a single warp.
     pub fn with_warp(mut self, warp: WarpOperator) -> Self {
         self.warp_chain.clear();
-        self.warp_chain.push(WarpStep::new(warp, WarpParams::default()));
+        self.warp_chain
+            .push(WarpStep::new(warp, WarpParams::default()));
         self
     }
 
@@ -457,7 +461,8 @@ impl FeedbackConfig {
         if let Some(step) = self.warp_chain.first_mut() {
             step.params = params;
         } else {
-            self.warp_chain.push(WarpStep::new(WarpOperator::None, params));
+            self.warp_chain
+                .push(WarpStep::new(WarpOperator::None, params));
         }
         self
     }
@@ -466,7 +471,8 @@ impl FeedbackConfig {
     /// Clears any existing color chain and sets a single color.
     pub fn with_color(mut self, color: ColorOperator) -> Self {
         self.color_chain.clear();
-        self.color_chain.push(ColorStep::new(color, ColorParams::default()));
+        self.color_chain
+            .push(ColorStep::new(color, ColorParams::default()));
         self
     }
 
@@ -475,7 +481,8 @@ impl FeedbackConfig {
         if let Some(step) = self.color_chain.first_mut() {
             step.params = params;
         } else {
-            self.color_chain.push(ColorStep::new(ColorOperator::None, params));
+            self.color_chain
+                .push(ColorStep::new(ColorOperator::None, params));
         }
         self
     }
@@ -1042,10 +1049,10 @@ impl Default for FeedbackUniforms {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use crate::signal_eval::EvalContext;
     use crate::signal_state::SignalState;
     use crate::signal_stats::StatisticsCache;
+    use std::collections::HashMap;
 
     /// Create a minimal EvalContext for testing.
     fn test_eval_ctx() -> (SignalState, StatisticsCache) {
@@ -1065,8 +1072,14 @@ mod tests {
     #[test]
     fn test_color_operator_from_str() {
         assert_eq!(ColorOperator::from_str("decay"), ColorOperator::Decay);
-        assert_eq!(ColorOperator::from_str("hsv_shift"), ColorOperator::HsvShift);
-        assert_eq!(ColorOperator::from_str("posterize"), ColorOperator::Posterize);
+        assert_eq!(
+            ColorOperator::from_str("hsv_shift"),
+            ColorOperator::HsvShift
+        );
+        assert_eq!(
+            ColorOperator::from_str("posterize"),
+            ColorOperator::Posterize
+        );
         assert_eq!(
             ColorOperator::from_str("channel_offset"),
             ColorOperator::ChannelOffset
@@ -1079,7 +1092,10 @@ mod tests {
         assert_eq!(FeedbackBlend::from_str("multiply"), FeedbackBlend::Multiply);
         assert_eq!(FeedbackBlend::from_str("screen"), FeedbackBlend::Screen);
         assert_eq!(FeedbackBlend::from_str("overlay"), FeedbackBlend::Overlay);
-        assert_eq!(FeedbackBlend::from_str("difference"), FeedbackBlend::Difference);
+        assert_eq!(
+            FeedbackBlend::from_str("difference"),
+            FeedbackBlend::Difference
+        );
         assert_eq!(FeedbackBlend::from_str("max"), FeedbackBlend::Max);
         assert_eq!(FeedbackBlend::from_str("alpha"), FeedbackBlend::Alpha);
     }
@@ -1100,7 +1116,20 @@ mod tests {
         let stems = HashMap::new();
         let custom_signals = HashMap::new();
         let composed_signals = HashMap::new();
-        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom_signals, &composed_signals, &stats, &mut state, None);
+        let mut ctx = EvalContext::new(
+            0.0,
+            0.016,
+            0,
+            None,
+            &inputs,
+            &bands,
+            &stems,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+            None,
+        );
 
         let config = FeedbackConfig::new()
             .with_warp(WarpOperator::Spiral)
@@ -1138,27 +1167,52 @@ mod tests {
         let stems = HashMap::new();
         let custom_signals = HashMap::new();
         let composed_signals = HashMap::new();
-        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom_signals, &composed_signals, &stats, &mut state, None);
+        let mut ctx = EvalContext::new(
+            0.0,
+            0.016,
+            0,
+            None,
+            &inputs,
+            &bands,
+            &stems,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+            None,
+        );
 
         let config = FeedbackConfig::new()
-            .add_warp(WarpOperator::Spiral, WarpParams {
-                strength: 0.5.into(),
-                rotation: 0.02.into(),
-                ..Default::default()
-            })
-            .add_warp(WarpOperator::Radial, WarpParams {
-                strength: 0.3.into(),
-                scale: 1.01.into(),
-                ..Default::default()
-            })
-            .add_color(ColorOperator::Decay, ColorParams {
-                decay_rate: 0.95.into(),
-                ..Default::default()
-            })
-            .add_color(ColorOperator::HsvShift, ColorParams {
-                hsv_shift: [0.01.into(), 0.0.into(), (-0.02f32).into()],
-                ..Default::default()
-            })
+            .add_warp(
+                WarpOperator::Spiral,
+                WarpParams {
+                    strength: 0.5.into(),
+                    rotation: 0.02.into(),
+                    ..Default::default()
+                },
+            )
+            .add_warp(
+                WarpOperator::Radial,
+                WarpParams {
+                    strength: 0.3.into(),
+                    scale: 1.01.into(),
+                    ..Default::default()
+                },
+            )
+            .add_color(
+                ColorOperator::Decay,
+                ColorParams {
+                    decay_rate: 0.95.into(),
+                    ..Default::default()
+                },
+            )
+            .add_color(
+                ColorOperator::HsvShift,
+                ColorParams {
+                    hsv_shift: [0.01.into(), 0.0.into(), (-0.02f32).into()],
+                    ..Default::default()
+                },
+            )
             .with_blend(FeedbackBlend::Screen)
             .with_opacity(0.85);
 

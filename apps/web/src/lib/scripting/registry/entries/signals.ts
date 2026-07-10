@@ -548,7 +548,7 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
         ],
         returns: "EventStream",
         chainsTo: "EventStream",
-        example: 'let events = inputs.onsetEnvelope.pick.events(#{ target_density: 2.0 });',
+        example: "let events = inputs.onsetEnvelope.pick.events(#{ target_density: 2.0 });",
         notes: "In playback mode, this may return an empty stream.",
       },
     ],
@@ -661,7 +661,8 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
       {
         name: "beats_from_prev",
         path: "EventStream.beats_from_prev",
-        description: "Signal representing beats elapsed since previous event. 0 at event, grows linearly.",
+        description:
+          "Signal representing beats elapsed since previous event. 0 at event, grows linearly.",
         params: [],
         returns: "Signal",
         chainsTo: "Signal",
@@ -670,7 +671,8 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
       {
         name: "beats_to_next",
         path: "EventStream.beats_to_next",
-        description: "Signal representing beats remaining until next event. Decreases linearly to 0.",
+        description:
+          "Signal representing beats remaining until next event. Decreases linearly to 0.",
         params: [],
         returns: "Signal",
         chainsTo: "Signal",
@@ -735,7 +737,9 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
         name: "count_prev_seconds",
         path: "EventStream.count_prev_seconds",
         description: "Count events in the previous N seconds.",
-        params: [{ name: "window", type: "float | Signal", description: "Window size in seconds." }],
+        params: [
+          { name: "window", type: "float | Signal", description: "Window size in seconds." },
+        ],
         returns: "Signal",
         chainsTo: "Signal",
         example: "let recent = events.count_prev_seconds(2.0);",
@@ -744,7 +748,9 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
         name: "count_next_seconds",
         path: "EventStream.count_next_seconds",
         description: "Count events in the next N seconds.",
-        params: [{ name: "window", type: "float | Signal", description: "Window size in seconds." }],
+        params: [
+          { name: "window", type: "float | Signal", description: "Window size in seconds." },
+        ],
         returns: "Signal",
         chainsTo: "Signal",
         example: "let upcoming = events.count_next_seconds(2.0);",
@@ -790,7 +796,9 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
         name: "density_prev_seconds",
         path: "EventStream.density_prev_seconds",
         description: "Event density (events per second) in the previous N seconds.",
-        params: [{ name: "window", type: "float | Signal", description: "Window size in seconds." }],
+        params: [
+          { name: "window", type: "float | Signal", description: "Window size in seconds." },
+        ],
         returns: "Signal",
         chainsTo: "Signal",
         example: "let density = events.density_prev_seconds(2.0);",
@@ -799,7 +807,9 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
         name: "density_next_seconds",
         path: "EventStream.density_next_seconds",
         description: "Event density (events per second) in the next N seconds.",
-        params: [{ name: "window", type: "float | Signal", description: "Window size in seconds." }],
+        params: [
+          { name: "window", type: "float | Signal", description: "Window size in seconds." },
+        ],
         returns: "Signal",
         chainsTo: "Signal",
         example: "let density = events.density_next_seconds(2.0);",
@@ -913,7 +923,8 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
     kind: "type",
     name: "Bands",
     path: "Bands",
-    description: 'Band-scoped signal accessors (string-keyed map). Access via inputs.bands["BandName"].',
+    description:
+      'Band-scoped signal accessors (string-keyed map). Access via inputs.bands["BandName"].',
     properties: [],
     methods: [],
     example: 'inputs.bands["Bass"].energy',
@@ -1009,7 +1020,8 @@ export const SIGNAL_ENTRIES: RegistryEntry[] = [
     kind: "type",
     name: "CustomEvents",
     path: "CustomEvents",
-    description: 'User-authored event streams (string-keyed map). Access via inputs.customEvents["streamName"].',
+    description:
+      'User-authored event streams (string-keyed map). Access via inputs.customEvents["streamName"].',
     properties: [],
     methods: [],
     example: 'inputs.customEvents["Snares"].to_signal()',

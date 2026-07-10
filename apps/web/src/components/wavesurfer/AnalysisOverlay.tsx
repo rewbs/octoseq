@@ -63,13 +63,9 @@ export function AnalysisOverlay({
 
         {/* Main text */}
         <div className="text-center">
-          <p className="text-base font-medium text-zinc-100 tracking-wide">
-            Analysing...
-          </p>
+          <p className="text-base font-medium text-zinc-100 tracking-wide">Analysing...</p>
           {analysisName && (
-            <p className="mt-1 text-sm text-emerald-400/90 font-mono">
-              {analysisName}
-            </p>
+            <p className="mt-1 text-sm text-emerald-400/90 font-mono">{analysisName}</p>
           )}
         </div>
 

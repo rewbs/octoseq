@@ -10,7 +10,12 @@
 
 import type { RegistryEntry, RegistryMethod, RegistryProperty } from "../registry/types";
 import { parseChainBeforeDot, parseLocalVariableTypes } from "../context";
-import { getApiRegistry, resolveChainSegments, getConfigMapEntry, findMethodsByName } from "../registry";
+import {
+  getApiRegistry,
+  resolveChainSegments,
+  getConfigMapEntry,
+  findMethodsByName,
+} from "../registry";
 
 // Monaco types (provided at runtime)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -75,7 +80,8 @@ function formatMethodHover(method: RegistryMethod, parentName?: string): string 
     parts.push("", "**Parameters:**");
     for (const p of method.params) {
       const opt = p.optional ? " *(optional)*" : "";
-      const defaultVal = p.default !== undefined ? ` (default: \`${JSON.stringify(p.default)}\`)` : "";
+      const defaultVal =
+        p.default !== undefined ? ` (default: \`${JSON.stringify(p.default)}\`)` : "";
       parts.push(`- \`${p.name}: ${p.type}\`${opt}${defaultVal} — ${p.description}`);
     }
   }
@@ -131,7 +137,14 @@ function formatEntryHover(entry: RegistryEntry): string {
  */
 function formatConfigMapKeyHover(
   key: string,
-  param: { name: string; type: string; description: string; default?: unknown; range?: { min: number; max: number }; enumValues?: string[] },
+  param: {
+    name: string;
+    type: string;
+    description: string;
+    default?: unknown;
+    range?: { min: number; max: number };
+    enumValues?: string[];
+  },
   functionPath: string
 ): string {
   const parts: string[] = [
@@ -143,7 +156,8 @@ function formatConfigMapKeyHover(
   ];
 
   if (param.default !== undefined) {
-    const defaultStr = typeof param.default === "object" ? JSON.stringify(param.default) : String(param.default);
+    const defaultStr =
+      typeof param.default === "object" ? JSON.stringify(param.default) : String(param.default);
     parts.push("", `Default: \`${defaultStr}\``);
   }
   if (param.range) {
@@ -159,7 +173,10 @@ function formatConfigMapKeyHover(
 /**
  * Detect if we're inside a config-map and return the function path and key.
  */
-function detectConfigMapKeyAtPosition(textUntilWord: string, word: string): { functionPath: string; key: string } | null {
+function detectConfigMapKeyAtPosition(
+  textUntilWord: string,
+  word: string
+): { functionPath: string; key: string } | null {
   // Pattern: look for `functionPath(#{` before cursor and check if word is a key
   // We need to find the most recent #{ and the function before it
 
@@ -238,7 +255,15 @@ export function createHoverProvider(monaco: MonacoInstance) {
                 position.lineNumber,
                 word.endColumn
               ),
-              contents: [{ value: formatConfigMapKeyHover(configMapKey.key, param, configMapKey.functionPath) }],
+              contents: [
+                {
+                  value: formatConfigMapKeyHover(
+                    configMapKey.key,
+                    param,
+                    configMapKey.functionPath
+                  ),
+                },
+              ],
             };
           }
         }
@@ -250,7 +275,13 @@ export function createHoverProvider(monaco: MonacoInstance) {
         const firstPath = paths[0];
         if (firstPath) {
           const entry = registry.entries.get(firstPath);
-          if (entry && (entry.kind === "namespace" || entry.kind === "type" || entry.kind === "helper" || entry.kind === "lifecycle")) {
+          if (
+            entry &&
+            (entry.kind === "namespace" ||
+              entry.kind === "type" ||
+              entry.kind === "helper" ||
+              entry.kind === "lifecycle")
+          ) {
             return {
               range: new monaco.Range(
                 position.lineNumber,
@@ -319,7 +350,9 @@ export function createHoverProvider(monaco: MonacoInstance) {
       const localVarType = localVars.get(wordText);
       if (localVarType) {
         const typeEntry = registry.entries.get(localVarType);
-        const typeInfo = typeEntry ? `\n\nType: \`${typeEntry.name}\`` : `\n\nType: \`${localVarType}\``;
+        const typeInfo = typeEntry
+          ? `\n\nType: \`${typeEntry.name}\``
+          : `\n\nType: \`${localVarType}\``;
 
         return {
           range: new monaco.Range(

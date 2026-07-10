@@ -209,14 +209,17 @@ export function TimeAlignedHeatmapPixi({
   const startYRef = useRef(0);
   const startHeightRef = useRef(0);
 
-  const handleResizeStart = useCallback((e: MouseEvent) => {
-    e.preventDefault();
-    isResizingRef.current = true;
-    startYRef.current = e.clientY;
-    startHeightRef.current = panelHeight;
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-  }, [panelHeight]);
+  const handleResizeStart = useCallback(
+    (e: MouseEvent) => {
+      e.preventDefault();
+      isResizingRef.current = true;
+      startYRef.current = e.clientY;
+      startHeightRef.current = panelHeight;
+      document.body.style.cursor = "ns-resize";
+      document.body.style.userSelect = "none";
+    },
+    [panelHeight]
+  );
 
   useEffect(() => {
     const handleMouseMove = (e: globalThis.MouseEvent) => {
@@ -229,17 +232,17 @@ export function TimeAlignedHeatmapPixi({
     const handleMouseUp = () => {
       if (isResizingRef.current) {
         isResizingRef.current = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
       }
     };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
     };
   }, []);
 
@@ -255,7 +258,7 @@ export function TimeAlignedHeatmapPixi({
   const aliveRef = useRef(true);
 
   // Callable ref so we can trigger a render from async init without "use before declare".
-  const renderNowRef = useRef<() => void>(() => { });
+  const renderNowRef = useRef<() => void>(() => {});
 
   // RAF-based render throttling to avoid rendering on every scroll/zoom frame
   const rafIdRef = useRef<number | null>(null);
@@ -445,9 +448,10 @@ export function TimeAlignedHeatmapPixi({
           if (v > max) max = v;
         }
       }
-      range = (!Number.isFinite(min) || !Number.isFinite(max) || min === max)
-        ? { min: 0, max: 1 }
-        : { min, max };
+      range =
+        !Number.isFinite(min) || !Number.isFinite(max) || min === max
+          ? { min: 0, max: 1 }
+          : { min, max };
     }
 
     const inv = 1 / (range.max - range.min);
@@ -491,7 +495,14 @@ export function TimeAlignedHeatmapPixi({
       appRef.current?.render();
       appRef.current?.start();
 
-      console.debug("[Heatmap] rendered", { frame0, frame1, w, h, rangeMin: range.min, rangeMax: range.max });
+      console.debug("[Heatmap] rendered", {
+        frame0,
+        frame1,
+        w,
+        h,
+        rangeMin: range.min,
+        rangeMax: range.max,
+      });
     });
   }
 

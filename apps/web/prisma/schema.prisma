@@ -29,11 +29,11 @@ enum AssetStatus {
 // -----------------------------------------------------------------------------
 
 model User {
-  id        String   @id @default(cuid())
-  clerkId   String   @unique
+  id      String @id @default(cuid())
+  clerkId String @unique
 
   // Synced from Clerk
-  email     String   @unique
+  email     String  @unique
   firstName String?
   lastName  String?
   imageUrl  String?
@@ -54,7 +54,7 @@ model Project {
   id        String   @id @default(cuid())
   ownerId   String
   name      String
-  isPublic  Boolean  @default(true)
+  isPublic  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -62,6 +62,7 @@ model Project {
   owner        User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   workingState ProjectWorkingState?
   snapshots    ProjectSnapshot[]
+  assets       ProjectAsset[]
 
   @@index([ownerId])
 }
@@ -69,6 +70,7 @@ model Project {
 model ProjectWorkingState {
   projectId   String   @id
   workingJson Json
+  revision    Int      @default(0)
   updatedAt   DateTime @updatedAt
 
   // Relations
@@ -82,14 +84,15 @@ model ProjectSnapshot {
   createdAt    DateTime @default(now())
 
   // Relations
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assets  ProjectSnapshotAsset[]
 
   @@index([projectId])
 }
 
 model Asset {
   id           String      @id @default(cuid())
-  ownerId      String
+  ownerId      String?
   contentHash  String
   r2Key        String
   type         AssetType
@@ -98,9 +101,47 @@ model Asset {
   createdAt    DateTime    @default(now())
 
   // Relations
-  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  owner     User?                  @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  projects  ProjectAsset[]
+  snapshots ProjectSnapshotAsset[]
 
+  @@unique([ownerId, contentHash])
   @@index([ownerId])
   @@index([contentHash])
-  @@unique([ownerId, contentHash])
+}
+
+/// Explicit project-to-asset references used for authorization and cloning.
+model ProjectAsset {
+  projectId String
+  assetId   String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  asset   Asset   @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@id([projectId, assetId])
+  @@index([assetId])
+}
+
+/// Asset references retained by immutable snapshots even after working state changes.
+model ProjectSnapshotAsset {
+  snapshotId String
+  assetId    String
+  createdAt  DateTime @default(now())
+
+  snapshot ProjectSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  asset    Asset           @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@id([snapshotId, assetId])
+  @@index([assetId])
+}
+
+/// Cross-instance fixed-window counters for server action rate limits.
+model RateLimitBucket {
+  key         String   @id
+  windowStart DateTime
+  count       Int
+  expiresAt   DateTime
+
+  @@index([expiresAt])
 }

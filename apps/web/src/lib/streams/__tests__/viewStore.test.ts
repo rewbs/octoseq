@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useViewStore } from "../viewStore";
-import { addBand, addStemWithAudio, loadMixdown, removeStreamCascade, resetAllStreams } from "../streamActions";
+import {
+  addBand,
+  addStemWithAudio,
+  loadMixdown,
+  removeStreamCascade,
+  resetAllStreams,
+} from "../streamActions";
 import { MIXDOWN_STREAM_ID } from "../types";
 import { makeAudioRef, makeBuffer, makeSegment } from "./fixtures";
 

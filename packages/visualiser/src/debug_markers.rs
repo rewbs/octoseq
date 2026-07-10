@@ -81,7 +81,7 @@ pub struct DebugMarkerRequest {
 }
 
 thread_local! {
-    static PENDING_MARKER_REQUESTS: RefCell<Vec<DebugMarkerRequest>> = RefCell::new(Vec::new());
+    static PENDING_MARKER_REQUESTS: RefCell<Vec<DebugMarkerRequest>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Add a marker request to be processed in the next frame.
@@ -121,12 +121,7 @@ impl DebugMarkerLayer {
         // Process pending requests
         let requests = take_pending_requests();
         for request in requests {
-            Self::generate_markers_for_request(
-                &mut self.markers,
-                &request,
-                current_beat,
-                bpm,
-            );
+            Self::generate_markers_for_request(&mut self.markers, &request, current_beat, bpm);
         }
     }
 

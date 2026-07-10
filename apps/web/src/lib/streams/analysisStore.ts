@@ -11,12 +11,7 @@
 
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import {
-  streamKeyPrefix,
-  type AnalysisKey,
-  type AnalysisResult,
-  type StreamId,
-} from "./types";
+import { streamKeyPrefix, type AnalysisKey, type AnalysisResult, type StreamId } from "./types";
 
 /** Timing/backend info from the most recent completed analysis run. */
 export interface LastRunInfo {
@@ -178,18 +173,10 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>()(
       },
 
       invalidateAll: () =>
-        set(
-          { results: new Map(), pending: new Set(), errors: new Map() },
-          false,
-          "invalidateAll"
-        ),
+        set({ results: new Map(), pending: new Set(), errors: new Map() }, false, "invalidateAll"),
 
       reset: () =>
-        set(
-          { results: new Map(), pending: new Set(), errors: new Map() },
-          false,
-          "reset"
-        ),
+        set({ results: new Map(), pending: new Set(), errors: new Map() }, false, "reset"),
     }),
     { name: "AnalysisStore" }
   )

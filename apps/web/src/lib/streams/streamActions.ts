@@ -24,12 +24,7 @@ import { clearAnalysisMemos } from "./analysisRunner";
 import { useViewStore } from "./viewStore";
 import { useBandEditingStore } from "./bandEditingStore";
 import { useStreamStore, type AddBandParams, type BandShapePatch } from "./streamStore";
-import {
-  MIXDOWN_STREAM_ID,
-  type AudioReference,
-  type Stream,
-  type StreamId,
-} from "./types";
+import { MIXDOWN_STREAM_ID, type AudioReference, type Stream, type StreamId } from "./types";
 
 export { toFrequencyBand } from "./types";
 

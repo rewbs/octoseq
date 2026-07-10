@@ -5,7 +5,7 @@
  * Assets are always referenced by ID, never by inline content or URLs.
  */
 
-import type { AssetStatus, AssetType } from '@/lib/db';
+import type { AssetStatus, AssetType } from "@/lib/db";
 
 // -----------------------------------------------------------------------------
 // Asset Reference (stored in project working JSON)
@@ -48,10 +48,10 @@ export interface MeshAssetReference extends AssetReference {
 // -----------------------------------------------------------------------------
 
 export type AssetResolutionStatus =
-  | 'resolved' // Asset exists and is uploaded
-  | 'pending' // Asset exists but upload in progress
-  | 'failed' // Asset exists but upload failed
-  | 'missing'; // Asset reference exists but asset not found
+  | "resolved" // Asset exists and is uploaded
+  | "pending" // Asset exists but upload in progress
+  | "failed" // Asset exists but upload failed
+  | "missing"; // Asset reference exists but asset not found
 
 /**
  * Status of an asset reference with details.
@@ -95,14 +95,14 @@ export interface ProjectAssetSummary {
  */
 export function toResolutionStatus(dbStatus: AssetStatus): AssetResolutionStatus {
   switch (dbStatus) {
-    case 'UPLOADED':
-      return 'resolved';
-    case 'PENDING':
-      return 'pending';
-    case 'FAILED':
-      return 'failed';
+    case "UPLOADED":
+      return "resolved";
+    case "PENDING":
+      return "pending";
+    case "FAILED":
+      return "failed";
     default:
-      return 'pending';
+      return "pending";
   }
 }
 

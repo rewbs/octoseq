@@ -178,23 +178,40 @@ pub fn run() -> Result<()> {
 ///
 /// Public so integration tests (e.g. `tests/package_render.rs`) can drive the
 /// exact same render path as the CLI.
-pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet: bool) -> Result<()> {
+pub async fn execute_render_job(
+    job: &RenderJobSpec,
+    save_metadata: bool,
+    quiet: bool,
+) -> Result<()> {
     let start_time = Utc::now();
     let render_start = std::time::Instant::now();
     let mut warnings: Vec<String> = Vec::new();
 
     // Validate job
-    job.validate().map_err(|e| anyhow::anyhow!("[{}] {}", RenderPhase::Initialization, e))?;
+    job.validate()
+        .map_err(|e| anyhow::anyhow!("[{}] {}", RenderPhase::Initialization, e))?;
 
     // Load interpretation package, if given. It supplies the script (unless an
     // explicit --script overrides it), the default duration, and all signal
     // maps / event streams / state configuration.
     let package: Option<LoadedPackage> = match &job.package_path {
         Some(package_path) => {
-            let json = std::fs::read_to_string(package_path)
-                .map_err(|e| anyhow::anyhow!("[{}] Failed to read package {:?}: {}", RenderPhase::InputLoading, package_path, e))?;
-            let pkg = load_package(&json)
-                .map_err(|e| anyhow::anyhow!("[{}] Failed to load package {:?}: {:#}", RenderPhase::InputLoading, package_path, e))?;
+            let json = std::fs::read_to_string(package_path).map_err(|e| {
+                anyhow::anyhow!(
+                    "[{}] Failed to read package {:?}: {}",
+                    RenderPhase::InputLoading,
+                    package_path,
+                    e
+                )
+            })?;
+            let pkg = load_package(&json).map_err(|e| {
+                anyhow::anyhow!(
+                    "[{}] Failed to load package {:?}: {:#}",
+                    RenderPhase::InputLoading,
+                    package_path,
+                    e
+                )
+            })?;
             Some(pkg)
         }
         None => None,
@@ -202,11 +219,22 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
 
     // Load script: an explicit --script wins; otherwise the package supplies it.
     let script_content = if let Some(script_path) = &job.script_path {
-        let mut script_file = File::open(script_path)
-            .map_err(|e| anyhow::anyhow!("[{}] Failed to open script {:?}: {}", RenderPhase::ScriptLoading, script_path, e))?;
+        let mut script_file = File::open(script_path).map_err(|e| {
+            anyhow::anyhow!(
+                "[{}] Failed to open script {:?}: {}",
+                RenderPhase::ScriptLoading,
+                script_path,
+                e
+            )
+        })?;
         let mut content = String::new();
-        script_file.read_to_string(&mut content)
-            .map_err(|e| anyhow::anyhow!("[{}] Failed to read script: {}", RenderPhase::ScriptLoading, e))?;
+        script_file.read_to_string(&mut content).map_err(|e| {
+            anyhow::anyhow!(
+                "[{}] Failed to read script: {}",
+                RenderPhase::ScriptLoading,
+                e
+            )
+        })?;
         content
     } else if let Some(script) = package.as_ref().and_then(|pkg| pkg.script.clone()) {
         script
@@ -220,11 +248,22 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
     // Load input signal (legacy single-signal path only)
     let legacy_signal: Option<SharedSignal> = match &job.input_path {
         Some(input_path) => {
-            let mut file = File::open(input_path)
-                .map_err(|e| anyhow::anyhow!("[{}] Failed to open input {:?}: {}", RenderPhase::InputLoading, input_path, e))?;
+            let mut file = File::open(input_path).map_err(|e| {
+                anyhow::anyhow!(
+                    "[{}] Failed to open input {:?}: {}",
+                    RenderPhase::InputLoading,
+                    input_path,
+                    e
+                )
+            })?;
             let mut contents = String::new();
-            file.read_to_string(&mut contents)
-                .map_err(|e| anyhow::anyhow!("[{}] Failed to read input: {}", RenderPhase::InputLoading, e))?;
+            file.read_to_string(&mut contents).map_err(|e| {
+                anyhow::anyhow!(
+                    "[{}] Failed to read input: {}",
+                    RenderPhase::InputLoading,
+                    e
+                )
+            })?;
 
             let samples: Vec<f32> = serde_json::from_str(&contents)
                 .or_else(|_| {
@@ -240,7 +279,10 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
                     )
                 })?;
 
-            Some(std::rc::Rc::new(InputSignal::new(samples, job.input_sample_rate)))
+            Some(std::rc::Rc::new(InputSignal::new(
+                samples,
+                job.input_sample_rate,
+            )))
         }
         None => None,
     };
@@ -252,14 +294,23 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
         .or_else(|| package.as_ref().map(|pkg| pkg.duration_sec))
         .or_else(|| legacy_signal.as_ref().map(|sig| sig.get_duration()))
         .ok_or_else(|| {
-            anyhow::anyhow!("[{}] No duration available from --duration, package, or input signal", RenderPhase::Initialization)
+            anyhow::anyhow!(
+                "[{}] No duration available from --duration, package, or input signal",
+                RenderPhase::Initialization
+            )
         })?;
     let total_frames = (render_duration * job.fps).ceil() as usize;
     let dt = 1.0 / job.fps;
 
     // Create output directory
-    std::fs::create_dir_all(&job.output_dir)
-        .map_err(|e| anyhow::anyhow!("[{}] Failed to create output directory {:?}: {}", RenderPhase::Initialization, job.output_dir, e))?;
+    std::fs::create_dir_all(&job.output_dir).map_err(|e| {
+        anyhow::anyhow!(
+            "[{}] Failed to create output directory {:?}: {}",
+            RenderPhase::Initialization,
+            job.output_dir,
+            e
+        )
+    })?;
 
     // WGPU Init
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
@@ -278,7 +329,9 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor::default(), None)
         .await
-        .map_err(|e| anyhow::anyhow!("[{}] Failed to create device: {}", RenderPhase::GpuSetup, e))?;
+        .map_err(|e| {
+            anyhow::anyhow!("[{}] Failed to create device: {}", RenderPhase::GpuSetup, e)
+        })?;
 
     let texture_desc = wgpu::TextureDescriptor {
         label: Some("Target Texture"),
@@ -336,11 +389,18 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
             .get_script_error()
             .unwrap_or("Unknown script error")
             .to_string();
-        return Err(anyhow::anyhow!("[{}] {}", RenderPhase::ScriptLoading, error_msg));
+        return Err(anyhow::anyhow!(
+            "[{}] {}",
+            RenderPhase::ScriptLoading,
+            error_msg
+        ));
     }
 
     if !quiet {
-        println!("Rendering {} frames at {}x{} @ {} fps...", total_frames, job.width, job.height, job.fps);
+        println!(
+            "Rendering {} frames at {}x{} @ {} fps...",
+            total_frames, job.width, job.height, job.fps
+        );
         if job.seed != 0 {
             println!("  Seed: {}", job.seed);
         }
@@ -373,7 +433,12 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
             &pkg.custom_signals,
             pkg.musical_time.as_ref(),
         ),
-        None => (&empty_signals, &empty_band_signals, &empty_custom_signals, None),
+        None => (
+            &empty_signals,
+            &empty_band_signals,
+            &empty_custom_signals,
+            None,
+        ),
     };
 
     // Rotation/amplitude signal:
@@ -434,9 +499,13 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
         let (tx, rx) = std::sync::mpsc::channel();
         buffer_slice.map_async(wgpu::MapMode::Read, move |v| tx.send(v).unwrap());
         renderer.device().poll(wgpu::Maintain::Wait);
-        rx.recv()
-            .unwrap()
-            .map_err(|e| anyhow::anyhow!("[{}] Buffer mapping failed: {:?}", RenderPhase::FrameSave, e))?;
+        rx.recv().unwrap().map_err(|e| {
+            anyhow::anyhow!(
+                "[{}] Buffer mapping failed: {:?}",
+                RenderPhase::FrameSave,
+                e
+            )
+        })?;
 
         let data = buffer_slice.get_mapped_range();
 
@@ -457,7 +526,14 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
             job.height,
             image::ColorType::Rgba8,
         )
-        .map_err(|e| anyhow::anyhow!("[{}] Failed to save frame {}: {}", RenderPhase::FrameSave, i, e))?;
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "[{}] Failed to save frame {}: {}",
+                RenderPhase::FrameSave,
+                i,
+                e
+            )
+        })?;
 
         drop(data);
         output_buffer.unmap();
@@ -487,7 +563,8 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
     let render_duration_secs = render_start.elapsed().as_secs_f64();
 
     if !quiet {
-        println!("\r  Completed {} frames in {:.1}s ({:.1} fps average)        ",
+        println!(
+            "\r  Completed {} frames in {:.1}s ({:.1} fps average)        ",
             total_frames,
             render_duration_secs,
             total_frames as f64 / render_duration_secs
@@ -501,7 +578,10 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
         match check_ffmpeg() {
             FfmpegStatus::Available(version) => {
                 if !quiet {
-                    println!("Encoding video with {}...", version.split('\n').next().unwrap_or("FFmpeg"));
+                    println!(
+                        "Encoding video with {}...",
+                        version.split('\n').next().unwrap_or("FFmpeg")
+                    );
                 }
                 match encode_video_with_ffmpeg(&job.output_dir, &video_out, job.fps) {
                     Ok(()) => {
@@ -561,8 +641,9 @@ pub async fn execute_render_job(job: &RenderJobSpec, save_metadata: bool, quiet:
         // Hash the script file when one was given; otherwise the script came
         // from the package, so hash its content directly.
         let script_hash = match &job.script_path {
-            Some(script_path) => RenderMetadata::hash_file(script_path)
-                .unwrap_or_else(|_| "unknown".to_string()),
+            Some(script_path) => {
+                RenderMetadata::hash_file(script_path).unwrap_or_else(|_| "unknown".to_string())
+            }
             None => RenderMetadata::hash_bytes(script_content.as_bytes()),
         };
         // The "input" is whichever source fed the render: the legacy signal
@@ -664,7 +745,10 @@ async fn run_batch(
     }
 
     if !quiet {
-        println!("\nBatch complete: {} succeeded, {} failed", completed, failed);
+        println!(
+            "\nBatch complete: {} succeeded, {} failed",
+            completed, failed
+        );
     }
 
     if failed > 0 && !continue_on_error {

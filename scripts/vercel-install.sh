@@ -8,8 +8,8 @@
 # It includes retry logic to handle the race condition where GitHub Actions
 # may still be publishing packages when Vercel starts building.
 #
-# If the matching SHA isn't found after a timeout, it falls back to the latest
-# dev version (this handles commits that don't trigger the publish workflow).
+# Commits that change a package must resolve the exact matching SHA. Deploying
+# artifacts from another commit is treated as an error.
 
 set -e
 
@@ -85,15 +85,7 @@ wait_for_package() {
         attempt=$((attempt + 1))
     done
 
-    # Fallback: use whatever dev version is available
-    local fallback_version=$(get_latest_dev_version "$package_name")
-    if [ -n "$fallback_version" ]; then
-        echo "    WARNING: SHA $expected_sha not found, falling back to latest dev: $fallback_version" >&2
-        echo "$fallback_version"
-        return 0
-    fi
-
-    echo "    ERROR: No dev version available for $package_name" >&2
+    echo "    ERROR: No $package_name release matched SHA $expected_sha" >&2
     return 1
 }
 

@@ -3,10 +3,23 @@
 import { memo, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { AudioBufferLike, MusicalTimeStructure } from "@octoseq/mir";
 import { computeBeatPosition } from "@octoseq/mir";
-import { GripHorizontal, GripVertical, Rows3, Columns3, FlaskConical, Loader2, BookOpen } from "lucide-react";
+import {
+  GripHorizontal,
+  GripVertical,
+  Rows3,
+  Columns3,
+  FlaskConical,
+  Loader2,
+  BookOpen,
+} from "lucide-react";
 import Editor, { type Monaco } from "@monaco-editor/react";
 import { useHotkeysContext } from "react-hotkeys-hook";
-import { useConfigStore, useDebugSignalStore, type RawAnalysisResult, type DebugSignal } from "@/lib/stores";
+import {
+  useConfigStore,
+  useDebugSignalStore,
+  type RawAnalysisResult,
+  type DebugSignal,
+} from "@/lib/stores";
 import { HOTKEY_SCOPE_APP } from "@/lib/hotkeys";
 import {
   MIXDOWN_STREAM_ID,
@@ -55,7 +68,9 @@ type MonacoEditorLike = {
   getModel?: () => unknown;
   onDidFocusEditorText: (callback: () => void) => MonacoDisposable;
   onDidBlurEditorText: (callback: () => void) => MonacoDisposable;
-  onDidChangeCursorPosition?: (callback: (e: { position: { lineNumber: number; column: number } }) => void) => MonacoDisposable;
+  onDidChangeCursorPosition?: (
+    callback: (e: { position: { lineNumber: number; column: number } }) => void
+  ) => MonacoDisposable;
   hasTextFocus?: () => boolean;
 };
 
@@ -95,7 +110,15 @@ const SCRIPT_DEFAULT_WIDTH_PERCENT = 30;
 // from @/lib/package/normalizeSignal so browser pushes and offline packages
 // normalize identically.
 
-export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTime, audioDuration, searchSignal, className, isPlaying = true, musicalTimeStructure }: VisualiserPanelProps) {
+export const VisualiserPanel = memo(function VisualiserPanel({
+  audio,
+  playbackTime,
+  audioDuration,
+  searchSignal,
+  className,
+  isPlaying = true,
+  musicalTimeStructure,
+}: VisualiserPanelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const visRef = useRef<WasmVisualiser | null>(null);
   const rafRef = useRef<number>(0);
@@ -182,23 +205,26 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
 
     // Calculate after DOM is settled
     const rafId = requestAnimationFrame(calculateAutoFitHeight);
-    window.addEventListener('resize', calculateAutoFitHeight);
+    window.addEventListener("resize", calculateAutoFitHeight);
 
     return () => {
       cancelAnimationFrame(rafId);
-      window.removeEventListener('resize', calculateAutoFitHeight);
+      window.removeEventListener("resize", calculateAutoFitHeight);
     };
   }, []);
 
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isResizingRef.current = true;
-    userHasResizedRef.current = true; // User has manually resized, disable auto-fit
-    startYRef.current = e.clientY;
-    startHeightRef.current = panelHeight;
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-  }, [panelHeight]);
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      isResizingRef.current = true;
+      userHasResizedRef.current = true; // User has manually resized, disable auto-fit
+      startYRef.current = e.clientY;
+      startHeightRef.current = panelHeight;
+      document.body.style.cursor = "ns-resize";
+      document.body.style.userSelect = "none";
+    },
+    [panelHeight]
+  );
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -211,17 +237,17 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
     const handleMouseUp = () => {
       if (isResizingRef.current) {
         isResizingRef.current = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
       }
     };
 
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
 
     return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
     };
   }, []);
 
@@ -259,96 +285,111 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   const { disableScope, enableScope } = useHotkeysContext();
 
   // Handler for Monaco editor initialization
-  const handleEditorBeforeMount = useCallback(
-    (monaco: Monaco) => {
-      // Clean up any previous registrations
-      monacoDisposablesRef.current.forEach((d) => d.dispose());
+  const handleEditorBeforeMount = useCallback((monaco: Monaco) => {
+    // Clean up any previous registrations
+    monacoDisposablesRef.current.forEach((d) => d.dispose());
 
-      // Register Rhai language using the TypeScript API registry.
-      // The registry is self-contained - no need for WASM metadata.
-      monacoDisposablesRef.current = registerRhaiLanguage(monaco, {
-        getAvailableBands: () => availableBandsRef.current,
-        getAvailableStems: () => availableStemsRef.current,
-        getAvailableCustomEvents: () => availableCustomEventsRef.current,
-      });
+    // Register Rhai language using the TypeScript API registry.
+    // The registry is self-contained - no need for WASM metadata.
+    monacoDisposablesRef.current = registerRhaiLanguage(monaco, {
+      getAvailableBands: () => availableBandsRef.current,
+      getAvailableStems: () => availableStemsRef.current,
+      getAvailableCustomEvents: () => availableCustomEventsRef.current,
+    });
+  }, []);
+
+  const handleEditorMount = useCallback(
+    (editor: MonacoEditorLike, monaco: Monaco) => {
+      editorRef.current = editor;
+      monacoRef.current = monaco;
+
+      // Disable global app hotkeys while the script editor has focus so typing
+      // isn't hijacked by single-letter shortcuts.
+      hotkeysScopeDisposablesRef.current.forEach((d) => d.dispose());
+      hotkeysScopeDisposablesRef.current = [
+        editor.onDidFocusEditorText(() => disableScope(HOTKEY_SCOPE_APP)),
+        editor.onDidBlurEditorText(() => enableScope(HOTKEY_SCOPE_APP)),
+      ];
+
+      // Add cursor position listener for Signal Explorer
+      if (editor.onDidChangeCursorPosition) {
+        const cursorDisposable = editor.onDidChangeCursorPosition((e) => {
+          const model = editor.getModel?.() as
+            Parameters<typeof monaco.editor.setModelMarkers>[0] | null;
+          if (!model) return;
+
+          const scriptSignals = useSignalExplorerStore.getState().scriptSignals;
+          const prevCursor = useSignalExplorerStore.getState().currentCursor;
+          const cursor = detectSignalAtCursor(model, e.position, scriptSignals);
+
+          useSignalExplorerStore.getState().setCursor(cursor);
+
+          // Only trigger analysis if cursor moved to a different signal
+          if (cursor.signalName && cursorChangedSignal(prevCursor, cursor) && visRef.current) {
+            requestSignalAnalysis(
+              visRef.current as Parameters<typeof requestSignalAnalysis>[0],
+              cursor.signalName,
+              timeRef.current
+            );
+          }
+        });
+        monacoDisposablesRef.current.push(cursorDisposable);
+      }
+
+      if (editor.hasTextFocus?.()) {
+        disableScope(HOTKEY_SCOPE_APP);
+      }
+    },
+    [disableScope, enableScope]
+  );
+
+  const applyDiagnosticsToEditor = useCallback(
+    (diags: ScriptDiagnostic[], configMapDiags: ConfigMapDiagnostic[] = []) => {
+      const monaco = monacoRef.current;
+      const editor = editorRef.current;
+      if (!monaco || !editor) return;
+      const model = editor.getModel?.();
+      if (!model) return;
+
+      // Runtime diagnostics (errors and warnings from Rust)
+      const runtimeMarkers = diags
+        .filter(
+          (d) =>
+            d.location &&
+            typeof d.location.line === "number" &&
+            typeof d.location.column === "number"
+        )
+        .map((d) => ({
+          severity:
+            d.kind === "warning" ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Error,
+          message: `[${d.phase}] ${d.message}`,
+          startLineNumber: d.location!.line,
+          startColumn: d.location!.column,
+          endLineNumber: d.location!.line,
+          endColumn: d.location!.column + 1,
+        }));
+
+      // Config-map validation warnings
+      const configMapMarkers = configMapDiags.map((d) => ({
+        severity:
+          d.severity === "warning" ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Info,
+        message: d.message,
+        startLineNumber: d.startLineNumber,
+        startColumn: d.startColumn,
+        endLineNumber: d.endLineNumber,
+        endColumn: d.endColumn,
+      }));
+
+      // Merge both sets of markers
+      const allMarkers = [...runtimeMarkers, ...configMapMarkers];
+      monaco.editor.setModelMarkers(
+        model as Parameters<typeof monaco.editor.setModelMarkers>[0],
+        "octoseq-rhai",
+        allMarkers
+      );
     },
     []
   );
-
-  const handleEditorMount = useCallback((editor: MonacoEditorLike, monaco: Monaco) => {
-    editorRef.current = editor;
-    monacoRef.current = monaco;
-
-    // Disable global app hotkeys while the script editor has focus so typing
-    // isn't hijacked by single-letter shortcuts.
-    hotkeysScopeDisposablesRef.current.forEach((d) => d.dispose());
-    hotkeysScopeDisposablesRef.current = [
-      editor.onDidFocusEditorText(() => disableScope(HOTKEY_SCOPE_APP)),
-      editor.onDidBlurEditorText(() => enableScope(HOTKEY_SCOPE_APP)),
-    ];
-
-    // Add cursor position listener for Signal Explorer
-    if (editor.onDidChangeCursorPosition) {
-      const cursorDisposable = editor.onDidChangeCursorPosition((e) => {
-        const model = editor.getModel?.() as Parameters<typeof monaco.editor.setModelMarkers>[0] | null;
-        if (!model) return;
-
-        const scriptSignals = useSignalExplorerStore.getState().scriptSignals;
-        const prevCursor = useSignalExplorerStore.getState().currentCursor;
-        const cursor = detectSignalAtCursor(model, e.position, scriptSignals);
-
-        useSignalExplorerStore.getState().setCursor(cursor);
-
-        // Only trigger analysis if cursor moved to a different signal
-        if (cursor.signalName && cursorChangedSignal(prevCursor, cursor) && visRef.current) {
-          requestSignalAnalysis(
-            visRef.current as Parameters<typeof requestSignalAnalysis>[0],
-            cursor.signalName,
-            timeRef.current
-          );
-        }
-      });
-      monacoDisposablesRef.current.push(cursorDisposable);
-    }
-
-    if (editor.hasTextFocus?.()) {
-      disableScope(HOTKEY_SCOPE_APP);
-    }
-  }, [disableScope, enableScope]);
-
-  const applyDiagnosticsToEditor = useCallback((diags: ScriptDiagnostic[], configMapDiags: ConfigMapDiagnostic[] = []) => {
-    const monaco = monacoRef.current;
-    const editor = editorRef.current;
-    if (!monaco || !editor) return;
-    const model = editor.getModel?.();
-    if (!model) return;
-
-    // Runtime diagnostics (errors and warnings from Rust)
-    const runtimeMarkers = diags
-      .filter((d) => d.location && typeof d.location.line === "number" && typeof d.location.column === "number")
-      .map((d) => ({
-        severity: d.kind === "warning" ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Error,
-        message: `[${d.phase}] ${d.message}`,
-        startLineNumber: d.location!.line,
-        startColumn: d.location!.column,
-        endLineNumber: d.location!.line,
-        endColumn: d.location!.column + 1,
-      }));
-
-    // Config-map validation warnings
-    const configMapMarkers = configMapDiags.map((d) => ({
-      severity: d.severity === "warning" ? monaco.MarkerSeverity.Warning : monaco.MarkerSeverity.Info,
-      message: d.message,
-      startLineNumber: d.startLineNumber,
-      startColumn: d.startColumn,
-      endLineNumber: d.endLineNumber,
-      endColumn: d.endColumn,
-    }));
-
-    // Merge both sets of markers
-    const allMarkers = [...runtimeMarkers, ...configMapMarkers];
-    monaco.editor.setModelMarkers(model as Parameters<typeof monaco.editor.setModelMarkers>[0], "octoseq-rhai", allMarkers);
-  }, []);
 
   // Cleanup Monaco disposables on unmount
   useEffect(() => {
@@ -366,7 +407,7 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   const scriptStartHeightRef = useRef(0);
 
   // Layout mode: 'vertical' (stacked) or 'horizontal' (side-by-side)
-  const [layoutMode, setLayoutMode] = useState<'vertical' | 'horizontal'>('horizontal');
+  const [layoutMode, setLayoutMode] = useState<"vertical" | "horizontal">("horizontal");
 
   // Horizontal layout split (percentage for script width)
   const [scriptWidthPercent, setScriptWidthPercent] = useState(SCRIPT_DEFAULT_WIDTH_PERCENT);
@@ -375,14 +416,17 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
   const horizontalStartWidthRef = useRef(0);
   const horizontalContainerRef = useRef<HTMLDivElement>(null);
 
-  const handleHorizontalResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isHorizontalResizingRef.current = true;
-    horizontalStartXRef.current = e.clientX;
-    horizontalStartWidthRef.current = scriptWidthPercent;
-    document.body.style.cursor = 'ew-resize';
-    document.body.style.userSelect = 'none';
-  }, [scriptWidthPercent]);
+  const handleHorizontalResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      isHorizontalResizingRef.current = true;
+      horizontalStartXRef.current = e.clientX;
+      horizontalStartWidthRef.current = scriptWidthPercent;
+      document.body.style.cursor = "ew-resize";
+      document.body.style.userSelect = "none";
+    },
+    [scriptWidthPercent]
+  );
 
   useEffect(() => {
     const handleHorizontalMouseMove = (e: MouseEvent) => {
@@ -400,52 +444,58 @@ export const VisualiserPanel = memo(function VisualiserPanel({ audio, playbackTi
     const handleHorizontalMouseUp = () => {
       if (isHorizontalResizingRef.current) {
         isHorizontalResizingRef.current = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
       }
     };
 
-    document.addEventListener('mousemove', handleHorizontalMouseMove);
-    document.addEventListener('mouseup', handleHorizontalMouseUp);
+    document.addEventListener("mousemove", handleHorizontalMouseMove);
+    document.addEventListener("mouseup", handleHorizontalMouseUp);
 
     return () => {
-      document.removeEventListener('mousemove', handleHorizontalMouseMove);
-      document.removeEventListener('mouseup', handleHorizontalMouseUp);
+      document.removeEventListener("mousemove", handleHorizontalMouseMove);
+      document.removeEventListener("mouseup", handleHorizontalMouseUp);
     };
   }, []);
 
-  const handleScriptResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    isScriptResizingRef.current = true;
-    scriptStartYRef.current = e.clientY;
-    scriptStartHeightRef.current = scriptHeight;
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-  }, [scriptHeight]);
+  const handleScriptResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      isScriptResizingRef.current = true;
+      scriptStartYRef.current = e.clientY;
+      scriptStartHeightRef.current = scriptHeight;
+      document.body.style.cursor = "ns-resize";
+      document.body.style.userSelect = "none";
+    },
+    [scriptHeight]
+  );
 
   useEffect(() => {
     const handleScriptMouseMove = (e: MouseEvent) => {
       if (!isScriptResizingRef.current) return;
       const delta = e.clientY - scriptStartYRef.current;
       const maxScriptHeight = panelHeight - MIN_HEIGHT;
-      const newHeight = Math.min(maxScriptHeight, Math.max(SCRIPT_MIN_HEIGHT, scriptStartHeightRef.current + delta));
+      const newHeight = Math.min(
+        maxScriptHeight,
+        Math.max(SCRIPT_MIN_HEIGHT, scriptStartHeightRef.current + delta)
+      );
       setScriptHeight(newHeight);
     };
 
     const handleScriptMouseUp = () => {
       if (isScriptResizingRef.current) {
         isScriptResizingRef.current = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
       }
     };
 
-    document.addEventListener('mousemove', handleScriptMouseMove);
-    document.addEventListener('mouseup', handleScriptMouseUp);
+    document.addEventListener("mousemove", handleScriptMouseMove);
+    document.addEventListener("mouseup", handleScriptMouseUp);
 
     return () => {
-      document.removeEventListener('mousemove', handleScriptMouseMove);
-      document.removeEventListener('mouseup', handleScriptMouseUp);
+      document.removeEventListener("mousemove", handleScriptMouseMove);
+      document.removeEventListener("mouseup", handleScriptMouseUp);
     };
   }, [panelHeight]);
 
@@ -837,7 +887,11 @@ fn update(dt, frame) {
     }
 
     // Push musical time signals (B4)
-    if (musicalTimeStructure && musicalTimeStructure.segments.length > 0 && typeof vis.push_signal === "function") {
+    if (
+      musicalTimeStructure &&
+      musicalTimeStructure.segments.length > 0 &&
+      typeof vis.push_signal === "function"
+    ) {
       // Pre-compute beat signals as dense arrays
       // Use 100 samples per second for smooth interpolation
       const sampleRate = 100;
@@ -882,7 +936,15 @@ fn update(dt, frame) {
 
     // Request render when signals change (even when paused)
     requestRender();
-  }, [analysisResults, isReady, audio, audioDuration, searchSignal, musicalTimeStructure, requestRender]);
+  }, [
+    analysisResults,
+    isReady,
+    audio,
+    audioDuration,
+    searchSignal,
+    musicalTimeStructure,
+    requestRender,
+  ]);
 
   // Update Signal Explorer BPM from musical time structure
   useEffect(() => {
@@ -1001,7 +1063,6 @@ fn update(dt, frame) {
     requestRender();
   }, [analysisResults, streamsMap, isReady, audioDuration, requestRender]);
 
-
   // Compute stems from the stream collection (memoized to avoid infinite loops)
   const stems = useMemo(
     () =>
@@ -1118,7 +1179,12 @@ fn update(dt, frame) {
     const duration = audioDuration ?? 0;
 
     // Build list of enabled signals with computed results
-    const signalsToSync: Array<{ id: string; name: string; values: Float32Array; sampleRate: number }> = [];
+    const signalsToSync: Array<{
+      id: string;
+      name: string;
+      values: Float32Array;
+      sampleRate: number;
+    }> = [];
     for (const signal of derivedSignals) {
       if (!signal.enabled) continue;
       const result = getSignalResult(signal.id);
@@ -1222,7 +1288,16 @@ fn update(dt, frame) {
         requestRender();
       }
     }
-  }, [script, isReady, applyDiagnosticsToEditor, analysisResults, streamsMap, requestRender, setCurrentDiagnostics, addToHistory]);
+  }, [
+    script,
+    isReady,
+    applyDiagnosticsToEditor,
+    analysisResults,
+    streamsMap,
+    requestRender,
+    setCurrentDiagnostics,
+    addToHistory,
+  ]);
 
   // Render Loop
   useEffect(() => {
@@ -1275,7 +1350,7 @@ fn update(dt, frame) {
 
       // Use fixed dt based on target FPS for consistent signal sampling
       // This ensures peak-preserving sampling windows are predictable
-      const dt = isCurrentlyPlaying ? (1 / currentTargetFps) : 0;
+      const dt = isCurrentlyPlaying ? 1 / currentTargetFps : 0;
       lastRenderTime = now;
       lastTimeRef.current = now;
 
@@ -1301,9 +1376,10 @@ fn update(dt, frame) {
 
       // Update rolling average (only for completed frames to avoid skewed stats)
       if (frameCompleted) {
-        avgFrameTimeMs = avgFrameTimeMs === 0
-          ? frameTimeMs
-          : avgFrameTimeMs * (1 - EMA_ALPHA) + frameTimeMs * EMA_ALPHA;
+        avgFrameTimeMs =
+          avgFrameTimeMs === 0
+            ? frameTimeMs
+            : avgFrameTimeMs * (1 - EMA_ALPHA) + frameTimeMs * EMA_ALPHA;
       }
 
       // Track dropped frames
@@ -1314,7 +1390,7 @@ fn update(dt, frame) {
         if (now - lastDroppedFrameWarning > 5000) {
           console.warn(
             `Dropped ${droppedFrameCount} frames in the last 5 seconds due to script complexity. ` +
-            `Consider simplifying your script.`
+              `Consider simplifying your script.`
           );
           droppedFrameCount = 0;
           lastDroppedFrameWarning = now;
@@ -1346,7 +1422,7 @@ fn update(dt, frame) {
             lineCount: vals[3] || 0,
             frameTimeMs: avgFrameTimeMs,
             budgetUsedPercent: (avgFrameTimeMs / FRAME_BUDGET_MS) * 100,
-            droppedFrames: totalDroppedFrames
+            droppedFrames: totalDroppedFrames,
           });
         }
       }
@@ -1367,7 +1443,7 @@ fn update(dt, frame) {
     if (!canvasRef.current || !visRef.current) return;
     const vis = visRef.current;
 
-    const observer = new ResizeObserver(entries => {
+    const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const width = entry.contentRect.width;
         const height = entry.contentRect.height;
@@ -1389,8 +1465,13 @@ fn update(dt, frame) {
   }, [isReady]);
 
   const [debugValues, setDebugValues] = useState<{
-    time: number, entityCount: number, meshCount: number, lineCount: number,
-    frameTimeMs: number, budgetUsedPercent: number, droppedFrames: number
+    time: number;
+    entityCount: number;
+    meshCount: number;
+    lineCount: number;
+    frameTimeMs: number;
+    budgetUsedPercent: number;
+    droppedFrames: number;
   } | null>(null);
 
   // Debug signal analysis
@@ -1457,7 +1538,16 @@ fn update(dt, frame) {
     } finally {
       setAnalysisRunning(false);
     }
-  }, [isAnalysisRunning, script, audioDuration, setDebugSignals, setAnalysisRunning, setAnalysisError, setLastRunDuration, setLastStepCount]);
+  }, [
+    isAnalysisRunning,
+    script,
+    audioDuration,
+    setDebugSignals,
+    setAnalysisRunning,
+    setAnalysisError,
+    setLastRunDuration,
+    setLastStepCount,
+  ]);
 
   // const availableSources = useMemo(() => {
   //   const keys = mirResults ? Object.keys(mirResults) : [];
@@ -1469,23 +1559,28 @@ fn update(dt, frame) {
   // }, [mirResults, searchSignal]);
 
   return (
-    <div className={`mt-1.5 rounded-md border border-zinc-200 p-1 dark:border-zinc-800 ${className}`}>
+    <div
+      className={`mt-1.5 rounded-md border border-zinc-200 p-1 dark:border-zinc-800 ${className}`}
+    >
       {/* Compact inline controls */}
       <div className="flex flex-wrap items-center gap-2 mb-1 text-xs text-zinc-600 dark:text-zinc-300">
-
-        {(
+        {
           <button
-            onClick={() => setLayoutMode(m => m === 'vertical' ? 'horizontal' : 'vertical')}
+            onClick={() => setLayoutMode((m) => (m === "vertical" ? "horizontal" : "vertical"))}
             className="p-0.5 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
-            title={layoutMode === 'vertical' ? 'Switch to side-by-side layout' : 'Switch to stacked layout'}
+            title={
+              layoutMode === "vertical"
+                ? "Switch to side-by-side layout"
+                : "Switch to stacked layout"
+            }
           >
-            {layoutMode === 'vertical' ? (
+            {layoutMode === "vertical" ? (
               <Columns3 className="w-4 h-4" />
             ) : (
               <Rows3 className="w-4 h-4" />
             )}
           </button>
-        )}
+        }
         {/* Extract debug signals button */}
         <button
           onClick={handleRunAnalysis}
@@ -1540,7 +1635,9 @@ fn update(dt, frame) {
           </div>
         )}
         {analysisError && (
-          <span className="text-red-500 text-xs" title={analysisError}>Analysis error</span>
+          <span className="text-red-500 text-xs" title={analysisError}>
+            Analysis error
+          </span>
         )}
         <ScriptErrorHistory />
       </div>
@@ -1548,11 +1645,11 @@ fn update(dt, frame) {
       {/* Main content area - uses flex for horizontal, block for vertical */}
       <div
         ref={horizontalContainerRef}
-        className={layoutMode === 'horizontal' ? 'flex gap-0' : 'block'}
-        style={{ height: layoutMode === 'horizontal' ? panelHeight : undefined }}
+        className={layoutMode === "horizontal" ? "flex gap-0" : "block"}
+        style={{ height: layoutMode === "horizontal" ? panelHeight : undefined }}
       >
         {/* Script Editor - horizontal mode (side panel) */}
-        {layoutMode === 'horizontal' && (
+        {layoutMode === "horizontal" && (
           <>
             <div
               className="shrink-0 rounded-l-md border border-r-0 border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col"
@@ -1585,7 +1682,9 @@ fn update(dt, frame) {
                   <div className="font-mono whitespace-pre-wrap">
                     {scriptDiagnostics.map((d, i) => (
                       <div key={i}>
-                        {(d.location && typeof d.location.line === "number" && typeof d.location.column === "number")
+                        {d.location &&
+                        typeof d.location.line === "number" &&
+                        typeof d.location.column === "number"
                           ? `L${d.location.line}:C${d.location.column} `
                           : ""}
                         [{d.phase}] {d.message}
@@ -1612,7 +1711,7 @@ fn update(dt, frame) {
         )}
 
         {/* Script Editor - vertical mode (stacked above) */}
-        {layoutMode === 'vertical' && (
+        {layoutMode === "vertical" && (
           <div className="mb-1 rounded-md border border-zinc-200 dark:border-zinc-800 overflow-hidden">
             <div style={{ height: scriptHeight }} className="flex flex-col">
               <div className="flex-1 min-h-0">
@@ -1642,7 +1741,9 @@ fn update(dt, frame) {
                   <div className="font-mono whitespace-pre-wrap">
                     {scriptDiagnostics.map((d, i) => (
                       <div key={i}>
-                        {(d.location && typeof d.location.line === "number" && typeof d.location.column === "number")
+                        {d.location &&
+                        typeof d.location.line === "number" &&
+                        typeof d.location.column === "number"
                           ? `L${d.location.line}:C${d.location.column} `
                           : ""}
                         [{d.phase}] {d.message}
@@ -1663,7 +1764,7 @@ fn update(dt, frame) {
         )}
 
         {/* Signal Explorer Panel - vertical mode (between script and canvas) */}
-        {layoutMode === 'vertical' && (
+        {layoutMode === "vertical" && (
           <div className="mb-1 rounded-md border border-zinc-200 dark:border-zinc-800 overflow-hidden">
             <SignalExplorerPanel className="rounded-none border-0" />
           </div>
@@ -1672,11 +1773,10 @@ fn update(dt, frame) {
         {/* Canvas Container - always in the same position in the React tree */}
         <div
           ref={containerRef}
-          className={`relative bg-black overflow-hidden border border-zinc-700 ${layoutMode === 'horizontal'
-            ? 'flex-1 rounded-r-md border-l-0'
-            : 'rounded-md'
-            }`}
-          style={layoutMode === 'horizontal' ? undefined : { height: panelHeight }}
+          className={`relative bg-black overflow-hidden border border-zinc-700 ${
+            layoutMode === "horizontal" ? "flex-1 rounded-r-md border-l-0" : "rounded-md"
+          }`}
+          style={layoutMode === "horizontal" ? undefined : { height: panelHeight }}
         >
           <canvas ref={canvasRef} className="absolute inset-0 h-full w-full object-contain" />
 
@@ -1688,12 +1788,17 @@ fn update(dt, frame) {
               <div>Meshes: {debugValues.meshCount.toFixed(0)}</div>
               <div>Lines: {debugValues.lineCount.toFixed(0)}</div>
               <div className="mt-1 pt-1 border-t border-zinc-600">
-                <div className={
-                  debugValues.budgetUsedPercent > 100 ? 'text-red-400' :
-                    debugValues.budgetUsedPercent > 60 ? 'text-yellow-400' :
-                      'text-emerald-400'
-                }>
-                  Frame: {debugValues.frameTimeMs.toFixed(1)}ms ({debugValues.budgetUsedPercent.toFixed(0)}%)
+                <div
+                  className={
+                    debugValues.budgetUsedPercent > 100
+                      ? "text-red-400"
+                      : debugValues.budgetUsedPercent > 60
+                        ? "text-yellow-400"
+                        : "text-emerald-400"
+                  }
+                >
+                  Frame: {debugValues.frameTimeMs.toFixed(1)}ms (
+                  {debugValues.budgetUsedPercent.toFixed(0)}%)
                 </div>
                 {debugValues.droppedFrames > 0 && (
                   <div className="text-red-400">Dropped: {debugValues.droppedFrames}</div>

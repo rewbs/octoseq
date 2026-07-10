@@ -2,14 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
-import {
-  Plus,
-  Trash2,
-  Music,
-  Spline,
-  Grid2X2,
-  Magnet,
-} from "lucide-react";
+import { Plus, Trash2, Music, Spline, Grid2X2, Magnet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useComposedSignalStore } from "@/lib/stores/composedSignalStore";
@@ -28,15 +21,11 @@ import { cn } from "@/lib/utils";
  */
 export function ComposedSignalsPanel() {
   const selectedNodeId = useInterpretationTreeStore((s) => s.selectedNodeId);
-  const selectedNodeType = useMemo(
-    () => getInspectorNodeType(selectedNodeId),
-    [selectedNodeId]
-  );
+  const selectedNodeType = useMemo(() => getInspectorNodeType(selectedNodeId), [selectedNodeId]);
 
   // Only show when composed signals section or signal is selected
   const isVisible =
-    selectedNodeType === "composed-signals-section" ||
-    selectedNodeType === "composed-signal";
+    selectedNodeType === "composed-signals-section" || selectedNodeType === "composed-signal";
 
   const bpm = useTimingStore((s) => s.selectedHypothesis?.bpm ?? null);
 
@@ -112,9 +101,7 @@ export function ComposedSignalsPanel() {
   }, [selectedSignalId]); // Re-run when signal selection changes, as the container may now be mounted
 
   const signals = structure?.signals ?? [];
-  const selectedSignal = selectedSignalId
-    ? signals.find((s) => s.id === selectedSignalId)
-    : null;
+  const selectedSignal = selectedSignalId ? signals.find((s) => s.id === selectedSignalId) : null;
   const durationBeats = getDurationBeats();
 
   const handleAddSignal = useCallback(() => {
@@ -150,12 +137,10 @@ export function ComposedSignalsPanel() {
         </div>
         <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
           <Music className="h-12 w-12 text-zinc-400 dark:text-zinc-600 mb-4" />
-          <p className="font-medium text-zinc-900 dark:text-zinc-100 mb-2">
-            Beat grid required
-          </p>
+          <p className="font-medium text-zinc-900 dark:text-zinc-100 mb-2">Beat grid required</p>
           <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-xs">
-            Select a tempo hypothesis to enable composed signal editing.
-            Composed signals are defined in beats, not seconds.
+            Select a tempo hypothesis to enable composed signal editing. Composed signals are
+            defined in beats, not seconds.
           </p>
         </div>
       </div>
@@ -212,9 +197,7 @@ export function ComposedSignalsPanel() {
             {signals.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 p-4 text-center">
                 <Spline className="h-8 w-8 text-zinc-400 dark:text-zinc-600" />
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  No signals yet
-                </p>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">No signals yet</p>
                 <Button size="sm" onClick={handleAddSignal}>
                   <Plus className="mr-1 h-4 w-4" />
                   Add
@@ -236,9 +219,7 @@ export function ComposedSignalsPanel() {
                     <Spline
                       className={cn(
                         "h-4 w-4 shrink-0",
-                        signal.enabled
-                          ? "text-blue-500"
-                          : "text-zinc-400 dark:text-zinc-600"
+                        signal.enabled ? "text-blue-500" : "text-zinc-400 dark:text-zinc-600"
                       )}
                     />
                     <span className="truncate">{signal.name}</span>

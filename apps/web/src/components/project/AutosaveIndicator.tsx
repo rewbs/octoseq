@@ -32,9 +32,7 @@ export function AutosaveIndicator() {
       case "saving":
         return "Saving...";
       case "saved":
-        return lastSavedAt
-          ? `Saved ${formatAutosaveTimestamp(lastSavedAt)}`
-          : "Saved";
+        return lastSavedAt ? `Saved ${formatAutosaveTimestamp(lastSavedAt)}` : "Saved";
       case "error":
         return error ? `Save failed: ${error}` : "Save failed";
       default:

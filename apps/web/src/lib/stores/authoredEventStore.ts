@@ -80,14 +80,8 @@ interface AuthoredEventActions {
   toggleStreamVisibility: (streamId: string) => void;
 
   // Event management
-  addEvent: (
-    streamId: string,
-    event: Omit<AuthoredEvent, "id" | "modifiedAt">
-  ) => string | null;
-  addEvents: (
-    streamId: string,
-    events: Omit<AuthoredEvent, "id" | "modifiedAt">[]
-  ) => string[];
+  addEvent: (streamId: string, event: Omit<AuthoredEvent, "id" | "modifiedAt">) => string | null;
+  addEvents: (streamId: string, events: Omit<AuthoredEvent, "id" | "modifiedAt">[]) => string[];
   removeEvent: (streamId: string, eventId: string) => void;
   removeEvents: (streamId: string, eventIds: string[]) => void;
   updateEvent: (
@@ -230,10 +224,7 @@ function applyInverseOperation(
       let currentState = state;
       // Apply in reverse order
       for (let i = operation.operations.length - 1; i >= 0; i--) {
-        const partialState = applyInverseOperation(
-          currentState,
-          operation.operations[i]!
-        );
+        const partialState = applyInverseOperation(currentState, operation.operations[i]!);
         currentState = { ...currentState, ...partialState };
       }
       return { streams: currentState.streams };
@@ -366,10 +357,9 @@ export const useAuthoredEventStore = create<AuthoredEventStore>()(
           (state) => ({
             streams: new Map(state.streams).set(id, stream),
             streamColorIndex: state.streamColorIndex + 1,
-            undoStack: [
-              ...state.undoStack,
-              { operation, timestamp: now },
-            ].slice(-state.maxUndoSize),
+            undoStack: [...state.undoStack, { operation, timestamp: now }].slice(
+              -state.maxUndoSize
+            ),
             redoStack: [],
           }),
           false,
@@ -395,9 +385,7 @@ export const useAuthoredEventStore = create<AuthoredEventStore>()(
             return {
               streams: newStreams,
               inspectedStreamId:
-                state.inspectedStreamId === streamId
-                  ? null
-                  : state.inspectedStreamId,
+                state.inspectedStreamId === streamId ? null : state.inspectedStreamId,
               selectedEventIds: new Set(),
               undoStack: [
                 ...state.undoStack,
@@ -514,10 +502,9 @@ export const useAuthoredEventStore = create<AuthoredEventStore>()(
             });
             return {
               streams: newStreams,
-              undoStack: [
-                ...state.undoStack,
-                { operation, timestamp: now },
-              ].slice(-state.maxUndoSize),
+              undoStack: [...state.undoStack, { operation, timestamp: now }].slice(
+                -state.maxUndoSize
+              ),
               redoStack: [],
             };
           },
@@ -562,10 +549,7 @@ export const useAuthoredEventStore = create<AuthoredEventStore>()(
             const existingStream = state.streams.get(streamId);
             if (!existingStream) return state;
 
-            const newEvents = sortEventsByTime([
-              ...existingStream.events,
-              ...events,
-            ]);
+            const newEvents = sortEventsByTime([...existingStream.events, ...events]);
             const newStreams = new Map(state.streams);
             newStreams.set(streamId, {
               ...existingStream,
@@ -574,10 +558,9 @@ export const useAuthoredEventStore = create<AuthoredEventStore>()(
             });
             return {
               streams: newStreams,
-              undoStack: [
-                ...state.undoStack,
-                { operation: batchOperation, timestamp: now },
-              ].slice(-state.maxUndoSize),
+              undoStack: [...state.undoStack, { operation: batchOperation, timestamp: now }].slice(
+                -state.maxUndoSize
+              ),
               redoStack: [],
             };
           },
@@ -608,9 +591,7 @@ export const useAuthoredEventStore = create<AuthoredEventStore>()(
             const existingStream = state.streams.get(streamId);
             if (!existingStream) return state;
 
-            const newEvents = existingStream.events.filter(
-              (e) => e.id !== eventId
-            );
+            const newEvents = existingStream.events.filter((e) => e.id !== eventId);
             const newStreams = new Map(state.streams);
             newStreams.set(streamId, {
               ...existingStream,
@@ -669,9 +650,7 @@ export const useAuthoredEventStore = create<AuthoredEventStore>()(
             if (!existingStream) return state;
 
             const eventIdSet = new Set(eventIds);
-            const newEvents = existingStream.events.filter(
-              (e) => !eventIdSet.has(e.id)
-            );
+            const newEvents = existingStream.events.filter((e) => !eventIdSet.has(e.id));
             const newStreams = new Map(state.streams);
             newStreams.set(streamId, {
               ...existingStream,
@@ -688,10 +667,9 @@ export const useAuthoredEventStore = create<AuthoredEventStore>()(
             return {
               streams: newStreams,
               selectedEventIds: newSelectedIds,
-              undoStack: [
-                ...state.undoStack,
-                { operation: batchOperation, timestamp: now },
-              ].slice(-state.maxUndoSize),
+              undoStack: [...state.undoStack, { operation: batchOperation, timestamp: now }].slice(
+                -state.maxUndoSize
+              ),
               redoStack: [],
             };
           },
@@ -742,10 +720,9 @@ export const useAuthoredEventStore = create<AuthoredEventStore>()(
             });
             return {
               streams: newStreams,
-              undoStack: [
-                ...state.undoStack,
-                { operation, timestamp: now },
-              ].slice(-state.maxUndoSize),
+              undoStack: [...state.undoStack, { operation, timestamp: now }].slice(
+                -state.maxUndoSize
+              ),
               redoStack: [],
             };
           },
@@ -816,7 +793,7 @@ export const useAuthoredEventStore = create<AuthoredEventStore>()(
       // ----------------------------
 
       undo: () => {
-        const { undoStack, redoStack } = get();
+        const { undoStack } = get();
         if (undoStack.length === 0) return;
 
         const entry = undoStack[undoStack.length - 1]!;
@@ -863,11 +840,9 @@ export const useAuthoredEventStore = create<AuthoredEventStore>()(
 
       getAllStreams: () => Array.from(get().streams.values()),
 
-      getVisibleStreams: () =>
-        Array.from(get().streams.values()).filter((s) => s.isVisible),
+      getVisibleStreams: () => Array.from(get().streams.values()).filter((s) => s.isVisible),
 
-      getStreamByName: (name) =>
-        Array.from(get().streams.values()).find((s) => s.name === name),
+      getStreamByName: (name) => Array.from(get().streams.values()).find((s) => s.name === name),
 
       getTotalEventCount: () => {
         let count = 0;

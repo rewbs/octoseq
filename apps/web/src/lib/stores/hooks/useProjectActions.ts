@@ -193,9 +193,9 @@ export function useProjectActions() {
     try {
       // Hydrate musical time
       if (project.interpretation.musicalTime) {
-        useTimingStore.getState().importFromJSON(
-          JSON.stringify(project.interpretation.musicalTime)
-        );
+        useTimingStore
+          .getState()
+          .importFromJSON(JSON.stringify(project.interpretation.musicalTime));
       }
 
       // Hydrate authored events
@@ -486,12 +486,7 @@ export function useProjectActions() {
   // Autosave Integration
   // ----------------------------
 
-  const {
-    hasRecovery,
-    acceptRecovery,
-    dismissRecovery,
-    formatTimestamp,
-  } = useAutosave({
+  const { acceptRecovery, dismissRecovery, formatTimestamp } = useAutosave({
     onRecoveryAvailable: (record) => {
       setPendingRecovery(record);
     },

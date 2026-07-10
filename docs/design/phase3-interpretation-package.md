@@ -23,16 +23,28 @@ exports and the CLI ingests; the same script sees the same inputs in both.
 ```ts
 interface InterpretationPackageV1 {
   formatVersion: 1;
-  createdAt: string;            // informational only
+  createdAt: string; // informational only
   projectName?: string;
-  durationSec: number;          // default render duration
-  script: string | null;        // active Rhai script
+  durationSec: number; // default render duration
+  script: string | null; // active Rhai script
 
   // Signal payloads — names/features EXACTLY as the browser pushes them,
   // so scripts behave identically. `values` at explicit `rate` (Hz).
   signals: Array<{ name: string; rate: number; values: number[] }>;
-  bandSignals: Array<{ bandId: string; label: string; feature: string; rate: number; values: number[] }>;
-  stemSignals: Array<{ stemId: string; label: string; feature: string; rate: number; values: number[] }>;
+  bandSignals: Array<{
+    bandId: string;
+    label: string;
+    feature: string;
+    rate: number;
+    values: number[];
+  }>;
+  stemSignals: Array<{
+    stemId: string;
+    label: string;
+    feature: string;
+    rate: number;
+    values: number[];
+  }>;
   customSignals: Array<{ id: string; name: string; rate: number; values: number[] }>;
   composedSignals: Array<{ name: string; rate: number; values: number[] }>;
 
@@ -41,14 +53,17 @@ interface InterpretationPackageV1 {
   authoredEventStreams: Array<{ name: string; events: PackageEvent[] }>;
   bandEvents: Array<{ bandId: string; events: Array<{ time: number; weight: number }> }>;
 
-  musicalTime: MusicalTimeStructure | null;     // as set_musical_time expects
+  musicalTime: MusicalTimeStructure | null; // as set_musical_time expects
   frequencyBands: FrequencyBandStructure | null; // as set_frequency_bands expects
-  availableStems: Array<[string, string]>;       // [id, label] pairs
+  availableStems: Array<[string, string]>; // [id, label] pairs
 }
 
 type PackageEvent = {
-  time: number; weight: number;
-  beat_position?: number | null; beat_phase?: number | null; cluster_id?: number | null;
+  time: number;
+  weight: number;
+  beat_position?: number | null;
+  beat_phase?: number | null;
+  cluster_id?: number | null;
 };
 ```
 

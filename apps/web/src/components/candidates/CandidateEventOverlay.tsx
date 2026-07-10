@@ -30,10 +30,7 @@ export function CandidateEventOverlay({
   height = 60,
 }: CandidateEventOverlayProps) {
   // Filter to visible streams only
-  const visibleStreams = useMemo(
-    () => streams.filter((s) => s.isVisible),
-    [streams]
-  );
+  const visibleStreams = useMemo(() => streams.filter((s) => s.isVisible), [streams]);
 
   if (visibleStreams.length === 0) {
     return null;

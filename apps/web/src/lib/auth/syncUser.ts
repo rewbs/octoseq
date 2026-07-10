@@ -1,5 +1,5 @@
-import { currentUser } from '@clerk/nextjs/server';
-import { prisma, type User } from '@/lib/db';
+import { currentUser } from "@clerk/nextjs/server";
+import { prisma, type User } from "@/lib/db";
 
 /**
  * Syncs the current Clerk user to the database.
@@ -17,7 +17,7 @@ export async function syncCurrentUser(): Promise<User | null> {
   )?.emailAddress;
 
   if (!primaryEmail) {
-    console.error('No primary email for user:', clerkUser.id);
+    console.error("No primary email for user:", clerkUser.id);
     return null;
   }
 

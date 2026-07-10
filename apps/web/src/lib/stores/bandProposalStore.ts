@@ -7,26 +7,26 @@ import type { BandProposal, BandProposalConfig } from "@octoseq/mir";
 // ----------------------------
 
 interface BandProposalState {
-    /**
-     * Current set of proposals (ephemeral, never persisted).
-     * Proposals are cleared on audio change or explicit user action.
-     */
-    proposals: BandProposal[];
+  /**
+   * Current set of proposals (ephemeral, never persisted).
+   * Proposals are cleared on audio change or explicit user action.
+   */
+  proposals: BandProposal[];
 
-    /** Whether proposals are currently being computed. */
-    isComputing: boolean;
+  /** Whether proposals are currently being computed. */
+  isComputing: boolean;
 
-    /** Last computation error, if any. */
-    error: string | null;
+  /** Last computation error, if any. */
+  error: string | null;
 
-    /** Config used for last computation. */
-    lastConfig: BandProposalConfig | null;
+  /** Config used for last computation. */
+  lastConfig: BandProposalConfig | null;
 
-    /** ID of proposal currently being inspected. */
-    inspectedProposalId: string | null;
+  /** ID of proposal currently being inspected. */
+  inspectedProposalId: string | null;
 
-    /** ID of proposal currently being auditioned. */
-    auditioningProposalId: string | null;
+  /** ID of proposal currently being auditioned. */
+  auditioningProposalId: string | null;
 }
 
 // ----------------------------
@@ -34,43 +34,43 @@ interface BandProposalState {
 // ----------------------------
 
 interface BandProposalActions {
-    /** Set the proposals (called after computation). */
-    setProposals: (proposals: BandProposal[]) => void;
+  /** Set the proposals (called after computation). */
+  setProposals: (proposals: BandProposal[]) => void;
 
-    /** Clear all proposals. */
-    clearProposals: () => void;
+  /** Clear all proposals. */
+  clearProposals: () => void;
 
-    /** Set computing state. */
-    setComputing: (computing: boolean) => void;
+  /** Set computing state. */
+  setComputing: (computing: boolean) => void;
 
-    /** Set error state. */
-    setError: (error: string | null) => void;
+  /** Set error state. */
+  setError: (error: string | null) => void;
 
-    /** Set the last config used. */
-    setLastConfig: (config: BandProposalConfig | null) => void;
+  /** Set the last config used. */
+  setLastConfig: (config: BandProposalConfig | null) => void;
 
-    /** Set the inspected proposal ID. */
-    inspectProposal: (id: string | null) => void;
+  /** Set the inspected proposal ID. */
+  inspectProposal: (id: string | null) => void;
 
-    /** Start auditioning a proposal. */
-    startAudition: (id: string) => void;
+  /** Start auditioning a proposal. */
+  startAudition: (id: string) => void;
 
-    /** Stop auditioning. */
-    stopAudition: () => void;
+  /** Stop auditioning. */
+  stopAudition: () => void;
 
-    /**
-     * Dismiss a proposal (remove it from the list).
-     * This is different from promotion - dismissed proposals are just removed.
-     */
-    dismissProposal: (id: string) => void;
+  /**
+   * Dismiss a proposal (remove it from the list).
+   * This is different from promotion - dismissed proposals are just removed.
+   */
+  dismissProposal: (id: string) => void;
 
-    /**
-     * Get a proposal by ID.
-     */
-    getProposalById: (id: string) => BandProposal | null;
+  /**
+   * Get a proposal by ID.
+   */
+  getProposalById: (id: string) => BandProposal | null;
 
-    /** Full reset (called on audio change). */
-    reset: () => void;
+  /** Full reset (called on audio change). */
+  reset: () => void;
 }
 
 export type BandProposalStore = BandProposalState & BandProposalActions;
@@ -80,12 +80,12 @@ export type BandProposalStore = BandProposalState & BandProposalActions;
 // ----------------------------
 
 const initialState: BandProposalState = {
-    proposals: [],
-    isComputing: false,
-    error: null,
-    lastConfig: null,
-    inspectedProposalId: null,
-    auditioningProposalId: null,
+  proposals: [],
+  isComputing: false,
+  error: null,
+  lastConfig: null,
+  inspectedProposalId: null,
+  auditioningProposalId: null,
 };
 
 // ----------------------------
@@ -93,83 +93,83 @@ const initialState: BandProposalState = {
 // ----------------------------
 
 export const useBandProposalStore = create<BandProposalStore>()(
-    devtools(
-        (set, get) => ({
-            ...initialState,
+  devtools(
+    (set, get) => ({
+      ...initialState,
 
-            setProposals: (proposals) => {
-                set(
-                    {
-                        proposals,
-                        error: null,
-                        inspectedProposalId: null,
-                        auditioningProposalId: null,
-                    },
-                    false,
-                    "setProposals"
-                );
-            },
+      setProposals: (proposals) => {
+        set(
+          {
+            proposals,
+            error: null,
+            inspectedProposalId: null,
+            auditioningProposalId: null,
+          },
+          false,
+          "setProposals"
+        );
+      },
 
-            clearProposals: () => {
-                set(
-                    {
-                        proposals: [],
-                        error: null,
-                        inspectedProposalId: null,
-                        auditioningProposalId: null,
-                    },
-                    false,
-                    "clearProposals"
-                );
-            },
+      clearProposals: () => {
+        set(
+          {
+            proposals: [],
+            error: null,
+            inspectedProposalId: null,
+            auditioningProposalId: null,
+          },
+          false,
+          "clearProposals"
+        );
+      },
 
-            setComputing: (computing) => {
-                set({ isComputing: computing }, false, "setComputing");
-            },
+      setComputing: (computing) => {
+        set({ isComputing: computing }, false, "setComputing");
+      },
 
-            setError: (error) => {
-                set({ error, isComputing: false }, false, "setError");
-            },
+      setError: (error) => {
+        set({ error, isComputing: false }, false, "setError");
+      },
 
-            setLastConfig: (config) => {
-                set({ lastConfig: config }, false, "setLastConfig");
-            },
+      setLastConfig: (config) => {
+        set({ lastConfig: config }, false, "setLastConfig");
+      },
 
-            inspectProposal: (id) => {
-                set({ inspectedProposalId: id }, false, "inspectProposal");
-            },
+      inspectProposal: (id) => {
+        set({ inspectedProposalId: id }, false, "inspectProposal");
+      },
 
-            startAudition: (id) => {
-                set({ auditioningProposalId: id }, false, "startAudition");
-            },
+      startAudition: (id) => {
+        set({ auditioningProposalId: id }, false, "startAudition");
+      },
 
-            stopAudition: () => {
-                set({ auditioningProposalId: null }, false, "stopAudition");
-            },
+      stopAudition: () => {
+        set({ auditioningProposalId: null }, false, "stopAudition");
+      },
 
-            dismissProposal: (id) => {
-                const { proposals, inspectedProposalId, auditioningProposalId } = get();
+      dismissProposal: (id) => {
+        const { proposals, inspectedProposalId, auditioningProposalId } = get();
 
-                set(
-                    {
-                        proposals: proposals.filter((p) => p.id !== id),
-                        inspectedProposalId: inspectedProposalId === id ? null : inspectedProposalId,
-                        auditioningProposalId: auditioningProposalId === id ? null : auditioningProposalId,
-                    },
-                    false,
-                    "dismissProposal"
-                );
-            },
+        set(
+          {
+            proposals: proposals.filter((p) => p.id !== id),
+            inspectedProposalId: inspectedProposalId === id ? null : inspectedProposalId,
+            auditioningProposalId: auditioningProposalId === id ? null : auditioningProposalId,
+          },
+          false,
+          "dismissProposal"
+        );
+      },
 
-            getProposalById: (id) => {
-                const { proposals } = get();
-                return proposals.find((p) => p.id === id) ?? null;
-            },
+      getProposalById: (id) => {
+        const { proposals } = get();
+        return proposals.find((p) => p.id === id) ?? null;
+      },
 
-            reset: () => {
-                set(initialState, false, "reset");
-            },
-        }),
-        { name: "band-proposal-store" }
-    )
+      reset: () => {
+        set(initialState, false, "reset");
+      },
+    }),
+    { name: "band-proposal-store" }
+  )
 );

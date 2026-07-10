@@ -93,12 +93,30 @@ impl QuadVertex {
 }
 
 const QUAD_VERTICES: &[QuadVertex] = &[
-    QuadVertex { position: [-1.0, -1.0], uv: [0.0, 1.0] },
-    QuadVertex { position: [ 1.0, -1.0], uv: [1.0, 1.0] },
-    QuadVertex { position: [ 1.0,  1.0], uv: [1.0, 0.0] },
-    QuadVertex { position: [-1.0, -1.0], uv: [0.0, 1.0] },
-    QuadVertex { position: [ 1.0,  1.0], uv: [1.0, 0.0] },
-    QuadVertex { position: [-1.0,  1.0], uv: [0.0, 0.0] },
+    QuadVertex {
+        position: [-1.0, -1.0],
+        uv: [0.0, 1.0],
+    },
+    QuadVertex {
+        position: [1.0, -1.0],
+        uv: [1.0, 1.0],
+    },
+    QuadVertex {
+        position: [1.0, 1.0],
+        uv: [1.0, 0.0],
+    },
+    QuadVertex {
+        position: [-1.0, -1.0],
+        uv: [0.0, 1.0],
+    },
+    QuadVertex {
+        position: [1.0, 1.0],
+        uv: [1.0, 0.0],
+    },
+    QuadVertex {
+        position: [-1.0, 1.0],
+        uv: [0.0, 0.0],
+    },
 ];
 
 /// Multi-pass bloom processor
@@ -116,7 +134,6 @@ pub struct BloomProcessor {
 
     // Bind group layouts
     single_texture_layout: wgpu::BindGroupLayout,
-    uniform_layout: wgpu::BindGroupLayout,
     composite_layout: wgpu::BindGroupLayout,
 
     // Uniform buffers
@@ -215,46 +232,45 @@ impl BloomProcessor {
         });
 
         // Composite needs two textures
-        let composite_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("Bloom Composite Layout"),
-                entries: &[
-                    // Scene texture
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
+        let composite_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Bloom Composite Layout"),
+            entries: &[
+                // Scene texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // Bloom texture
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    // Bloom texture
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ],
-            });
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
 
         // Create pipelines
         let threshold_pipeline = Self::create_threshold_pipeline(
@@ -327,7 +343,6 @@ impl BloomProcessor {
             blur_pipeline,
             composite_pipeline,
             single_texture_layout,
-            uniform_layout,
             composite_layout,
             threshold_uniform_buffer,
             blur_uniform_buffer,
@@ -379,7 +394,9 @@ impl BloomProcessor {
     ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Bloom Threshold Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader_post_bloom_threshold.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("shader_post_bloom_threshold.wgsl").into(),
+            ),
         });
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -473,7 +490,9 @@ impl BloomProcessor {
     ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Bloom Composite Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader_post_bloom_composite.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("shader_post_bloom_composite.wgsl").into(),
+            ),
         });
 
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -572,16 +591,37 @@ impl BloomProcessor {
         self.render_threshold(device, encoder, queue, input_view, params.threshold);
 
         // 2. Horizontal blur: bloom_a -> bloom_b
-        self.render_blur(device, encoder, queue, &self.bloom_view_a, &self.bloom_view_b,
-                         [1.0, 0.0], params.radius);
+        self.render_blur(
+            device,
+            encoder,
+            queue,
+            &self.bloom_view_a,
+            &self.bloom_view_b,
+            [1.0, 0.0],
+            params.radius,
+        );
 
         // 3. Vertical blur: bloom_b -> bloom_a
-        self.render_blur(device, encoder, queue, &self.bloom_view_b, &self.bloom_view_a,
-                         [0.0, 1.0], params.radius);
+        self.render_blur(
+            device,
+            encoder,
+            queue,
+            &self.bloom_view_b,
+            &self.bloom_view_a,
+            [0.0, 1.0],
+            params.radius,
+        );
 
         // 4. Composite: scene + bloom_a -> output
-        self.render_composite(device, encoder, queue, input_view, &self.bloom_view_a,
-                              output_view, params.intensity);
+        self.render_composite(
+            device,
+            encoder,
+            queue,
+            input_view,
+            &self.bloom_view_a,
+            output_view,
+            params.intensity,
+        );
     }
 
     fn blit(
@@ -643,7 +683,11 @@ impl BloomProcessor {
             soft_knee: 0.5, // Reasonable default for soft threshold
             _padding: [0.0; 2],
         };
-        queue.write_buffer(&self.threshold_uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+        queue.write_buffer(
+            &self.threshold_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&uniforms),
+        );
 
         // Create texture bind group
         let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -752,7 +796,11 @@ impl BloomProcessor {
             intensity,
             _padding: [0.0; 3],
         };
-        queue.write_buffer(&self.composite_uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+        queue.write_buffer(
+            &self.composite_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&uniforms),
+        );
 
         // Create combined texture bind group
         let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {

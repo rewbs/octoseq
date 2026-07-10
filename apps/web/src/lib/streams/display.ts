@@ -105,7 +105,11 @@ export function toUiResult(result: AnalysisResult, analysisId: AnalysisId): UiDi
       : null;
   } else if (result.kind === "2d") {
     ui = { kind: "2d", fn: analysisId, raw: { data: result.data, times: result.times } };
-  } else if (result.kind === "events" || result.kind === "beatCandidates" || result.kind === "bandEvents") {
+  } else if (
+    result.kind === "events" ||
+    result.kind === "beatCandidates" ||
+    result.kind === "bandEvents"
+  ) {
     const events = toDisplayEvents(result) ?? [];
     const times = result.kind === "bandEvents" ? new Float32Array(0) : result.times;
     ui = { kind: "events", fn: analysisId, times, events };

@@ -138,7 +138,9 @@ export function getGlobalNamespaces(): RegistryEntry[] {
 export function getLifecycleFunctions(): RegistryEntry[] {
   const registry = getApiRegistry();
   const paths = registry.byKind.get("lifecycle") || [];
-  return paths.map((p) => registry.entries.get(p)).filter((e): e is RegistryEntry => e !== undefined);
+  return paths
+    .map((p) => registry.entries.get(p))
+    .filter((e): e is RegistryEntry => e !== undefined);
 }
 
 /**
@@ -147,7 +149,9 @@ export function getLifecycleFunctions(): RegistryEntry[] {
 export function getHelperFunctions(): RegistryEntry[] {
   const registry = getApiRegistry();
   const paths = registry.byKind.get("helper") || [];
-  return paths.map((p) => registry.entries.get(p)).filter((e): e is RegistryEntry => e !== undefined);
+  return paths
+    .map((p) => registry.entries.get(p))
+    .filter((e): e is RegistryEntry => e !== undefined);
 }
 
 /**

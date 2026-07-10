@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { AlertTriangle, RefreshCw, X, ChevronDown, ChevronRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import type { UploadState } from '@/lib/hooks/useAssetUpload';
+import { useState } from "react";
+import { AlertTriangle, RefreshCw, X, ChevronDown, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { UploadState } from "@/lib/hooks/useAssetUpload";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -48,10 +48,10 @@ function FailedUploadItem({
       <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-red-700 dark:text-red-300 truncate">
-          {upload.fileName ?? 'Unknown file'}
+          {upload.fileName ?? "Unknown file"}
         </div>
         <div className="text-xs text-red-600 dark:text-red-400 mt-0.5">
-          {upload.error ?? 'Upload failed'}
+          {upload.error ?? "Upload failed"}
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
@@ -63,7 +63,7 @@ function FailedUploadItem({
             onClick={() => void handleRetry()}
             disabled={isRetrying}
           >
-            <RefreshCw className={`h-4 w-4 ${isRetrying ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-4 w-4 ${isRetrying ? "animate-spin" : ""}`} />
           </Button>
         )}
         {onDismiss && (
@@ -112,7 +112,7 @@ export function AssetFailurePanel({
           )}
           <AlertTriangle className="h-4 w-4 text-red-500" />
           <span className="text-sm font-medium text-red-700 dark:text-red-300">
-            {failedUploads.length} failed upload{failedUploads.length !== 1 ? 's' : ''}
+            {failedUploads.length} failed upload{failedUploads.length !== 1 ? "s" : ""}
           </span>
         </div>
         {onDismissAll && (

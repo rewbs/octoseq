@@ -4,13 +4,16 @@ import {
   type Project,
   type ProjectWorkingState,
   type ProjectSnapshot,
+  type ProjectAsset,
+  type ProjectSnapshotAsset,
   type Asset,
   AssetType,
   AssetStatus,
-} from '../generated/.prisma/client/client';
-import { PrismaNeon } from '@prisma/adapter-neon';
-import { neonConfig } from '@neondatabase/serverless';
-import { env } from './env';
+  Prisma,
+} from "../generated/.prisma/client/client";
+import { PrismaNeon } from "@prisma/adapter-neon";
+import { neonConfig } from "@neondatabase/serverless";
+import { env } from "./env";
 
 // Configure Neon for serverless environments
 neonConfig.useSecureWebSocket = true;
@@ -23,15 +26,24 @@ function createPrismaClient() {
   const adapter = new PrismaNeon({ connectionString: env.DATABASE_URL });
   return new PrismaClient({
     adapter,
-    log: env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
+    log: env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
-if (env.NODE_ENV !== 'production') {
+if (env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
 }
 
-export type { User, Project, ProjectWorkingState, ProjectSnapshot, Asset };
+export type {
+  User,
+  Project,
+  ProjectWorkingState,
+  ProjectSnapshot,
+  ProjectAsset,
+  ProjectSnapshotAsset,
+  Asset,
+};
 export { AssetType, AssetStatus };
+export { Prisma };

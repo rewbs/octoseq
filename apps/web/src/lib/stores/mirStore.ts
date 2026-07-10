@@ -67,7 +67,11 @@ export const useMirStore = create<MirStore>()(
 /**
  * Tab definitions for the MIR visual tabs, in display order.
  */
-export const mirTabDefinitions: Array<{ id: MirFunctionId; label: string; kind: "1d" | "events" | "2d" | "tempoHypotheses" }> = [
+export const mirTabDefinitions: Array<{
+  id: MirFunctionId;
+  label: string;
+  kind: "1d" | "events" | "2d" | "tempoHypotheses";
+}> = [
   { id: "tempoHypotheses", label: "Tempo Hypotheses", kind: "tempoHypotheses" },
   { id: "amplitudeEnvelope", label: "Amplitude (1D)", kind: "1d" },
   { id: "spectralCentroid", label: "Spectral Centroid (1D)", kind: "1d" },

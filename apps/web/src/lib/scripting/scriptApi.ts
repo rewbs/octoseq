@@ -82,4 +82,3 @@ export function formatMethodSignature(method: ApiMethod): string {
   const params = method.params.map((p) => `${p.name}: ${p.type_name}`).join(", ");
   return `${method.name}(${params}) -> ${method.returns}`;
 }
-

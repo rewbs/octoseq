@@ -4,7 +4,12 @@ import { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Plus, Sparkles, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { pickPeaks, pickPeaksAdaptive, DEFAULT_PEAK_PICKING_PARAMS, type PeakPickingParams } from "@octoseq/mir";
+import {
+  pickPeaks,
+  pickPeaksAdaptive,
+  DEFAULT_PEAK_PICKING_PARAMS,
+  type PeakPickingParams,
+} from "@octoseq/mir";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import { useAuthoredEventActions } from "@/lib/stores/hooks/useAuthoredEventActions";
 import { usePlaybackStore } from "@/lib/stores/playbackStore";
@@ -142,21 +147,24 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
   }, [autoDetect, signalData, algorithm, threshold, minDistance, adaptiveWindow, runDetection]);
 
   // Handle source selection
-  const handleSourceChange = useCallback((ref: SignalSourceRef | null) => {
-    setSelectedSourceRef(ref);
-    setPeakResult(null);
+  const handleSourceChange = useCallback(
+    (ref: SignalSourceRef | null) => {
+      setSelectedSourceRef(ref);
+      setPeakResult(null);
 
-    // Set default name
-    if (ref) {
-      const value = signalSourceValue(ref);
-      const option = sourceGroups
-        .flatMap((group) => group.options)
-        .find((o) => o.value === value);
-      if (option) {
-        setNewStreamName(`${option.label} Peaks`);
+      // Set default name
+      if (ref) {
+        const value = signalSourceValue(ref);
+        const option = sourceGroups
+          .flatMap((group) => group.options)
+          .find((o) => o.value === value);
+        if (option) {
+          setNewStreamName(`${option.label} Peaks`);
+        }
       }
-    }
-  }, [sourceGroups]);
+    },
+    [sourceGroups]
+  );
 
   // Handle create new stream
   const handleCreateStream = useCallback(() => {
@@ -248,9 +256,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
               ))}
             </select>
             <span className="text-zinc-400">→</span>
-            <span className="text-amber-600 dark:text-amber-400 font-medium">
-              Events
-            </span>
+            <span className="text-amber-600 dark:text-amber-400 font-medium">Events</span>
           </>
         )}
       </div>
@@ -260,9 +266,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
         <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 flex flex-wrap items-center gap-4">
           {/* Threshold slider */}
           <div className="flex items-center gap-2">
-            <label className="text-xs text-zinc-500 dark:text-zinc-400 w-16">
-              Threshold
-            </label>
+            <label className="text-xs text-zinc-500 dark:text-zinc-400 w-16">Threshold</label>
             <input
               type="range"
               value={threshold}
@@ -279,9 +283,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
 
           {/* Min distance slider */}
           <div className="flex items-center gap-2">
-            <label className="text-xs text-zinc-500 dark:text-zinc-400 w-16">
-              Min Gap
-            </label>
+            <label className="text-xs text-zinc-500 dark:text-zinc-400 w-16">Min Gap</label>
             <input
               type="range"
               value={minDistance}
@@ -299,9 +301,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
           {/* Adaptive window (only for adaptive algorithm) */}
           {algorithm === "adaptive" && (
             <div className="flex items-center gap-2">
-              <label className="text-xs text-zinc-500 dark:text-zinc-400 w-14">
-                Window
-              </label>
+              <label className="text-xs text-zinc-500 dark:text-zinc-400 w-14">Window</label>
               <input
                 type="range"
                 value={adaptiveWindow}
@@ -319,7 +319,10 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
 
           {/* Auto-detect toggle and manual detect button */}
           <div className="flex items-center gap-2 ml-auto">
-            <label className="flex items-center gap-1 cursor-pointer" title="Auto-detect when parameters change">
+            <label
+              className="flex items-center gap-1 cursor-pointer"
+              title="Auto-detect when parameters change"
+            >
               <input
                 type="checkbox"
                 checked={autoDetect}
@@ -414,11 +417,7 @@ export function EventImportPanel({ onClose }: EventImportPanelProps) {
             />
             <Button
               size="sm"
-              className={cn(
-                "h-8",
-                "bg-amber-600 hover:bg-amber-700",
-                "text-white"
-              )}
+              className={cn("h-8", "bg-amber-600 hover:bg-amber-700", "text-white")}
               onClick={handleCreateStream}
               disabled={!newStreamName.trim()}
             >

@@ -85,11 +85,12 @@ const initialState: SearchState = {
 
 export const useSearchStore = create<SearchStore>()(
   devtools(
-    (set, get) => ({
+    (set) => ({
       ...initialState,
 
       // Search control actions
-      setSearchControls: (controls) => set({ searchControls: controls }, false, "setSearchControls"),
+      setSearchControls: (controls) =>
+        set({ searchControls: controls }, false, "setSearchControls"),
 
       updateSearchControls: (update) =>
         set(
@@ -102,7 +103,8 @@ export const useSearchStore = create<SearchStore>()(
 
       setSearchDirty: (dirty) => set({ searchDirty: dirty }, false, "setSearchDirty"),
 
-      setIsSearchRunning: (running) => set({ isSearchRunning: running }, false, "setIsSearchRunning"),
+      setIsSearchRunning: (running) =>
+        set({ isSearchRunning: running }, false, "setIsSearchRunning"),
 
       // Refinement actions
       setRefinement: (update) =>
@@ -123,11 +125,14 @@ export const useSearchStore = create<SearchStore>()(
 
       setLoopCandidate: (loop) => set({ loopCandidate: loop }, false, "setLoopCandidate"),
 
-      setAutoPlayOnNavigate: (auto) => set({ autoPlayOnNavigate: auto }, false, "setAutoPlayOnNavigate"),
+      setAutoPlayOnNavigate: (auto) =>
+        set({ autoPlayOnNavigate: auto }, false, "setAutoPlayOnNavigate"),
 
-      setAdvanceToNextBest: (advance) => set({ advanceToNextBest: advance }, false, "setAdvanceToNextBest"),
+      setAdvanceToNextBest: (advance) =>
+        set({ advanceToNextBest: advance }, false, "setAdvanceToNextBest"),
 
-      setUseRefinementSearch: (use) => set({ useRefinementSearch: use }, false, "setUseRefinementSearch"),
+      setUseRefinementSearch: (use) =>
+        set({ useRefinementSearch: use }, false, "setUseRefinementSearch"),
 
       // Candidate management actions
       setActiveCandidateId: (id) =>
@@ -212,7 +217,7 @@ export const useSearchStore = create<SearchStore>()(
             const updated = state.refinement.candidates.filter((c) => c.id !== id);
             const nextActiveId =
               state.refinement.activeCandidateId === id
-                ? updated[0]?.id ?? null
+                ? (updated[0]?.id ?? null)
                 : state.refinement.activeCandidateId;
 
             return {

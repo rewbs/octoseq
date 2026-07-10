@@ -51,8 +51,8 @@ export function AutosaveRecoveryDialog({
           </div>
           <div className="flex-1">
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              An unsaved version of your project was found. This may have been
-              saved automatically before a crash or unexpected close.
+              An unsaved version of your project was found. This may have been saved automatically
+              before a crash or unexpected close.
             </p>
           </div>
         </div>
@@ -68,11 +68,7 @@ export function AutosaveRecoveryDialog({
 
         {/* Actions */}
         <div className="flex justify-end gap-2 pt-2">
-          <Button
-            variant="outline"
-            onClick={onDismiss}
-            className="gap-2"
-          >
+          <Button variant="outline" onClick={onDismiss} className="gap-2">
             <Trash2 className="h-4 w-4" />
             Discard & Start Fresh
           </Button>

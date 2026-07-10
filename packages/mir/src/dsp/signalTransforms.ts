@@ -55,9 +55,7 @@ export interface TransformSmoothGaussian extends TransformBase {
  * All smoothing transform types.
  */
 export type TransformSmooth =
-  | TransformSmoothMovingAverage
-  | TransformSmoothExponential
-  | TransformSmoothGaussian;
+  TransformSmoothMovingAverage | TransformSmoothExponential | TransformSmoothGaussian;
 
 /**
  * Normalize to 0-1 range using min/max.
@@ -93,9 +91,7 @@ export interface TransformNormalizeZScore extends TransformBase {
  * All normalization transform types.
  */
 export type TransformNormalize =
-  | TransformNormalizeMinMax
-  | TransformNormalizeRobust
-  | TransformNormalizeZScore;
+  TransformNormalizeMinMax | TransformNormalizeRobust | TransformNormalizeZScore;
 
 /**
  * Linear scale and offset.
@@ -219,11 +215,7 @@ function smoothExponential(
 /**
  * Apply Gaussian smoothing.
  */
-function smoothGaussian(
-  values: Float32Array,
-  windowMs: number,
-  sampleRate: number
-): Float32Array {
+function smoothGaussian(values: Float32Array, windowMs: number, sampleRate: number): Float32Array {
   const windowSamples = Math.max(1, Math.round((windowMs / 1000) * sampleRate));
   if (windowSamples <= 1) return values;
 
@@ -389,11 +381,7 @@ function normalizeZScore(values: Float32Array): Float32Array {
 /**
  * Apply linear scale and offset.
  */
-function applyScale(
-  values: Float32Array,
-  scale: number,
-  offset: number
-): Float32Array {
+function applyScale(values: Float32Array, scale: number, offset: number): Float32Array {
   const n = values.length;
   const result = new Float32Array(n);
   for (let i = 0; i < n; i++) {
@@ -405,10 +393,7 @@ function applyScale(
 /**
  * Apply polarity transformation.
  */
-function applyPolarityTransform(
-  values: Float32Array,
-  mode: "signed" | "magnitude"
-): Float32Array {
+function applyPolarityTransform(values: Float32Array, mode: "signed" | "magnitude"): Float32Array {
   if (mode === "signed") {
     return values;
   }
@@ -424,11 +409,7 @@ function applyPolarityTransform(
 /**
  * Apply clamping to bounds.
  */
-function applyClamp(
-  values: Float32Array,
-  min?: number,
-  max?: number
-): Float32Array {
+function applyClamp(values: Float32Array, min?: number, max?: number): Float32Array {
   const n = values.length;
   const result = new Float32Array(n);
 
@@ -478,9 +459,7 @@ function applyRemap(
         t = 1 - (1 - t) * (1 - t);
         break;
       case "ease":
-        t = t < 0.5
-          ? 2 * t * t
-          : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        t = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
         break;
       // linear: no change
     }
@@ -638,9 +617,7 @@ export function getTransformLabel(step: TransformStep): string {
 /**
  * Create a default transform step for a kind.
  */
-export function createDefaultTransform(
-  kind: TransformStep["kind"]
-): TransformStep | null {
+export function createDefaultTransform(kind: TransformStep["kind"]): TransformStep | null {
   switch (kind) {
     case "smooth":
       return { kind: "smooth", method: "movingAverage", windowMs: 10 };

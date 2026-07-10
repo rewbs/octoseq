@@ -100,6 +100,7 @@ impl GpuMeshParticleInstance {
 }
 use crate::particle::{EmissionSource, ParticleEnvelope, ParticleSystem, StreamMode};
 use crate::signal::{EasingFunction, EnvelopeShape};
+use crate::signal_eval::EvalContext;
 
 /// Evaluation context for particle systems.
 pub struct ParticleEvalContext {
@@ -116,15 +117,19 @@ pub struct ParticleEvalContext {
 }
 
 /// Update a particle system: spawn new instances and cull expired ones.
-pub fn update_particle_system(system: &mut ParticleSystem, ctx: &ParticleEvalContext) {
+pub fn update_particle_system(
+    system: &mut ParticleSystem,
+    ctx: &ParticleEvalContext,
+    eval_ctx: &mut EvalContext<'_>,
+) {
     // First, cull expired instances
     let lifetime_secs = system.config.lifetime_beats * ctx.secs_per_beat;
-    system.instances.retain(|instance| {
-        ctx.current_time_secs - instance.spawn_time_secs < lifetime_secs
-    });
+    system
+        .instances
+        .retain(|instance| ctx.current_time_secs - instance.spawn_time_secs < lifetime_secs);
 
     // Collect spawn requests to avoid borrowing issues
-    let spawn_requests = collect_spawn_requests(system, ctx);
+    let spawn_requests = collect_spawn_requests(system, ctx, eval_ctx);
 
     // Spawn new instances
     for request in spawn_requests {
@@ -140,7 +145,11 @@ struct SpawnRequest {
 }
 
 /// Collect spawn requests based on emission source.
-fn collect_spawn_requests(system: &mut ParticleSystem, ctx: &ParticleEvalContext) -> Vec<SpawnRequest> {
+fn collect_spawn_requests(
+    system: &mut ParticleSystem,
+    ctx: &ParticleEvalContext,
+    eval_ctx: &mut EvalContext<'_>,
+) -> Vec<SpawnRequest> {
     let mut requests = Vec::new();
 
     match &mut system.source {
@@ -168,14 +177,12 @@ fn collect_spawn_requests(system: &mut ParticleSystem, ctx: &ParticleEvalContext
             }
         }
         EmissionSource::Stream {
+            signal,
             mode,
             accumulator,
             prev_value,
-            ..
         } => {
-            // For stream mode, we need to evaluate the signal
-            // For now, use a placeholder value (actual signal evaluation happens elsewhere)
-            let signal_value = 0.5_f32; // This would be evaluated from the signal
+            let signal_value = signal.evaluate(eval_ctx).clamp(0.0, 1.0);
 
             match mode {
                 StreamMode::Proportional { rate_per_beat } => {
@@ -285,7 +292,8 @@ pub fn generate_mesh_particle_instances(
             let envelope_value = evaluate_particle_envelope(age_beats, &system.config.envelope);
 
             // Apply envelope to scale and opacity
-            let scale = base_mesh_scale * system.config.base_scale * instance.local_scale * envelope_value;
+            let scale =
+                base_mesh_scale * system.config.base_scale * instance.local_scale * envelope_value;
             let opacity = envelope_value * instance.event_weight;
 
             // Calculate world position
@@ -418,7 +426,46 @@ fn apply_easing(t: f32, easing: EasingFunction) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::particle::ParticleEnvelope;
+    use crate::input::{BandSignalMap, SignalMap};
+    use crate::particle::{ParticleConfig, ParticleEnvelope};
+    use crate::signal::Signal;
+    use crate::signal_state::SignalState;
+    use crate::signal_stats::StatisticsCache;
+
+    fn update_constant_stream(value: f32) -> usize {
+        let signal_map = SignalMap::new();
+        let band_map = BandSignalMap::new();
+        let stats = StatisticsCache::new();
+        let mut state = SignalState::new();
+        let mut eval_ctx = EvalContext::new(
+            1.0,
+            0.5,
+            1,
+            None,
+            &signal_map,
+            &band_map,
+            &band_map,
+            &signal_map,
+            &signal_map,
+            &stats,
+            &mut state,
+            None,
+        );
+        let mut system = ParticleSystem::from_stream(
+            Signal::constant(value),
+            StreamMode::Proportional { rate_per_beat: 1.0 },
+            ParticleConfig::default(),
+        );
+        let ctx = ParticleEvalContext {
+            current_time_secs: 1.0,
+            current_beat: 2.0,
+            secs_per_beat: 0.5,
+            dt: 0.5,
+            dt_beats: 1.0,
+        };
+        update_particle_system(&mut system, &ctx, &mut eval_ctx);
+        system.instances.len()
+    }
 
     #[test]
     fn test_evaluate_envelope_impulse() {
@@ -459,5 +506,11 @@ mod tests {
     fn test_apply_easing_smoothstep() {
         let v = apply_easing(0.5, EasingFunction::SmoothStep);
         assert!((v - 0.5).abs() < 0.01); // Smoothstep(0.5) = 0.5
+    }
+
+    #[test]
+    fn stream_emission_uses_the_supplied_signal() {
+        assert_eq!(update_constant_stream(0.0), 0);
+        assert_eq!(update_constant_stream(1.0), 1);
     }
 }

@@ -28,17 +28,9 @@ import type {
   Source2D,
   Source1D,
   SourceEvents,
-  EventWindow,
 } from "../types/derivedSignal";
 import type { MirFunctionId } from "@/components/mir/MirControlPanel";
 import type { TimeAlignedHeatmapData } from "@/components/heatmap/TimeAlignedHeatmapPixi";
-import {
-  getCachedResult,
-  setCachedResult,
-  shouldCache,
-  getDefinitionHash,
-  invalidateSignal as invalidateSignalCache,
-} from "@/lib/cache/derivedSignalCache";
 
 /**
  * Map Source2DFunctionId to MirFunctionId.
@@ -65,11 +57,7 @@ function source2DToMirFunction(source: Source2DFunctionId): MirFunctionId {
  * Check if source is mel-based (uses Hz for frequency range).
  */
 function isMelBased(source: Source2DFunctionId): boolean {
-  return (
-    source === "melSpectrogram" ||
-    source === "hpssHarmonic" ||
-    source === "hpssPercussive"
-  );
+  return source === "melSpectrogram" || source === "hpssHarmonic" || source === "hpssPercussive";
 }
 
 /**
@@ -89,9 +77,7 @@ function rangeSpec2DToBinRange(
       // but here we only read its geometry, not its analyses.
       const band = useStreamStore.getState().getStream(range.bandId);
       if (!band || !isBandStream(band)) {
-        console.warn(
-          `Band reference "${range.bandId}" does not resolve to a band stream`
-        );
+        console.warn(`Band reference "${range.bandId}" does not resolve to a band stream`);
         return undefined;
       }
       if (!melConfig) {
@@ -114,7 +100,7 @@ function rangeSpec2DToBinRange(
       };
     }
 
-    case "frequencyRange":
+    case "frequencyRange": {
       if (!melConfig) {
         // Can't convert Hz to bins without mel config
         return undefined;
@@ -125,6 +111,7 @@ function rangeSpec2DToBinRange(
         lowBin: Math.max(0, Math.floor(lowIndex)),
         highBin: Math.min(numBins, Math.ceil(highIndex)),
       };
+    }
 
     case "coefficientRange":
       // Direct coefficient indices (for MFCC)
@@ -144,9 +131,7 @@ function buildReductionOptions(
 ): ReductionOptions {
   const params = source.reducerParams;
   return {
-    binRange: binRange
-      ? { lowBin: binRange.lowBin, highBin: binRange.highBin }
-      : undefined,
+    binRange: binRange ? { lowBin: binRange.lowBin, highBin: binRange.highBin } : undefined,
     onsetStrength: {
       smoothMs: params.smoothMs ?? 10,
       useLog: params.useLog ?? true,
@@ -162,9 +147,7 @@ function buildReductionOptions(
  * Convert TransformChain to MIR TransformStep array.
  * The types should match directly.
  */
-function convertTransformChain(
-  transforms: DerivedSignalDefinition["transforms"]
-): TransformStep[] {
+function convertTransformChain(transforms: DerivedSignalDefinition["transforms"]): TransformStep[] {
   return transforms as TransformStep[];
 }
 
@@ -198,9 +181,7 @@ export function useDerivedSignalActions() {
         .getResult(analysisKey(source.streamId, mirFunctionId));
 
       if (!mirResult || mirResult.kind !== "2d") {
-        console.warn(
-          `No 2D MIR result available for ${source.streamId}:${mirFunctionId}`
-        );
+        console.warn(`No 2D MIR result available for ${source.streamId}:${mirFunctionId}`);
         return null;
       }
 
@@ -251,21 +232,21 @@ export function useDerivedSignalActions() {
         times: reductionResult.times,
       };
       const transformSteps = convertTransformChain(definition.transforms);
-      let transformedValues = transformSteps.length > 0
-        ? applyTransformChain(reductionResult.values, transformSteps, transformContext)
-        : reductionResult.values;
+      const transformedValues =
+        transformSteps.length > 0
+          ? applyTransformChain(reductionResult.values, transformSteps, transformContext)
+          : reductionResult.values;
 
       // Apply polarity interpretation (after reduction, before stabilization)
       // Check if there's a polarity transform in the chain, otherwise default to signed
       const polarityTransform = definition.transforms.find((t) => t.kind === "polarity");
       const polarityMode = polarityTransform?.mode ?? "signed";
-      let postReductionValues = applyPolarity(transformedValues, polarityMode);
+      const postReductionValues = applyPolarity(transformedValues, polarityMode);
 
       // Apply stabilization if configured
       const stabilization = definition.stabilization;
       const needsStabilization =
-        stabilization &&
-        (stabilization.mode !== "none" || stabilization.envelopeMode !== "raw");
+        stabilization && (stabilization.mode !== "none" || stabilization.envelopeMode !== "raw");
 
       let finalValues = postReductionValues;
       let rawValues: Float32Array | undefined;
@@ -283,11 +264,7 @@ export function useDerivedSignalActions() {
         };
 
         // Apply stabilization
-        finalValues = stabilizeSignal(
-          postReductionValues,
-          reductionResult.times,
-          stabOptions
-        );
+        finalValues = stabilizeSignal(postReductionValues, reductionResult.times, stabOptions);
       }
 
       // Compute value range for stabilized signal
@@ -345,13 +322,9 @@ export function useDerivedSignalActions() {
             .getResult(analysisKey(ref.streamId, ref.analysisId));
           if (
             !result ||
-            (result.kind !== "1d" &&
-              result.kind !== "bandMir1d" &&
-              result.kind !== "bandCqt1d")
+            (result.kind !== "1d" && result.kind !== "bandMir1d" && result.kind !== "bandCqt1d")
           ) {
-            console.warn(
-              `No 1D analysis result available for ${ref.streamId}:${ref.analysisId}`
-            );
+            console.warn(`No 1D analysis result available for ${ref.streamId}:${ref.analysisId}`);
             return null;
           }
           sourceValues = result.values;
@@ -363,9 +336,7 @@ export function useDerivedSignalActions() {
           // Get from another derived signal (chaining)
           const sourceResult = derivedSignalStore.getSignalResult(source.signalRef.signalId);
           if (!sourceResult) {
-            console.warn(
-              `Source derived signal not computed: ${source.signalRef.signalId}`
-            );
+            console.warn(`Source derived signal not computed: ${source.signalRef.signalId}`);
             return null;
           }
           sourceValues = sourceResult.values;
@@ -386,20 +357,20 @@ export function useDerivedSignalActions() {
         times: sourceTimes,
       };
       const transformSteps = convertTransformChain(definition.transforms);
-      let transformedValues = transformSteps.length > 0
-        ? applyTransformChain(sourceValues, transformSteps, transformContext)
-        : new Float32Array(sourceValues);
+      const transformedValues =
+        transformSteps.length > 0
+          ? applyTransformChain(sourceValues, transformSteps, transformContext)
+          : new Float32Array(sourceValues);
 
       // Apply polarity
       const polarityTransform = definition.transforms.find((t) => t.kind === "polarity");
       const polarityMode = polarityTransform?.mode ?? "signed";
-      let postTransformValues = applyPolarity(transformedValues, polarityMode);
+      const postTransformValues = applyPolarity(transformedValues, polarityMode);
 
       // Apply stabilization if configured
       const stabilization = definition.stabilization;
       const needsStabilization =
-        stabilization &&
-        (stabilization.mode !== "none" || stabilization.envelopeMode !== "raw");
+        stabilization && (stabilization.mode !== "none" || stabilization.envelopeMode !== "raw");
 
       let finalValues = postTransformValues;
       let rawValues: Float32Array | undefined;
@@ -522,20 +493,22 @@ export function useDerivedSignalActions() {
       // Build event-to-signal parameters
       // Convert EventWindow to EventWindowSpec (only "seconds" is supported in MIR)
       const eventWindow = source.reducerParams.window ?? { kind: "seconds", windowSize: 0.5 };
-      const windowSpec: EventWindowSpec = eventWindow.kind === "seconds"
-        ? { kind: "seconds", windowSize: eventWindow.windowSize }
-        : { kind: "seconds", windowSize: 0.5 }; // Fallback for "beats"
+      const windowSpec: EventWindowSpec =
+        eventWindow.kind === "seconds"
+          ? { kind: "seconds", windowSize: eventWindow.windowSize }
+          : { kind: "seconds", windowSize: 0.5 }; // Fallback for "beats"
 
       const eventShape = source.reducerParams.envelopeShape ?? {
         kind: "attackDecay",
         attackMs: 5,
         decayMs: 100,
       };
-      const envelopeShape: EnvelopeShape = eventShape.kind === "impulse"
-        ? { kind: "impulse" }
-        : eventShape.kind === "gaussian"
-          ? { kind: "gaussian", widthMs: eventShape.widthMs }
-          : { kind: "attackDecay", attackMs: eventShape.attackMs, decayMs: eventShape.decayMs };
+      const envelopeShape: EnvelopeShape =
+        eventShape.kind === "impulse"
+          ? { kind: "impulse" }
+          : eventShape.kind === "gaussian"
+            ? { kind: "gaussian", widthMs: eventShape.widthMs }
+            : { kind: "attackDecay", attackMs: eventShape.attackMs, decayMs: eventShape.decayMs };
 
       // Convert events and run through reducer
       const eventResult = eventsToSignal(
@@ -558,20 +531,20 @@ export function useDerivedSignalActions() {
         times: eventResult.times,
       };
       const transformSteps = convertTransformChain(definition.transforms);
-      let transformedValues = transformSteps.length > 0
-        ? applyTransformChain(eventResult.values, transformSteps, transformContext)
-        : eventResult.values;
+      const transformedValues =
+        transformSteps.length > 0
+          ? applyTransformChain(eventResult.values, transformSteps, transformContext)
+          : eventResult.values;
 
       // Apply polarity
       const polarityTransform = definition.transforms.find((t) => t.kind === "polarity");
       const polarityMode = polarityTransform?.mode ?? "signed";
-      let postTransformValues = applyPolarity(transformedValues, polarityMode);
+      const postTransformValues = applyPolarity(transformedValues, polarityMode);
 
       // Apply stabilization if configured
       const stabilization = definition.stabilization;
       const needsStabilization =
-        stabilization &&
-        (stabilization.mode !== "none" || stabilization.envelopeMode !== "raw");
+        stabilization && (stabilization.mode !== "none" || stabilization.envelopeMode !== "raw");
 
       let finalValues = postTransformValues;
       let rawValues: Float32Array | undefined;
@@ -798,9 +771,7 @@ export function useDerivedSignalActions() {
   const isSourceDataAvailable = useCallback(
     (streamId: string, source2D: Source2DFunctionId): boolean => {
       const mirFunctionId = source2DToMirFunction(source2D);
-      const result = useAnalysisStore
-        .getState()
-        .getResult(analysisKey(streamId, mirFunctionId));
+      const result = useAnalysisStore.getState().getResult(analysisKey(streamId, mirFunctionId));
       return result !== null && result.kind === "2d";
     },
     []
@@ -810,14 +781,9 @@ export function useDerivedSignalActions() {
    * Get the 2D data for preview.
    */
   const getSource2DData = useCallback(
-    (
-      streamId: string,
-      source2D: Source2DFunctionId
-    ): TimeAlignedHeatmapData | null => {
+    (streamId: string, source2D: Source2DFunctionId): TimeAlignedHeatmapData | null => {
       const mirFunctionId = source2DToMirFunction(source2D);
-      const result = useAnalysisStore
-        .getState()
-        .getResult(analysisKey(streamId, mirFunctionId));
+      const result = useAnalysisStore.getState().getResult(analysisKey(streamId, mirFunctionId));
 
       if (result && result.kind === "2d") {
         return { data: result.data, times: result.times };

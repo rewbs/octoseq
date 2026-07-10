@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Upload, Check, AlertCircle, ChevronDown, ChevronUp, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import type { UploadState } from '@/lib/hooks/useAssetUpload';
+import { useState } from "react";
+import { Upload, Check, AlertCircle, ChevronDown, ChevronUp, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { UploadState } from "@/lib/hooks/useAssetUpload";
 
 // -----------------------------------------------------------------------------
 // Types
@@ -31,9 +31,9 @@ function UploadItem({
   onCancel?: (assetId: string) => void;
   onDismiss?: (assetId: string) => void;
 }) {
-  const isActive = upload.status === 'pending' || upload.status === 'uploading';
-  const isComplete = upload.status === 'uploaded';
-  const isFailed = upload.status === 'failed' || upload.status === 'cancelled';
+  const isActive = upload.status === "pending" || upload.status === "uploading";
+  const isComplete = upload.status === "uploaded";
+  const isFailed = upload.status === "failed" || upload.status === "cancelled";
 
   return (
     <div className="flex items-center gap-2 py-1.5 px-2 text-xs">
@@ -44,7 +44,7 @@ function UploadItem({
           {isActive && (
             <div className="h-3 w-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin shrink-0" />
           )}
-          <span className="truncate">{upload.fileName ?? 'Uploading...'}</span>
+          <span className="truncate">{upload.fileName ?? "Uploading..."}</span>
         </div>
         {isActive && (
           <div className="mt-1 h-1 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
@@ -96,13 +96,9 @@ export function UploadProgressIndicator({
   const [isExpanded, setIsExpanded] = useState(false);
 
   // Filter to show only relevant uploads
-  const activeUploads = uploads.filter(
-    (u) => u.status === 'pending' || u.status === 'uploading'
-  );
-  const completedUploads = uploads.filter((u) => u.status === 'uploaded');
-  const failedUploads = uploads.filter(
-    (u) => u.status === 'failed' || u.status === 'cancelled'
-  );
+  const activeUploads = uploads.filter((u) => u.status === "pending" || u.status === "uploading");
+  const completedUploads = uploads.filter((u) => u.status === "uploaded");
+  const failedUploads = uploads.filter((u) => u.status === "failed" || u.status === "cancelled");
 
   const totalActive = activeUploads.length;
   const totalFailed = failedUploads.length;
@@ -116,9 +112,7 @@ export function UploadProgressIndicator({
   // Calculate overall progress for active uploads
   const overallProgress =
     totalActive > 0
-      ? Math.round(
-          activeUploads.reduce((sum, u) => sum + u.progress, 0) / totalActive
-        )
+      ? Math.round(activeUploads.reduce((sum, u) => sum + u.progress, 0) / totalActive)
       : 100;
 
   return (
@@ -133,23 +127,19 @@ export function UploadProgressIndicator({
           <span className="text-sm font-medium">
             {totalActive > 0 ? (
               <>
-                Uploading {totalActive} file{totalActive !== 1 ? 's' : ''}
+                Uploading {totalActive} file{totalActive !== 1 ? "s" : ""}
               </>
             ) : totalFailed > 0 ? (
               <span className="text-red-600 dark:text-red-400">
-                {totalFailed} upload{totalFailed !== 1 ? 's' : ''} failed
+                {totalFailed} upload{totalFailed !== 1 ? "s" : ""} failed
               </span>
             ) : (
-              <span className="text-emerald-600 dark:text-emerald-400">
-                Uploads complete
-              </span>
+              <span className="text-emerald-600 dark:text-emerald-400">Uploads complete</span>
             )}
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {totalActive > 0 && (
-            <span className="text-xs text-zinc-500">{overallProgress}%</span>
-          )}
+          {totalActive > 0 && <span className="text-xs text-zinc-500">{overallProgress}%</span>}
           {isExpanded ? (
             <ChevronDown className="h-4 w-4 text-zinc-400" />
           ) : (

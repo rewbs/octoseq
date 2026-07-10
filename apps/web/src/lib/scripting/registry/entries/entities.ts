@@ -75,7 +75,8 @@ export const ENTITY_ENTRIES: RegistryEntry[] = [
         name: "emissive",
         path: "MeshEntity.emissive",
         type: "Signal | f32",
-        description: "Emissive intensity multiplier. Adds glow unaffected by lighting. Default: 0.0.",
+        description:
+          "Emissive intensity multiplier. Adds glow unaffected by lighting. Default: 0.0.",
       },
       {
         name: "shadow",
@@ -486,7 +487,8 @@ scene.add(copy);`,
     kind: "type",
     name: "ParticleSystemHandle",
     path: "ParticleSystemHandle",
-    description: "A handle to a particle system created by particles.from_events or particles.stream.",
+    description:
+      "A handle to a particle system created by particles.from_events or particles.stream.",
     properties: [
       {
         name: "visible",

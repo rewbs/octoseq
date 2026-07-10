@@ -1,6 +1,12 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { env } from './env';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { env } from "./env";
 
 // -----------------------------------------------------------------------------
 // R2 Client Configuration
@@ -8,7 +14,7 @@ import { env } from './env';
 // -----------------------------------------------------------------------------
 
 const r2Client = new S3Client({
-  region: 'auto',
+  region: "auto",
   endpoint: `https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
   credentials: {
     accessKeyId: env.R2_ACCESS_KEY_ID,
@@ -79,6 +85,32 @@ export async function generateDownloadUrl(
 
   const url = await getSignedUrl(r2Client, command, { expiresIn });
   return url;
+}
+
+export async function inspectObject(r2Key: string): Promise<{
+  contentLength: number;
+  contentType: string | null;
+}> {
+  const result = await r2Client.send(
+    new HeadObjectCommand({
+      Bucket: env.R2_BUCKET_NAME,
+      Key: r2Key,
+    })
+  );
+
+  return {
+    contentLength: result.ContentLength ?? 0,
+    contentType: result.ContentType ?? null,
+  };
+}
+
+export async function deleteObject(r2Key: string): Promise<void> {
+  await r2Client.send(
+    new DeleteObjectCommand({
+      Bucket: env.R2_BUCKET_NAME,
+      Key: r2Key,
+    })
+  );
 }
 
 /**

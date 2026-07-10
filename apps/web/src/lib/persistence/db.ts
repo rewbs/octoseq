@@ -104,14 +104,10 @@ export async function getDB(): Promise<IDBPDatabase<OctoseqDBSchema>> {
         // if (oldVersion < 2) { ... }
       },
       blocked() {
-        console.warn(
-          "[Persistence] Database upgrade blocked by other open tabs"
-        );
+        console.warn("[Persistence] Database upgrade blocked by other open tabs");
       },
       blocking() {
-        console.warn(
-          "[Persistence] This tab is blocking database upgrade in another tab"
-        );
+        console.warn("[Persistence] This tab is blocking database upgrade in another tab");
         // Close connection to allow other tab to upgrade
         dbPromise?.then((db) => db.close());
         dbPromise = null;

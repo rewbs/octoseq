@@ -8,10 +8,7 @@
  * - Snapping to beat grid
  */
 
-import type {
-  ComposedSignalNode,
-  InterpolationType,
-} from "@/lib/stores/types/composedSignal";
+import type { ComposedSignalNode, InterpolationType } from "@/lib/stores/types/composedSignal";
 import type { SubBeatDivision } from "@/lib/stores/timingStore";
 
 /**
@@ -39,9 +36,7 @@ export function applyEasing(t: number, interp: InterpolationType): number {
 
     case "ease_in_out":
       // Quadratic ease in/out
-      return clampedT < 0.5
-        ? 2 * clampedT * clampedT
-        : -1 + (4 - 2 * clampedT) * clampedT;
+      return clampedT < 0.5 ? 2 * clampedT * clampedT : -1 + (4 - 2 * clampedT) * clampedT;
 
     case "exponential_in":
       // Exponential ease in
@@ -142,8 +137,7 @@ export function generateCurvePoints(
 
   for (let i = 0; i <= resolution; i++) {
     const t = i / resolution;
-    const beat =
-      startNode.time_beats + t * (endNode.time_beats - startNode.time_beats);
+    const beat = startNode.time_beats + t * (endNode.time_beats - startNode.time_beats);
     const easedT = applyEasing(t, startNode.interp_to_next);
     const value = startNode.value + (endNode.value - startNode.value) * easedT;
     points.push({ beat, value });
@@ -172,11 +166,7 @@ export function generateFullCurve(
   const allPoints: CurvePoint[] = [];
 
   for (let i = 0; i < sorted.length - 1; i++) {
-    const segmentPoints = generateCurvePoints(
-      sorted[i]!,
-      sorted[i + 1]!,
-      resolution
-    );
+    const segmentPoints = generateCurvePoints(sorted[i]!, sorted[i + 1]!, resolution);
     // Avoid duplicate points at segment boundaries
     if (i > 0 && segmentPoints.length > 0) {
       segmentPoints.shift();

@@ -9,7 +9,6 @@ fn init(ctx) {
 fn update(dt, frame) {
 }`;
 
-
 export const BASIC_AUDIO_SCRIPT = `let cube = mesh.cube();
 
 let smoothAmp = inputs.mix.energy.smooth.moving_average(0.5).scale(20);

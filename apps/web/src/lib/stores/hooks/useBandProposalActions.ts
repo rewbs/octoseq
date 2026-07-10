@@ -1,9 +1,5 @@
 import { useCallback } from "react";
-import {
-    generateBandProposals,
-    type BandProposalConfig,
-    type FrequencyBand,
-} from "@octoseq/mir";
+import { generateBandProposals, type BandProposalConfig } from "@octoseq/mir";
 import { MIXDOWN_STREAM_ID, audioCache, useStreamStore, addBand } from "@/lib/streams";
 import { useBandProposalStore } from "../bandProposalStore";
 
@@ -13,138 +9,147 @@ import { useBandProposalStore } from "../bandProposalStore";
  * Handles computing proposals from audio and promoting them to real bands.
  */
 export function useBandProposalActions() {
-    /**
-     * Compute band proposals from the specified audio source.
-     * @param sourceId - The audio source ID ("mixdown" or a stem ID). Defaults to "mixdown".
-     * @param config - Optional configuration for proposal generation.
-     */
-    const computeProposals = useCallback(async (sourceId: string = MIXDOWN_STREAM_ID, config?: BandProposalConfig) => {
-        // Get the correct audio buffer based on sourceId
-        const audioDuration = useStreamStore.getState().getMixdown()?.audio.durationSec ?? 0;
-        const audioBuffer = audioCache.get(sourceId);
+  /**
+   * Compute band proposals from the specified audio source.
+   * @param sourceId - The audio source ID ("mixdown" or a stem ID). Defaults to "mixdown".
+   * @param config - Optional configuration for proposal generation.
+   */
+  const computeProposals = useCallback(
+    async (sourceId: string = MIXDOWN_STREAM_ID, config?: BandProposalConfig) => {
+      // Get the correct audio buffer based on sourceId
+      const audioDuration = useStreamStore.getState().getMixdown()?.audio.durationSec ?? 0;
+      const audioBuffer = audioCache.get(sourceId);
 
-        if (!audioBuffer) {
-            useBandProposalStore.getState().setError(`No audio loaded for source: ${sourceId}`);
-            return;
-        }
+      if (!audioBuffer) {
+        useBandProposalStore.getState().setError(`No audio loaded for source: ${sourceId}`);
+        return;
+      }
 
-        const proposalStore = useBandProposalStore.getState();
+      const proposalStore = useBandProposalStore.getState();
 
-        // Set computing state
-        proposalStore.setComputing(true);
-        proposalStore.setError(null);
-        proposalStore.setLastConfig(config ?? null);
+      // Set computing state
+      proposalStore.setComputing(true);
+      proposalStore.setError(null);
+      proposalStore.setLastConfig(config ?? null);
 
-        try {
-            // Use the audio buffer from the specified source
-            const ch0 = audioBuffer.getChannelData(0);
-            const mono = new Float32Array(ch0);
-            const audioLike = {
-                sampleRate: audioBuffer.sampleRate,
-                numberOfChannels: 1,
-                getChannelData: () => mono,
-            };
+      try {
+        // Use the audio buffer from the specified source
+        const ch0 = audioBuffer.getChannelData(0);
+        const mono = new Float32Array(ch0);
+        const audioLike = {
+          sampleRate: audioBuffer.sampleRate,
+          numberOfChannels: 1,
+          getChannelData: () => mono,
+        };
 
-            // Generate proposals
-            const result = await generateBandProposals(audioLike, audioDuration, {
-                config,
-            });
-
-            // Store results
-            proposalStore.setProposals(result.proposals);
-        } catch (error) {
-            const message = error instanceof Error ? error.message : "Unknown error";
-            proposalStore.setError(message);
-        } finally {
-            proposalStore.setComputing(false);
-        }
-    }, []);
-
-    /**
-     * Promote a proposal to a real FrequencyBand.
-     * The proposal is removed from the proposal list after promotion.
-     * @param proposalId - The ID of the proposal to promote.
-     * @param sourceId - The audio source ID to assign to the band. Defaults to "mixdown".
-     */
-    const promoteProposal = useCallback((proposalId: string, sourceId: string = MIXDOWN_STREAM_ID) => {
-        const proposalStore = useBandProposalStore.getState();
-
-        const proposal = proposalStore.getProposalById(proposalId);
-        if (!proposal) return;
-
-        // Add the band stream with updated provenance under the correct parent
-        addBand({
-            parentId: sourceId,
-            label: proposal.band.label,
-            frequencyShape: proposal.band.frequencyShape,
-            timeScope: proposal.band.timeScope,
-            enabled: proposal.band.enabled,
-            provenance: {
-                source: "imported",
-                createdAt: new Date().toISOString(),
-            },
+        // Generate proposals
+        const result = await generateBandProposals(audioLike, audioDuration, {
+          config,
         });
 
-        // Remove from proposals
-        proposalStore.dismissProposal(proposalId);
-    }, []);
+        // Store results
+        proposalStore.setProposals(result.proposals);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        proposalStore.setError(message);
+      } finally {
+        proposalStore.setComputing(false);
+      }
+    },
+    []
+  );
 
-    /**
-     * Promote all proposals to real FrequencyBands.
-     * @param sourceId - The audio source ID to assign to all promoted bands. Defaults to "mixdown".
-     */
-    const promoteAllProposals = useCallback((sourceId: string = MIXDOWN_STREAM_ID) => {
-        const proposalStore = useBandProposalStore.getState();
-        const proposals = [...proposalStore.proposals];
+  /**
+   * Promote a proposal to a real FrequencyBand.
+   * The proposal is removed from the proposal list after promotion.
+   * @param proposalId - The ID of the proposal to promote.
+   * @param sourceId - The audio source ID to assign to the band. Defaults to "mixdown".
+   */
+  const promoteProposal = useCallback(
+    (proposalId: string, sourceId: string = MIXDOWN_STREAM_ID) => {
+      const proposalStore = useBandProposalStore.getState();
 
-        for (const proposal of proposals) {
-            promoteProposal(proposal.id, sourceId);
-        }
-    }, [promoteProposal]);
+      const proposal = proposalStore.getProposalById(proposalId);
+      if (!proposal) return;
 
-    /**
-     * Dismiss a proposal (remove it without promoting).
-     */
-    const dismissProposal = useCallback((proposalId: string) => {
-        useBandProposalStore.getState().dismissProposal(proposalId);
-    }, []);
+      // Add the band stream with updated provenance under the correct parent
+      addBand({
+        parentId: sourceId,
+        label: proposal.band.label,
+        frequencyShape: proposal.band.frequencyShape,
+        timeScope: proposal.band.timeScope,
+        enabled: proposal.band.enabled,
+        provenance: {
+          source: "imported",
+          createdAt: new Date().toISOString(),
+        },
+      });
 
-    /**
-     * Dismiss all proposals.
-     */
-    const dismissAllProposals = useCallback(() => {
-        useBandProposalStore.getState().clearProposals();
-    }, []);
+      // Remove from proposals
+      proposalStore.dismissProposal(proposalId);
+    },
+    []
+  );
 
-    /**
-     * Start auditioning a proposal (for audio preview).
-     */
-    const startAudition = useCallback((proposalId: string) => {
-        useBandProposalStore.getState().startAudition(proposalId);
-    }, []);
+  /**
+   * Promote all proposals to real FrequencyBands.
+   * @param sourceId - The audio source ID to assign to all promoted bands. Defaults to "mixdown".
+   */
+  const promoteAllProposals = useCallback(
+    (sourceId: string = MIXDOWN_STREAM_ID) => {
+      const proposalStore = useBandProposalStore.getState();
+      const proposals = [...proposalStore.proposals];
 
-    /**
-     * Stop auditioning.
-     */
-    const stopAudition = useCallback(() => {
-        useBandProposalStore.getState().stopAudition();
-    }, []);
+      for (const proposal of proposals) {
+        promoteProposal(proposal.id, sourceId);
+      }
+    },
+    [promoteProposal]
+  );
 
-    /**
-     * Inspect a proposal (show details).
-     */
-    const inspectProposal = useCallback((proposalId: string | null) => {
-        useBandProposalStore.getState().inspectProposal(proposalId);
-    }, []);
+  /**
+   * Dismiss a proposal (remove it without promoting).
+   */
+  const dismissProposal = useCallback((proposalId: string) => {
+    useBandProposalStore.getState().dismissProposal(proposalId);
+  }, []);
 
-    return {
-        computeProposals,
-        promoteProposal,
-        promoteAllProposals,
-        dismissProposal,
-        dismissAllProposals,
-        startAudition,
-        stopAudition,
-        inspectProposal,
-    };
+  /**
+   * Dismiss all proposals.
+   */
+  const dismissAllProposals = useCallback(() => {
+    useBandProposalStore.getState().clearProposals();
+  }, []);
+
+  /**
+   * Start auditioning a proposal (for audio preview).
+   */
+  const startAudition = useCallback((proposalId: string) => {
+    useBandProposalStore.getState().startAudition(proposalId);
+  }, []);
+
+  /**
+   * Stop auditioning.
+   */
+  const stopAudition = useCallback(() => {
+    useBandProposalStore.getState().stopAudition();
+  }, []);
+
+  /**
+   * Inspect a proposal (show details).
+   */
+  const inspectProposal = useCallback((proposalId: string | null) => {
+    useBandProposalStore.getState().inspectProposal(proposalId);
+  }, []);
+
+  return {
+    computeProposals,
+    promoteProposal,
+    promoteAllProposals,
+    dismissProposal,
+    dismissAllProposals,
+    startAudition,
+    stopAudition,
+    inspectProposal,
+  };
 }

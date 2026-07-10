@@ -3,10 +3,7 @@
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/lib/stores/projectStore";
-import {
-  useInterpretationTreeStore,
-  TREE_NODE_IDS,
-} from "@/lib/stores/interpretationTreeStore";
+import { useInterpretationTreeStore, TREE_NODE_IDS } from "@/lib/stores/interpretationTreeStore";
 
 /**
  * Inspector for the Scripts section.
@@ -46,8 +43,8 @@ export function ScriptsInspector() {
 
       {scripts.length === 0 ? (
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          No scripts defined. Add a script to create visualizations using the
-          Rhai scripting language.
+          No scripts defined. Add a script to create visualizations using the Rhai scripting
+          language.
         </p>
       ) : (
         <div className="space-y-2">

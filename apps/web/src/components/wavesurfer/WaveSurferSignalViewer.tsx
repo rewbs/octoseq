@@ -87,7 +87,7 @@ export const WaveSurferSignalViewer = forwardRef<
             backgroundColor: options?.backgroundColor ?? "rgba(0, 0, 0, 0.1)",
             showGrid: options?.showGrid ?? false,
             layout: options?.layout ?? "overlay",
-            layers: layers,
+            layers: [],
             onHover: options?.onHover,
             onClick: options?.onClick,
           })
@@ -119,7 +119,15 @@ export const WaveSurferSignalViewer = forwardRef<
       actionsRef.current = null;
       setIsReady(false);
     };
-  }, [wavesurfer, options?.height, options?.backgroundColor, options?.showGrid, options?.layout]);
+  }, [
+    wavesurfer,
+    options?.height,
+    options?.backgroundColor,
+    options?.showGrid,
+    options?.layout,
+    options?.onHover,
+    options?.onClick,
+  ]);
 
   // Update layers when they change
   useEffect(() => {

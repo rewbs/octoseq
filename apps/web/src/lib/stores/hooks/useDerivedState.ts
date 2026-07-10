@@ -6,7 +6,10 @@ import { useConfigStore } from "../configStore";
 import { analysisKey, toUiResult, useAnalysisStore, useStreamStore } from "@/lib/streams";
 import { usePlaybackStore, getMirroredCursorTime } from "../playbackStore";
 import { normaliseForWaveform } from "@octoseq/mir";
-import { prepareHpssSpectrogramForHeatmap, prepareMfccForHeatmap } from "@/lib/mirDisplayTransforms";
+import {
+  prepareHpssSpectrogramForHeatmap,
+  prepareMfccForHeatmap,
+} from "@/lib/mirDisplayTransforms";
 import type { TimeAlignedHeatmapData } from "@/components/heatmap/TimeAlignedHeatmapPixi";
 import type { RefinementCandidate } from "@/lib/searchRefinement";
 
@@ -65,7 +68,9 @@ export function useActiveCandidateGroupLogit() {
     const startMs = Math.round(activeCandidate.startSec * 1000);
     const endMs = Math.round(activeCandidate.endSec * 1000);
     const match = searchResult.candidates.find(
-      (c) => Math.round(c.windowStartSec * 1000) === startMs && Math.round(c.windowEndSec * 1000) === endMs
+      (c) =>
+        Math.round(c.windowStartSec * 1000) === startMs &&
+        Math.round(c.windowEndSec * 1000) === endMs
     );
     return match?.explain?.groupLogit ?? null;
   }, [activeCandidate, searchResult]);
@@ -171,7 +176,12 @@ export function useDisplayedHeatmap(): TimeAlignedHeatmapData | null {
 
     const displayData =
       fn === "hpssHarmonic" || fn === "hpssPercussive"
-        ? prepareHpssSpectrogramForHeatmap(raw.data, { showDc: showDcBin, useDb: true, minDb: -80, maxDb: 0 })
+        ? prepareHpssSpectrogramForHeatmap(raw.data, {
+            showDc: showDcBin,
+            useDb: true,
+            minDb: -80,
+            maxDb: 0,
+          })
         : fn === "mfcc" || fn === "mfccDelta" || fn === "mfccDeltaDelta"
           ? prepareMfccForHeatmap(raw.data, { showC0: showMfccC0 })
           : raw.data;
@@ -190,7 +200,13 @@ export function useHeatmapValueRange() {
     const fn = tabResult.fn;
 
     // For HPSS + MFCC we pre-normalise to [0,1], so use a fixed colormap range.
-    if (fn === "hpssHarmonic" || fn === "hpssPercussive" || fn === "mfcc" || fn === "mfccDelta" || fn === "mfccDeltaDelta") {
+    if (
+      fn === "hpssHarmonic" ||
+      fn === "hpssPercussive" ||
+      fn === "mfcc" ||
+      fn === "mfccDelta" ||
+      fn === "mfccDeltaDelta"
+    ) {
       return { min: 0, max: 1 };
     }
 

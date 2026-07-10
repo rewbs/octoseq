@@ -463,14 +463,7 @@ export const CONFIG_MAP_ENTRIES: RegistryEntry[] = [
         type: "string",
         description: "Envelope shape.",
         default: "impulse",
-        enumValues: [
-          "impulse",
-          "step",
-          "attack_decay",
-          "adsr",
-          "gaussian",
-          "exponential_decay",
-        ],
+        enumValues: ["impulse", "step", "attack_decay", "adsr", "gaussian", "exponential_decay"],
       },
       {
         name: "attack_beats",
@@ -617,14 +610,7 @@ export const CONFIG_MAP_ENTRIES: RegistryEntry[] = [
         type: "string",
         description: "Envelope shape over lifetime.",
         default: "impulse",
-        enumValues: [
-          "impulse",
-          "step",
-          "attack_decay",
-          "adsr",
-          "gaussian",
-          "exponential_decay",
-        ],
+        enumValues: ["impulse", "step", "attack_decay", "adsr", "gaussian", "exponential_decay"],
       },
       {
         name: "attack_beats",

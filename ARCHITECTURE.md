@@ -202,18 +202,21 @@ packages/mir/src/
 #### Implementation Approach
 
 **DSP Pipeline (CPU)**:
+
 1. Audio input → FFT (via fft.js) → Complex spectrogram
 2. Spectrogram → Feature extraction (mel, MFCC, spectral features)
 3. Features → Event detection (onset envelope, peak picking)
 4. Features → Source separation (HPSS via median filtering)
 
 **GPU Acceleration** (optional):
+
 - Mel projection uses compute shaders for large spectrograms
 - HPSS mask estimation parallelized on GPU
 - Onset envelope computation accelerated
 - All GPU paths have CPU fallbacks
 
 **Search Algorithm**:
+
 1. Query region → Fingerprint (compressed representation)
 2. Sliding window across track → Similarity scores
 3. Optional: Logistic regression refinement with human labels
@@ -297,39 +300,43 @@ apps/web/src/
 
 Using **Zustand** with devtools middleware:
 
-| Store | Purpose | Key State |
-|-------|---------|-----------|
-| `audioStore` | Audio data | `audioBuffer`, `sampleRate`, `duration` |
-| `playbackStore` | Playback control | `currentTime`, `isPlaying`, `viewport` |
-| `mirStore` | Analysis results | `results` (cached by function ID) |
-| `searchStore` | Search state | `candidates`, `refinementLabels`, `queryRegion` |
-| `configStore` | UI settings | `colorSchemes`, `debugFlags` |
+| Store           | Purpose          | Key State                                       |
+| --------------- | ---------------- | ----------------------------------------------- |
+| `audioStore`    | Audio data       | `audioBuffer`, `sampleRate`, `duration`         |
+| `playbackStore` | Playback control | `currentTime`, `isPlaying`, `viewport`          |
+| `mirStore`      | Analysis results | `results` (cached by function ID)               |
+| `searchStore`   | Search state     | `candidates`, `refinementLabels`, `queryRegion` |
+| `configStore`   | UI settings      | `colorSchemes`, `debugFlags`                    |
 
 #### Implementation Approach
 
 **Audio Loading**:
+
 - WaveSurfer.js handles audio decoding and waveform display
 - AudioBuffer stored in Zustand for sharing across components
 
 **MIR Execution**:
+
 - Analysis runs in Web Workers via `workerProtocol`
 - Results transferred back with ArrayBuffer ownership
 - Cached by function ID to avoid recomputation
 
 **Visualization Strategy**:
+
 - 1D signals: SVG overlays synced to viewport
 - 2D data: PixiJS WebGL heatmaps with viewport culling
 - Events: Marker overlays at peak positions
 
 **Keyboard Shortcuts**:
-| Key | Action |
-|-----|--------|
-| `←/j` | Previous candidate |
-| `→/k` | Next candidate |
-| `a` | Accept candidate |
-| `r` | Reject candidate |
-| `space` | Play/pause |
-| `q` | Play query region |
+
+| Key     | Action             |
+| ------- | ------------------ |
+| `←/j`   | Previous candidate |
+| `→/k`   | Next candidate     |
+| `a`     | Accept candidate   |
+| `r`     | Reject candidate   |
+| `space` | Play/pause         |
+| `q`     | Play query region  |
 
 ---
 
@@ -385,22 +392,26 @@ packages/visualiser/src/
 #### Implementation Approach
 
 **Dual Target Build**:
+
 - **Native**: Full CLI with headless rendering to PNG frames
 - **WASM**: Browser-compatible module for preview
 
 **Rendering Pipeline**:
+
 1. Load Rhai script → Parse and validate
 2. Call `init(ctx)` → Create initial scene graph
 3. Per frame: Call `update(dt, frame)` → Update scene
 4. Render scene graph via wgpu → Output frame
 
 **Scene Graph**:
+
 - Entity-based system with unique IDs
 - Transform hierarchy (position, rotation, scale)
 - Mesh instances + procedural line strips
 - Visibility toggling
 
 **CLI Usage**:
+
 ```bash
 visualiser render \
   --input data.json \
@@ -453,24 +464,29 @@ fn update(dt, frame) {
 #### Available APIs
 
 **Mesh Creation**:
+
 - `mesh.cube()` → MeshInstance
 - `mesh.plane()` → MeshInstance
 
 **Line Primitives**:
+
 - `line.strip({ max_points })` → LineStrip
 - `entity.push(x, y)` / `entity.clear()`
 
 **Scene Management**:
+
 - `scene.add(entity)`
 - `scene.remove(entity)`
 
 **Entity Properties**:
+
 - `entity.position.{x, y, z}`
 - `entity.rotation.{x, y, z}`
 - `entity.scale`
 - `entity.visible`
 
 **Logging**:
+
 - `log.info(val)`, `log.warn(val)`, `log.error(val)`
 
 #### Implementation Approach
@@ -489,10 +505,16 @@ fn update(dt, frame) {
 ```typescript
 // Analysis function identifiers
 type MirFunctionId =
-  | "spectralCentroid" | "spectralFlux"
-  | "melSpectrogram" | "onsetEnvelope" | "onsetPeaks"
-  | "hpssHarmonic" | "hpssPercussive"
-  | "mfcc" | "mfccDelta" | "mfccDeltaDelta";
+  | "spectralCentroid"
+  | "spectralFlux"
+  | "melSpectrogram"
+  | "onsetEnvelope"
+  | "onsetPeaks"
+  | "hpssHarmonic"
+  | "hpssPercussive"
+  | "mfcc"
+  | "mfccDelta"
+  | "mfccDeltaDelta";
 
 // Analysis request configuration
 interface MirRunRequest {
@@ -504,7 +526,7 @@ interface MirRunRequest {
 // Canonical audio interface
 interface MirAudioPayload {
   sampleRate: number;
-  samples: Float32Array;  // Mono
+  samples: Float32Array; // Mono
 }
 
 // Result types (discriminated union)
@@ -520,7 +542,7 @@ interface Mir1DResult {
 interface Mir2DResult {
   kind: "2d";
   times: Float32Array;
-  data: Float32Array[];  // Per-band
+  data: Float32Array[]; // Per-band
   meta: MirRunMeta;
 }
 
@@ -687,6 +709,7 @@ Main Thread                          Web Worker
 ### Turbo Configuration
 
 **Root `turbo.json`**:
+
 ```json
 {
   "pipeline": {
@@ -707,11 +730,11 @@ Main Thread                          Web Worker
 
 ### Package Builds
 
-| Package | Build Tool | Entry | Output |
-|---------|-----------|-------|--------|
-| `@octoseq/mir` | tsup | `src/index.ts` | `dist/` (ESM + CJS) |
-| `apps/web` | Next.js | `src/app/page.tsx` | `.next/` |
-| `@octoseq/visualiser` | wasm-pack | `src/lib.rs` | `pkg/` (WASM) |
+| Package               | Build Tool | Entry              | Output              |
+| --------------------- | ---------- | ------------------ | ------------------- |
+| `@octoseq/mir`        | tsup       | `src/index.ts`     | `dist/` (ESM + CJS) |
+| `apps/web`            | Next.js    | `src/app/page.tsx` | `.next/`            |
+| `@octoseq/visualiser` | wasm-pack  | `src/lib.rs`       | `pkg/` (WASM)       |
 
 ### Development Commands
 
@@ -741,53 +764,53 @@ cd packages/visualiser && cargo run --release -- render ...
 
 ### Frontend (Web App)
 
-| Category | Technology |
-|----------|------------|
-| Framework | Next.js 16, React 19 |
-| Compiler | React Compiler, Turbopack |
-| UI | Radix UI primitives |
-| Styling | Tailwind CSS v4 |
-| Audio | WaveSurfer.js 7.12 |
-| 2D Graphics | PixiJS 8.14 |
-| Code Editor | Monaco Editor 4.7 |
-| State | Zustand 5.0 |
+| Category    | Technology                |
+| ----------- | ------------------------- |
+| Framework   | Next.js 16, React 19      |
+| Compiler    | React Compiler, Turbopack |
+| UI          | Radix UI primitives       |
+| Styling     | Tailwind CSS v4           |
+| Audio       | WaveSurfer.js 7.12        |
+| 2D Graphics | PixiJS 8.14               |
+| Code Editor | Monaco Editor 4.7         |
+| State       | Zustand 5.0               |
 
 ### MIR Library
 
-| Category | Technology |
-|----------|------------|
-| Language | TypeScript (ES2022) |
-| GPU Compute | WebGPU + WGSL |
-| DSP | fft.js |
-| Build | tsup |
-| Testing | Vitest |
+| Category    | Technology          |
+| ----------- | ------------------- |
+| Language    | TypeScript (ES2022) |
+| GPU Compute | WebGPU + WGSL       |
+| DSP         | fft.js              |
+| Build       | tsup                |
+| Testing     | Vitest              |
 
 ### Rendering Engine
 
-| Category | Technology |
-|----------|------------|
-| Language | Rust (2021 edition) |
-| Graphics | wgpu 23.0 |
-| Scripting | Rhai 1.20 |
-| Math | glam 0.28 |
-| WASM | wasm-bindgen, web-sys |
-| CLI | clap 4.5 |
+| Category  | Technology            |
+| --------- | --------------------- |
+| Language  | Rust (2021 edition)   |
+| Graphics  | wgpu 23.0             |
+| Scripting | Rhai 1.20             |
+| Math      | glam 0.28             |
+| WASM      | wasm-bindgen, web-sys |
+| CLI       | clap 4.5              |
 
 ### Monorepo
 
-| Category | Technology |
-|----------|------------|
-| Task Runner | Turbo |
-| Package Manager | pnpm |
-| TypeScript | 5.x with strict mode |
+| Category        | Technology           |
+| --------------- | -------------------- |
+| Task Runner     | Turbo                |
+| Package Manager | pnpm                 |
+| TypeScript      | 5.x with strict mode |
 
 ---
 
 ## Appendix: File Metrics
 
-| Component | Approximate LOC |
-|-----------|-----------------|
-| MIR Library | ~5,000 |
-| Web App | ~9,200 |
-| Visualiser | ~2,900 |
-| **Total** | **~17,100** |
+| Component   | Approximate LOC |
+| ----------- | --------------- |
+| MIR Library | ~5,000          |
+| Web App     | ~9,200          |
+| Visualiser  | ~2,900          |
+| **Total**   | **~17,100**     |

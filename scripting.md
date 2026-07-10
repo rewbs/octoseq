@@ -71,13 +71,13 @@ The `mesh.load()` function creates an instance of a 3D mesh asset that was loade
 
 Mesh entities have the following properties:
 
-| Property   | Type           | Description                            |
-| ---------- | -------------- | -------------------------------------- |
-| `position` | `{x, y, z}`    | Position in 3D space                   |
-| `rotation` | `{x, y, z}`    | Euler angles in radians                |
-| `scale`    | `f32`          | Uniform scale factor (default: 1.0)    |
-| `visible`  | `bool`         | Visibility flag                        |
-| `color`    | `{r, g, b, a}` | RGBA tint (0.0-1.0, default: white)    |
+| Property   | Type           | Description                         |
+| ---------- | -------------- | ----------------------------------- |
+| `position` | `{x, y, z}`    | Position in 3D space                |
+| `rotation` | `{x, y, z}`    | Euler angles in radians             |
+| `scale`    | `f32`          | Uniform scale factor (default: 1.0) |
+| `visible`  | `bool`         | Visibility flag                     |
+| `color`    | `{r, g, b, a}` | RGBA tint (0.0-1.0, default: white) |
 
 The `color` property multiplies with the mesh's vertex colors, so white (`{r: 1.0, g: 1.0, b: 1.0, a: 1.0}`) shows the original vertex colors unchanged.
 
@@ -104,6 +104,7 @@ scene.add(copy2);
 ```
 
 Instances share the underlying geometry (no memory duplication) but have their own:
+
 - Transform (position, rotation, scale)
 - Material and material parameters
 - Color
@@ -148,13 +149,13 @@ let energy_trace = line.trace(inputs.mix.energy, #{
 
 The engine automatically evaluates the Signal each frame and pushes a point at `(time * x_scale, (value + y_offset) * y_scale)`. This is the preferred way to visualize Signals without imperative code.
 
-| Property/Method | Type           | Description                              |
-| --------------- | -------------- | ---------------------------------------- |
-| `color`         | `{r, g, b, a}` | RGBA color (0.0-1.0 range)               |
-| `clear()`       | method         | Clear all points                         |
-| `x_scale`       | `f32 \| Signal` | Scale factor for time axis              |
-| `y_scale`       | `f32 \| Signal` | Scale factor for signal value           |
-| `y_offset`      | `f32 \| Signal` | Offset added before scaling             |
+| Property/Method | Type            | Description                   |
+| --------------- | --------------- | ----------------------------- |
+| `color`         | `{r, g, b, a}`  | RGBA color (0.0-1.0 range)    |
+| `clear()`       | method          | Clear all points              |
+| `x_scale`       | `f32 \| Signal` | Scale factor for time axis    |
+| `y_scale`       | `f32 \| Signal` | Scale factor for signal value |
+| `y_offset`      | `f32 \| Signal` | Offset added before scaling   |
 
 **Comparison:**
 
@@ -185,14 +186,15 @@ let ribbon = line.ribbon(inputs.mix.energy, #{
 });
 ```
 
-| Property/Method | Type            | Description                                |
-| --------------- | --------------- | ------------------------------------------ |
-| `color`         | `{r, g, b, a}`  | RGBA color (0.0-1.0 range)                 |
-| `width`         | `f32 \| Signal` | Ribbon width (or diameter for tube mode)   |
-| `twist`         | `f32 \| Signal` | Twist rate along ribbon length             |
-| `clear()`       | method          | Clear all points                           |
+| Property/Method | Type            | Description                              |
+| --------------- | --------------- | ---------------------------------------- |
+| `color`         | `{r, g, b, a}`  | RGBA color (0.0-1.0 range)               |
+| `width`         | `f32 \| Signal` | Ribbon width (or diameter for tube mode) |
+| `twist`         | `f32 \| Signal` | Twist rate along ribbon length           |
+| `clear()`       | method          | Clear all points                         |
 
 **Mode comparison:**
+
 - **strip**: Flat ribbon perpendicular to the view direction
 - **tube**: Cylindrical tube around the path, best for 3D orbits
 
@@ -235,12 +237,13 @@ let cloud = points.cloud(#{
 });
 ```
 
-| Property   | Type            | Description                    |
-| ---------- | --------------- | ------------------------------ |
-| `color`    | `{r, g, b, a}`  | Point color (RGBA 0.0-1.0)     |
+| Property     | Type            | Description                  |
+| ------------ | --------------- | ---------------------------- |
+| `color`      | `{r, g, b, a}`  | Point color (RGBA 0.0-1.0)   |
 | `point_size` | `f32 \| Signal` | Size of each point in pixels |
 
 **Modes:**
+
 - **uniform**: Points distributed in a cube with half-extent = spread
 - **sphere**: Points distributed on a sphere surface with radius = spread
 
@@ -281,14 +284,15 @@ group.remove(cube);
 
 Group properties:
 
-| Property   | Type        | Description                              |
-| ---------- | ----------- | ---------------------------------------- |
-| `position` | `{x, y, z}` | Position offset for all children         |
-| `rotation` | `{x, y, z}` | Rotation applied to all children         |
-| `scale`    | `f32`       | Scale multiplier for all children        |
-| `visible`  | `bool`      | When false, hides all children           |
+| Property   | Type        | Description                       |
+| ---------- | ----------- | --------------------------------- |
+| `position` | `{x, y, z}` | Position offset for all children  |
+| `rotation` | `{x, y, z}` | Rotation applied to all children  |
+| `scale`    | `f32`       | Scale multiplier for all children |
+| `visible`  | `bool`      | When false, hides all children    |
 
 Notes:
+
 - Children don't need to be added to the scene individually (group membership implies visibility)
 - Nested groups are supported (a group can contain other groups)
 - An entity can only belong to one group at a time
@@ -362,11 +366,13 @@ There are two distinct input surfaces:
 Tip: avoid naming the second `update()` parameter `inputs` if you plan to use the Signal API, since it will shadow the global `inputs`.
 
 Signals are **not** automatically coerced into numbers inside Rhai. Use:
+
 - `frame.*` when you need a number for control-flow or arbitrary math (e.g. `if`, `sin()`, loops)
 - `inputs.*` when you want to build a `Signal` graph and assign it to a numeric entity property
 - `timing.*` for time-based animation (returns Signals, not numbers)
 
 **Namespace structure:**
+
 - `inputs.mix` - Mixdown audio signals: `rms`, `energy`, `centroid`, `flux`, `onset`, `searchSimilarity`, `harmonic`, `bassMotion`, `tonal`, `pitch`, `pitchConfidence`, `activity`
   - `inputs.mix.bands[...]` - Frequency band signals
   - `inputs.mix.beatCandidates`, `inputs.mix.onsetPeaks` - Pre-extracted event streams
@@ -392,10 +398,12 @@ fn update(dt, frame) {
 Numeric entity fields can be authored as either numbers or `Signal` graphs. When a `Signal` is assigned, the engine evaluates it each frame at the current `time`/`dt` during scene sync.
 
 Supported (signals allowed):
+
 - `position.{x,y,z}`, `rotation.{x,y,z}`, `scale`
 - `color.{r,g,b,a}`, `wireframeColor.{r,g,b,a}`
 
 Not supported (signals are treated as plain values and won’t evaluate):
+
 - `visible` (expects `bool`)
 - `line.strip()` point data (`push(x, y)` expects numbers)
 
@@ -421,6 +429,7 @@ If frequency bands are available, scripts get a band-scoped namespace at `inputs
 - Use `log.info(inputs.mix.bands)` to inspect available keys (and `describe(inputs.mix.bands)` for the API shape).
 
 Each band entry is a `BandSignals` object with:
+
 - `energy`, `onset`, `flux`, `centroid` → `Signal`
 - `beatCandidates`, `onsetPeaks` → `EventStream` (pre-extracted events)
 
@@ -453,11 +462,13 @@ cube.color = #{
 Derived Signals are user-defined 1D signals created from various source types. They are accessible via `inputs.customSignals["signal_name"]`.
 
 **Source Types:**
+
 - **2D Spectral Data** (spectrogram, MFCC, chroma) → reduced to 1D via algorithms like `mean`, `max`, `spectralCentroid`
 - **1D MIR Outputs** (energy, flux, centroid) → passed through directly or transformed
 - **Event Streams** (beat candidates, onset peaks, authored events) → converted to continuous signals via envelope generators
 
 **Accessing in Scripts:**
+
 ```rhai
 let cube = mesh.cube();
 
@@ -778,11 +789,11 @@ let timed_peaks = inputs.mix.energy.peak_window_sec(0.05);  // 50ms
 
 **When to use each strategy:**
 
-| Strategy | Best For | Notes |
-|----------|----------|-------|
-| `peak()` (default) | Transient signals (onset, energy) | Preserves spikes that would be missed at low frame rates |
-| `interpolate()` | Smooth signals (centroid, flux) | More accurate continuous values |
-| `peak_window(beats)` | Custom temporal resolution | Larger window = more aggressive peak capture |
+| Strategy             | Best For                          | Notes                                                    |
+| -------------------- | --------------------------------- | -------------------------------------------------------- |
+| `peak()` (default)   | Transient signals (onset, energy) | Preserves spikes that would be missed at low frame rates |
+| `interpolate()`      | Smooth signals (centroid, flux)   | More accurate continuous values                          |
+| `peak_window(beats)` | Custom temporal resolution        | Larger window = more aggressive peak capture             |
 
 **Note:** Sampling configuration only affects `Input` and `BandInput` signals. For other signals (constants, generators, transformations), these methods return the signal unchanged.
 
@@ -972,6 +983,7 @@ let anticipation = kicks.beats_to_next()
 ```
 
 **Edge cases:**
+
 - Before first event: `*_from_prev()` returns distance to first event
 - After last event: `*_to_next()` returns distance to track end
 - Empty events: Returns 0.0
@@ -1021,6 +1033,7 @@ let anticipation = phase.scale(2.0).clamp(0.0, 1.0);  // Build up in second half
 ```
 
 **Edge cases:**
+
 - Before first event: Returns 0.0
 - After last event: Returns 1.0
 - Single event or no events: Returns 0.0
@@ -1886,40 +1899,41 @@ fn update(dt, frame) {
 ```
 
 **Notes on chained transforms:**
+
 - Up to 4 warp operations and 4 color operations can be chained
 - Each method call adds a new operation to the chain
 - Methods can be called in any order; `.build()` finalizes the config
 
 #### Warp Methods Reference
 
-| Method | Signature | Effect |
-|--------|-----------|--------|
-| `.warp.spiral` | `(strength, rotation)` or `(strength, rotation, scale)` | Radial + rotation combined |
-| `.warp.radial` | `(strength)` or `(strength, scale)` | Expand/contract from center |
-| `.warp.affine` | `(scale, rotation)` or `(scale, rotation, tx, ty)` | Scale, rotate, translate |
-| `.warp.noise` | `(strength, frequency)` | Perlin-based displacement |
-| `.warp.shear` | `(strength)` | Skew transformation |
+| Method         | Signature                                               | Effect                      |
+| -------------- | ------------------------------------------------------- | --------------------------- |
+| `.warp.spiral` | `(strength, rotation)` or `(strength, rotation, scale)` | Radial + rotation combined  |
+| `.warp.radial` | `(strength)` or `(strength, scale)`                     | Expand/contract from center |
+| `.warp.affine` | `(scale, rotation)` or `(scale, rotation, tx, ty)`      | Scale, rotate, translate    |
+| `.warp.noise`  | `(strength, frequency)`                                 | Perlin-based displacement   |
+| `.warp.shear`  | `(strength)`                                            | Skew transformation         |
 
 #### Color Methods Reference
 
-| Method | Signature | Effect |
-|--------|-----------|--------|
-| `.color.decay` | `(rate)` | Fade to black (0.9=fast, 0.99=slow) |
-| `.color.hsv` | `(h, s, v)` | Hue/saturation/value shift |
-| `.color.posterize` | `(levels)` | Reduce color levels (2-16 typical) |
-| `.color.channel_offset` | `(x, y)` | RGB split / chromatic aberration |
+| Method                  | Signature   | Effect                              |
+| ----------------------- | ----------- | ----------------------------------- |
+| `.color.decay`          | `(rate)`    | Fade to black (0.9=fast, 0.99=slow) |
+| `.color.hsv`            | `(h, s, v)` | Hue/saturation/value shift          |
+| `.color.posterize`      | `(levels)`  | Reduce color levels (2-16 typical)  |
+| `.color.channel_offset` | `(x, y)`    | RGB split / chromatic aberration    |
 
 #### Blend Methods Reference
 
-| Method | Effect |
-|--------|--------|
-| `.blend.alpha()` | Linear interpolation (default) |
-| `.blend.add()` | Additive (brightens, good for trails) |
-| `.blend.multiply()` | Darkens overlapping areas |
-| `.blend.screen()` | Inverse multiply (brightens) |
-| `.blend.overlay()` | Contrast enhancement |
-| `.blend.difference()` | Subtractive (psychedelic effects) |
-| `.blend.max()` | Maximum of both values |
+| Method                | Effect                                |
+| --------------------- | ------------------------------------- |
+| `.blend.alpha()`      | Linear interpolation (default)        |
+| `.blend.add()`        | Additive (brightens, good for trails) |
+| `.blend.multiply()`   | Darkens overlapping areas             |
+| `.blend.screen()`     | Inverse multiply (brightens)          |
+| `.blend.overlay()`    | Contrast enhancement                  |
+| `.blend.difference()` | Subtractive (psychedelic effects)     |
+| `.blend.max()`        | Maximum of both values                |
 
 #### Feedback Sampling Mode
 
@@ -1943,10 +1957,10 @@ fn init(ctx) {
 }
 ```
 
-| Method | Pipeline Order | Use Case |
-|--------|----------------|----------|
-| `.sample_before_effects()` | scene → feedback → post-FX (default) | Fresh post-FX each frame |
-| `.sample_after_effects()` | scene → post-FX → feedback | Accumulating bloom/grain effects |
+| Method                     | Pipeline Order                       | Use Case                         |
+| -------------------------- | ------------------------------------ | -------------------------------- |
+| `.sample_before_effects()` | scene → feedback → post-FX (default) | Fresh post-FX each frame         |
+| `.sample_after_effects()`  | scene → post-FX → feedback           | Accumulating bloom/grain effects |
 
 **Example: Accumulating Bloom Trails**
 
@@ -2035,13 +2049,13 @@ fn update(dt, frame) {
 
 #### Available Materials
 
-| Material ID | Description | Parameters |
-|------------|-------------|------------|
-| `default` | Standard mesh rendering | `base_color` |
-| `emissive` | Self-illuminating glow | `emission_color`, `emission_intensity` |
-| `wire_glow` | Glowing wireframe effect | `glow_color`, `glow_intensity`, `line_width` |
-| `soft_additive` | Soft additive blending | `base_color`, `softness` |
-| `gradient` | Two-tone gradient | `color_top`, `color_bottom`, `blend_height` |
+| Material ID     | Description              | Parameters                                   |
+| --------------- | ------------------------ | -------------------------------------------- |
+| `default`       | Standard mesh rendering  | `base_color`                                 |
+| `emissive`      | Self-illuminating glow   | `emission_color`, `emission_intensity`       |
+| `wire_glow`     | Glowing wireframe effect | `glow_color`, `glow_intensity`, `line_width` |
+| `soft_additive` | Soft additive blending   | `base_color`, `softness`                     |
+| `gradient`      | Two-tone gradient        | `color_top`, `color_bottom`, `blend_height`  |
 
 #### Material Introspection
 
@@ -2133,17 +2147,17 @@ fn update(dt, frame) {
 
 #### Available Effects
 
-| Effect | Description | Parameters |
-|--------|-------------|------------|
-| `fx.bloom()` | Glow on bright areas | `threshold`, `intensity`, `radius` (capped at 32), `downsample` |
-| `fx.colorGrade()` | Color correction | `brightness`, `contrast`, `saturation`, `gamma`, `tint` |
-| `fx.vignette()` | Darkened edges | `intensity`, `smoothness`, `color` |
-| `fx.distortion()` | Barrel/pincushion | `amount`, `center` |
-| `fx.zoomWrap()` | Zoom with edge wrapping | `amount` (<1=zoom in), `center`, `wrap_mode` ("repeat"/"mirror") |
-| `fx.radialBlur()` | Radial motion blur | `strength`, `center`, `samples` (2-32) |
-| `fx.directionalBlur()` | Directional motion blur | `amount` (pixels), `angle` (radians), `samples` (2-32) |
-| `fx.chromaticAberration()` | RGB channel separation | `amount`, `angle` (radians) |
-| `fx.grain()` | Deterministic film grain | `amount`, `scale`, `seed` |
+| Effect                     | Description              | Parameters                                                       |
+| -------------------------- | ------------------------ | ---------------------------------------------------------------- |
+| `fx.bloom()`               | Glow on bright areas     | `threshold`, `intensity`, `radius` (capped at 32), `downsample`  |
+| `fx.colorGrade()`          | Color correction         | `brightness`, `contrast`, `saturation`, `gamma`, `tint`          |
+| `fx.vignette()`            | Darkened edges           | `intensity`, `smoothness`, `color`                               |
+| `fx.distortion()`          | Barrel/pincushion        | `amount`, `center`                                               |
+| `fx.zoomWrap()`            | Zoom with edge wrapping  | `amount` (<1=zoom in), `center`, `wrap_mode` ("repeat"/"mirror") |
+| `fx.radialBlur()`          | Radial motion blur       | `strength`, `center`, `samples` (2-32)                           |
+| `fx.directionalBlur()`     | Directional motion blur  | `amount` (pixels), `angle` (radians), `samples` (2-32)           |
+| `fx.chromaticAberration()` | RGB channel separation   | `amount`, `angle` (radians)                                      |
+| `fx.grain()`               | Deterministic film grain | `amount`, `scale`, `seed`                                        |
 
 #### Chain Management
 
@@ -2362,62 +2376,62 @@ Parameters marked with `†` can accept either a constant (`f32`) or a `Signal` 
 
 #### Arithmetic
 
-| Method    | Signature                                 | Description              |
-| --------- | ----------------------------------------- | ------------------------ |
-| `add`     | `(Signal) -> Signal` or `(f32) -> Signal` | Add signals or constant  |
-| `sub`     | `(Signal) -> Signal` or `(f32) -> Signal` | Subtract signals         |
-| `mul`     | `(Signal) -> Signal`                      | Multiply signals         |
-| `div`     | `(Signal) -> Signal`                      | Divide signals           |
-| `scale`   | `(factor†) -> Signal`                     | Multiply by factor       |
-| `offset`  | `(amount†) -> Signal`                     | Add constant (alias)     |
-| `neg`     | `() -> Signal`                            | Negate signal            |
-| `pow`     | `(exponent†) -> Signal`                   | Raise to power           |
-| `mix`     | `(Signal, weight†) -> Signal`             | Blend two signals        |
-| `lerp`    | `(Signal, t†) -> Signal`                  | Linear interpolation     |
+| Method   | Signature                                 | Description             |
+| -------- | ----------------------------------------- | ----------------------- |
+| `add`    | `(Signal) -> Signal` or `(f32) -> Signal` | Add signals or constant |
+| `sub`    | `(Signal) -> Signal` or `(f32) -> Signal` | Subtract signals        |
+| `mul`    | `(Signal) -> Signal`                      | Multiply signals        |
+| `div`    | `(Signal) -> Signal`                      | Divide signals          |
+| `scale`  | `(factor†) -> Signal`                     | Multiply by factor      |
+| `offset` | `(amount†) -> Signal`                     | Add constant (alias)    |
+| `neg`    | `() -> Signal`                            | Negate signal           |
+| `pow`    | `(exponent†) -> Signal`                   | Raise to power          |
+| `mix`    | `(Signal, weight†) -> Signal`             | Blend two signals       |
+| `lerp`   | `(Signal, t†) -> Signal`                  | Linear interpolation    |
 
 #### Trigonometric
 
-| Method  | Signature                | Description                    |
-| ------- | ------------------------ | ------------------------------ |
-| `sin`   | `() -> Signal`           | Sine of value                  |
-| `cos`   | `() -> Signal`           | Cosine of value                |
-| `tan`   | `() -> Signal`           | Tangent of value               |
-| `asin`  | `() -> Signal`           | Arc sine (input clamped)       |
-| `acos`  | `() -> Signal`           | Arc cosine (input clamped)     |
-| `atan`  | `() -> Signal`           | Arc tangent                    |
-| `atan2` | `(Signal) -> Signal`     | atan2(self, other)             |
+| Method  | Signature            | Description                |
+| ------- | -------------------- | -------------------------- |
+| `sin`   | `() -> Signal`       | Sine of value              |
+| `cos`   | `() -> Signal`       | Cosine of value            |
+| `tan`   | `() -> Signal`       | Tangent of value           |
+| `asin`  | `() -> Signal`       | Arc sine (input clamped)   |
+| `acos`  | `() -> Signal`       | Arc cosine (input clamped) |
+| `atan`  | `() -> Signal`       | Arc tangent                |
+| `atan2` | `(Signal) -> Signal` | atan2(self, other)         |
 
 #### Exponential and Logarithmic
 
-| Method | Signature          | Description              |
-| ------ | ------------------ | ------------------------ |
-| `sqrt` | `() -> Signal`     | Square root              |
-| `exp`  | `() -> Signal`     | e^value                  |
-| `ln`   | `() -> Signal`     | Natural logarithm        |
-| `log`  | `(base†) -> Signal`| Logarithm with base      |
+| Method | Signature           | Description         |
+| ------ | ------------------- | ------------------- |
+| `sqrt` | `() -> Signal`      | Square root         |
+| `exp`  | `() -> Signal`      | e^value             |
+| `ln`   | `() -> Signal`      | Natural logarithm   |
+| `log`  | `(base†) -> Signal` | Logarithm with base |
 
 #### Modular and Periodic
 
-| Method   | Signature                    | Description                      |
-| -------- | ---------------------------- | -------------------------------- |
-| `modulo` | `(divisor†) -> Signal`       | Euclidean modulo (always ≥ 0)    |
-| `rem`    | `(divisor†) -> Signal`       | Remainder (can be negative)      |
-| `fract`  | `() -> Signal`               | Fractional part                  |
-| `wrap`   | `(min†, max†) -> Signal`     | Wrap value to range [min, max)   |
+| Method   | Signature                | Description                    |
+| -------- | ------------------------ | ------------------------------ |
+| `modulo` | `(divisor†) -> Signal`   | Euclidean modulo (always ≥ 0)  |
+| `rem`    | `(divisor†) -> Signal`   | Remainder (can be negative)    |
+| `fract`  | `() -> Signal`           | Fractional part                |
+| `wrap`   | `(min†, max†) -> Signal` | Wrap value to range [min, max) |
 
 #### Mapping and Shaping
 
-| Method      | Signature                                      | Description                    |
-| ----------- | ---------------------------------------------- | ------------------------------ |
-| `map`       | `(in_min†, in_max†, out_min†, out_max†) -> Signal` | Map from one range to another |
-| `smoothstep`| `(edge0†, edge1†) -> Signal`                   | S-curve interpolation          |
-| `clamp`     | `(min†, max†) -> Signal`                       | Clamp to range                 |
-| `abs`       | `() -> Signal`                                 | Absolute value                 |
-| `sign`      | `() -> Signal`                                 | -1, 0, or 1                    |
-| `floor`     | `() -> Signal`                                 | Round down                     |
-| `ceil`      | `() -> Signal`                                 | Round up                       |
-| `round`     | `() -> Signal`                                 | Round to nearest               |
-| `sigmoid`   | `(k†) -> Signal`                               | Sigmoid curve (center 0.5)     |
+| Method       | Signature                                          | Description                   |
+| ------------ | -------------------------------------------------- | ----------------------------- |
+| `map`        | `(in_min†, in_max†, out_min†, out_max†) -> Signal` | Map from one range to another |
+| `smoothstep` | `(edge0†, edge1†) -> Signal`                       | S-curve interpolation         |
+| `clamp`      | `(min†, max†) -> Signal`                           | Clamp to range                |
+| `abs`        | `() -> Signal`                                     | Absolute value                |
+| `sign`       | `() -> Signal`                                     | -1, 0, or 1                   |
+| `floor`      | `() -> Signal`                                     | Round down                    |
+| `ceil`       | `() -> Signal`                                     | Round up                      |
+| `round`      | `() -> Signal`                                     | Round to nearest              |
+| `sigmoid`    | `(k†) -> Signal`                                   | Sigmoid curve (center 0.5)    |
 
 #### Smoothing
 
@@ -2429,57 +2443,57 @@ Parameters marked with `†` can accept either a constant (`f32`) or a `Signal` 
 
 #### Normalisation
 
-| Method               | Signature                    | Description                    |
-| -------------------- | ---------------------------- | ------------------------------ |
-| `normalise.global`   | `() -> Signal`               | Min-max normalisation          |
-| `normalise.robust`   | `() -> Signal`               | Percentile-based normalisation |
-| `normalise.to_range` | `(min: f32, max: f32) -> Signal` | Map to range               |
+| Method               | Signature                        | Description                    |
+| -------------------- | -------------------------------- | ------------------------------ |
+| `normalise.global`   | `() -> Signal`                   | Min-max normalisation          |
+| `normalise.robust`   | `() -> Signal`                   | Percentile-based normalisation |
+| `normalise.to_range` | `(min: f32, max: f32) -> Signal` | Map to range                   |
 
 #### Gating
 
-| Method            | Signature                  | Description        |
-| ----------------- | -------------------------- | ------------------ |
-| `gate.threshold`  | `(f32) -> Signal`          | Simple threshold   |
-| `gate.hysteresis` | `(on: f32, off: f32) -> Signal` | Hysteresis gate |
+| Method            | Signature                       | Description      |
+| ----------------- | ------------------------------- | ---------------- |
+| `gate.threshold`  | `(f32) -> Signal`               | Simple threshold |
+| `gate.hysteresis` | `(on: f32, off: f32) -> Signal` | Hysteresis gate  |
 
 #### Time and State
 
-| Method      | Signature              | Description                         |
-| ----------- | ---------------------- | ----------------------------------- |
-| `diff`      | `() -> Signal`         | Derivative                          |
-| `integrate` | `(decay†) -> Signal`   | Cumulative sum with decay           |
-| `delay`     | `(beats†) -> Signal`   | Time delay                          |
-| `anticipate`| `(beats†) -> Signal`   | Look ahead (input signals only)     |
-| `sample_at` | `(time: f32) -> f32`   | Sample value at time (escape hatch) |
+| Method       | Signature            | Description                         |
+| ------------ | -------------------- | ----------------------------------- |
+| `diff`       | `() -> Signal`       | Derivative                          |
+| `integrate`  | `(decay†) -> Signal` | Cumulative sum with decay           |
+| `delay`      | `(beats†) -> Signal` | Time delay                          |
+| `anticipate` | `(beats†) -> Signal` | Look ahead (input signals only)     |
+| `sample_at`  | `(time: f32) -> f32` | Sample value at time (escape hatch) |
 
 #### Sampling Configuration
 
-| Method          | Signature              | Description                            |
-| --------------- | ---------------------- | -------------------------------------- |
-| `interpolate`   | `() -> Signal`         | Use linear interpolation sampling      |
-| `peak`          | `() -> Signal`         | Use peak-preserving sampling (default) |
-| `peak_window`   | `(beats: f32) -> Signal`| Peak-preserving with custom window    |
-| `peak_window_sec`| `(seconds: f32) -> Signal`| Peak-preserving with window in seconds|
+| Method            | Signature                  | Description                            |
+| ----------------- | -------------------------- | -------------------------------------- |
+| `interpolate`     | `() -> Signal`             | Use linear interpolation sampling      |
+| `peak`            | `() -> Signal`             | Use peak-preserving sampling (default) |
+| `peak_window`     | `(beats: f32) -> Signal`   | Peak-preserving with custom window     |
+| `peak_window_sec` | `(seconds: f32) -> Signal` | Peak-preserving with window in seconds |
 
 #### Debug
 
-| Method     | Signature                  | Description                       |
-| ---------- | -------------------------- | --------------------------------- |
-| `probe`    | `(name: String) -> Signal` | Attach debug probe                |
-| `describe` | `() -> String`             | Human-readable graph description  |
+| Method     | Signature                  | Description                      |
+| ---------- | -------------------------- | -------------------------------- |
+| `probe`    | `(name: String) -> Signal` | Attach debug probe               |
+| `describe` | `() -> String`             | Human-readable graph description |
 
 #### Comparison (Boolean Signals)
 
 Comparison methods return boolean-valued signals (1.0 = true, 0.0 = false).
 
-| Method | Signature                                 | Description                           |
-| ------ | ----------------------------------------- | ------------------------------------- |
-| `lt`   | `(Signal \| f32 \| i64) -> Signal` | Less than                             |
-| `gt`   | `(Signal \| f32 \| i64) -> Signal` | Greater than                          |
-| `le`   | `(Signal \| f32 \| i64) -> Signal` | Less than or equal                    |
-| `ge`   | `(Signal \| f32 \| i64) -> Signal` | Greater than or equal                 |
-| `eq`   | `(Signal \| f32 \| i64) -> Signal` | Equal (epsilon tolerance: 1e-6)       |
-| `ne`   | `(Signal \| f32 \| i64) -> Signal` | Not equal                             |
+| Method | Signature                          | Description                     |
+| ------ | ---------------------------------- | ------------------------------- |
+| `lt`   | `(Signal \| f32 \| i64) -> Signal` | Less than                       |
+| `gt`   | `(Signal \| f32 \| i64) -> Signal` | Greater than                    |
+| `le`   | `(Signal \| f32 \| i64) -> Signal` | Less than or equal              |
+| `ge`   | `(Signal \| f32 \| i64) -> Signal` | Greater than or equal           |
+| `eq`   | `(Signal \| f32 \| i64) -> Signal` | Equal (epsilon tolerance: 1e-6) |
+| `ne`   | `(Signal \| f32 \| i64) -> Signal` | Not equal                       |
 
 **Note:** Thresholds accept a `Signal` or a numeric literal (float or integer).
 
@@ -2493,11 +2507,11 @@ let isOnBeat = timing.beatPhase.lt(0.1);
 
 Combine boolean signals with logical operators.
 
-| Method | Signature              | Description                           |
-| ------ | ---------------------- | ------------------------------------- |
-| `and`  | `(Signal) -> Signal`   | True if both > 0                      |
-| `or`   | `(Signal) -> Signal`   | True if either > 0                    |
-| `not`  | `() -> Signal`         | True if <= 0                          |
+| Method | Signature            | Description        |
+| ------ | -------------------- | ------------------ |
+| `and`  | `(Signal) -> Signal` | True if both > 0   |
+| `or`   | `(Signal) -> Signal` | True if either > 0 |
+| `not`  | `() -> Signal`       | True if <= 0       |
 
 ```rhai
 let energy = inputs.mix.energy;
@@ -2513,11 +2527,11 @@ let isNotSilent = isSilent.not();
 
 Use `signal.select()` to build piecewise signals that choose between different values based on conditions.
 
-| Method                       | Signature                              | Description                     |
-| ---------------------------- | -------------------------------------- | ------------------------------- |
-| `signal.select()`            | `() -> SelectBuilder`                  | Start conditional selection     |
-| `SelectBuilder.when`         | `(condition: Signal, value: Signal) -> SelectBuilder` | Add condition/value pair |
-| `SelectBuilder.otherwise`    | `(default: Signal) -> Signal`          | Finalize with default (required)|
+| Method                    | Signature                                             | Description                      |
+| ------------------------- | ----------------------------------------------------- | -------------------------------- |
+| `signal.select()`         | `() -> SelectBuilder`                                 | Start conditional selection      |
+| `SelectBuilder.when`      | `(condition: Signal, value: Signal) -> SelectBuilder` | Add condition/value pair         |
+| `SelectBuilder.otherwise` | `(default: Signal) -> Signal`                         | Finalize with default (required) |
 
 Conditions are evaluated in order; the first condition that evaluates to true (> 0) wins.
 The `.otherwise()` call is **required** to produce a valid Signal.
@@ -2551,14 +2565,14 @@ like any other signal. This is signal composition, not imperative branching.
 
 ### Time Signals
 
-| Signal              | Description                               |
-| ------------------- | ----------------------------------------- |
-| `timing.time`       | Elapsed time in seconds                   |
-| `timing.dt`         | Delta time since last frame               |
-| `timing.beatPosition` | Current beat position (continuous)      |
-| `timing.beatIndex`  | Current beat index (integer-valued)       |
-| `timing.beatPhase`  | Beat phase 0-1 (fractional part of beat)  |
-| `timing.bpm`        | Current BPM (from beat grid, or 120.0)    |
+| Signal                | Description                              |
+| --------------------- | ---------------------------------------- |
+| `timing.time`         | Elapsed time in seconds                  |
+| `timing.dt`           | Delta time since last frame              |
+| `timing.beatPosition` | Current beat position (continuous)       |
+| `timing.beatIndex`    | Current beat index (integer-valued)      |
+| `timing.beatPhase`    | Beat phase 0-1 (fractional part of beat) |
+| `timing.bpm`          | Current BPM (from beat grid, or 120.0)   |
 
 ### Generator Functions
 
@@ -2590,15 +2604,15 @@ like any other signal. This is signal composition, not imperative branching.
 
 ### Sandbox Limits
 
-| Limit                      | Value              |
-| -------------------------- | ------------------ |
-| Expression recursion depth | 64                 |
-| Function call depth        | 64                 |
-| Operations per frame       | 100,000            |
-| Max string size            | 10,000 characters  |
-| Max array size             | 100,000 elements   |
-| Max map size               | 500 entries        |
-| Log messages per frame     | 100                |
+| Limit                      | Value             |
+| -------------------------- | ----------------- |
+| Expression recursion depth | 64                |
+| Function call depth        | 64                |
+| Operations per frame       | 100,000           |
+| Max string size            | 10,000 characters |
+| Max array size             | 100,000 elements  |
+| Max map size               | 500 entries       |
+| Log messages per frame     | 100               |
 
 ---
 
@@ -2631,15 +2645,15 @@ fn init(ctx) {
 
 #### Lighting Properties
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `enabled` | `bool` | `false` | Enable/disable global lighting |
-| `direction` | `{x, y, z}` | `(0, -1, 0)` | Light direction (points from light) |
-| `intensity` | `Signal \| f32` | `1.0` | Light intensity multiplier |
-| `color` | `{r, g, b}` | `(1, 1, 1)` | Light color (0-1 range) |
-| `ambient` | `Signal \| f32` | `0.3` | Ambient light intensity |
-| `rim_intensity` | `Signal \| f32` | `0.0` | Rim lighting intensity |
-| `rim_power` | `Signal \| f32` | `2.0` | Rim lighting falloff power |
+| Property        | Type            | Default      | Description                         |
+| --------------- | --------------- | ------------ | ----------------------------------- |
+| `enabled`       | `bool`          | `false`      | Enable/disable global lighting      |
+| `direction`     | `{x, y, z}`     | `(0, -1, 0)` | Light direction (points from light) |
+| `intensity`     | `Signal \| f32` | `1.0`        | Light intensity multiplier          |
+| `color`         | `{r, g, b}`     | `(1, 1, 1)`  | Light color (0-1 range)             |
+| `ambient`       | `Signal \| f32` | `0.3`        | Ambient light intensity             |
+| `rim_intensity` | `Signal \| f32` | `0.0`        | Rim lighting intensity              |
+| `rim_power`     | `Signal \| f32` | `2.0`        | Rim lighting falloff power          |
 
 ### Audio-Reactive Lighting
 
@@ -2697,10 +2711,10 @@ fn init(ctx) {
 
 #### Per-Entity Properties
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `lit` | `bool` | `true` | Whether this mesh is affected by global lighting |
-| `emissive` | `Signal \| f32` | `0.0` | Emissive intensity (adds glow unaffected by lighting) |
+| Property   | Type            | Default | Description                                           |
+| ---------- | --------------- | ------- | ----------------------------------------------------- |
+| `lit`      | `bool`          | `true`  | Whether this mesh is affected by global lighting      |
+| `emissive` | `Signal \| f32` | `0.0`   | Emissive intensity (adds glow unaffected by lighting) |
 
 ### Lighting Model
 
@@ -2719,6 +2733,7 @@ Loaded OBJ meshes automatically use their vertex normals for lighting:
 - If normals are missing, they are computed as area-weighted vertex normals from face geometry
 
 Built-in primitives have appropriate normals:
+
 - **Cube**: Per-face normals (flat shading)
 - **Sphere**: Smooth normals (normalized position)
 - **Plane**: Y-up normals `(0, 1, 0)`
@@ -2749,18 +2764,18 @@ fn init(ctx) {
 
 ### Shadow Properties
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `enabled` | `bool` | `false` | Enable/disable the shadow |
-| `plane_y` | `Signal \| f32` | `0.0` | Y position of shadow plane |
-| `opacity` | `Signal \| f32` | `0.5` | Shadow opacity (0.0-1.0) |
-| `radius` | `Signal \| f32` | `1.0` | Uniform radius (sets both radius_x and radius_z) |
-| `radius_x` | `Signal \| f32` | `1.0` | Shadow radius in X direction |
-| `radius_z` | `Signal \| f32` | `1.0` | Shadow radius in Z direction |
-| `softness` | `Signal \| f32` | `0.3` | Edge softness (0 = hard, 1 = very soft) |
-| `offset_x` | `Signal \| f32` | `0.0` | X offset from entity position |
-| `offset_z` | `Signal \| f32` | `0.0` | Z offset from entity position |
-| `color` | `Map { r, g, b }` | `(0, 0, 0)` | Shadow color (RGB, 0-1 range) |
+| Property   | Type              | Default     | Description                                      |
+| ---------- | ----------------- | ----------- | ------------------------------------------------ |
+| `enabled`  | `bool`            | `false`     | Enable/disable the shadow                        |
+| `plane_y`  | `Signal \| f32`   | `0.0`       | Y position of shadow plane                       |
+| `opacity`  | `Signal \| f32`   | `0.5`       | Shadow opacity (0.0-1.0)                         |
+| `radius`   | `Signal \| f32`   | `1.0`       | Uniform radius (sets both radius_x and radius_z) |
+| `radius_x` | `Signal \| f32`   | `1.0`       | Shadow radius in X direction                     |
+| `radius_z` | `Signal \| f32`   | `1.0`       | Shadow radius in Z direction                     |
+| `softness` | `Signal \| f32`   | `0.3`       | Edge softness (0 = hard, 1 = very soft)          |
+| `offset_x` | `Signal \| f32`   | `0.0`       | X offset from entity position                    |
+| `offset_z` | `Signal \| f32`   | `0.0`       | Z offset from entity position                    |
+| `color`    | `Map { r, g, b }` | `(0, 0, 0)` | Shadow color (RGB, 0-1 range)                    |
 
 ### Audio-Reactive Shadows
 
@@ -2838,10 +2853,10 @@ The following APIs fully support Signals for numeric parameters:
 
 ### APIs That Accept Numbers Only
 
-| API | Parameters | Notes |
-|-----|------------|-------|
-| `line.push(x, y)` | `x`, `y` | Immediate-mode; use `line.trace()` for Signal-driven lines |
-| `dbg.emit(name, value)` | `value` | Debug emission - samples value at call time |
+| API                     | Parameters | Notes                                                      |
+| ----------------------- | ---------- | ---------------------------------------------------------- |
+| `line.push(x, y)`       | `x`, `y`   | Immediate-mode; use `line.trace()` for Signal-driven lines |
+| `dbg.emit(name, value)` | `value`    | Debug emission - samples value at call time                |
 
 ### Implementation Pattern
 
@@ -2854,6 +2869,7 @@ When adding Signal support to a parameter:
    - If it's a Signal, evaluate at current time/dt
 
 Example (pseudo-code):
+
 ```rust
 // In effect parameter storage
 pub struct BloomOptions {
@@ -2867,6 +2883,7 @@ let intensity_value = eval_signal_param(&options.intensity, time, dt, signals)?;
 ### Why This Matters
 
 Without Signal support, users must write imperative code in `update()`:
+
 ```rhai
 // Without Signal support (verbose, imperative)
 fn update(dt, frame) {
@@ -2875,6 +2892,7 @@ fn update(dt, frame) {
 ```
 
 With Signal support, users can express intent declaratively:
+
 ```rhai
 // With Signal support (declarative, expressive)
 let bloom = fx.bloom(#{

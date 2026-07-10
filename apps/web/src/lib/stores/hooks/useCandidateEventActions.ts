@@ -160,9 +160,7 @@ export function useCandidateEventActions() {
       candidateStore.setError(null);
     } catch (e) {
       console.error("[CandidateEvents] Generation failed:", e);
-      candidateStore.setError(
-        e instanceof Error ? e.message : "Unknown error during generation"
-      );
+      candidateStore.setError(e instanceof Error ? e.message : "Unknown error during generation");
     } finally {
       candidateStore.setGenerating(false);
     }
@@ -187,9 +185,7 @@ export function useCandidateEventActions() {
         candidateStore.setError(null);
       } catch (e) {
         console.error("[CandidateEvents] Generation failed:", e);
-        candidateStore.setError(
-          e instanceof Error ? e.message : "Unknown error during generation"
-        );
+        candidateStore.setError(e instanceof Error ? e.message : "Unknown error during generation");
       } finally {
         candidateStore.setGenerating(false);
       }
@@ -238,13 +234,10 @@ export function useCandidateEventActions() {
   /**
    * Check if MIR analysis has been run for a source and event type.
    */
-  const hasAnalysisFor = useCallback(
-    (sourceId: string, eventType: CandidateEventType): boolean => {
-      const mirFn = EVENT_TYPE_TO_MIR_FN[eventType];
-      return useAnalysisStore.getState().getResult(analysisKey(sourceId, mirFn)) !== null;
-    },
-    []
-  );
+  const hasAnalysisFor = useCallback((sourceId: string, eventType: CandidateEventType): boolean => {
+    const mirFn = EVENT_TYPE_TO_MIR_FN[eventType];
+    return useAnalysisStore.getState().getResult(analysisKey(sourceId, mirFn)) !== null;
+  }, []);
 
   /**
    * Get list of sources that have analysis available for all event types.
@@ -254,21 +247,16 @@ export function useCandidateEventActions() {
     const eventTypes: CandidateEventType[] = ["onset", "beat", "flux"];
 
     return allStreams
-      .filter((stream) =>
-        eventTypes.every((eventType) => hasAnalysisFor(stream.id, eventType))
-      )
+      .filter((stream) => eventTypes.every((eventType) => hasAnalysisFor(stream.id, eventType)))
       .map((stream) => stream.id);
   }, [hasAnalysisFor]);
 
   /**
    * Get the display label for an event type.
    */
-  const getEventTypeLabel = useCallback(
-    (eventType: CandidateEventType): string => {
-      return EVENT_TYPE_LABELS[eventType];
-    },
-    []
-  );
+  const getEventTypeLabel = useCallback((eventType: CandidateEventType): string => {
+    return EVENT_TYPE_LABELS[eventType];
+  }, []);
 
   return {
     // Generation

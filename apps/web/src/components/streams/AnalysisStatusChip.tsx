@@ -29,10 +29,7 @@ export function AnalysisStatusChip({ streamId }: { streamId: StreamId }) {
 
   if (status.isPending) {
     return (
-      <span
-        className="flex w-7 shrink-0 items-center justify-center"
-        title="Analysis running"
-      >
+      <span className="flex w-7 shrink-0 items-center justify-center" title="Analysis running">
         <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
       </span>
     );

@@ -264,7 +264,9 @@ export function MirConfigModal() {
 
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
             <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-              <span className="text-xs text-zinc-600 dark:text-zinc-300">FFT size (power of 2)</span>
+              <span className="text-xs text-zinc-600 dark:text-zinc-300">
+                FFT size (power of 2)
+              </span>
               <input
                 type="number"
                 min={64}
@@ -294,7 +296,9 @@ export function MirConfigModal() {
               </h3>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                  <span className="text-xs text-zinc-600 dark:text-zinc-300">Mel bands (nMels)</span>
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">
+                    Mel bands (nMels)
+                  </span>
                   <input
                     type="number"
                     min={1}
@@ -363,9 +367,7 @@ export function MirConfigModal() {
                     <span className="text-xs text-zinc-600 dark:text-zinc-300">Diff method</span>
                     <select
                       value={onsetDiffMethod}
-                      onChange={(e) =>
-                        setOnsetDiffMethod(e.target.value as "rectified" | "abs")
-                      }
+                      onChange={(e) => setOnsetDiffMethod(e.target.value as "rectified" | "abs")}
                       className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                     >
                       <option value="rectified">Rectified (positive only)</option>
@@ -505,7 +507,9 @@ export function MirConfigModal() {
                     />
                   </label>
                   <label className="grid grid-cols-[140px,1fr] items-center gap-2">
-                    <span className="text-xs text-zinc-600 dark:text-zinc-300">Adaptive factor</span>
+                    <span className="text-xs text-zinc-600 dark:text-zinc-300">
+                      Adaptive factor
+                    </span>
                     <input
                       type="number"
                       step={0.1}
@@ -527,13 +531,17 @@ export function MirConfigModal() {
               </h3>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                  <span className="text-xs text-zinc-600 dark:text-zinc-300">FFT size (power of 2)</span>
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">
+                    FFT size (power of 2)
+                  </span>
                   <input
                     type="number"
                     min={64}
                     step={64}
                     value={transientFftSize}
-                    onChange={(e) => setTransientFftSize(Math.max(64, Math.floor(Number(e.target.value)) || 64))}
+                    onChange={(e) =>
+                      setTransientFftSize(Math.max(64, Math.floor(Number(e.target.value)) || 64))
+                    }
                     className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                   />
                 </label>
@@ -544,7 +552,9 @@ export function MirConfigModal() {
                     min={1}
                     step={16}
                     value={transientHopSize}
-                    onChange={(e) => setTransientHopSize(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                    onChange={(e) =>
+                      setTransientHopSize(Math.max(1, Math.floor(Number(e.target.value)) || 1))
+                    }
                     className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                   />
                 </label>
@@ -585,13 +595,17 @@ export function MirConfigModal() {
               </h3>
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                 <label className="grid grid-cols-[160px,1fr] items-center gap-2">
-                  <span className="text-xs text-zinc-600 dark:text-zinc-300">FFT size (power of 2)</span>
+                  <span className="text-xs text-zinc-600 dark:text-zinc-300">
+                    FFT size (power of 2)
+                  </span>
                   <input
                     type="number"
                     min={64}
                     step={64}
                     value={timbreFftSize}
-                    onChange={(e) => setTimbreFftSize(Math.max(64, Math.floor(Number(e.target.value)) || 64))}
+                    onChange={(e) =>
+                      setTimbreFftSize(Math.max(64, Math.floor(Number(e.target.value)) || 64))
+                    }
                     className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                   />
                 </label>
@@ -602,7 +616,9 @@ export function MirConfigModal() {
                     min={1}
                     step={16}
                     value={timbreHopSize}
-                    onChange={(e) => setTimbreHopSize(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                    onChange={(e) =>
+                      setTimbreHopSize(Math.max(1, Math.floor(Number(e.target.value)) || 1))
+                    }
                     className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                   />
                 </label>
@@ -639,7 +655,9 @@ export function MirConfigModal() {
                       max={300}
                       step={1}
                       value={tempoMinBpm}
-                      onChange={(e) => setTempoMinBpm(Math.max(1, Math.floor(Number(e.target.value)) || 24))}
+                      onChange={(e) =>
+                        setTempoMinBpm(Math.max(1, Math.floor(Number(e.target.value)) || 24))
+                      }
                       className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                     />
                   </label>
@@ -651,7 +669,9 @@ export function MirConfigModal() {
                       max={600}
                       step={1}
                       value={tempoMaxBpm}
-                      onChange={(e) => setTempoMaxBpm(Math.max(1, Math.floor(Number(e.target.value)) || 300))}
+                      onChange={(e) =>
+                        setTempoMaxBpm(Math.max(1, Math.floor(Number(e.target.value)) || 300))
+                      }
                       className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                     />
                   </label>
@@ -679,7 +699,9 @@ export function MirConfigModal() {
                       max={50}
                       step={1}
                       value={tempoMaxHypotheses}
-                      onChange={(e) => setTempoMaxHypotheses(Math.max(1, Math.floor(Number(e.target.value)) || 10))}
+                      onChange={(e) =>
+                        setTempoMaxHypotheses(Math.max(1, Math.floor(Number(e.target.value)) || 10))
+                      }
                       className="rounded border border-zinc-200 bg-white px-2 py-1 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                     />
                   </label>

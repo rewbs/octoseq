@@ -62,4 +62,3 @@ export function makeAutoCandidateId(startSec: number, endSec: number, index: num
   const endMs = Math.round(endSec * 1000);
   return `auto-${startMs}-${endMs}-${index}`;
 }
-

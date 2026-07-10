@@ -2,12 +2,7 @@
 
 import { useMemo } from "react";
 import { Input } from "@/components/ui/input";
-import {
-  useStreamStore,
-  isAudioStream,
-  isBandStream,
-  MIXDOWN_STREAM_ID,
-} from "@/lib/streams";
+import { useStreamStore, isAudioStream, isBandStream, MIXDOWN_STREAM_ID } from "@/lib/streams";
 import { useAuthoredEventStore } from "@/lib/stores/authoredEventStore";
 import {
   REDUCER_EVENT_LABELS,
@@ -95,9 +90,7 @@ export function SourceEventSelector({ source, onChange }: SourceEventSelectorPro
   const handleWindowKindChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const kind = e.target.value as EventWindow["kind"];
     const newWindow: EventWindow =
-      kind === "seconds"
-        ? { kind: "seconds", windowSize: 0.5 }
-        : { kind: "beats", windowSize: 1 };
+      kind === "seconds" ? { kind: "seconds", windowSize: 0.5 } : { kind: "beats", windowSize: 1 };
     onChange({
       ...source,
       reducerParams: { ...source.reducerParams, window: newWindow },
@@ -159,7 +152,9 @@ export function SourceEventSelector({ source, onChange }: SourceEventSelectorPro
 
   const streamRef = source.streamRef;
   const isEnvelopeReducer = source.reducer === "envelope";
-  const isWindowedReducer = ["eventCount", "eventDensity", "weightedSum", "weightedMean"].includes(source.reducer);
+  const isWindowedReducer = ["eventCount", "eventDensity", "weightedSum", "weightedMean"].includes(
+    source.reducer
+  );
 
   return (
     <div className="space-y-4">
@@ -333,7 +328,9 @@ export function SourceEventSelector({ source, onChange }: SourceEventSelectorPro
                 type="radio"
                 name="envelopeShape"
                 value="attackDecay"
-                checked={(source.reducerParams.envelopeShape?.kind ?? "attackDecay") === "attackDecay"}
+                checked={
+                  (source.reducerParams.envelopeShape?.kind ?? "attackDecay") === "attackDecay"
+                }
                 onChange={handleEnvelopeShapeChange}
                 className="h-4 w-4"
               />

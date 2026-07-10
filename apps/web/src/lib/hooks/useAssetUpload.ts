@@ -1,19 +1,19 @@
-'use client';
+"use client";
 
-import { useCallback, useRef, useSyncExternalStore } from 'react';
-import { AssetType } from '@/lib/db';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import type { AssetType } from "@/lib/db";
 import {
   registerAsset,
   confirmAssetUpload,
   markAssetFailed,
   getAssetUploadUrl,
-} from '@/lib/actions/asset';
+} from "@/lib/actions/asset";
 
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
 
-export type UploadStatus = 'pending' | 'uploading' | 'uploaded' | 'failed' | 'cancelled';
+export type UploadStatus = "pending" | "uploading" | "uploaded" | "failed" | "cancelled";
 
 export interface UploadState {
   assetId: string;
@@ -90,7 +90,7 @@ class UploadManager {
     });
 
     if (!result?.data) {
-      const error = result?.serverError ?? 'Failed to register asset';
+      const error = result?.serverError ?? "Failed to register asset";
       onError?.(error);
       throw new Error(error);
     }
@@ -106,7 +106,7 @@ class UploadManager {
     // Initialize upload state
     this.uploads.set(asset.id, {
       assetId: asset.id,
-      status: 'pending',
+      status: "pending",
       progress: 0,
       contentHash,
       fileName: metadata?.fileName,
@@ -131,7 +131,7 @@ class UploadManager {
     const abortController = new AbortController();
     this.abortControllers.set(assetId, abortController);
 
-    this.updateUpload(assetId, { status: 'uploading', progress: 0 });
+    this.updateUpload(assetId, { status: "uploading", progress: 0 });
 
     try {
       // Use XMLHttpRequest for progress tracking
@@ -150,20 +150,20 @@ class UploadManager {
       const confirmResult = await confirmAssetUpload({ assetId });
 
       if (!confirmResult?.data) {
-        throw new Error(confirmResult?.serverError ?? 'Failed to confirm upload');
+        throw new Error(confirmResult?.serverError ?? "Failed to confirm upload");
       }
 
-      this.updateUpload(assetId, { status: 'uploaded', progress: 100 });
+      this.updateUpload(assetId, { status: "uploaded", progress: 100 });
       this.abortControllers.delete(assetId);
       onComplete?.(assetId);
     } catch (error) {
       if (abortController.signal.aborted) {
-        this.updateUpload(assetId, { status: 'cancelled' });
+        this.updateUpload(assetId, { status: "cancelled" });
         return;
       }
 
-      const errorMessage = error instanceof Error ? error.message : 'Upload failed';
-      this.updateUpload(assetId, { status: 'failed', error: errorMessage });
+      const errorMessage = error instanceof Error ? error.message : "Upload failed";
+      this.updateUpload(assetId, { status: "failed", error: errorMessage });
       this.abortControllers.delete(assetId);
 
       // Mark as failed on server
@@ -185,14 +185,14 @@ class UploadManager {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
 
-      xhr.upload.addEventListener('progress', (event) => {
+      xhr.upload.addEventListener("progress", (event) => {
         if (event.lengthComputable) {
           const progress = Math.round((event.loaded / event.total) * 100);
           onProgress(progress);
         }
       });
 
-      xhr.addEventListener('load', () => {
+      xhr.addEventListener("load", () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve();
         } else {
@@ -200,20 +200,20 @@ class UploadManager {
         }
       });
 
-      xhr.addEventListener('error', () => {
-        reject(new Error('Network error during upload'));
+      xhr.addEventListener("error", () => {
+        reject(new Error("Network error during upload"));
       });
 
-      xhr.addEventListener('abort', () => {
-        reject(new Error('Upload cancelled'));
+      xhr.addEventListener("abort", () => {
+        reject(new Error("Upload cancelled"));
       });
 
-      signal.addEventListener('abort', () => {
+      signal.addEventListener("abort", () => {
         xhr.abort();
       });
 
-      xhr.open('PUT', url);
-      xhr.setRequestHeader('Content-Type', contentType);
+      xhr.open("PUT", url);
+      xhr.setRequestHeader("Content-Type", contentType);
       xhr.send(file);
     });
   }
@@ -235,7 +235,7 @@ class UploadManager {
     onError?: (error: string) => void
   ): Promise<void> {
     const current = this.uploads.get(assetId);
-    if (!current || (current.status !== 'failed' && current.status !== 'cancelled')) {
+    if (!current || (current.status !== "failed" && current.status !== "cancelled")) {
       return;
     }
 
@@ -243,7 +243,7 @@ class UploadManager {
     const result = await getAssetUploadUrl({ assetId, contentType });
 
     if (!result?.data) {
-      const error = result?.serverError ?? 'Failed to get upload URL';
+      const error = result?.serverError ?? "Failed to get upload URL";
       onError?.(error);
       return;
     }
@@ -297,8 +297,9 @@ export function useAssetUpload() {
     () => uploadManager.getSnapshot()
   );
 
-  // Keep ref in sync for stable callbacks
-  uploadsRef.current = uploads;
+  useEffect(() => {
+    uploadsRef.current = uploads;
+  }, [uploads]);
 
   const startUpload = useCallback(async (options: UploadOptions): Promise<string> => {
     return uploadManager.startUpload(options);
@@ -350,9 +351,9 @@ export function useAssetUpload() {
 
   // Derived state
   const pendingUploads = Array.from(uploads.values()).filter(
-    (u) => u.status === 'pending' || u.status === 'uploading'
+    (u) => u.status === "pending" || u.status === "uploading"
   );
-  const failedUploads = Array.from(uploads.values()).filter((u) => u.status === 'failed');
+  const failedUploads = Array.from(uploads.values()).filter((u) => u.status === "failed");
   const hasActiveUploads = pendingUploads.length > 0;
 
   return {

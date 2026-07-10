@@ -85,10 +85,7 @@ export function StreamManagerPanel() {
     return { mixdown: mixdownStream, stems: stemStreams, bandsByParent: bands };
   }, [streams]);
 
-  const audioStreams = useMemo(
-    () => (mixdown ? [mixdown, ...stems] : stems),
-    [mixdown, stems]
-  );
+  const audioStreams = useMemo(() => (mixdown ? [mixdown, ...stems] : stems), [mixdown, stems]);
 
   // DnD (same setup as StemManagementContent)
   const sensors = useSensors(
@@ -275,9 +272,7 @@ export function StreamManagerPanel() {
                         stream={audio}
                         sortable={audio.kind === "stem"}
                         onSelect={() => selectStream(audio.id)}
-                        onRemove={
-                          audio.kind === "stem" ? () => handleRemove(audio.id) : undefined
-                        }
+                        onRemove={audio.kind === "stem" ? () => handleRemove(audio.id) : undefined}
                       />
                       <BandGroup
                         bands={bandsByParent.get(audio.id) ?? []}

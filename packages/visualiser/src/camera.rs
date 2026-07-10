@@ -177,7 +177,11 @@ impl CameraConfig {
     pub fn has_signals(&self) -> bool {
         self.position.has_signals()
             || self.rotation.has_signals()
-            || self.target.as_ref().map(|t| t.has_signals()).unwrap_or(false)
+            || self
+                .target
+                .as_ref()
+                .map(|t| t.has_signals())
+                .unwrap_or(false)
             || self.up.has_signals()
             || !self.fov.is_scalar()
             || !self.near.is_scalar()
@@ -437,8 +441,20 @@ mod tests {
         let stems = HashMap::new();
         let custom_signals = HashMap::new();
         let composed_signals = HashMap::new();
-        let mut ctx =
-            EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom_signals, &composed_signals, &stats, &mut state, None);
+        let mut ctx = EvalContext::new(
+            0.0,
+            0.016,
+            0,
+            None,
+            &inputs,
+            &bands,
+            &stems,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+            None,
+        );
 
         let config = CameraConfig {
             position: Vec3Signal::new(5.0, 3.0, 5.0),
@@ -471,8 +487,20 @@ mod tests {
         let stems = HashMap::new();
         let custom_signals = HashMap::new();
         let composed_signals = HashMap::new();
-        let mut ctx =
-            EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom_signals, &composed_signals, &stats, &mut state, None);
+        let mut ctx = EvalContext::new(
+            0.0,
+            0.016,
+            0,
+            None,
+            &inputs,
+            &bands,
+            &stems,
+            &custom_signals,
+            &composed_signals,
+            &stats,
+            &mut state,
+            None,
+        );
 
         let config = CameraConfig {
             position: Vec3Signal::new(5.0, 3.0, 5.0),

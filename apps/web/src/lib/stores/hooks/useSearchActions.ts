@@ -199,12 +199,12 @@ export function useSearchActions() {
             nextCandidates.some((c) => c.id === prevState.activeCandidateId);
           const nextActive = stillActive
             ? prevState.activeCandidateId
-            : nextCandidates.find((c) => c.status === "unreviewed")?.id ??
+            : (nextCandidates.find((c) => c.status === "unreviewed")?.id ??
               nextCandidates[0]?.id ??
-              null;
+              null);
 
           const nextActiveCandidate = nextActive
-            ? nextCandidates.find((c) => c.id === nextActive) ?? null
+            ? (nextCandidates.find((c) => c.id === nextActive) ?? null)
             : null;
           if (nextActiveCandidate) {
             playbackStore.setWaveformSeekTo(nextActiveCandidate.startSec);

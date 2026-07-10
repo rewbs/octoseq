@@ -117,7 +117,9 @@ export function Source1DSelector({ source, onChange }: Source1DSelectorProps) {
             />
             <span className="text-sm">Analysis Signal</span>
           </label>
-          <label className={`flex items-center space-x-2 ${availableDerivedSignals.length === 0 ? "opacity-50" : ""}`}>
+          <label
+            className={`flex items-center space-x-2 ${availableDerivedSignals.length === 0 ? "opacity-50" : ""}`}
+          >
             <input
               type="radio"
               name="refType"

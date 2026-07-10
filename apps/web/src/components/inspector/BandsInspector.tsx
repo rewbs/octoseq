@@ -94,10 +94,7 @@ export function BandsInspector({ nodeId }: BandsInspectorProps) {
       )}
 
       {/* Band Management */}
-      <FrequencyBandContent
-        audioDuration={audioDuration}
-        sourceId={sourceId}
-      />
+      <FrequencyBandContent audioDuration={audioDuration} sourceId={sourceId} />
     </div>
   );
 }

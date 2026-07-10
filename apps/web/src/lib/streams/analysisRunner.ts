@@ -58,6 +58,31 @@ import {
   type StreamId,
 } from "./types";
 
+function analysisConfigFingerprint(config: ReturnType<typeof useConfigStore.getState>): string {
+  return JSON.stringify({
+    sampleRate: config.mirSampleRate,
+    backend: config.enableGpu ? "gpu" : "cpu",
+    spectrogram: config.getSpectrogramConfig(),
+    mel: config.getMelConfig(),
+    onset: config.getOnsetConfig(),
+    peakPick: config.getPeakPickConfig(),
+    hpss: config.getHpssConfig(),
+    mfcc: config.getMfccConfig(),
+    tempoHypotheses: config.getTempoHypothesesConfig(),
+    cqt: config.getCqtConfig(),
+  });
+}
+
+let currentConfigFingerprint = analysisConfigFingerprint(useConfigStore.getState());
+useConfigStore.subscribe((config) => {
+  const nextFingerprint = analysisConfigFingerprint(config);
+  if (nextFingerprint === currentConfigFingerprint) return;
+  currentConfigFingerprint = nextFingerprint;
+  clearAnalysisMemos();
+  cancelAllAnalyses();
+  useAnalysisStore.getState().invalidateAll();
+});
+
 // ----------------------------
 // Band implementation families
 // ----------------------------
@@ -129,7 +154,9 @@ function effectiveSampleRate(buffer: AudioBufferLike): number {
 function makeMono(buffer: AudioBufferLike, rate: number): Float32Array {
   const ch0 = buffer.getChannelData(0);
   // Always copy: callers may transfer the underlying ArrayBuffer to a worker.
-  return rate !== buffer.sampleRate ? resample(ch0, buffer.sampleRate, rate) : new Float32Array(ch0);
+  return rate !== buffer.sampleRate
+    ? resample(ch0, buffer.sampleRate, rate)
+    : new Float32Array(ch0);
 }
 
 /** Memoized mono payload for main-thread use. NOT safe to transfer to a worker. */
@@ -289,7 +316,11 @@ async function runAudioStreamAnalysis(
     const result = await resultPromise;
     const analysesNow = useAnalysisStore.getState();
     analysesNow.setResult(key, result);
-    const meta = (result as { meta?: { timings?: { totalMs?: number; cpuMs?: number; gpuMs?: number }; backend?: string } }).meta;
+    const meta = (
+      result as {
+        meta?: { timings?: { totalMs?: number; cpuMs?: number; gpuMs?: number }; backend?: string };
+      }
+    ).meta;
     if (meta?.timings) {
       analysesNow.setLastRun({
         key,
@@ -331,7 +362,9 @@ function resolveParentAudio(parentId: StreamId): { parent: AudioStream; buffer: 
   return { parent, buffer };
 }
 
-function bandFnFor(analysisId: AnalysisId): BandMirFunctionId | BandCqtFunctionId | BandEventFunctionId {
+function bandFnFor(
+  analysisId: AnalysisId
+): BandMirFunctionId | BandCqtFunctionId | BandEventFunctionId {
   const bandFn = BAND_ANALYSIS_IMPL[analysisId];
   if (!bandFn) {
     throw new Error(`Analysis "${analysisId}" is not available on band streams`);
@@ -388,7 +421,9 @@ async function runBandFamily(
     if (family === "stft") {
       const spec = await getSpectrogram(parentId, buffer);
       const functions = [
-        ...new Set(work.flatMap((w) => w.analysisIds.map((id) => bandFnFor(id) as BandMirFunctionId))),
+        ...new Set(
+          work.flatMap((w) => w.analysisIds.map((id) => bandFnFor(id) as BandMirFunctionId))
+        ),
       ];
       const { results } = await runBandMirBatch(
         spec,
@@ -398,13 +433,16 @@ async function runBandFamily(
       for (const [bandId, bandResults] of results) {
         for (const result of bandResults) {
           const unifiedId = UNIFIED_ID_FOR_BAND_FN.get(result.fn);
-          if (unifiedId) useAnalysisStore.getState().setResult(analysisKey(bandId, unifiedId), result);
+          if (unifiedId)
+            useAnalysisStore.getState().setResult(analysisKey(bandId, unifiedId), result);
         }
       }
     } else if (family === "cqt") {
       const cqt = await getCqt(parentId, buffer);
       const functions = [
-        ...new Set(work.flatMap((w) => w.analysisIds.map((id) => bandFnFor(id) as BandCqtFunctionId))),
+        ...new Set(
+          work.flatMap((w) => w.analysisIds.map((id) => bandFnFor(id) as BandCqtFunctionId))
+        ),
       ];
       const { results } = await runBandCqtBatch(
         cqt,
@@ -414,7 +452,8 @@ async function runBandFamily(
       for (const [bandId, bandResults] of results) {
         for (const result of bandResults) {
           const unifiedId = UNIFIED_ID_FOR_BAND_FN.get(result.fn);
-          if (unifiedId) useAnalysisStore.getState().setResult(analysisKey(bandId, unifiedId), result);
+          if (unifiedId)
+            useAnalysisStore.getState().setResult(analysisKey(bandId, unifiedId), result);
         }
       }
     } else {
@@ -424,7 +463,9 @@ async function runBandFamily(
         bandMirResults.set(band.id, [await ensureEventSourceSignal(parentId, band)]);
       }
       const functions = [
-        ...new Set(work.flatMap((w) => w.analysisIds.map((id) => bandFnFor(id) as BandEventFunctionId))),
+        ...new Set(
+          work.flatMap((w) => w.analysisIds.map((id) => bandFnFor(id) as BandEventFunctionId))
+        ),
       ];
       const { results } = await runBandEventsBatch({
         bandMirResults,
@@ -434,7 +475,8 @@ async function runBandFamily(
       for (const [bandId, bandResults] of results) {
         for (const result of bandResults) {
           const unifiedId = UNIFIED_ID_FOR_BAND_FN.get(result.fn);
-          if (unifiedId) useAnalysisStore.getState().setResult(analysisKey(bandId, unifiedId), result);
+          if (unifiedId)
+            useAnalysisStore.getState().setResult(analysisKey(bandId, unifiedId), result);
         }
       }
       // Event extraction can silently skip bands (e.g. missing source); fail those keys

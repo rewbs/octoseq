@@ -113,16 +113,34 @@ pub fn apply_deformations(vertices: &[Vertex], deformations: &[Deformation]) -> 
 /// Apply a single deformation to vertices in place.
 fn apply_single_deformation(vertices: &mut [Vertex], deform: &Deformation) {
     match deform {
-        Deformation::Twist { axis, amount, center } => {
+        Deformation::Twist {
+            axis,
+            amount,
+            center,
+        } => {
             apply_twist(vertices, *axis, *amount, *center);
         }
-        Deformation::Bend { axis, amount, center } => {
+        Deformation::Bend {
+            axis,
+            amount,
+            center,
+        } => {
             apply_bend(vertices, *axis, *amount, *center);
         }
-        Deformation::Wave { axis, direction, amplitude, frequency, phase } => {
+        Deformation::Wave {
+            axis,
+            direction,
+            amplitude,
+            frequency,
+            phase,
+        } => {
             apply_wave(vertices, *axis, *direction, *amplitude, *frequency, *phase);
         }
-        Deformation::Noise { scale, amplitude, seed } => {
+        Deformation::Noise {
+            scale,
+            amplitude,
+            seed,
+        } => {
             apply_noise(vertices, *scale, *amplitude, *seed);
         }
     }
@@ -355,9 +373,11 @@ mod tests {
     #[test]
     fn test_zero_deformation() {
         let vertices = make_test_vertices();
-        let deformations = vec![
-            Deformation::Twist { axis: DeformAxis::Y, amount: 0.0, center: 0.0 },
-        ];
+        let deformations = vec![Deformation::Twist {
+            axis: DeformAxis::Y,
+            amount: 0.0,
+            center: 0.0,
+        }];
 
         let result = apply_deformations(&vertices, &deformations);
         assert_eq!(result.len(), vertices.len());
@@ -372,16 +392,12 @@ mod tests {
 
     #[test]
     fn test_twist_deformation() {
-        let vertices = vec![
-            Vertex::new([1.0, 1.0, 0.0], [0.0, 1.0, 0.0], [1.0; 3]),
-        ];
-        let deformations = vec![
-            Deformation::Twist {
-                axis: DeformAxis::Y,
-                amount: std::f32::consts::FRAC_PI_2, // 90 degrees per unit
-                center: 0.0,
-            },
-        ];
+        let vertices = vec![Vertex::new([1.0, 1.0, 0.0], [0.0, 1.0, 0.0], [1.0; 3])];
+        let deformations = vec![Deformation::Twist {
+            axis: DeformAxis::Y,
+            amount: std::f32::consts::FRAC_PI_2, // 90 degrees per unit
+            center: 0.0,
+        }];
 
         let result = apply_deformations(&vertices, &deformations);
 
@@ -398,15 +414,13 @@ mod tests {
             Vertex::new([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0; 3]),
             Vertex::new([0.5, 0.0, 0.0], [0.0, 1.0, 0.0], [1.0; 3]),
         ];
-        let deformations = vec![
-            Deformation::Wave {
-                axis: DeformAxis::X,
-                direction: DeformAxis::Y,
-                amplitude: 1.0,
-                frequency: 1.0,
-                phase: 0.0,
-            },
-        ];
+        let deformations = vec![Deformation::Wave {
+            axis: DeformAxis::X,
+            direction: DeformAxis::Y,
+            amplitude: 1.0,
+            frequency: 1.0,
+            phase: 0.0,
+        }];
 
         let result = apply_deformations(&vertices, &deformations);
 
@@ -419,9 +433,11 @@ mod tests {
     #[test]
     fn test_noise_determinism() {
         let vertices = make_test_vertices();
-        let deformations = vec![
-            Deformation::Noise { scale: 1.0, amplitude: 0.1, seed: 42 },
-        ];
+        let deformations = vec![Deformation::Noise {
+            scale: 1.0,
+            amplitude: 0.1,
+            seed: 42,
+        }];
 
         let result1 = apply_deformations(&vertices, &deformations);
         let result2 = apply_deformations(&vertices, &deformations);

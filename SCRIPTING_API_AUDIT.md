@@ -6,41 +6,42 @@ This document inventories all script-relevant data sources and defines the canon
 
 ### 1.1 Audio Sources
 
-| Source | Location | UI Visible | Script Access Needed |
-|--------|----------|------------|---------------------|
-| Mixdown | `audioInputStore.collection.inputs["mixdown"]` | Yes | `inputs.*` (global signals) |
-| Stems | `audioInputStore.collection.inputs[stemId]` | Yes | `inputs.stems[id\|label].*` |
+| Source  | Location                                       | UI Visible | Script Access Needed        |
+| ------- | ---------------------------------------------- | ---------- | --------------------------- |
+| Mixdown | `audioInputStore.collection.inputs["mixdown"]` | Yes        | `inputs.*` (global signals) |
+| Stems   | `audioInputStore.collection.inputs[stemId]`    | Yes        | `inputs.stems[id\|label].*` |
 
 ### 1.2 MIR-Derived 1D Signals (per audio source)
 
-| Signal | Description | Available For |
-|--------|-------------|---------------|
-| `amplitudeEnvelope` / `energy` | Loudness envelope | mixdown, stems |
-| `spectralCentroid` | Spectral brightness | mixdown, stems |
-| `spectralFlux` / `flux` | Rate of spectral change | mixdown, stems |
-| `onsetEnvelope` | Transient detection | mixdown, stems |
-| `cqtHarmonicEnergy` | Harmonic energy (CQT-based) | mixdown |
-| `cqtBassPitchMotion` | Bass pitch trajectory | mixdown |
-| `cqtTonalStability` | Tonal stability measure | mixdown |
+| Signal                         | Description                 | Available For  |
+| ------------------------------ | --------------------------- | -------------- |
+| `amplitudeEnvelope` / `energy` | Loudness envelope           | mixdown, stems |
+| `spectralCentroid`             | Spectral brightness         | mixdown, stems |
+| `spectralFlux` / `flux`        | Rate of spectral change     | mixdown, stems |
+| `onsetEnvelope`                | Transient detection         | mixdown, stems |
+| `cqtHarmonicEnergy`            | Harmonic energy (CQT-based) | mixdown        |
+| `cqtBassPitchMotion`           | Bass pitch trajectory       | mixdown        |
+| `cqtTonalStability`            | Tonal stability measure     | mixdown        |
 
 ### 1.3 Frequency Bands
 
-| Data | Location | UI Visible | Script Access Needed |
-|------|----------|------------|---------------------|
-| Band definitions | `frequencyBandStore.bands` | Yes | `inputs.bands[id\|label]` |
-| Band MIR signals | `bandMirStore` per band | Yes | `inputs.bands[id].{energy,onset,flux,amplitude}` |
-| Band events | Extracted from band MIR | Yes | `inputs.bands[id].events` |
+| Data             | Location                   | UI Visible | Script Access Needed                             |
+| ---------------- | -------------------------- | ---------- | ------------------------------------------------ |
+| Band definitions | `frequencyBandStore.bands` | Yes        | `inputs.bands[id\|label]`                        |
+| Band MIR signals | `bandMirStore` per band    | Yes        | `inputs.bands[id].{energy,onset,flux,amplitude}` |
+| Band events      | Extracted from band MIR    | Yes        | `inputs.bands[id].events`                        |
 
 **Note**: Bands can have `sourceId` pointing to either "mixdown" OR a stem ID.
 
 ### 1.4 Custom Signals
 
-| Data | Location | UI Visible | Script Access Needed |
-|------|----------|------------|---------------------|
-| Custom signal definitions | `customSignalStore.structure.signals` | Yes | `inputs.customSignals[id\|name]` |
-| Custom signal results | `customSignalStore.resultCache` | Yes | As 1D signal data |
+| Data                      | Location                              | UI Visible | Script Access Needed             |
+| ------------------------- | ------------------------------------- | ---------- | -------------------------------- |
+| Custom signal definitions | `customSignalStore.structure.signals` | Yes        | `inputs.customSignals[id\|name]` |
+| Custom signal results     | `customSignalStore.resultCache`       | Yes        | As 1D signal data                |
 
 **Custom Signal Properties**:
+
 - `id`: Unique identifier
 - `name`: User-editable name
 - `sourceAudioId`: "mixdown" or stem ID
@@ -50,26 +51,26 @@ This document inventories all script-relevant data sources and defines the canon
 
 ### 1.5 Event Streams
 
-| Stream Type | Location | UI Visible | Script Access Needed |
-|-------------|----------|------------|---------------------|
-| Named system events | `mirStore` (beatCandidates, onsetPeaks) | Yes | `inputs.mix.{streamName}` |
-| Band events | Per-band extracted events | Yes | `inputs.mix.bands[id].{beatCandidates,onsetPeaks}` |
-| Authored events | `authoredEventStore.streams` | Yes | `inputs.customEvents[name]` |
-| Candidate events | `candidateEventStore` (ephemeral) | Yes | Not needed (ephemeral) |
+| Stream Type         | Location                                | UI Visible | Script Access Needed                               |
+| ------------------- | --------------------------------------- | ---------- | -------------------------------------------------- |
+| Named system events | `mirStore` (beatCandidates, onsetPeaks) | Yes        | `inputs.mix.{streamName}`                          |
+| Band events         | Per-band extracted events               | Yes        | `inputs.mix.bands[id].{beatCandidates,onsetPeaks}` |
+| Authored events     | `authoredEventStore.streams`            | Yes        | `inputs.customEvents[name]`                        |
+| Candidate events    | `candidateEventStore` (ephemeral)       | Yes        | Not needed (ephemeral)                             |
 
 ### 1.6 Musical Time & Beat Information
 
-| Data | Location | UI Visible | Script Access Needed |
-|------|----------|------------|---------------------|
-| Beat grid | `beatGridStore.activeBeatGrid` | Yes | `timing.beatPosition`, `timing.beatPhase`, `timing.bpm` |
-| Tempo | `beatGridStore.selectedHypothesis` | Yes | `timing.bpm` |
-| Time position | `playbackStore.playheadTimeSec` | Yes | `timing.time`, `timing.dt` |
+| Data          | Location                           | UI Visible | Script Access Needed                                    |
+| ------------- | ---------------------------------- | ---------- | ------------------------------------------------------- |
+| Beat grid     | `beatGridStore.activeBeatGrid`     | Yes        | `timing.beatPosition`, `timing.beatPhase`, `timing.bpm` |
+| Tempo         | `beatGridStore.selectedHypothesis` | Yes        | `timing.bpm`                                            |
+| Time position | `playbackStore.playheadTimeSec`    | Yes        | `timing.time`, `timing.dt`                              |
 
 ### 1.7 Mesh Assets
 
-| Data | Location | UI Visible | Script Access Needed |
-|------|----------|------------|---------------------|
-| 3D mesh assets | `meshAssetStore` | Yes | `mesh.load(assetId)` |
+| Data           | Location         | UI Visible | Script Access Needed |
+| -------------- | ---------------- | ---------- | -------------------- |
+| 3D mesh assets | `meshAssetStore` | Yes        | `mesh.load(assetId)` |
 
 ---
 
@@ -77,23 +78,26 @@ This document inventories all script-relevant data sources and defines the canon
 
 ### 2.1 Runtime (Rhai) Bindings - What Exists
 
-| Namespace | Bound | Generated In |
-|-----------|-------|--------------|
-| `inputs.*` (global signals) | ✅ Yes | `generate_inputs_namespace()` |
-| `inputs.bands[id\|label]` | ✅ Yes | `generate_bands_namespace()` |
-| `inputs.stems[id\|label]` | ✅ Yes | `generate_stems_namespace()` |
-| `inputs.{eventStreamName}` | ✅ Yes | `generate_event_streams_namespace()` |
-| `inputs.authored[name]` (to rename: `inputs.customEvents`) | ✅ Yes | `generate_authored_namespace()` |
-| `inputs.customSignals[id\|name]` | ❌ **MISSING** | Not implemented |
-| `timing.*` | ❌ **MISSING** | Not yet separated from inputs |
+| Namespace                                                  | Bound          | Generated In                         |
+| ---------------------------------------------------------- | -------------- | ------------------------------------ |
+| `inputs.*` (global signals)                                | ✅ Yes         | `generate_inputs_namespace()`        |
+| `inputs.bands[id\|label]`                                  | ✅ Yes         | `generate_bands_namespace()`         |
+| `inputs.stems[id\|label]`                                  | ✅ Yes         | `generate_stems_namespace()`         |
+| `inputs.{eventStreamName}`                                 | ✅ Yes         | `generate_event_streams_namespace()` |
+| `inputs.authored[name]` (to rename: `inputs.customEvents`) | ✅ Yes         | `generate_authored_namespace()`      |
+| `inputs.customSignals[id\|name]`                           | ❌ **MISSING** | Not implemented                      |
+| `timing.*`                                                 | ❌ **MISSING** | Not yet separated from inputs        |
 
 **Stem Signals Exposed** (per `generate_stems_namespace()`) - CURRENT:
+
 - `energy`, `amplitude` (alias), `flux`, `centroid`, `spectralCentroid`, `onset`, `onsetEnvelope`, `label`
 
 **Band Signals Exposed** (per `generate_bands_namespace()`) - CURRENT:
+
 - `energy`, `amplitude` (alias), `flux`, `onset`, `events`
 
 **Issues with Current Bindings**:
+
 - Inconsistent naming: `spectralCentroid` vs `centroid`, `onsetEnvelope` vs `onset`
 - `amplitude` alias is redundant (should just use `energy`)
 - No `beatCandidates` or `onsetPeaks` on bands/stems
@@ -102,27 +106,27 @@ This document inventories all script-relevant data sources and defines the canon
 
 ### 2.2 Monaco Registry - What's Documented for IDE
 
-| Namespace | In Registry | Location |
-|-----------|-------------|----------|
-| `inputs.*` (global signals) | ✅ Yes | `namespaces.ts` |
-| `inputs.bands` | ✅ Yes | `signals.ts` (Bands, BandSignals types) |
-| `inputs.stems` | ❌ **MISSING** | Not in registry |
-| Named event streams | ❌ **MISSING** | Not discoverable |
-| `inputs.customEvents` | ❌ **MISSING** | Not in registry |
-| `inputs.customSignals` | ❌ **MISSING** | Not in registry |
-| `timing.*` | ❌ **MISSING** | Not in registry |
+| Namespace                   | In Registry    | Location                                |
+| --------------------------- | -------------- | --------------------------------------- |
+| `inputs.*` (global signals) | ✅ Yes         | `namespaces.ts`                         |
+| `inputs.bands`              | ✅ Yes         | `signals.ts` (Bands, BandSignals types) |
+| `inputs.stems`              | ❌ **MISSING** | Not in registry                         |
+| Named event streams         | ❌ **MISSING** | Not discoverable                        |
+| `inputs.customEvents`       | ❌ **MISSING** | Not in registry                         |
+| `inputs.customSignals`      | ❌ **MISSING** | Not in registry                         |
+| `timing.*`                  | ❌ **MISSING** | Not in registry                         |
 
 ### 2.3 Documentation - What's in scripting.md / scripting-reference.md
 
-| Namespace | Documented |
-|-----------|-----------|
-| `inputs.*` (global signals) | ✅ Yes |
-| `inputs.bands[id]` | ✅ Yes |
-| `inputs.stems[id]` | ❌ **MISSING** |
-| Named event streams | ⚠️ Partial (mentioned but not listed) |
-| `inputs.customEvents[name]` | ❌ **MISSING** |
-| `inputs.customSignals[id]` | ❌ **MISSING** |
-| `timing.*` | ❌ **MISSING** |
+| Namespace                   | Documented                            |
+| --------------------------- | ------------------------------------- |
+| `inputs.*` (global signals) | ✅ Yes                                |
+| `inputs.bands[id]`          | ✅ Yes                                |
+| `inputs.stems[id]`          | ❌ **MISSING**                        |
+| Named event streams         | ⚠️ Partial (mentioned but not listed) |
+| `inputs.customEvents[name]` | ❌ **MISSING**                        |
+| `inputs.customSignals[id]`  | ❌ **MISSING**                        |
+| `timing.*`                  | ❌ **MISSING**                        |
 
 ---
 
@@ -130,39 +134,39 @@ This document inventories all script-relevant data sources and defines the canon
 
 ### Critical Gaps (Data exists but NOT script-accessible)
 
-| Gap | Severity | Impact |
-|-----|----------|--------|
-| Custom signals not bound | **CRITICAL** | Users can create custom signals in UI but cannot use them in scripts |
-| Band-level event streams missing | **HIGH** | `beatCandidates`/`onsetPeaks` not on bands |
-| Stem-level event streams missing | **HIGH** | `beatCandidates`/`onsetPeaks` not on stems |
+| Gap                              | Severity     | Impact                                                               |
+| -------------------------------- | ------------ | -------------------------------------------------------------------- |
+| Custom signals not bound         | **CRITICAL** | Users can create custom signals in UI but cannot use them in scripts |
+| Band-level event streams missing | **HIGH**     | `beatCandidates`/`onsetPeaks` not on bands                           |
+| Stem-level event streams missing | **HIGH**     | `beatCandidates`/`onsetPeaks` not on stems                           |
 
 ### Structural Gaps (Wrong shape, needs refactoring)
 
-| Gap | Severity | Impact |
-|-----|----------|--------|
-| No `inputs.mix` namespace | **HIGH** | Mixdown signals at top level, inconsistent with stems |
-| Bands not hierarchical | **HIGH** | All bands flat instead of under mix/stem |
-| Inconsistent signal names | **MEDIUM** | `spectralCentroid` vs `centroid`, etc. |
+| Gap                       | Severity   | Impact                                                |
+| ------------------------- | ---------- | ----------------------------------------------------- |
+| No `inputs.mix` namespace | **HIGH**   | Mixdown signals at top level, inconsistent with stems |
+| Bands not hierarchical    | **HIGH**   | All bands flat instead of under mix/stem              |
+| Inconsistent signal names | **MEDIUM** | `spectralCentroid` vs `centroid`, etc.                |
 
 ### Monaco/IDE Gaps (Data accessible but NOT discoverable)
 
-| Gap | Severity | Impact |
-|-----|----------|--------|
-| `inputs.stems` not in registry | **HIGH** | No autocomplete for stem signals |
-| `inputs.customEvents` not in registry | **HIGH** | No autocomplete for authored events |
-| `inputs.mix` not in registry | **HIGH** | New namespace needs registry entry |
-| `timing.*` not in registry | **HIGH** | New namespace needs registry entry |
-| Named event streams not discoverable | **MEDIUM** | Users don't know what streams exist |
+| Gap                                   | Severity   | Impact                              |
+| ------------------------------------- | ---------- | ----------------------------------- |
+| `inputs.stems` not in registry        | **HIGH**   | No autocomplete for stem signals    |
+| `inputs.customEvents` not in registry | **HIGH**   | No autocomplete for authored events |
+| `inputs.mix` not in registry          | **HIGH**   | New namespace needs registry entry  |
+| `timing.*` not in registry            | **HIGH**   | New namespace needs registry entry  |
+| Named event streams not discoverable  | **MEDIUM** | Users don't know what streams exist |
 
 ### Documentation Gaps
 
-| Gap | Severity | Impact |
-|-----|----------|--------|
-| Stems not documented | **HIGH** | Users don't know stems are accessible |
-| Authored events not documented | **HIGH** | Users don't know authored events are accessible |
-| Custom signals not documented | **CRITICAL** | Feature is undiscoverable |
-| `inputs.mix` not documented | **HIGH** | New namespace needs docs |
-| `timing` namespace not documented | **HIGH** | New namespace needs docs |
+| Gap                               | Severity     | Impact                                          |
+| --------------------------------- | ------------ | ----------------------------------------------- |
+| Stems not documented              | **HIGH**     | Users don't know stems are accessible           |
+| Authored events not documented    | **HIGH**     | Users don't know authored events are accessible |
+| Custom signals not documented     | **CRITICAL** | Feature is undiscoverable                       |
+| `inputs.mix` not documented       | **HIGH**     | New namespace needs docs                        |
+| `timing` namespace not documented | **HIGH**     | New namespace needs docs                        |
 
 ---
 
@@ -270,6 +274,7 @@ inputs                             # Audio-derived signals namespace
    - Remove `amplitude` alias (just use `energy`)
 
 2. **Refactor `generate_inputs_namespace()`** to create `inputs.mix`:
+
    ```rhai
    inputs.mix = #{};
    inputs.mix.energy = __signal_input("energy");
@@ -293,6 +298,7 @@ inputs                             # Audio-derived signals namespace
    - Add `bands` sub-namespace per stem
 
 5. **Add `generate_timing_namespace() -> String`**:
+
    ```rhai
    let timing = #{};
    timing.time = __signal_input("time");
@@ -304,6 +310,7 @@ inputs                             # Audio-derived signals namespace
    ```
 
 6. **Add `generate_custom_signals_namespace(signals: &[(String, String)]) -> String`**:
+
    ```rhai
    inputs.customSignals = #{};
    inputs.customSignals["sig-123"] = __custom_signal_input("sig-123");
@@ -311,6 +318,7 @@ inputs                             # Audio-derived signals namespace
    ```
 
 7. **Rename `generate_authored_namespace()` to `generate_custom_events_namespace()`**:
+
    ```rhai
    inputs.customEvents = #{};
    inputs.customEvents["Kick Events"] = __event_stream_get("Kick Events");
@@ -347,6 +355,7 @@ inputs                             # Audio-derived signals namespace
 **File**: `apps/web/src/lib/scripting/registry/entries/signals.ts`
 
 Add/update entries for:
+
 1. `TimingSignals` type with `time`, `dt`, `beatPosition`, `beatIndex`, `beatPhase`, `bpm`
 2. `MixSignals` type with `energy`, `centroid`, `flux`, `onset`, `searchSimilarity`, `beatCandidates`, `onsetPeaks`, `bands`
 3. `Stems` type (map of stem signals)
@@ -358,9 +367,11 @@ Add/update entries for:
 **File**: `apps/web/src/lib/scripting/registry/entries/namespaces.ts`
 
 Add `timing` namespace:
+
 1. New global namespace with `TimingSignals` properties
 
 Update `inputs` namespace properties:
+
 1. Remove top-level MIR signals (moved to `mix`)
 2. Add `mix: MixSignals`
 3. Add `stems: Stems`
@@ -370,6 +381,7 @@ Update `inputs` namespace properties:
 **File**: `apps/web/src/lib/scripting/registry/index.ts`
 
 Add chain resolution for:
+
 1. `timing.*` → `TimingSignals` properties
 2. `inputs.mix` → `MixSignals`
 3. `inputs.mix.bands["key"]` → `BandSignals`
@@ -394,6 +406,7 @@ Add chain resolution for:
 **File**: `scripting.md`
 
 Update/add sections for:
+
 1. `timing` namespace - Global timing signals (time, dt, beatPosition, beatIndex, beatPhase, bpm)
 2. `inputs.mix` - Mixdown audio signals
 3. `inputs.mix.bands[id]` - Mixdown frequency bands
@@ -406,6 +419,7 @@ Update/add sections for:
 ### 5.5 Backward Compatibility
 
 **Breaking changes** (no aliases, clean break):
+
 - `inputs.time` → `timing.time`
 - `inputs.dt` → `timing.dt`
 - `inputs.beatPosition` → `timing.beatPosition`
@@ -431,6 +445,7 @@ Update/add sections for:
 ### Development-Time Warnings
 
 Add diagnostic checks that warn when:
+
 1. Project contains custom signals that aren't bound to scripts
 2. Monaco registry has entries without runtime counterparts
 3. Runtime bindings exist without Monaco entries
@@ -440,12 +455,13 @@ Add diagnostic checks that warn when:
 **File**: `apps/web/src/lib/scripting/scriptDiagnostics.ts`
 
 Add validation functions:
+
 ```typescript
 function validateScriptApiCoverage(
   projectSignals: string[],
   runtimeBindings: string[],
   registryEntries: string[]
-): Diagnostic[]
+): Diagnostic[];
 ```
 
 ---
@@ -572,17 +588,17 @@ Bands use a slightly different pattern - availability is inferred from pushed si
 
 ## Summary: What Needs to Change
 
-| Component | Changes Required |
-|-----------|-----------------|
-| **Rust (signal.rs)** | Add `CustomSignalInput` variant to `SignalNode` |
-| **Rust (signal_rhai.rs)** | Restructure namespace generation: `timing`, `inputs.mix`, hierarchical bands, consistent naming, custom signals, custom events |
-| **Rust (scripting.rs)** | Add `available_custom_signals`, refactor `load_script()` for new structure |
-| **Rust (wasm.rs)** | Add WASM exports for custom signals, update band/stem event streams |
-| **TS (signals.ts)** | Add `TimingSignals`, `MixSignals`, `Stems`, `StemSignals`, `CustomSignals`, `CustomEvents` types; update `BandSignals` |
-| **TS (namespaces.ts)** | Add `timing` namespace, replace top-level signals with `mix`, add `stems`, `customSignals`, `customEvents` |
-| **TS (registry/index.ts)** | Add chain resolution for `timing`, `inputs.mix`, nested bands, custom signals, custom events |
-| **TS (VisualiserPanel.tsx)** | Update band pushing for source context, add event streams, integrate custom signals |
-| **Docs (scripting.md)** | Full rewrite: add `timing` namespace, `inputs.mix`, `stems`, `customSignals`, `customEvents`, consistent naming |
+| Component                    | Changes Required                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Rust (signal.rs)**         | Add `CustomSignalInput` variant to `SignalNode`                                                                                |
+| **Rust (signal_rhai.rs)**    | Restructure namespace generation: `timing`, `inputs.mix`, hierarchical bands, consistent naming, custom signals, custom events |
+| **Rust (scripting.rs)**      | Add `available_custom_signals`, refactor `load_script()` for new structure                                                     |
+| **Rust (wasm.rs)**           | Add WASM exports for custom signals, update band/stem event streams                                                            |
+| **TS (signals.ts)**          | Add `TimingSignals`, `MixSignals`, `Stems`, `StemSignals`, `CustomSignals`, `CustomEvents` types; update `BandSignals`         |
+| **TS (namespaces.ts)**       | Add `timing` namespace, replace top-level signals with `mix`, add `stems`, `customSignals`, `customEvents`                     |
+| **TS (registry/index.ts)**   | Add chain resolution for `timing`, `inputs.mix`, nested bands, custom signals, custom events                                   |
+| **TS (VisualiserPanel.tsx)** | Update band pushing for source context, add event streams, integrate custom signals                                            |
+| **Docs (scripting.md)**      | Full rewrite: add `timing` namespace, `inputs.mix`, `stems`, `customSignals`, `customEvents`, consistent naming                |
 
 ---
 
@@ -591,6 +607,7 @@ Bands use a slightly different pattern - availability is inferred from pushed si
 After implementation:
 
 **Timing Namespace**
+
 - [ ] `timing.time` returns playback time signal
 - [ ] `timing.dt` returns delta time signal
 - [ ] `timing.beatPosition` returns continuous beat position
@@ -599,6 +616,7 @@ After implementation:
 - [ ] `timing.bpm` returns tempo signal
 
 **Inputs Namespace**
+
 - [ ] `inputs.mix.energy` returns mixdown energy signal
 - [ ] `inputs.mix.centroid` returns mixdown spectral centroid
 - [ ] `inputs.mix.flux` returns mixdown spectral flux
@@ -615,12 +633,14 @@ After implementation:
 - [ ] `inputs.customEvents["Kick Events"]` returns authored event stream
 
 **Monaco IDE**
+
 - [ ] Monaco autocomplete shows `timing` as global namespace
 - [ ] Monaco shows `time`, `dt`, `beatPosition`, `beatIndex`, `beatPhase`, `bpm` under `timing`
 - [ ] Monaco autocomplete shows `mix`, `stems`, `customSignals`, `customEvents` under `inputs`
 - [ ] Monaco shows nested `bands` under both `inputs.mix` and `inputs.stems[id]`
 
 **Documentation**
+
 - [ ] `timing` namespace documented with all signals
 - [ ] `inputs.mix` documented with all signals and event streams
 - [ ] `inputs.stems` documented with bands sub-namespace

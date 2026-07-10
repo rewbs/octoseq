@@ -1,22 +1,45 @@
-'use server';
+"use server";
 
-import { z } from 'zod';
-import { prisma, AssetType, AssetStatus } from '@/lib/db';
-import { authActionLenient, authActionModerate } from '@/lib/safe-action';
-import { generateR2Key, generateUploadUrl, generateDownloadUrl } from '@/lib/r2';
+import { z } from "zod";
+import { prisma, AssetType, AssetStatus } from "@/lib/db";
+import { authActionModerate, publicActionLenient } from "@/lib/safe-action";
+import { getDbUser } from "@/lib/auth/syncUser";
+import { canReadAsset } from "@/lib/auth/assetAccess";
+import {
+  deleteObject,
+  generateR2Key,
+  generateUploadUrl,
+  generateDownloadUrl,
+  inspectObject,
+} from "@/lib/r2";
+
+const MAX_ASSET_BYTES = 512 * 1024 * 1024;
+const contentTypeSchema = z
+  .string()
+  .max(255)
+  .regex(/^[\w.+-]+\/[\w.+-]+$/, "Invalid MIME type");
+
+const assetAccessInclude = {
+  projects: { select: { project: { select: { ownerId: true, isPublic: true } } } },
+  snapshots: {
+    select: {
+      snapshot: { select: { project: { select: { ownerId: true, isPublic: true } } } },
+    },
+  },
+} as const;
 
 // -----------------------------------------------------------------------------
 // Schemas
 // -----------------------------------------------------------------------------
 
 const registerAssetSchema = z.object({
-  contentHash: z.string().min(1),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/i, "Expected a SHA-256 content hash"),
   type: z.nativeEnum(AssetType),
-  contentType: z.string().min(1), // MIME type for upload URL
+  contentType: contentTypeSchema,
   metadata: z
     .object({
       fileName: z.string().optional(),
-      fileSize: z.number().optional(),
+      fileSize: z.number().int().positive().max(MAX_ASSET_BYTES).optional(),
       // Audio-specific metadata
       sampleRate: z.number().optional(),
       channels: z.number().optional(),
@@ -51,6 +74,11 @@ export const registerAsset = authActionModerate
     });
 
     if (existingAsset) {
+      const r2Key = existingAsset.r2Key || generateR2Key(user.id, existingAsset.id);
+      if (!existingAsset.r2Key) {
+        await prisma.asset.update({ where: { id: existingAsset.id }, data: { r2Key } });
+      }
+
       // Asset already exists - return it without creating a new one
       // If it's already uploaded, no need for a new upload URL
       if (existingAsset.status === AssetStatus.UPLOADED) {
@@ -58,7 +86,7 @@ export const registerAsset = authActionModerate
           asset: {
             id: existingAsset.id,
             status: existingAsset.status,
-            r2Key: existingAsset.r2Key,
+            r2Key,
           },
           uploadUrl: null, // No upload needed
           isExisting: true,
@@ -66,38 +94,33 @@ export const registerAsset = authActionModerate
       }
 
       // Asset exists but is pending/failed - generate a new upload URL
-      const uploadUrl = await generateUploadUrl(existingAsset.r2Key, contentType);
+      const uploadUrl = await generateUploadUrl(r2Key, contentType);
 
       return {
         asset: {
           id: existingAsset.id,
           status: existingAsset.status,
-          r2Key: existingAsset.r2Key,
+          r2Key,
         },
         uploadUrl,
         isExisting: true,
       };
     }
 
-    // Create new asset with PENDING status
+    // Generate both identifiers before insertion so a partially-created row can
+    // never retain an empty storage key.
+    const assetId = crypto.randomUUID();
+    const r2Key = generateR2Key(user.id, assetId);
     const asset = await prisma.asset.create({
       data: {
+        id: assetId,
         ownerId: user.id,
         contentHash,
-        r2Key: '', // Temporary - will be set below
+        r2Key,
         type,
-        metadataJson: metadata ?? undefined,
+        metadataJson: { ...metadata, contentType },
         status: AssetStatus.PENDING,
       },
-    });
-
-    // Generate deterministic R2 key from user ID and asset ID
-    const r2Key = generateR2Key(user.id, asset.id);
-
-    // Update asset with the R2 key
-    await prisma.asset.update({
-      where: { id: asset.id },
-      data: { r2Key },
     });
 
     // Generate pre-signed upload URL
@@ -135,11 +158,11 @@ export const confirmAssetUpload = authActionModerate
     });
 
     if (!asset) {
-      throw new Error('Asset not found');
+      throw new Error("Asset not found");
     }
 
     if (asset.ownerId !== user.id) {
-      throw new Error('You do not have permission to modify this asset');
+      throw new Error("You do not have permission to modify this asset");
     }
 
     // Only allow confirming pending or failed assets
@@ -147,7 +170,28 @@ export const confirmAssetUpload = authActionModerate
       return { asset: { id: asset.id, status: asset.status } };
     }
 
-    // Mark as uploaded
+    const object = await inspectObject(asset.r2Key);
+    const metadata = (asset.metadataJson as Record<string, unknown> | null) ?? {};
+    const expectedSize = metadata.fileSize;
+    const expectedType = metadata.contentType;
+
+    if (object.contentLength <= 0 || object.contentLength > MAX_ASSET_BYTES) {
+      await deleteObject(asset.r2Key);
+      throw new Error("Uploaded asset is empty or exceeds the maximum size");
+    }
+    if (typeof expectedSize === "number" && object.contentLength !== expectedSize) {
+      await deleteObject(asset.r2Key);
+      throw new Error("Uploaded asset size does not match the registered file");
+    }
+    if (
+      typeof expectedType === "string" &&
+      object.contentType &&
+      object.contentType.toLowerCase() !== expectedType.toLowerCase()
+    ) {
+      await deleteObject(asset.r2Key);
+      throw new Error("Uploaded asset type does not match the registered file");
+    }
+
     const updated = await prisma.asset.update({
       where: { id: assetId },
       data: { status: AssetStatus.UPLOADED },
@@ -183,11 +227,11 @@ export const markAssetFailed = authActionModerate
     });
 
     if (!asset) {
-      throw new Error('Asset not found');
+      throw new Error("Asset not found");
     }
 
     if (asset.ownerId !== user.id) {
-      throw new Error('You do not have permission to modify this asset');
+      throw new Error("You do not have permission to modify this asset");
     }
 
     // Mark as failed, optionally store error in metadata
@@ -202,7 +246,7 @@ export const markAssetFailed = authActionModerate
         status: AssetStatus.FAILED,
         metadataJson: updatedMetadata as Parameters<
           typeof prisma.asset.update
-        >[0]['data']['metadataJson'],
+        >[0]["data"]["metadataJson"],
       },
     });
 
@@ -221,7 +265,7 @@ export const markAssetFailed = authActionModerate
 
 const getUploadUrlSchema = z.object({
   assetId: z.string().min(1),
-  contentType: z.string().min(1),
+  contentType: contentTypeSchema,
 });
 
 export const getAssetUploadUrl = authActionModerate
@@ -236,11 +280,19 @@ export const getAssetUploadUrl = authActionModerate
     });
 
     if (!asset) {
-      throw new Error('Asset not found');
+      throw new Error("Asset not found");
     }
 
     if (asset.ownerId !== user.id) {
-      throw new Error('You do not have permission to access this asset');
+      throw new Error("You do not have permission to access this asset");
+    }
+
+    const metadata = (asset.metadataJson as Record<string, unknown> | null) ?? {};
+    if (
+      typeof metadata.contentType === "string" &&
+      metadata.contentType.toLowerCase() !== contentType.toLowerCase()
+    ) {
+      throw new Error("Upload content type does not match the registered asset");
     }
 
     // Generate fresh upload URL
@@ -258,37 +310,26 @@ const getDownloadUrlSchema = z.object({
   assetId: z.string().min(1),
 });
 
-export const getAssetDownloadUrl = authActionLenient
+export const getAssetDownloadUrl = publicActionLenient
   .schema(getDownloadUrlSchema)
-  .action(async ({ parsedInput, ctx }) => {
+  .action(async ({ parsedInput }) => {
     const { assetId } = parsedInput;
-    const { user } = ctx;
+    const user = await getDbUser();
 
     // Get the asset
     const asset = await prisma.asset.findUnique({
-      where: { id: assetId },
+      where: {
+        id: assetId,
+        status: AssetStatus.UPLOADED,
+      },
+      include: assetAccessInclude,
     });
 
     if (!asset) {
-      throw new Error('Asset not found');
+      throw new Error("Asset not found");
     }
-
-    // Check access: owner or asset is part of a public project
-    // For now, allow owners and public access (we'll refine this later)
-    const isOwner = asset.ownerId === user.id;
-
-    if (!isOwner) {
-      // Check if asset is part of a public project the user can access
-      // For simplicity, we'll allow access to any uploaded asset for now
-      // TODO: Add proper access control based on project visibility
-      if (asset.status !== AssetStatus.UPLOADED) {
-        throw new Error('You do not have permission to access this asset');
-      }
-    }
-
-    // Only allow downloading uploaded assets
-    if (asset.status !== AssetStatus.UPLOADED) {
-      throw new Error('Asset is not available for download');
+    if (!canReadAsset(user?.id ?? null, asset)) {
+      throw new Error("You do not have permission to access this asset");
     }
 
     // Generate pre-signed download URL
@@ -307,25 +348,28 @@ export const getAssetDownloadUrl = authActionLenient
 // -----------------------------------------------------------------------------
 
 const getDownloadUrlsSchema = z.object({
-  assetIds: z.array(z.string().min(1)),
+  assetIds: z.array(z.string().min(1)).max(100),
 });
 
-export const getAssetDownloadUrls = authActionLenient
+export const getAssetDownloadUrls = publicActionLenient
   .schema(getDownloadUrlsSchema)
   .action(async ({ parsedInput }) => {
     const { assetIds } = parsedInput;
+    const user = await getDbUser();
 
     if (assetIds.length === 0) {
       return { assets: [] };
     }
 
     // Get all assets
-    const assets = await prisma.asset.findMany({
+    const candidateAssets = await prisma.asset.findMany({
       where: {
         id: { in: assetIds },
         status: AssetStatus.UPLOADED,
       },
+      include: assetAccessInclude,
     });
+    const assets = candidateAssets.filter((asset) => canReadAsset(user?.id ?? null, asset));
 
     // Generate download URLs for each asset
     const results = await Promise.all(

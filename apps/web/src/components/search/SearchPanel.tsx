@@ -174,10 +174,22 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
     const fileName = audioFileName ?? null;
     const accepted = refinement.candidates
       .filter((c) => c.status === "accepted")
-      .map((c) => ({ id: c.id, startSec: c.startSec, endSec: c.endSec, score: c.score, source: c.source }));
+      .map((c) => ({
+        id: c.id,
+        startSec: c.startSec,
+        endSec: c.endSec,
+        score: c.score,
+        source: c.source,
+      }));
     const rejected = refinement.candidates
       .filter((c) => c.status === "rejected")
-      .map((c) => ({ id: c.id, startSec: c.startSec, endSec: c.endSec, score: c.score, source: c.source }));
+      .map((c) => ({
+        id: c.id,
+        startSec: c.startSec,
+        endSec: c.endSec,
+        score: c.score,
+        source: c.source,
+      }));
     const manualMatches = refinement.candidates
       .filter((c) => c.source === "manual")
       .map((c) => ({ id: c.id, startSec: c.startSec, endSec: c.endSec, status: c.status }));
@@ -187,7 +199,11 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
       accepted,
       rejected,
       manualMatches,
-      meta: { audioFileName: fileName, sampleRate: audioSampleRate, selectionDurationSec: Math.max(0, q.endSec - q.startSec) },
+      meta: {
+        audioFileName: fileName,
+        sampleRate: audioSampleRate,
+        selectionDurationSec: Math.max(0, q.endSec - q.startSec),
+      },
     };
 
     try {
@@ -218,9 +234,7 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
             Search
           </Button>
           {searchDirty && searchResult ? (
-            <span className="text-amber-600 dark:text-amber-400">
-              Params changed
-            </span>
+            <span className="text-amber-600 dark:text-amber-400">Params changed</span>
           ) : null}
           {isSearchRunning ? (
             <span className="inline-flex items-center gap-1 text-zinc-600 dark:text-zinc-300">
@@ -238,18 +252,24 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
             max={95}
             step={1}
             value={thresholdPct}
-            onChange={(e) => handleChange({ ...searchControls, threshold: clamp01(Number(e.target.value) / 100) })}
+            onChange={(e) =>
+              handleChange({ ...searchControls, threshold: clamp01(Number(e.target.value) / 100) })
+            }
             disabled={disabled}
             className="w-24"
           />
-          <span className="w-8 text-right tabular-nums text-zinc-600 dark:text-zinc-300">{thresholdPct}%</span>
+          <span className="w-8 text-right tabular-nums text-zinc-600 dark:text-zinc-300">
+            {thresholdPct}%
+          </span>
         </label>
 
         <label className="flex items-center gap-1.5">
           <span className="text-zinc-600 dark:text-zinc-300">Precision</span>
           <select
             value={searchControls.precision}
-            onChange={(e) => handleChange({ ...searchControls, precision: e.target.value as SearchPrecision })}
+            onChange={(e) =>
+              handleChange({ ...searchControls, precision: e.target.value as SearchPrecision })
+            }
             disabled={disabled}
             className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs dark:border-zinc-800 dark:bg-zinc-950"
           >
@@ -284,16 +304,40 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
         </label>
 
         <details className="text-xs">
-          <summary className="cursor-pointer text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Weights</summary>
+          <summary className="cursor-pointer text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+            Weights
+          </summary>
           <div className="absolute z-10 mt-1 rounded border border-zinc-200 bg-white p-2 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
             <label className="flex items-center gap-1.5 mb-1">
               <span className="text-zinc-600 dark:text-zinc-300 w-20">Mel</span>
-              <input type="range" min={0} max={200} step={5} value={Math.round(searchControls.melWeight * 100)} onChange={(e) => handleChange({ ...searchControls, melWeight: Number(e.target.value) / 100 })} disabled={disabled} className="w-20" />
+              <input
+                type="range"
+                min={0}
+                max={200}
+                step={5}
+                value={Math.round(searchControls.melWeight * 100)}
+                onChange={(e) =>
+                  handleChange({ ...searchControls, melWeight: Number(e.target.value) / 100 })
+                }
+                disabled={disabled}
+                className="w-20"
+              />
               <span className="w-8 tabular-nums">{searchControls.melWeight.toFixed(2)}</span>
             </label>
             <label className="flex items-center gap-1.5">
               <span className="text-zinc-600 dark:text-zinc-300 w-20">Transient</span>
-              <input type="range" min={0} max={200} step={5} value={Math.round(searchControls.transientWeight * 100)} onChange={(e) => handleChange({ ...searchControls, transientWeight: Number(e.target.value) / 100 })} disabled={disabled} className="w-20" />
+              <input
+                type="range"
+                min={0}
+                max={200}
+                step={5}
+                value={Math.round(searchControls.transientWeight * 100)}
+                onChange={(e) =>
+                  handleChange({ ...searchControls, transientWeight: Number(e.target.value) / 100 })
+                }
+                disabled={disabled}
+                className="w-20"
+              />
               <span className="w-8 tabular-nums">{searchControls.transientWeight.toFixed(2)}</span>
             </label>
           </div>
@@ -331,17 +375,39 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
 
         {/* Navigation */}
         <div className="flex items-center gap-1">
-          <Button size="sm" variant="outline" onClick={onPrevCandidate} disabled={!audio || filteredTotal === 0} className="h-6 px-2 text-xs">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onPrevCandidate}
+            disabled={!audio || filteredTotal === 0}
+            className="h-6 px-2 text-xs"
+          >
             ← Prev
           </Button>
           <span className="tabular-nums text-zinc-500 min-w-16 text-center">
-            {hasActive && activeFilteredIndex >= 0 ? `${activeFilteredIndex + 1}/${filteredTotal}` : filteredTotal > 0 ? `—/${filteredTotal}` : "—"}
+            {hasActive && activeFilteredIndex >= 0
+              ? `${activeFilteredIndex + 1}/${filteredTotal}`
+              : filteredTotal > 0
+                ? `—/${filteredTotal}`
+                : "—"}
           </span>
-          <Button size="sm" variant="outline" onClick={onNextCandidate} disabled={!audio || filteredTotal === 0} className="h-6 px-2 text-xs">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onNextCandidate}
+            disabled={!audio || filteredTotal === 0}
+            className="h-6 px-2 text-xs"
+          >
             Next →
           </Button>
           {showJumpToBest && (
-            <Button size="sm" variant="outline" onClick={jumpToBestUnreviewed} disabled={!audio} className="h-6 px-2 text-xs">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={jumpToBestUnreviewed}
+              disabled={!audio}
+              className="h-6 px-2 text-xs"
+            >
               Best
             </Button>
           )}
@@ -349,14 +415,31 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
 
         {/* Classification */}
         <div className="flex items-center gap-1">
-          <Button size="sm" onClick={acceptActive} disabled={!audio || !hasActive} className="h-6 px-2 text-xs bg-green-600 hover:bg-green-700">
+          <Button
+            size="sm"
+            onClick={acceptActive}
+            disabled={!audio || !hasActive}
+            className="h-6 px-2 text-xs bg-green-600 hover:bg-green-700"
+          >
             Accept(A)
           </Button>
-          <Button size="sm" variant="destructive" onClick={rejectActive} disabled={!audio || !hasActive} className="h-6 px-2 text-xs">
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={rejectActive}
+            disabled={!audio || !hasActive}
+            className="h-6 px-2 text-xs"
+          >
             Reject(R)
           </Button>
           {canDeleteManual && (
-            <Button size="sm" variant="outline" onClick={deleteActiveManual} disabled={!audio} className="h-6 px-2 text-xs">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={deleteActiveManual}
+              disabled={!audio}
+              className="h-6 px-2 text-xs"
+            >
               Del
             </Button>
           )}
@@ -364,10 +447,22 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
 
         {/* Playback */}
         <div className="flex items-center gap-1">
-          <Button size="sm" variant="outline" onClick={playActiveCandidate} disabled={!audio || !hasActive} className="h-6 px-2 text-xs">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={playActiveCandidate}
+            disabled={!audio || !hasActive}
+            className="h-6 px-2 text-xs"
+          >
             ▶ Cand
           </Button>
-          <Button size="sm" variant="outline" onClick={playQueryRegion} disabled={!audio} className="h-6 px-2 text-xs">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={playQueryRegion}
+            disabled={!audio}
+            className="h-6 px-2 text-xs"
+          >
             ▶ Query
           </Button>
         </div>
@@ -375,11 +470,23 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
         {/* Toggles */}
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1">
-            <input type="checkbox" checked={loopCandidate} onChange={(e) => setLoopCandidate(e.target.checked)} disabled={!audio} className="h-3 w-3" />
+            <input
+              type="checkbox"
+              checked={loopCandidate}
+              onChange={(e) => setLoopCandidate(e.target.checked)}
+              disabled={!audio}
+              className="h-3 w-3"
+            />
             <span className="text-zinc-600 dark:text-zinc-300">Loop</span>
           </label>
           <label className="flex items-center gap-1">
-            <input type="checkbox" checked={autoPlayOnNavigate} onChange={(e) => setAutoPlayOnNavigate(e.target.checked)} disabled={!audio} className="h-3 w-3" />
+            <input
+              type="checkbox"
+              checked={autoPlayOnNavigate}
+              onChange={(e) => setAutoPlayOnNavigate(e.target.checked)}
+              disabled={!audio}
+              className="h-3 w-3"
+            />
             <span className="text-zinc-600 dark:text-zinc-300">Auto-play</span>
           </label>
         </div>
@@ -395,7 +502,13 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
           >
             {addMissingMode ? "Add:ON" : "+Add(M)"}
           </Button>
-          <Button size="sm" variant="outline" onClick={copyRefinementJson} disabled={!audio || candidatesTotal === 0} className="h-6 px-2 text-xs">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={copyRefinementJson}
+            disabled={!audio || candidatesTotal === 0}
+            className="h-6 px-2 text-xs"
+          >
             Copy JSON
           </Button>
         </div>
@@ -408,7 +521,9 @@ export function SearchPanel({ playerRef }: SearchPanelProps) {
             {activeCandidate.startSec.toFixed(2)}s–{activeCandidate.endSec.toFixed(2)}s
           </span>
           <span>score: {activeCandidate.score?.toFixed(3) ?? "—"}</span>
-          <span>{activeCandidate.source}/{activeCandidate.status}</span>
+          <span>
+            {activeCandidate.source}/{activeCandidate.status}
+          </span>
         </div>
       )}
     </div>

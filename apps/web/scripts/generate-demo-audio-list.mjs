@@ -27,8 +27,8 @@ function generateDisplayName(filename) {
 
   // Clean up common patterns
   name = name
-    .replace(/[-_]/g, " ")  // Replace dashes/underscores with spaces
-    .replace(/\s+/g, " ")   // Collapse multiple spaces
+    .replace(/[-_]/g, " ") // Replace dashes/underscores with spaces
+    .replace(/\s+/g, " ") // Collapse multiple spaces
     .trim();
 
   return name;

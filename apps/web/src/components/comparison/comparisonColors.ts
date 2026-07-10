@@ -34,9 +34,7 @@ function stemColorHex(index: number): string {
 /** Compute a stable stroke color for every stream in the collection. */
 export function buildStreamColorMap(streams: Map<StreamId, Stream>): Map<StreamId, string> {
   const all = [...streams.values()];
-  const stems = all
-    .filter((s) => s.kind === "stem")
-    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const stems = all.filter((s) => s.kind === "stem").sort((a, b) => a.sortOrder - b.sortOrder);
   const bands = all.filter(isBandStream).sort((a, b) => a.sortOrder - b.sortOrder);
 
   const colors = new Map<StreamId, string>();

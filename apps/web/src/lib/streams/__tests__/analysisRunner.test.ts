@@ -6,11 +6,7 @@ import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { AudioBufferLike } from "@octoseq/mir";
 import { useConfigStore } from "@/lib/stores/configStore";
 import { useAnalysisStore } from "../analysisStore";
-import {
-  cancelAllAnalyses,
-  runStreamAnalyses,
-  runStreamAnalysis,
-} from "../analysisRunner";
+import { cancelAllAnalyses, runStreamAnalyses, runStreamAnalysis } from "../analysisRunner";
 import { addBand, addStemWithAudio, loadMixdown, resetAllStreams } from "../streamActions";
 import { MIXDOWN_STREAM_ID, analysisKey } from "../types";
 import { makeAudioRef, makeSegment } from "./fixtures";
@@ -73,6 +69,15 @@ describe("audio-stream analyses", () => {
     expect(forced).not.toBe(first);
   });
 
+  it("invalidates cached results when analysis configuration changes", async () => {
+    const first = await runStreamAnalysis(MIXDOWN_STREAM_ID, "onsetEnvelope");
+    const previousHopSize = useConfigStore.getState().hopSize;
+    useConfigStore.getState().setHopSize(previousHopSize === 128 ? 256 : 128);
+    const second = await runStreamAnalysis(MIXDOWN_STREAM_ID, "onsetEnvelope");
+    expect(second).not.toBe(first);
+    useConfigStore.getState().setHopSize(previousHopSize);
+  });
+
   it("runs analyses on a stem independently of the mixdown", async () => {
     const stem = addStemWithAudio({
       label: "Drums",
@@ -102,7 +107,13 @@ describe("band-stream analyses", () => {
       parentId: MIXDOWN_STREAM_ID,
       label: "Low",
       frequencyShape: [
-        makeSegment({ endTime: DURATION_SEC, lowHzStart: 100, highHzStart: 400, lowHzEnd: 100, highHzEnd: 400 }),
+        makeSegment({
+          endTime: DURATION_SEC,
+          lowHzStart: 100,
+          highHzStart: 400,
+          lowHzEnd: 100,
+          highHzEnd: 400,
+        }),
       ],
     });
     const result = await runStreamAnalysis(band, "amplitudeEnvelope");
@@ -120,7 +131,13 @@ describe("band-stream analyses", () => {
       parentId: MIXDOWN_STREAM_ID,
       label: "Low",
       frequencyShape: [
-        makeSegment({ endTime: DURATION_SEC, lowHzStart: 100, highHzStart: 400, lowHzEnd: 100, highHzEnd: 400 }),
+        makeSegment({
+          endTime: DURATION_SEC,
+          lowHzStart: 100,
+          highHzStart: 400,
+          lowHzEnd: 100,
+          highHzEnd: 400,
+        }),
       ],
     });
     const result = await runStreamAnalysis(band, "onsetPeaks");
@@ -146,14 +163,26 @@ describe("band-stream analyses", () => {
       parentId: MIXDOWN_STREAM_ID,
       label: "Low",
       frequencyShape: [
-        makeSegment({ endTime: DURATION_SEC, lowHzStart: 80, highHzStart: 500, lowHzEnd: 80, highHzEnd: 500 }),
+        makeSegment({
+          endTime: DURATION_SEC,
+          lowHzStart: 80,
+          highHzStart: 500,
+          lowHzEnd: 80,
+          highHzEnd: 500,
+        }),
       ],
     });
     const high = addBand({
       parentId: MIXDOWN_STREAM_ID,
       label: "High",
       frequencyShape: [
-        makeSegment({ endTime: DURATION_SEC, lowHzStart: 1000, highHzStart: 3500, lowHzEnd: 1000, highHzEnd: 3500 }),
+        makeSegment({
+          endTime: DURATION_SEC,
+          lowHzStart: 1000,
+          highHzStart: 3500,
+          lowHzEnd: 1000,
+          highHzEnd: 3500,
+        }),
       ],
     });
 

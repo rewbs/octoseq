@@ -19,13 +19,8 @@ interface AutosaveProviderProps {
  */
 export function AutosaveProvider({ children }: AutosaveProviderProps) {
   const pathname = usePathname();
-  const {
-    pendingRecovery,
-    wasRecovered,
-    clearRecovered,
-    acceptRecovery,
-    dismissRecovery,
-  } = useProjectActions();
+  const { pendingRecovery, wasRecovered, clearRecovered, acceptRecovery, dismissRecovery } =
+    useProjectActions();
 
   // Local state to track dialog visibility (separate from pendingRecovery)
   const [showDialog, setShowDialog] = useState(false);

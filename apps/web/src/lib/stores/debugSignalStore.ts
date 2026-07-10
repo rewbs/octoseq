@@ -52,8 +52,7 @@ export const useDebugSignalStore = create<DebugSignalStore>()(
       setLastRunDuration: (duration) =>
         set({ lastRunDuration: duration }, false, "setLastRunDuration"),
 
-      setLastStepCount: (count) =>
-        set({ lastStepCount: count }, false, "setLastStepCount"),
+      setLastStepCount: (count) => set({ lastStepCount: count }, false, "setLastStepCount"),
     }),
     { name: "debug-signal-store" }
   )

@@ -104,7 +104,10 @@ impl SignalState {
     /// Warn once about a missing custom signal.
     /// Logs a warning if this custom signal hasn't been warned about yet.
     pub fn warn_missing_custom_signal(&mut self, signal_id: &str) {
-        if self.warned_missing_custom_signals.insert(signal_id.to_string()) {
+        if self
+            .warned_missing_custom_signals
+            .insert(signal_id.to_string())
+        {
             log::warn!(
                 "Custom signal not found: inputs.customSignals[\"{}\"] - returning 0.0",
                 signal_id
@@ -115,7 +118,10 @@ impl SignalState {
     /// Warn once about a missing composed signal.
     /// Logs a warning if this composed signal hasn't been warned about yet.
     pub fn warn_missing_composed_signal(&mut self, name: &str) {
-        if self.warned_missing_composed_signals.insert(name.to_string()) {
+        if self
+            .warned_missing_composed_signals
+            .insert(name.to_string())
+        {
             log::warn!(
                 "Composed signal not found: inputs.composedSignals[\"{}\"] - returning 0.0",
                 name
@@ -161,12 +167,14 @@ impl SignalState {
 
     /// Get or create a ring buffer for moving average.
     pub fn get_ma_buffer(&mut self, id: SignalId, capacity: usize) -> &mut RingBuffer {
-        self.ma_buffers.entry(id).or_insert_with(|| RingBuffer::new(capacity))
+        self.ma_buffers
+            .entry(id)
+            .or_insert_with(|| RingBuffer::new(capacity))
     }
 
     /// Get or create pink noise state.
     pub fn get_pink_noise(&mut self, id: SignalId) -> &mut PinkNoiseState {
-        self.pink_noise_state.entry(id).or_insert_with(PinkNoiseState::new)
+        self.pink_noise_state.entry(id).or_default()
     }
 
     /// Get previous value for diff operation.
@@ -209,8 +217,14 @@ impl SignalState {
             ("delay_buffers", self.delay_buffers.len()),
             ("warned_missing_bands", self.warned_missing_bands.len()),
             ("warned_missing_stems", self.warned_missing_stems.len()),
-            ("warned_missing_custom", self.warned_missing_custom_signals.len()),
-            ("warned_missing_composed", self.warned_missing_composed_signals.len()),
+            (
+                "warned_missing_custom",
+                self.warned_missing_custom_signals.len(),
+            ),
+            (
+                "warned_missing_composed",
+                self.warned_missing_composed_signals.len(),
+            ),
             ("warned_missing_stats", self.warned_missing_stats.len()),
         ]
     }
@@ -486,7 +500,11 @@ mod tests {
             let sample = pink.next(white);
 
             // Pink noise should be bounded (though not strictly to [-1, 1] due to summation)
-            assert!(sample.abs() < 2.0, "Pink noise sample out of expected range: {}", sample);
+            assert!(
+                sample.abs() < 2.0,
+                "Pink noise sample out of expected range: {}",
+                sample
+            );
         }
     }
 

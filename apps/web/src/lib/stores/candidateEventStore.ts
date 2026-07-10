@@ -411,9 +411,7 @@ export const useCandidateEventStore = create<CandidateEventStore>()(
       },
 
       getStreamsForSource: (sourceId) => {
-        return Array.from(get().streams.values()).filter(
-          (stream) => stream.sourceId === sourceId
-        );
+        return Array.from(get().streams.values()).filter((stream) => stream.sourceId === sourceId);
       },
 
       getTotalVisibleEventCount: () => {
@@ -457,17 +455,12 @@ export const useCandidateEventStore = create<CandidateEventStore>()(
         const stream = get().streams.get(streamId);
         if (!stream) return;
 
-        const eventsInRange = stream.events.filter(
-          (e) => e.time >= startTime && e.time <= endTime
-        );
+        const eventsInRange = stream.events.filter((e) => e.time >= startTime && e.time <= endTime);
         const eventIds = eventsInRange.map((e) => e.id);
 
         set(
           (state) => ({
-            selectedCandidateIds: new Set([
-              ...state.selectedCandidateIds,
-              ...eventIds,
-            ]),
+            selectedCandidateIds: new Set([...state.selectedCandidateIds, ...eventIds]),
           }),
           false,
           "selectCandidateRange"

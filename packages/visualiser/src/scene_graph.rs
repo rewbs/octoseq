@@ -10,6 +10,10 @@ use glam::Vec2;
 use crate::deformation::Deformation;
 use crate::material::ParamValue;
 
+pub const MAX_LINE_POINTS: usize = 65_536;
+pub const MAX_POINT_CLOUD_POINTS: usize = 262_144;
+pub const MAX_RADIAL_WAVE_RESOLUTION: usize = 65_536;
+
 /// Unique identifier for scene entities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct EntityId(pub u64);
@@ -232,6 +236,7 @@ pub struct LineStrip {
 
 impl LineStrip {
     pub fn new(max_points: usize, mode: LineMode) -> Self {
+        let max_points = max_points.clamp(1, MAX_LINE_POINTS);
         Self {
             max_points,
             points: vec![Point2::default(); max_points],
@@ -353,7 +358,14 @@ pub struct PointCloud {
 
 impl PointCloud {
     /// Create a new point cloud with deterministic positions based on seed.
-    pub fn new(count: usize, spread: f32, mode: PointCloudMode, seed: u64, point_size: f32) -> Self {
+    pub fn new(
+        count: usize,
+        spread: f32,
+        mode: PointCloudMode,
+        seed: u64,
+        point_size: f32,
+    ) -> Self {
+        let count = count.min(MAX_POINT_CLOUD_POINTS);
         let positions = Self::generate_positions(count, spread, mode, seed);
         Self {
             count,
@@ -420,7 +432,15 @@ impl PointCloud {
     }
 
     /// Regenerate positions if parameters changed.
-    pub fn update(&mut self, count: usize, spread: f32, mode: PointCloudMode, seed: u64, point_size: f32) {
+    pub fn update(
+        &mut self,
+        count: usize,
+        spread: f32,
+        mode: PointCloudMode,
+        seed: u64,
+        point_size: f32,
+    ) {
+        let count = count.min(MAX_POINT_CLOUD_POINTS);
         if self.count != count || self.spread != spread || self.mode != mode || self.seed != seed {
             self.count = count;
             self.spread = spread;
@@ -457,6 +477,7 @@ pub struct RadialWave {
 impl RadialWave {
     /// Create a new radial wave.
     pub fn new(base_radius: f32, amplitude: f32, wave_frequency: f32, resolution: usize) -> Self {
+        let resolution = resolution.clamp(3, MAX_RADIAL_WAVE_RESOLUTION);
         Self {
             base_radius,
             amplitude,
@@ -475,12 +496,9 @@ impl RadialWave {
         let mut points = Vec::with_capacity(self.resolution + 1);
         for i in 0..=self.resolution {
             let angle = (i as f32 / self.resolution as f32) * std::f32::consts::TAU;
-            let radius = self.base_radius + self.amplitude * self.signal_value * (angle * self.wave_frequency).sin();
-            points.push(Vec3::new(
-                radius * angle.cos(),
-                radius * angle.sin(),
-                0.0,
-            ));
+            let radius = self.base_radius
+                + self.amplitude * self.signal_value * (angle * self.wave_frequency).sin();
+            points.push(Vec3::new(radius * angle.cos(), radius * angle.sin(), 0.0));
         }
         points
     }
@@ -525,6 +543,7 @@ pub struct Ribbon {
 impl Ribbon {
     /// Create a new ribbon.
     pub fn new(max_points: usize, mode: RibbonMode, width: f32, twist: f32) -> Self {
+        let max_points = max_points.clamp(1, MAX_LINE_POINTS);
         Self {
             max_points,
             mode,
@@ -702,6 +721,18 @@ impl SceneGraph {
         if !self.entities.contains_key(&child_id) || !self.entities.contains_key(&parent_id) {
             return false;
         }
+        if child_id == parent_id {
+            return false;
+        }
+
+        let mut visited = HashSet::new();
+        let mut current = Some(parent_id);
+        while let Some(id) = current {
+            if id == child_id || !visited.insert(id) {
+                return false;
+            }
+            current = self.parent_ids.get(&id).copied();
+        }
         self.parent_ids.insert(child_id, parent_id);
         true
     }
@@ -744,6 +775,8 @@ impl SceneGraph {
     /// Destroy an entity completely (removes from scene and deletes).
     pub fn destroy(&mut self, id: EntityId) -> bool {
         self.remove_from_scene(id);
+        self.parent_ids.remove(&id);
+        self.parent_ids.retain(|_, parent| *parent != id);
         self.entities.remove(&id).is_some()
     }
 
@@ -759,80 +792,75 @@ impl SceneGraph {
 
     /// Get all entities currently in the scene (for rendering).
     pub fn scene_entities(&self) -> impl Iterator<Item = (EntityId, &SceneEntity)> {
-        self.scene_entities.iter()
+        self.scene_entities
+            .iter()
             .filter_map(|&id| self.entities.get(&id).map(|e| (id, e)))
     }
 
     /// Get all mesh instances in the scene.
     pub fn meshes(&self) -> impl Iterator<Item = (EntityId, &MeshInstance)> {
-        self.scene_entities()
-            .filter_map(|(id, entity)| {
-                if let SceneEntity::Mesh(mesh) = entity {
-                    Some((id, mesh))
-                } else {
-                    None
-                }
-            })
+        self.scene_entities().filter_map(|(id, entity)| {
+            if let SceneEntity::Mesh(mesh) = entity {
+                Some((id, mesh))
+            } else {
+                None
+            }
+        })
     }
 
     /// Get all line strips in the scene.
     pub fn lines(&self) -> impl Iterator<Item = (EntityId, &LineStrip)> {
-        self.scene_entities()
-            .filter_map(|(id, entity)| {
-                if let SceneEntity::Line(line) = entity {
-                    Some((id, line))
-                } else {
-                    None
-                }
-            })
+        self.scene_entities().filter_map(|(id, entity)| {
+            if let SceneEntity::Line(line) = entity {
+                Some((id, line))
+            } else {
+                None
+            }
+        })
     }
 
     /// Get all groups in the scene.
     pub fn groups(&self) -> impl Iterator<Item = (EntityId, &Group)> {
-        self.scene_entities()
-            .filter_map(|(id, entity)| {
-                if let SceneEntity::Group(group) = entity {
-                    Some((id, group))
-                } else {
-                    None
-                }
-            })
+        self.scene_entities().filter_map(|(id, entity)| {
+            if let SceneEntity::Group(group) = entity {
+                Some((id, group))
+            } else {
+                None
+            }
+        })
     }
 
     /// Get all point clouds in the scene.
     pub fn point_clouds(&self) -> impl Iterator<Item = (EntityId, &PointCloud)> {
-        self.scene_entities()
-            .filter_map(|(id, entity)| {
-                if let SceneEntity::PointCloud(cloud) = entity {
-                    Some((id, cloud))
-                } else {
-                    None
-                }
-            })
+        self.scene_entities().filter_map(|(id, entity)| {
+            if let SceneEntity::PointCloud(cloud) = entity {
+                Some((id, cloud))
+            } else {
+                None
+            }
+        })
     }
 
     /// Get all radial waves in the scene.
     pub fn radial_waves(&self) -> impl Iterator<Item = (EntityId, &RadialWave)> {
-        self.scene_entities()
-            .filter_map(|(id, entity)| {
-                if let SceneEntity::RadialWave(wave) = entity {
-                    Some((id, wave))
-                } else {
-                    None
-                }
-            })
+        self.scene_entities().filter_map(|(id, entity)| {
+            if let SceneEntity::RadialWave(wave) = entity {
+                Some((id, wave))
+            } else {
+                None
+            }
+        })
     }
 
     /// Get all ribbons in the scene.
     pub fn ribbons(&self) -> impl Iterator<Item = (EntityId, &Ribbon)> {
-        self.scene_entities()
-            .filter_map(|(id, entity)| {
-                if let SceneEntity::Ribbon(ribbon) = entity {
-                    Some((id, ribbon))
-                } else {
-                    None
-                }
-            })
+        self.scene_entities().filter_map(|(id, entity)| {
+            if let SceneEntity::Ribbon(ribbon) = entity {
+                Some((id, ribbon))
+            } else {
+                None
+            }
+        })
     }
 
     /// Toggle debug bounding box visualization for an entity.
@@ -968,5 +996,28 @@ mod tests {
         assert!(scene.destroy(id));
         assert!(!scene.exists(id));
         assert!(!scene.is_in_scene(id));
+    }
+
+    #[test]
+    fn parent_cycles_are_rejected() {
+        let mut scene = SceneGraph::new();
+        let parent = scene.create_group();
+        let child = scene.create_group();
+        assert!(scene.set_parent(child, parent));
+        assert!(!scene.set_parent(parent, child));
+        assert!(!scene.set_parent(parent, parent));
+        assert_eq!(scene.get_parent(child), Some(parent));
+        assert_eq!(scene.get_parent(parent), None);
+    }
+
+    #[test]
+    fn zero_sized_buffers_are_clamped_to_one() {
+        let mut line = LineStrip::new(0, LineMode::Line);
+        line.push(1.0, 2.0);
+        assert_eq!(line.max_points, 1);
+
+        let mut ribbon = Ribbon::new(0, RibbonMode::Strip, 1.0, 0.0);
+        ribbon.push(1.0, 2.0);
+        assert_eq!(ribbon.max_points, 1);
     }
 }

@@ -3,8 +3,8 @@
 use rhai::{Dynamic, Engine, EvalAltResult};
 
 use crate::feedback::{
-    BlendBuilder, ColorBuilder, FeedbackBuilder, FeedbackConfig, FeedbackSamplingMode,
-    SignalOrF32, WarpBuilder,
+    BlendBuilder, ColorBuilder, FeedbackBuilder, FeedbackConfig, FeedbackSamplingMode, SignalOrF32,
+    WarpBuilder,
 };
 use crate::signal::Signal;
 
@@ -63,17 +63,11 @@ pub fn register_feedback_builder_api(engine: &mut Engine) {
     // FeedbackBuilder property accessors (return sub-builders)
     // ========================================================================
 
-    engine.register_get("warp", |fb: &mut FeedbackBuilder| {
-        WarpBuilder(fb.clone())
-    });
+    engine.register_get("warp", |fb: &mut FeedbackBuilder| WarpBuilder(fb.clone()));
 
-    engine.register_get("color", |fb: &mut FeedbackBuilder| {
-        ColorBuilder(fb.clone())
-    });
+    engine.register_get("color", |fb: &mut FeedbackBuilder| ColorBuilder(fb.clone()));
 
-    engine.register_get("blend", |fb: &mut FeedbackBuilder| {
-        BlendBuilder(fb.clone())
-    });
+    engine.register_get("blend", |fb: &mut FeedbackBuilder| BlendBuilder(fb.clone()));
 
     // ========================================================================
     // FeedbackBuilder methods

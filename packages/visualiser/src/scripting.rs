@@ -34,54 +34,64 @@
 //! - Collected during analysis mode; no-op during playback
 //! - Use for inspecting script-derived values (gates, envelopes, etc.)
 
+use rhai::{Dynamic, Engine, EvalAltResult, Scope, AST};
 use std::collections::HashMap;
-use rhai::{Engine, Scope, AST, Dynamic, EvalAltResult};
 
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicI64, Ordering};
-use std::sync::{Mutex, LazyLock};
 use std::collections::HashSet as StdHashSet;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex};
 
 // Thread-local storage for post-processing effects (avoids Rhai closure capture issues)
 thread_local! {
     static PENDING_POST_EFFECTS: std::cell::RefCell<std::collections::HashMap<rhai::INT, rhai::Map>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
     static PENDING_POST_CHAIN: std::cell::RefCell<Vec<rhai::INT>> =
-        std::cell::RefCell::new(Vec::new());
+        const { std::cell::RefCell::new(Vec::new()) };
 }
 
 // Atomic counter for effect IDs
 static EFFECT_ID_COUNTER: AtomicI64 = AtomicI64::new(0);
 
-use crate::debug_collector::debug_emit;
-use crate::debug_markers::{add_marker_request, DebugMarkerRequest, ShowEventsOptions, MarkerSpreadMode};
-use crate::event_rhai::{get_named_event_stream_names, get_authored_event_stream_names};
-use crate::event_stream::EventStream;
-use crate::input::{BandSignalMap, SignalMap};
-use crate::musical_time::MusicalTimeStructure;
-use crate::scene_graph::{SceneGraph, EntityId, MeshType, RenderMode, LineMode, SceneEntity, LineStrip as SceneLineStrip, PointCloudMode, RadialWave, Ribbon, RibbonMode};
-use crate::deformation::{Deformation, DeformAxis};
-use crate::script_log::{ScriptLogger, reset_frame_log_count};
-use crate::script_diagnostics::{from_eval_error, from_parse_error, lint_script, ScriptDiagnostic, ScriptPhase};
-use crate::script_introspection::register_introspection_api;
-use crate::signal_rhai::{
-    clear_current_input_signals, generate_composed_signals_namespace,
-    generate_custom_events_namespace, generate_custom_signals_namespace,
-    generate_bands_namespace, generate_event_streams_namespace, generate_inputs_namespace,
-    generate_stems_namespace, register_signal_api, set_current_composed_signals,
-    set_current_custom_signals, set_current_input_signals, SIGNAL_API_RHAI,
-};
-use crate::signal::Signal;
-use crate::signal_eval::EvalContext;
-use crate::signal_state::SignalState;
-use crate::signal_stats::StatisticsCache;
-use crate::particle_rhai::{register_particle_api, generate_particles_namespace, set_global_particle_seed};
-use crate::post_processing::{PostProcessingChain, PostEffectInstance, EffectParamValue};
 use crate::camera::{CameraConfig, CameraUniforms};
 use crate::camera_rhai::{generate_camera_namespace, sync_camera_from_scope};
+use crate::debug_collector::debug_emit;
+use crate::debug_markers::{
+    add_marker_request, DebugMarkerRequest, MarkerSpreadMode, ShowEventsOptions,
+};
+use crate::deformation::{DeformAxis, Deformation};
+use crate::event_rhai::{get_authored_event_stream_names, get_named_event_stream_names};
+use crate::event_stream::EventStream;
+use crate::input::{BandSignalMap, SignalMap};
 use crate::lighting::{LightingConfig, LightingUniforms};
 use crate::lighting_rhai::{generate_lighting_namespace, sync_lighting_from_scope};
+use crate::musical_time::MusicalTimeStructure;
+use crate::particle_rhai::{
+    generate_particles_namespace, register_particle_api, set_global_particle_seed,
+};
+use crate::perf_profiling::{should_log_collections, time_end, time_start};
+use crate::post_processing::{EffectParamValue, PostEffectInstance, PostProcessingChain};
+use crate::scene_graph::{
+    EntityId, LineMode, LineStrip as SceneLineStrip, MeshType, PointCloudMode, RadialWave,
+    RenderMode, Ribbon, RibbonMode, SceneEntity, SceneGraph, MAX_LINE_POINTS,
+    MAX_POINT_CLOUD_POINTS, MAX_RADIAL_WAVE_RESOLUTION,
+};
+use crate::script_diagnostics::{
+    from_eval_error, from_parse_error, lint_script, ScriptDiagnostic, ScriptPhase,
+};
+use crate::script_introspection::register_introspection_api;
+use crate::script_log::{reset_frame_log_count, ScriptLogger};
+use crate::signal::Signal;
+use crate::signal_eval::EvalContext;
 use crate::signal_explorer::{sample_signal_chain, ScriptSignalInfo, SignalChainAnalysis};
-use crate::perf_profiling::{time_start, time_end, should_log_collections};
+use crate::signal_rhai::{
+    clear_current_input_signals, generate_bands_namespace, generate_composed_signals_namespace,
+    generate_custom_events_namespace, generate_custom_signals_namespace,
+    generate_event_streams_namespace, generate_inputs_namespace, generate_stems_namespace,
+    register_signal_api, set_current_composed_signals, set_current_custom_signals,
+    set_current_input_signals, SIGNAL_API_RHAI,
+};
+use crate::signal_state::SignalState;
+use crate::signal_stats::StatisticsCache;
 use std::sync::Arc;
 
 /// Global debug options set by scripts.
@@ -91,7 +101,22 @@ static DEBUG_BOUNDING_BOXES: AtomicBool = AtomicBool::new(false);
 /// 0 means no isolation, any other value is the entity ID to isolate.
 static DEBUG_ISOLATED_ENTITY: AtomicU64 = AtomicU64::new(0);
 /// Per-entity debug bounding box toggles.
-static DEBUG_BOUNDS_ENTITIES: LazyLock<Mutex<StdHashSet<u64>>> = LazyLock::new(|| Mutex::new(StdHashSet::new()));
+static DEBUG_BOUNDS_ENTITIES: LazyLock<Mutex<StdHashSet<u64>>> =
+    LazyLock::new(|| Mutex::new(StdHashSet::new()));
+
+fn bounded_script_usize(value: Option<i64>, default: usize, min: usize, max: usize) -> usize {
+    value
+        .and_then(|raw| usize::try_from(raw).ok())
+        .unwrap_or(default)
+        .clamp(min, max)
+}
+
+fn bounded_script_u32(value: Option<i64>, default: u32, min: u32, max: u32) -> u32 {
+    value
+        .and_then(|raw| u32::try_from(raw).ok())
+        .unwrap_or(default)
+        .clamp(min, max)
+}
 
 // Pending feedback configuration from script.
 // Uses the FeedbackConfig type directly now that we have the fluent builder API.
@@ -115,7 +140,8 @@ pub struct ScriptDebugOptions {
 /// Get the current debug options set by scripts.
 pub fn get_script_debug_options() -> ScriptDebugOptions {
     let isolated = DEBUG_ISOLATED_ENTITY.load(Ordering::Relaxed);
-    let bounds_entities = DEBUG_BOUNDS_ENTITIES.lock()
+    let bounds_entities = DEBUG_BOUNDS_ENTITIES
+        .lock()
         .map(|guard| guard.clone())
         .unwrap_or_default();
     ScriptDebugOptions {
@@ -209,7 +235,7 @@ impl ScriptEngine {
         engine.set_max_call_levels(64);
         engine.set_max_operations(100_000); // Prevent infinite loops
         engine.set_max_string_size(10_000);
-        engine.set_max_array_size(100_000);  // Allow larger arrays for mesh assets
+        engine.set_max_array_size(100_000); // Allow larger arrays for mesh assets
         engine.set_max_map_size(500);
 
         // Register standalone logging functions (these can be called from anywhere)
@@ -232,7 +258,7 @@ impl ScriptEngine {
             |name: rhai::ImmutableString, value: Dynamic| {
                 // Convert value to f32
                 let f_value = if let Ok(f) = value.as_float() {
-                    f as f32
+                    f
                 } else if let Ok(i) = value.as_int() {
                     i as f32
                 } else {
@@ -285,73 +311,107 @@ impl ScriptEngine {
         });
 
         // Register debug show_events function with options
-        engine.register_fn("__debug_show_events_opts", |events: Arc<EventStream>, options: rhai::Map| {
-            let opts = parse_show_events_options(&options);
-            add_marker_request(DebugMarkerRequest {
-                events,
-                options: opts,
-            });
-        });
+        engine.register_fn(
+            "__debug_show_events_opts",
+            |events: Arc<EventStream>, options: rhai::Map| {
+                let opts = parse_show_events_options(&options);
+                add_marker_request(DebugMarkerRequest {
+                    events,
+                    options: opts,
+                });
+            },
+        );
 
         // Register material/post-processing debug inspection functions
         engine.register_fn("__debug_list_materials", || -> rhai::Array {
             use crate::material::MaterialRegistry;
             let registry = MaterialRegistry::new();
-            registry.list_ids().into_iter()
+            registry
+                .list_ids()
+                .into_iter()
                 .map(|id| Dynamic::from(id.to_string()))
                 .collect()
         });
 
-        engine.register_fn("__debug_describe_material", |id: rhai::ImmutableString| -> rhai::Map {
-            use crate::material::MaterialRegistry;
-            let registry = MaterialRegistry::new();
-            let mut result = rhai::Map::new();
+        engine.register_fn(
+            "__debug_describe_material",
+            |id: rhai::ImmutableString| -> rhai::Map {
+                use crate::material::MaterialRegistry;
+                let registry = MaterialRegistry::new();
+                let mut result = rhai::Map::new();
 
-            if let Some(material) = registry.get(&id) {
-                result.insert("name".into(), Dynamic::from(material.name.clone()));
-                result.insert("blend_mode".into(), Dynamic::from(format!("{:?}", material.blend_mode)));
+                if let Some(material) = registry.get(&id) {
+                    result.insert("name".into(), Dynamic::from(material.name.clone()));
+                    result.insert(
+                        "blend_mode".into(),
+                        Dynamic::from(format!("{:?}", material.blend_mode)),
+                    );
 
-                let params: rhai::Array = material.params.iter().map(|p| {
-                    let mut param_info = rhai::Map::new();
-                    param_info.insert("name".into(), Dynamic::from(p.name.clone()));
-                    param_info.insert("type".into(), Dynamic::from(format!("{:?}", p.param_type)));
-                    Dynamic::from(param_info)
-                }).collect();
-                result.insert("params".into(), Dynamic::from(params));
-            }
+                    let params: rhai::Array = material
+                        .params
+                        .iter()
+                        .map(|p| {
+                            let mut param_info = rhai::Map::new();
+                            param_info.insert("name".into(), Dynamic::from(p.name.clone()));
+                            param_info.insert(
+                                "type".into(),
+                                Dynamic::from(format!("{:?}", p.param_type)),
+                            );
+                            Dynamic::from(param_info)
+                        })
+                        .collect();
+                    result.insert("params".into(), Dynamic::from(params));
+                }
 
-            result
-        });
+                result
+            },
+        );
 
         engine.register_fn("__debug_list_effects", || -> rhai::Array {
             use crate::post_processing::PostEffectRegistry;
             let registry = PostEffectRegistry::new();
-            registry.list_ids().into_iter()
+            registry
+                .list_ids()
+                .into_iter()
                 .map(|id| Dynamic::from(id.to_string()))
                 .collect()
         });
 
-        engine.register_fn("__debug_describe_effect", |id: rhai::ImmutableString| -> rhai::Map {
-            use crate::post_processing::PostEffectRegistry;
-            let registry = PostEffectRegistry::new();
-            let mut result = rhai::Map::new();
+        engine.register_fn(
+            "__debug_describe_effect",
+            |id: rhai::ImmutableString| -> rhai::Map {
+                use crate::post_processing::PostEffectRegistry;
+                let registry = PostEffectRegistry::new();
+                let mut result = rhai::Map::new();
 
-            if let Some(effect) = registry.get(&id) {
-                result.insert("name".into(), Dynamic::from(effect.name.clone()));
-                result.insert("description".into(), Dynamic::from(effect.description.clone()));
+                if let Some(effect) = registry.get(&id) {
+                    result.insert("name".into(), Dynamic::from(effect.name.clone()));
+                    result.insert(
+                        "description".into(),
+                        Dynamic::from(effect.description.clone()),
+                    );
 
-                let params: rhai::Array = effect.params.iter().map(|p| {
-                    let mut param_info = rhai::Map::new();
-                    param_info.insert("name".into(), Dynamic::from(p.name.clone()));
-                    param_info.insert("type".into(), Dynamic::from(format!("{:?}", p.param_type)));
-                    param_info.insert("description".into(), Dynamic::from(p.description.clone()));
-                    Dynamic::from(param_info)
-                }).collect();
-                result.insert("params".into(), Dynamic::from(params));
-            }
+                    let params: rhai::Array = effect
+                        .params
+                        .iter()
+                        .map(|p| {
+                            let mut param_info = rhai::Map::new();
+                            param_info.insert("name".into(), Dynamic::from(p.name.clone()));
+                            param_info.insert(
+                                "type".into(),
+                                Dynamic::from(format!("{:?}", p.param_type)),
+                            );
+                            param_info
+                                .insert("description".into(), Dynamic::from(p.description.clone()));
+                            Dynamic::from(param_info)
+                        })
+                        .collect();
+                    result.insert("params".into(), Dynamic::from(params));
+                }
 
-            result
-        });
+                result
+            },
+        );
 
         // Register effect creation functions (fully native to avoid Rhai closure issues)
         engine.register_fn("__fx_create_bloom", |options: rhai::Map| -> rhai::Map {
@@ -361,41 +421,95 @@ impl ScriptEngine {
             effect.insert("__type".into(), Dynamic::from("post_effect"));
             effect.insert("__effect_id".into(), Dynamic::from("bloom"));
             effect.insert("enabled".into(), Dynamic::from(true));
-            effect.insert("threshold".into(), options.get("threshold").cloned().unwrap_or_else(|| Dynamic::from(0.8_f64)));
-            effect.insert("intensity".into(), options.get("intensity").cloned().unwrap_or_else(|| Dynamic::from(0.5_f64)));
-            effect.insert("radius".into(), options.get("radius").cloned().unwrap_or_else(|| Dynamic::from(4.0_f64)));
-            effect.insert("downsample".into(), options.get("downsample").cloned().unwrap_or_else(|| Dynamic::from(2.0_f64)));
+            effect.insert(
+                "threshold".into(),
+                options
+                    .get("threshold")
+                    .cloned()
+                    .unwrap_or_else(|| Dynamic::from(0.8_f64)),
+            );
+            effect.insert(
+                "intensity".into(),
+                options
+                    .get("intensity")
+                    .cloned()
+                    .unwrap_or_else(|| Dynamic::from(0.5_f64)),
+            );
+            effect.insert(
+                "radius".into(),
+                options
+                    .get("radius")
+                    .cloned()
+                    .unwrap_or_else(|| Dynamic::from(4.0_f64)),
+            );
+            effect.insert(
+                "downsample".into(),
+                options
+                    .get("downsample")
+                    .cloned()
+                    .unwrap_or_else(|| Dynamic::from(2.0_f64)),
+            );
             PENDING_POST_EFFECTS.with(|cell| {
                 cell.borrow_mut().insert(id, effect.clone());
             });
             effect
         });
 
-        engine.register_fn("__fx_create_color_grade", |options: rhai::Map| -> rhai::Map {
-            let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let mut effect = rhai::Map::new();
-            effect.insert("__id".into(), Dynamic::from(id));
-            effect.insert("__type".into(), Dynamic::from("post_effect"));
-            effect.insert("__effect_id".into(), Dynamic::from("color_grade"));
-            effect.insert("enabled".into(), Dynamic::from(true));
-            effect.insert("brightness".into(), options.get("brightness").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
-            effect.insert("contrast".into(), options.get("contrast").cloned().unwrap_or_else(|| Dynamic::from(1.0_f64)));
-            effect.insert("saturation".into(), options.get("saturation").cloned().unwrap_or_else(|| Dynamic::from(1.0_f64)));
-            effect.insert("gamma".into(), options.get("gamma").cloned().unwrap_or_else(|| Dynamic::from(1.0_f64)));
-            let default_tint = {
-                let mut t = rhai::Map::new();
-                t.insert("r".into(), Dynamic::from(1.0_f64));
-                t.insert("g".into(), Dynamic::from(1.0_f64));
-                t.insert("b".into(), Dynamic::from(1.0_f64));
-                t.insert("a".into(), Dynamic::from(1.0_f64));
-                Dynamic::from(t)
-            };
-            effect.insert("tint".into(), options.get("tint").cloned().unwrap_or(default_tint));
-            PENDING_POST_EFFECTS.with(|cell| {
-                cell.borrow_mut().insert(id, effect.clone());
-            });
-            effect
-        });
+        engine.register_fn(
+            "__fx_create_color_grade",
+            |options: rhai::Map| -> rhai::Map {
+                let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let mut effect = rhai::Map::new();
+                effect.insert("__id".into(), Dynamic::from(id));
+                effect.insert("__type".into(), Dynamic::from("post_effect"));
+                effect.insert("__effect_id".into(), Dynamic::from("color_grade"));
+                effect.insert("enabled".into(), Dynamic::from(true));
+                effect.insert(
+                    "brightness".into(),
+                    options
+                        .get("brightness")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                effect.insert(
+                    "contrast".into(),
+                    options
+                        .get("contrast")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                effect.insert(
+                    "saturation".into(),
+                    options
+                        .get("saturation")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                effect.insert(
+                    "gamma".into(),
+                    options
+                        .get("gamma")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                let default_tint = {
+                    let mut t = rhai::Map::new();
+                    t.insert("r".into(), Dynamic::from(1.0_f64));
+                    t.insert("g".into(), Dynamic::from(1.0_f64));
+                    t.insert("b".into(), Dynamic::from(1.0_f64));
+                    t.insert("a".into(), Dynamic::from(1.0_f64));
+                    Dynamic::from(t)
+                };
+                effect.insert(
+                    "tint".into(),
+                    options.get("tint").cloned().unwrap_or(default_tint),
+                );
+                PENDING_POST_EFFECTS.with(|cell| {
+                    cell.borrow_mut().insert(id, effect.clone());
+                });
+                effect
+            },
+        );
 
         engine.register_fn("__fx_create_vignette", |options: rhai::Map| -> rhai::Map {
             let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -404,8 +518,20 @@ impl ScriptEngine {
             effect.insert("__type".into(), Dynamic::from("post_effect"));
             effect.insert("__effect_id".into(), Dynamic::from("vignette"));
             effect.insert("enabled".into(), Dynamic::from(true));
-            effect.insert("intensity".into(), options.get("intensity").cloned().unwrap_or_else(|| Dynamic::from(0.3_f64)));
-            effect.insert("smoothness".into(), options.get("smoothness").cloned().unwrap_or_else(|| Dynamic::from(0.5_f64)));
+            effect.insert(
+                "intensity".into(),
+                options
+                    .get("intensity")
+                    .cloned()
+                    .unwrap_or_else(|| Dynamic::from(0.3_f64)),
+            );
+            effect.insert(
+                "smoothness".into(),
+                options
+                    .get("smoothness")
+                    .cloned()
+                    .unwrap_or_else(|| Dynamic::from(0.5_f64)),
+            );
             let default_color = {
                 let mut c = rhai::Map::new();
                 c.insert("r".into(), Dynamic::from(0.0_f64));
@@ -414,33 +540,48 @@ impl ScriptEngine {
                 c.insert("a".into(), Dynamic::from(1.0_f64));
                 Dynamic::from(c)
             };
-            effect.insert("color".into(), options.get("color").cloned().unwrap_or(default_color));
+            effect.insert(
+                "color".into(),
+                options.get("color").cloned().unwrap_or(default_color),
+            );
             PENDING_POST_EFFECTS.with(|cell| {
                 cell.borrow_mut().insert(id, effect.clone());
             });
             effect
         });
 
-        engine.register_fn("__fx_create_distortion", |options: rhai::Map| -> rhai::Map {
-            let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let mut effect = rhai::Map::new();
-            effect.insert("__id".into(), Dynamic::from(id));
-            effect.insert("__type".into(), Dynamic::from("post_effect"));
-            effect.insert("__effect_id".into(), Dynamic::from("distortion"));
-            effect.insert("enabled".into(), Dynamic::from(true));
-            effect.insert("amount".into(), options.get("amount").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
-            let default_center = {
-                let mut c = rhai::Map::new();
-                c.insert("x".into(), Dynamic::from(0.5_f64));
-                c.insert("y".into(), Dynamic::from(0.5_f64));
-                Dynamic::from(c)
-            };
-            effect.insert("center".into(), options.get("center").cloned().unwrap_or(default_center));
-            PENDING_POST_EFFECTS.with(|cell| {
-                cell.borrow_mut().insert(id, effect.clone());
-            });
-            effect
-        });
+        engine.register_fn(
+            "__fx_create_distortion",
+            |options: rhai::Map| -> rhai::Map {
+                let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let mut effect = rhai::Map::new();
+                effect.insert("__id".into(), Dynamic::from(id));
+                effect.insert("__type".into(), Dynamic::from("post_effect"));
+                effect.insert("__effect_id".into(), Dynamic::from("distortion"));
+                effect.insert("enabled".into(), Dynamic::from(true));
+                effect.insert(
+                    "amount".into(),
+                    options
+                        .get("amount")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                let default_center = {
+                    let mut c = rhai::Map::new();
+                    c.insert("x".into(), Dynamic::from(0.5_f64));
+                    c.insert("y".into(), Dynamic::from(0.5_f64));
+                    Dynamic::from(c)
+                };
+                effect.insert(
+                    "center".into(),
+                    options.get("center").cloned().unwrap_or(default_center),
+                );
+                PENDING_POST_EFFECTS.with(|cell| {
+                    cell.borrow_mut().insert(id, effect.clone());
+                });
+                effect
+            },
+        );
 
         engine.register_fn("__fx_create_zoom_wrap", |options: rhai::Map| -> rhai::Map {
             let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -449,73 +590,142 @@ impl ScriptEngine {
             effect.insert("__type".into(), Dynamic::from("post_effect"));
             effect.insert("__effect_id".into(), Dynamic::from("zoom_wrap"));
             effect.insert("enabled".into(), Dynamic::from(true));
-            effect.insert("amount".into(), options.get("amount").cloned().unwrap_or_else(|| Dynamic::from(1.0_f64)));
-            effect.insert("wrap_mode".into(), options.get("wrap_mode").cloned().unwrap_or_else(|| Dynamic::from("repeat")));
+            effect.insert(
+                "amount".into(),
+                options
+                    .get("amount")
+                    .cloned()
+                    .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+            );
+            effect.insert(
+                "wrap_mode".into(),
+                options
+                    .get("wrap_mode")
+                    .cloned()
+                    .unwrap_or_else(|| Dynamic::from("repeat")),
+            );
             let default_center = {
                 let mut c = rhai::Map::new();
                 c.insert("x".into(), Dynamic::from(0.5_f64));
                 c.insert("y".into(), Dynamic::from(0.5_f64));
                 Dynamic::from(c)
             };
-            effect.insert("center".into(), options.get("center").cloned().unwrap_or(default_center));
+            effect.insert(
+                "center".into(),
+                options.get("center").cloned().unwrap_or(default_center),
+            );
             PENDING_POST_EFFECTS.with(|cell| {
                 cell.borrow_mut().insert(id, effect.clone());
             });
             effect
         });
 
-        engine.register_fn("__fx_create_radial_blur", |options: rhai::Map| -> rhai::Map {
-            let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let mut effect = rhai::Map::new();
-            effect.insert("__id".into(), Dynamic::from(id));
-            effect.insert("__type".into(), Dynamic::from("post_effect"));
-            effect.insert("__effect_id".into(), Dynamic::from("radial_blur"));
-            effect.insert("enabled".into(), Dynamic::from(true));
-            effect.insert("strength".into(), options.get("strength").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
-            effect.insert("samples".into(), options.get("samples").cloned().unwrap_or_else(|| Dynamic::from(8_i64)));
-            let default_center = {
-                let mut c = rhai::Map::new();
-                c.insert("x".into(), Dynamic::from(0.5_f64));
-                c.insert("y".into(), Dynamic::from(0.5_f64));
-                Dynamic::from(c)
-            };
-            effect.insert("center".into(), options.get("center").cloned().unwrap_or(default_center));
-            PENDING_POST_EFFECTS.with(|cell| {
-                cell.borrow_mut().insert(id, effect.clone());
-            });
-            effect
-        });
+        engine.register_fn(
+            "__fx_create_radial_blur",
+            |options: rhai::Map| -> rhai::Map {
+                let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let mut effect = rhai::Map::new();
+                effect.insert("__id".into(), Dynamic::from(id));
+                effect.insert("__type".into(), Dynamic::from("post_effect"));
+                effect.insert("__effect_id".into(), Dynamic::from("radial_blur"));
+                effect.insert("enabled".into(), Dynamic::from(true));
+                effect.insert(
+                    "strength".into(),
+                    options
+                        .get("strength")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                effect.insert(
+                    "samples".into(),
+                    options
+                        .get("samples")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(8_i64)),
+                );
+                let default_center = {
+                    let mut c = rhai::Map::new();
+                    c.insert("x".into(), Dynamic::from(0.5_f64));
+                    c.insert("y".into(), Dynamic::from(0.5_f64));
+                    Dynamic::from(c)
+                };
+                effect.insert(
+                    "center".into(),
+                    options.get("center").cloned().unwrap_or(default_center),
+                );
+                PENDING_POST_EFFECTS.with(|cell| {
+                    cell.borrow_mut().insert(id, effect.clone());
+                });
+                effect
+            },
+        );
 
-        engine.register_fn("__fx_create_directional_blur", |options: rhai::Map| -> rhai::Map {
-            let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let mut effect = rhai::Map::new();
-            effect.insert("__id".into(), Dynamic::from(id));
-            effect.insert("__type".into(), Dynamic::from("post_effect"));
-            effect.insert("__effect_id".into(), Dynamic::from("directional_blur"));
-            effect.insert("enabled".into(), Dynamic::from(true));
-            effect.insert("amount".into(), options.get("amount").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
-            effect.insert("angle".into(), options.get("angle").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
-            effect.insert("samples".into(), options.get("samples").cloned().unwrap_or_else(|| Dynamic::from(8_i64)));
-            PENDING_POST_EFFECTS.with(|cell| {
-                cell.borrow_mut().insert(id, effect.clone());
-            });
-            effect
-        });
+        engine.register_fn(
+            "__fx_create_directional_blur",
+            |options: rhai::Map| -> rhai::Map {
+                let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let mut effect = rhai::Map::new();
+                effect.insert("__id".into(), Dynamic::from(id));
+                effect.insert("__type".into(), Dynamic::from("post_effect"));
+                effect.insert("__effect_id".into(), Dynamic::from("directional_blur"));
+                effect.insert("enabled".into(), Dynamic::from(true));
+                effect.insert(
+                    "amount".into(),
+                    options
+                        .get("amount")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                effect.insert(
+                    "angle".into(),
+                    options
+                        .get("angle")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                effect.insert(
+                    "samples".into(),
+                    options
+                        .get("samples")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(8_i64)),
+                );
+                PENDING_POST_EFFECTS.with(|cell| {
+                    cell.borrow_mut().insert(id, effect.clone());
+                });
+                effect
+            },
+        );
 
-        engine.register_fn("__fx_create_chromatic_aberration", |options: rhai::Map| -> rhai::Map {
-            let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let mut effect = rhai::Map::new();
-            effect.insert("__id".into(), Dynamic::from(id));
-            effect.insert("__type".into(), Dynamic::from("post_effect"));
-            effect.insert("__effect_id".into(), Dynamic::from("chromatic_aberration"));
-            effect.insert("enabled".into(), Dynamic::from(true));
-            effect.insert("amount".into(), options.get("amount").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
-            effect.insert("angle".into(), options.get("angle").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
-            PENDING_POST_EFFECTS.with(|cell| {
-                cell.borrow_mut().insert(id, effect.clone());
-            });
-            effect
-        });
+        engine.register_fn(
+            "__fx_create_chromatic_aberration",
+            |options: rhai::Map| -> rhai::Map {
+                let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let mut effect = rhai::Map::new();
+                effect.insert("__id".into(), Dynamic::from(id));
+                effect.insert("__type".into(), Dynamic::from("post_effect"));
+                effect.insert("__effect_id".into(), Dynamic::from("chromatic_aberration"));
+                effect.insert("enabled".into(), Dynamic::from(true));
+                effect.insert(
+                    "amount".into(),
+                    options
+                        .get("amount")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                effect.insert(
+                    "angle".into(),
+                    options
+                        .get("angle")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                PENDING_POST_EFFECTS.with(|cell| {
+                    cell.borrow_mut().insert(id, effect.clone());
+                });
+                effect
+            },
+        );
 
         engine.register_fn("__fx_create_grain", |options: rhai::Map| -> rhai::Map {
             let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -524,9 +734,27 @@ impl ScriptEngine {
             effect.insert("__type".into(), Dynamic::from("post_effect"));
             effect.insert("__effect_id".into(), Dynamic::from("grain"));
             effect.insert("enabled".into(), Dynamic::from(true));
-            effect.insert("amount".into(), options.get("amount").cloned().unwrap_or_else(|| Dynamic::from(0.0_f64)));
-            effect.insert("scale".into(), options.get("scale").cloned().unwrap_or_else(|| Dynamic::from(1.0_f64)));
-            effect.insert("seed".into(), options.get("seed").cloned().unwrap_or_else(|| Dynamic::from(0_i64)));
+            effect.insert(
+                "amount".into(),
+                options
+                    .get("amount")
+                    .cloned()
+                    .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+            );
+            effect.insert(
+                "scale".into(),
+                options
+                    .get("scale")
+                    .cloned()
+                    .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+            );
+            effect.insert(
+                "seed".into(),
+                options
+                    .get("seed")
+                    .cloned()
+                    .unwrap_or_else(|| Dynamic::from(0_i64)),
+            );
             PENDING_POST_EFFECTS.with(|cell| {
                 cell.borrow_mut().insert(id, effect.clone());
             });
@@ -563,9 +791,8 @@ impl ScriptEngine {
         });
 
         engine.register_fn("__post_get_chain", || -> rhai::Array {
-            PENDING_POST_CHAIN.with(|cell| {
-                cell.borrow().iter().map(|&id| Dynamic::from(id)).collect()
-            })
+            PENDING_POST_CHAIN
+                .with(|cell| cell.borrow().iter().map(|&id| Dynamic::from(id)).collect())
         });
 
         // Register feedback builder API (fluent builder pattern)
@@ -573,11 +800,14 @@ impl ScriptEngine {
 
         // Register feedback control native functions
         // These use thread-local storage to avoid Rhai closure capture issues
-        engine.register_fn("__feedback_enable", |config: crate::feedback::FeedbackConfig| {
-            PENDING_FEEDBACK_CONFIG.with(|cell| {
-                *cell.borrow_mut() = Some(config);
-            });
-        });
+        engine.register_fn(
+            "__feedback_enable",
+            |config: crate::feedback::FeedbackConfig| {
+                PENDING_FEEDBACK_CONFIG.with(|cell| {
+                    *cell.borrow_mut() = Some(config);
+                });
+            },
+        );
 
         engine.register_fn("__feedback_disable", || {
             PENDING_FEEDBACK_CONFIG.with(|cell| {
@@ -586,9 +816,7 @@ impl ScriptEngine {
         });
 
         engine.register_fn("__feedback_is_enabled", || -> bool {
-            PENDING_FEEDBACK_CONFIG.with(|cell| {
-                cell.borrow().is_some()
-            })
+            PENDING_FEEDBACK_CONFIG.with(|cell| cell.borrow().is_some())
         });
 
         // Register Signal API types and functions
@@ -748,7 +976,11 @@ impl ScriptEngine {
         });
 
         // Generate inputs namespace based on available signals
-        let signal_names: Vec<&str> = self.available_signal_names.iter().map(|s| s.as_str()).collect();
+        let signal_names: Vec<&str> = self
+            .available_signal_names
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
         let inputs_namespace = generate_inputs_namespace(&signal_names);
 
         // Generate bands namespace based on available frequency bands
@@ -759,19 +991,23 @@ impl ScriptEngine {
 
         // Generate event streams namespace based on available named event streams
         let event_stream_names = get_named_event_stream_names();
-        let event_stream_names_refs: Vec<&str> = event_stream_names.iter().map(|s| s.as_str()).collect();
+        let event_stream_names_refs: Vec<&str> =
+            event_stream_names.iter().map(|s| s.as_str()).collect();
         let event_streams_namespace = generate_event_streams_namespace(&event_stream_names_refs);
 
         // Generate custom events namespace (renamed from authored) based on available authored streams
         let authored_stream_names = get_authored_event_stream_names();
-        let authored_stream_names_refs: Vec<&str> = authored_stream_names.iter().map(|s| s.as_str()).collect();
+        let authored_stream_names_refs: Vec<&str> =
+            authored_stream_names.iter().map(|s| s.as_str()).collect();
         let custom_events_namespace = generate_custom_events_namespace(&authored_stream_names_refs);
 
         // Generate custom signals namespace
-        let custom_signals_namespace = generate_custom_signals_namespace(&self.available_custom_signals);
+        let custom_signals_namespace =
+            generate_custom_signals_namespace(&self.available_custom_signals);
 
         // Generate composed signals namespace
-        let composed_signals_namespace = generate_composed_signals_namespace(&self.available_composed_signals);
+        let composed_signals_namespace =
+            generate_composed_signals_namespace(&self.available_composed_signals);
 
         // Generate particles namespace
         let particles_namespace = generate_particles_namespace();
@@ -787,7 +1023,8 @@ impl ScriptEngine {
         //
         // Important: we track the number of prelude lines so we can map Rhai error
         // positions back onto the user's script for UI reporting.
-        let prelude = format!(r#"
+        let prelude = format!(
+            r#"
 // === API Modules ===
 
 // Mesh module
@@ -1571,7 +1808,8 @@ feedback.is_enabled = || {{
 {lighting_namespace}
 
 // === User Script ===
-"#);
+"#
+        );
 
         // Count prelude lines so we can map errors back to user code.
         self.user_line_offset = prelude.matches('\n').count();
@@ -1613,9 +1851,9 @@ feedback.is_enabled = || {{
 
         // Pattern to match: let <name> = <signal_expression>
         // Signal expressions typically start with: inputs., gen., time., or are method chains
-        let re = Regex::new(
-            r"let\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*((?:inputs\.|gen\.|time\.)[^;]+)"
-        ).unwrap();
+        let re =
+            Regex::new(r"let\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*((?:inputs\.|gen\.|time\.)[^;]+)")
+                .unwrap();
 
         for cap in re.captures_iter(&self.script_source) {
             if let (Some(name), Some(expr)) = (cap.get(1), cap.get(2)) {
@@ -1625,7 +1863,10 @@ feedback.is_enabled = || {{
             }
         }
 
-        log::debug!("Parsed {} signal declarations from script", self.parsed_signal_decls.len());
+        log::debug!(
+            "Parsed {} signal declarations from script",
+            self.parsed_signal_decls.len()
+        );
     }
 
     /// Call the init function if it exists.
@@ -1646,12 +1887,9 @@ feedback.is_enabled = || {{
         ctx.insert("__type".into(), Dynamic::from("init_ctx"));
 
         // Call init if it exists
-        let result: Result<(), Box<EvalAltResult>> = self.engine.call_fn(
-            &mut self.scope,
-            &ast,
-            "init",
-            (Dynamic::from(ctx),),
-        );
+        let result: Result<(), Box<EvalAltResult>> =
+            self.engine
+                .call_fn(&mut self.scope, &ast, "init", (Dynamic::from(ctx),));
 
         if let Err(e) = result {
             let err_str = e.to_string();
@@ -1718,7 +1956,7 @@ feedback.is_enabled = || {{
         // Log available signals for debugging (only occasionally to avoid spam)
         static LOG_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let count = LOG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if count % 60 == 0 {
+        if count.is_multiple_of(60) {
             log::info!(
                 "Script update: dt={:.4}, inputs={:?}",
                 dt,
@@ -1728,7 +1966,9 @@ feedback.is_enabled = || {{
 
         // Call the update function
         // Note: Pass dt as f32 since Rhai is compiled with f32_float feature
-        let entities_before_update = self.scope.get_value::<rhai::Map>("__entities")
+        let entities_before_update = self
+            .scope
+            .get_value::<rhai::Map>("__entities")
             .map(|e| e.len())
             .unwrap_or(0);
         let next_id_before = self.scope.get_value::<i64>("__next_id").unwrap_or(-1);
@@ -1744,7 +1984,9 @@ feedback.is_enabled = || {{
 
         // Log if Rhai update added entities
         if should_log_collections() {
-            let entities_after_update = self.scope.get_value::<rhai::Map>("__entities")
+            let entities_after_update = self
+                .scope
+                .get_value::<rhai::Map>("__entities")
                 .map(|e| e.len())
                 .unwrap_or(0);
             let next_id_after = self.scope.get_value::<i64>("__next_id").unwrap_or(-1);
@@ -1752,8 +1994,10 @@ feedback.is_enabled = || {{
             if entities_before_update != entities_after_update || next_id_before != next_id_after {
                 log::warn!(
                     "[PERF] rhai_update changed state: __entities {} -> {}, __next_id {} -> {}",
-                    entities_before_update, entities_after_update,
-                    next_id_before, next_id_after
+                    entities_before_update,
+                    entities_after_update,
+                    next_id_before,
+                    next_id_after
                 );
             }
         }
@@ -1768,7 +2012,16 @@ feedback.is_enabled = || {{
 
         // Sync entities from scope to scene graph, evaluating any Signal properties at render time.
         time_start("sync_entities");
-        self.sync_entities_from_scope(time, dt, input_signals, band_signals, stem_signals, custom_signals, composed_signals, musical_time);
+        self.sync_entities_from_scope(
+            time,
+            dt,
+            input_signals,
+            band_signals,
+            stem_signals,
+            custom_signals,
+            composed_signals,
+            musical_time,
+        );
         time_end("sync_entities");
 
         // Log collection sizes periodically for performance profiling
@@ -1834,10 +2087,8 @@ feedback.is_enabled = || {{
         };
 
         // Convert scene_ids to a set for quick lookup
-        let scene_id_set: std::collections::HashSet<i64> = scene_ids
-            .iter()
-            .filter_map(|d| d.as_int().ok())
-            .collect();
+        let scene_id_set: std::collections::HashSet<i64> =
+            scene_ids.iter().filter_map(|d| d.as_int().ok()).collect();
 
         // Temporarily move Signal state/statistics out so we can mutate `self` while evaluating signals.
         let frame_count = self.frame_count;
@@ -1865,7 +2116,7 @@ feedback.is_enabled = || {{
             cache: &mut HashMap<crate::signal::SignalId, f32>,
         ) -> Option<f32> {
             if let Ok(f) = value.as_float() {
-                return Some(f as f32);
+                return Some(f);
             }
             if let Ok(i) = value.as_int() {
                 return Some(i as f32);
@@ -1887,11 +2138,17 @@ feedback.is_enabled = || {{
         time_start("sync_scope_iter");
         let scope_var_count = self.scope.len();
         let entities_before = entities.len();
-        let mut scope_referenced_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        let mut scope_referenced_ids: std::collections::HashSet<i64> =
+            std::collections::HashSet::new();
 
         for (name, _is_const, value) in self.scope.iter() {
             // Skip internal variables
-            if name.starts_with("__") || name == "mesh" || name == "line" || name == "scene" || name == "deform" {
+            if name.starts_with("__")
+                || name == "mesh"
+                || name == "line"
+                || name == "scene"
+                || name == "deform"
+            {
                 continue;
             }
 
@@ -1905,17 +2162,20 @@ feedback.is_enabled = || {{
                         // Preserve internal fields from the existing entry (like __parent_id)
                         // that are managed by group methods rather than user code
                         if let Some(existing_dyn) = entities.get(key.as_str()) {
-                            if let Some(existing_map) = existing_dyn.clone().try_cast::<rhai::Map>() {
+                            if let Some(existing_map) = existing_dyn.clone().try_cast::<rhai::Map>()
+                            {
                                 // Preserve __parent_id if the scope variable doesn't have it
-                                if scope_entity_map.get("__parent_id").is_none() {
+                                if !scope_entity_map.contains_key("__parent_id") {
                                     if let Some(parent_id) = existing_map.get("__parent_id") {
-                                        scope_entity_map.insert("__parent_id".into(), parent_id.clone());
+                                        scope_entity_map
+                                            .insert("__parent_id".into(), parent_id.clone());
                                     }
                                 }
                                 // Preserve __children if the scope variable doesn't have it
-                                if scope_entity_map.get("__children").is_none() {
+                                if !scope_entity_map.contains_key("__children") {
                                     if let Some(children) = existing_map.get("__children") {
-                                        scope_entity_map.insert("__children".into(), children.clone());
+                                        scope_entity_map
+                                            .insert("__children".into(), children.clone());
                                     }
                                 }
                             }
@@ -2000,9 +2260,7 @@ feedback.is_enabled = || {{
 
             // If scope is unexpectedly large, dump variable names to help debug
             if scope_var_count > 100 {
-                let var_names: Vec<&str> = self.scope.iter()
-                    .map(|(name, _, _)| name)
-                    .collect();
+                let var_names: Vec<&str> = self.scope.iter().map(|(name, _, _)| name).collect();
                 log::warn!(
                     "[PERF] Large scope detected ({} vars). Names: {:?}",
                     scope_var_count,
@@ -2012,11 +2270,12 @@ feedback.is_enabled = || {{
         }
 
         // Collect IDs of entities that should exist
-        let mut valid_entity_ids: std::collections::HashSet<EntityId> = std::collections::HashSet::new();
+        let mut valid_entity_ids: std::collections::HashSet<EntityId> =
+            std::collections::HashSet::new();
 
         // Sync each entity
         time_start("sync_entity_props");
-        let mut signal_eval_count = 0usize;
+        let _signal_eval_count = 0usize;
         for (_key, value) in entities.iter() {
             let entity_map = match value.clone().try_cast::<rhai::Map>() {
                 Some(m) => m,
@@ -2028,7 +2287,10 @@ feedback.is_enabled = || {{
                 None => continue,
             };
 
-            let entity_type = match entity_map.get("__type").and_then(|d| d.clone().into_string().ok()) {
+            let entity_type = match entity_map
+                .get("__type")
+                .and_then(|d| d.clone().into_string().ok())
+            {
                 Some(t) => t,
                 None => continue,
             };
@@ -2050,105 +2312,156 @@ feedback.is_enabled = || {{
                         self.create_entity_with_id(entity_id, MeshType::Sphere);
                     }
                     "mesh_asset" => {
-                        let asset_id = entity_map.get("__asset_id")
+                        let asset_id = entity_map
+                            .get("__asset_id")
                             .and_then(|d| d.clone().into_string().ok())
                             .unwrap_or_else(|| "unknown".into());
-                        self.create_entity_with_id(entity_id, MeshType::Asset(asset_id.to_string()));
+                        self.create_entity_with_id(
+                            entity_id,
+                            MeshType::Asset(asset_id.to_string()),
+                        );
                     }
                     "radial_ring" => {
                         // Read ring parameters (these can be Signals, so evaluate them)
-                        let radius = entity_map.get("__radius")
+                        let radius = entity_map
+                            .get("__radius")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(1.0);
-                        let thickness = entity_map.get("__thickness")
+                        let thickness = entity_map
+                            .get("__thickness")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(0.1);
-                        let start_angle = entity_map.get("__start_angle")
+                        let start_angle = entity_map
+                            .get("__start_angle")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(0.0);
-                        let end_angle = entity_map.get("__end_angle")
+                        let end_angle = entity_map
+                            .get("__end_angle")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(std::f32::consts::TAU);
-                        let segments = entity_map.get("__segments")
-                            .and_then(|d| d.as_int().ok())
-                            .unwrap_or(64) as u32;
-                        let depth = entity_map.get("__depth")
+                        let segments = bounded_script_u32(
+                            entity_map.get("__segments").and_then(|d| d.as_int().ok()),
+                            64,
+                            3,
+                            MAX_RADIAL_WAVE_RESOLUTION as u32,
+                        );
+                        let depth = entity_map
+                            .get("__depth")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(0.0);
-                        self.create_entity_with_id(entity_id, MeshType::RadialRing {
-                            radius,
-                            thickness,
-                            start_angle,
-                            end_angle,
-                            segments,
-                            depth,
-                        });
+                        self.create_entity_with_id(
+                            entity_id,
+                            MeshType::RadialRing {
+                                radius,
+                                thickness,
+                                start_angle,
+                                end_angle,
+                                segments,
+                                depth,
+                            },
+                        );
                     }
                     "line_strip" | "line_trace" => {
-                        let max_points = entity_map.get("__max_points")
-                            .and_then(|d| d.as_int().ok())
-                            .unwrap_or(256) as usize;
-                        let mode_str = entity_map.get("__mode")
+                        let max_points = bounded_script_usize(
+                            entity_map.get("__max_points").and_then(|d| d.as_int().ok()),
+                            256,
+                            1,
+                            MAX_LINE_POINTS,
+                        );
+                        let mode_str = entity_map
+                            .get("__mode")
                             .and_then(|d| d.clone().into_string().ok())
                             .unwrap_or_else(|| "line".into());
-                        let mode = if mode_str == "points" { LineMode::Points } else { LineMode::Line };
+                        let mode = if mode_str == "points" {
+                            LineMode::Points
+                        } else {
+                            LineMode::Line
+                        };
                         self.create_line_with_id(entity_id, max_points, mode);
                     }
                     "group" => {
                         self.create_group_with_id(entity_id);
                     }
                     "point_cloud" => {
-                        let count = entity_map.get("__count")
-                            .and_then(|d| d.as_int().ok())
-                            .unwrap_or(100) as usize;
-                        let spread = entity_map.get("__spread")
+                        let count = bounded_script_usize(
+                            entity_map.get("__count").and_then(|d| d.as_int().ok()),
+                            100,
+                            0,
+                            MAX_POINT_CLOUD_POINTS,
+                        );
+                        let spread = entity_map
+                            .get("__spread")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(1.0);
-                        let mode_str = entity_map.get("__mode")
+                        let mode_str = entity_map
+                            .get("__mode")
                             .and_then(|d| d.clone().into_string().ok())
                             .unwrap_or_else(|| "uniform".into());
                         let mode = match mode_str.as_str() {
                             "sphere" => PointCloudMode::Sphere,
                             _ => PointCloudMode::Uniform,
                         };
-                        let seed = entity_map.get("__seed")
+                        let seed = entity_map
+                            .get("__seed")
                             .and_then(|d| d.as_int().ok())
-                            .unwrap_or(0) as u64;
-                        let point_size = entity_map.get("__point_size")
+                            .and_then(|value| u64::try_from(value).ok())
+                            .unwrap_or(0);
+                        let point_size = entity_map
+                            .get("__point_size")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(2.0);
-                        self.create_point_cloud_with_id(entity_id, count, spread, mode, seed, point_size);
+                        self.create_point_cloud_with_id(
+                            entity_id, count, spread, mode, seed, point_size,
+                        );
                     }
                     "radial_wave" => {
-                        let base_radius = entity_map.get("__base_radius")
+                        let base_radius = entity_map
+                            .get("__base_radius")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(1.0);
-                        let amplitude = entity_map.get("__amplitude")
+                        let amplitude = entity_map
+                            .get("__amplitude")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(0.5);
-                        let wave_frequency = entity_map.get("__wave_frequency")
+                        let wave_frequency = entity_map
+                            .get("__wave_frequency")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(4.0);
-                        let resolution = entity_map.get("__resolution")
-                            .and_then(|d| d.as_int().ok())
-                            .unwrap_or(128) as usize;
-                        self.create_radial_wave_with_id(entity_id, base_radius, amplitude, wave_frequency, resolution);
+                        let resolution = bounded_script_usize(
+                            entity_map.get("__resolution").and_then(|d| d.as_int().ok()),
+                            128,
+                            3,
+                            MAX_RADIAL_WAVE_RESOLUTION,
+                        );
+                        self.create_radial_wave_with_id(
+                            entity_id,
+                            base_radius,
+                            amplitude,
+                            wave_frequency,
+                            resolution,
+                        );
                     }
                     "line_ribbon" => {
-                        let max_points = entity_map.get("__max_points")
-                            .and_then(|d| d.as_int().ok())
-                            .unwrap_or(256) as usize;
-                        let mode_str = entity_map.get("__mode")
+                        let max_points = bounded_script_usize(
+                            entity_map.get("__max_points").and_then(|d| d.as_int().ok()),
+                            256,
+                            1,
+                            MAX_LINE_POINTS,
+                        );
+                        let mode_str = entity_map
+                            .get("__mode")
                             .and_then(|d| d.clone().into_string().ok())
                             .unwrap_or_else(|| "strip".into());
                         let mode = match mode_str.as_str() {
                             "tube" => RibbonMode::Tube,
                             _ => RibbonMode::Strip,
                         };
-                        let width = entity_map.get("__width")
+                        let width = entity_map
+                            .get("__width")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(0.1);
-                        let twist = entity_map.get("__twist")
+                        let twist = entity_map
+                            .get("__twist")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(0.0);
                         self.create_ribbon_with_id(entity_id, max_points, mode, width, twist);
@@ -2160,7 +2473,10 @@ feedback.is_enabled = || {{
             // Update entity properties from the Map
             if let Some(entity) = self.scene_graph.get_mut(entity_id) {
                 // Position
-                if let Some(pos) = entity_map.get("position").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                if let Some(pos) = entity_map
+                    .get("position")
+                    .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                {
                     let transform = entity.transform_mut();
                     transform.position.x = pos
                         .get("x")
@@ -2177,7 +2493,10 @@ feedback.is_enabled = || {{
                 }
 
                 // Rotation
-                if let Some(rot) = entity_map.get("rotation").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                if let Some(rot) = entity_map
+                    .get("rotation")
+                    .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                {
                     let transform = entity.transform_mut();
                     transform.rotation.x = rot
                         .get("x")
@@ -2211,7 +2530,10 @@ feedback.is_enabled = || {{
 
                 // Mesh-specific: sync color, renderMode, wireframeColor, and deformations
                 if let SceneEntity::Mesh(mesh) = entity {
-                    if let Some(color) = entity_map.get("color").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                    if let Some(color) = entity_map
+                        .get("color")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
                         mesh.color[0] = color
                             .get("r")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
@@ -2231,7 +2553,10 @@ feedback.is_enabled = || {{
                     }
 
                     // Sync renderMode
-                    if let Some(mode_str) = entity_map.get("renderMode").and_then(|d| d.clone().into_string().ok()) {
+                    if let Some(mode_str) = entity_map
+                        .get("renderMode")
+                        .and_then(|d| d.clone().into_string().ok())
+                    {
                         mesh.render_mode = match mode_str.as_str() {
                             "wireframe" => RenderMode::Wireframe,
                             "solidWithWireframe" => RenderMode::SolidWithWireframe,
@@ -2240,7 +2565,10 @@ feedback.is_enabled = || {{
                     }
 
                     // Sync wireframeColor
-                    if let Some(wf_color) = entity_map.get("wireframeColor").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                    if let Some(wf_color) = entity_map
+                        .get("wireframeColor")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
                         mesh.wireframe_color[0] = wf_color
                             .get("r")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
@@ -2260,11 +2588,16 @@ feedback.is_enabled = || {{
                     }
 
                     // Sync deformations (with Signal support for numeric params)
-                    if let Some(deforms) = entity_map.get("deformations").and_then(|d| d.clone().try_cast::<rhai::Array>()) {
+                    if let Some(deforms) = entity_map
+                        .get("deformations")
+                        .and_then(|d| d.clone().try_cast::<rhai::Array>())
+                    {
                         mesh.deformations.clear();
                         for deform_dyn in deforms.iter() {
                             if let Some(deform_map) = deform_dyn.clone().try_cast::<rhai::Map>() {
-                                if let Some(deformation) = parse_deformation(&deform_map, &mut eval_ctx, &mut frame_cache) {
+                                if let Some(deformation) =
+                                    parse_deformation(&deform_map, &mut eval_ctx, &mut frame_cache)
+                                {
                                     mesh.deformations.push(deformation);
                                 }
                             }
@@ -2272,15 +2605,25 @@ feedback.is_enabled = || {{
                     }
 
                     // Sync material ID
-                    if let Some(material_str) = entity_map.get("material").and_then(|d| d.clone().into_string().ok()) {
+                    if let Some(material_str) = entity_map
+                        .get("material")
+                        .and_then(|d| d.clone().into_string().ok())
+                    {
                         mesh.material_id = Some(material_str.to_string());
                     }
 
                     // Sync material params
-                    if let Some(params_map) = entity_map.get("materialParams").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                    if let Some(params_map) = entity_map
+                        .get("materialParams")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
                         mesh.material_params.clear();
                         for (param_name, param_value) in params_map.iter() {
-                            if let Some(value) = parse_material_param_value(param_value, &mut eval_ctx, &mut frame_cache) {
+                            if let Some(value) = parse_material_param_value(
+                                param_value,
+                                &mut eval_ctx,
+                                &mut frame_cache,
+                            ) {
                                 mesh.material_params.set(param_name.to_string(), value);
                             }
                         }
@@ -2290,50 +2633,94 @@ feedback.is_enabled = || {{
                     if let Some(lit) = entity_map.get("lit").and_then(|d| d.as_bool().ok()) {
                         mesh.lit = lit;
                     }
-                    if let Some(emissive) = entity_map.get("emissive").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                    if let Some(emissive) = entity_map
+                        .get("emissive")
+                        .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                    {
                         mesh.emissive = emissive;
                     }
 
                     // Sync blob shadow properties
-                    if let Some(shadow_map) = entity_map.get("shadow").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
-                        if let Some(enabled) = shadow_map.get("enabled").and_then(|d| d.as_bool().ok()) {
+                    if let Some(shadow_map) = entity_map
+                        .get("shadow")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
+                        if let Some(enabled) =
+                            shadow_map.get("enabled").and_then(|d| d.as_bool().ok())
+                        {
                             mesh.shadow.enabled = enabled;
                         }
-                        if let Some(plane_y) = shadow_map.get("plane_y").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                        if let Some(plane_y) = shadow_map
+                            .get("plane_y")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                        {
                             mesh.shadow.plane_y = plane_y;
                         }
-                        if let Some(opacity) = shadow_map.get("opacity").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                        if let Some(opacity) = shadow_map
+                            .get("opacity")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                        {
                             mesh.shadow.opacity = opacity;
                         }
-                        if let Some(radius_x) = shadow_map.get("radius_x").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                        if let Some(radius_x) = shadow_map
+                            .get("radius_x")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                        {
                             mesh.shadow.radius_x = radius_x;
                         }
-                        if let Some(radius_z) = shadow_map.get("radius_z").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                        if let Some(radius_z) = shadow_map
+                            .get("radius_z")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                        {
                             mesh.shadow.radius_z = radius_z;
                         }
                         // Also support single "radius" for uniform shadows
-                        if let Some(radius) = shadow_map.get("radius").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                        if let Some(radius) = shadow_map
+                            .get("radius")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                        {
                             mesh.shadow.radius_x = radius;
                             mesh.shadow.radius_z = radius;
                         }
-                        if let Some(softness) = shadow_map.get("softness").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                        if let Some(softness) = shadow_map
+                            .get("softness")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                        {
                             mesh.shadow.softness = softness;
                         }
-                        if let Some(offset_x) = shadow_map.get("offset_x").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                        if let Some(offset_x) = shadow_map
+                            .get("offset_x")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                        {
                             mesh.shadow.offset_x = offset_x;
                         }
-                        if let Some(offset_z) = shadow_map.get("offset_z").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                        if let Some(offset_z) = shadow_map
+                            .get("offset_z")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                        {
                             mesh.shadow.offset_z = offset_z;
                         }
                         // Shadow color
-                        if let Some(color_map) = shadow_map.get("color").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
-                            if let Some(r) = color_map.get("r").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                        if let Some(color_map) = shadow_map
+                            .get("color")
+                            .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                        {
+                            if let Some(r) = color_map
+                                .get("r")
+                                .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            {
                                 mesh.shadow.color[0] = r;
                             }
-                            if let Some(g) = color_map.get("g").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                            if let Some(g) = color_map
+                                .get("g")
+                                .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            {
                                 mesh.shadow.color[1] = g;
                             }
-                            if let Some(b) = color_map.get("b").and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache)) {
+                            if let Some(b) = color_map
+                                .get("b")
+                                .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                            {
                                 mesh.shadow.color[2] = b;
                             }
                         }
@@ -2341,22 +2728,30 @@ feedback.is_enabled = || {{
 
                     // Update radial ring parameters (can be Signals that change per frame)
                     if matches!(mesh.mesh_type, MeshType::RadialRing { .. }) {
-                        let radius = entity_map.get("__radius")
+                        let radius = entity_map
+                            .get("__radius")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(1.0);
-                        let thickness = entity_map.get("__thickness")
+                        let thickness = entity_map
+                            .get("__thickness")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(0.1);
-                        let start_angle = entity_map.get("__start_angle")
+                        let start_angle = entity_map
+                            .get("__start_angle")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(0.0);
-                        let end_angle = entity_map.get("__end_angle")
+                        let end_angle = entity_map
+                            .get("__end_angle")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(std::f32::consts::TAU);
-                        let segments = entity_map.get("__segments")
-                            .and_then(|d| d.as_int().ok())
-                            .unwrap_or(64) as u32;
-                        let depth = entity_map.get("__depth")
+                        let segments = bounded_script_u32(
+                            entity_map.get("__segments").and_then(|d| d.as_int().ok()),
+                            64,
+                            3,
+                            MAX_RADIAL_WAVE_RESOLUTION as u32,
+                        );
+                        let depth = entity_map
+                            .get("__depth")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(0.0);
                         mesh.mesh_type = MeshType::RadialRing {
@@ -2373,7 +2768,10 @@ feedback.is_enabled = || {{
                 // Line-specific: sync points
                 if let SceneEntity::Line(line) = entity {
                     // Sync color
-                    if let Some(color) = entity_map.get("color").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                    if let Some(color) = entity_map
+                        .get("color")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
                         line.color[0] = color
                             .get("r")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
@@ -2395,14 +2793,20 @@ feedback.is_enabled = || {{
                     // Check if this is a line_trace (Signal-driven) or line_strip (manual push)
                     if entity_type == "line_trace" {
                         // line.trace - evaluate signal and push a point each frame
-                        if let Some(signal) = entity_map.get("__signal").and_then(|d| d.clone().try_cast::<Signal>()) {
-                            let x_scale = entity_map.get("__x_scale")
+                        if let Some(signal) = entity_map
+                            .get("__signal")
+                            .and_then(|d| d.clone().try_cast::<Signal>())
+                        {
+                            let x_scale = entity_map
+                                .get("__x_scale")
                                 .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                                 .unwrap_or(1.0);
-                            let y_scale = entity_map.get("__y_scale")
+                            let y_scale = entity_map
+                                .get("__y_scale")
                                 .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                                 .unwrap_or(1.0);
-                            let y_offset = entity_map.get("__y_offset")
+                            let y_offset = entity_map
+                                .get("__y_offset")
                                 .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                                 .unwrap_or(0.0);
 
@@ -2422,7 +2826,10 @@ feedback.is_enabled = || {{
                         }
                     } else {
                         // line.strip - sync points from manual push() calls
-                        if let Some(points) = entity_map.get("__points").and_then(|d| d.clone().try_cast::<rhai::Array>()) {
+                        if let Some(points) = entity_map
+                            .get("__points")
+                            .and_then(|d| d.clone().try_cast::<rhai::Array>())
+                        {
                             // Clear existing and repopulate
                             line.clear();
                             for point_dyn in points.iter() {
@@ -2432,7 +2839,6 @@ feedback.is_enabled = || {{
                                         .and_then(|d| {
                                             d.as_float()
                                                 .ok()
-                                                .map(|f| f as f32)
                                                 .or_else(|| d.as_int().ok().map(|i| i as f32))
                                         })
                                         .unwrap_or(0.0);
@@ -2441,7 +2847,6 @@ feedback.is_enabled = || {{
                                         .and_then(|d| {
                                             d.as_float()
                                                 .ok()
-                                                .map(|f| f as f32)
                                                 .or_else(|| d.as_int().ok().map(|i| i as f32))
                                         })
                                         .unwrap_or(0.0);
@@ -2454,7 +2859,10 @@ feedback.is_enabled = || {{
 
                 // PointCloud-specific: sync color and point_size
                 if let SceneEntity::PointCloud(cloud) = entity {
-                    if let Some(color) = entity_map.get("color").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                    if let Some(color) = entity_map
+                        .get("color")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
                         cloud.color[0] = color
                             .get("r")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
@@ -2472,7 +2880,8 @@ feedback.is_enabled = || {{
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                             .unwrap_or(1.0);
                     }
-                    if let Some(point_size) = entity_map.get("__point_size")
+                    if let Some(point_size) = entity_map
+                        .get("__point_size")
                         .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                     {
                         cloud.point_size = point_size;
@@ -2481,7 +2890,10 @@ feedback.is_enabled = || {{
 
                 // RadialWave-specific: sync color, parameters, and signal value
                 if let SceneEntity::RadialWave(wave) = entity {
-                    if let Some(color) = entity_map.get("color").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                    if let Some(color) = entity_map
+                        .get("color")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
                         wave.color[0] = color
                             .get("r")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
@@ -2500,23 +2912,29 @@ feedback.is_enabled = || {{
                             .unwrap_or(1.0);
                     }
                     // Update wave parameters (support Signal | f32)
-                    if let Some(base_radius) = entity_map.get("__base_radius")
+                    if let Some(base_radius) = entity_map
+                        .get("__base_radius")
                         .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                     {
                         wave.base_radius = base_radius;
                     }
-                    if let Some(amplitude) = entity_map.get("__amplitude")
+                    if let Some(amplitude) = entity_map
+                        .get("__amplitude")
                         .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                     {
                         wave.amplitude = amplitude;
                     }
-                    if let Some(wave_frequency) = entity_map.get("__wave_frequency")
+                    if let Some(wave_frequency) = entity_map
+                        .get("__wave_frequency")
                         .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                     {
                         wave.wave_frequency = wave_frequency;
                     }
                     // Evaluate the signal and update signal_value
-                    if let Some(signal) = entity_map.get("__signal").and_then(|d| d.clone().try_cast::<Signal>()) {
+                    if let Some(signal) = entity_map
+                        .get("__signal")
+                        .and_then(|d| d.clone().try_cast::<Signal>())
+                    {
                         let value = if let Some(cached) = frame_cache.get(&signal.id) {
                             *cached
                         } else {
@@ -2530,7 +2948,10 @@ feedback.is_enabled = || {{
 
                 // Ribbon-specific: sync color, update parameters, evaluate signal and push point
                 if let SceneEntity::Ribbon(ribbon) = entity {
-                    if let Some(color) = entity_map.get("color").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                    if let Some(color) = entity_map
+                        .get("color")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
                         ribbon.color[0] = color
                             .get("r")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
@@ -2549,22 +2970,31 @@ feedback.is_enabled = || {{
                             .unwrap_or(1.0);
                     }
                     // Update ribbon parameters
-                    if let Some(width) = entity_map.get("__width")
+                    if let Some(width) = entity_map
+                        .get("__width")
                         .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                     {
                         ribbon.width = width;
                     }
-                    if let Some(twist) = entity_map.get("__twist")
+                    if let Some(twist) = entity_map
+                        .get("__twist")
                         .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                     {
                         ribbon.twist = twist;
                     }
                     // Check for clear flag
-                    if entity_map.get("__clear").and_then(|d| d.as_bool().ok()).unwrap_or(false) {
+                    if entity_map
+                        .get("__clear")
+                        .and_then(|d| d.as_bool().ok())
+                        .unwrap_or(false)
+                    {
                         ribbon.clear();
                     }
                     // Evaluate signal and push point (x = time, y = signal value)
-                    if let Some(signal) = entity_map.get("__signal").and_then(|d| d.clone().try_cast::<Signal>()) {
+                    if let Some(signal) = entity_map
+                        .get("__signal")
+                        .and_then(|d| d.clone().try_cast::<Signal>())
+                    {
                         let value = if let Some(cached) = frame_cache.get(&signal.id) {
                             *cached
                         } else {
@@ -2610,7 +3040,8 @@ feedback.is_enabled = || {{
         }
 
         // Remove entities from scene graph that are no longer in __entities
-        let entity_ids_to_remove: Vec<EntityId> = self.scene_graph
+        let entity_ids_to_remove: Vec<EntityId> = self
+            .scene_graph
             .scene_entities()
             .map(|(id, _)| id)
             .filter(|id| !valid_entity_ids.contains(id))
@@ -2639,7 +3070,8 @@ feedback.is_enabled = || {{
 
         // Sync lighting configuration from scope
         time_start("sync_lighting");
-        let (lighting_config, lighting_uniforms) = sync_lighting_from_scope(&self.scope, &mut eval_ctx);
+        let (lighting_config, lighting_uniforms) =
+            sync_lighting_from_scope(&self.scope, &mut eval_ctx);
         self.lighting_config = lighting_config;
         self.lighting_uniforms = lighting_uniforms;
         time_end("sync_lighting");
@@ -2685,7 +3117,12 @@ feedback.is_enabled = || {{
             // Check if this is an effect Map
             if let Some(scope_effect_map) = value.clone().try_cast::<rhai::Map>() {
                 // Check if it's a post_effect type
-                if scope_effect_map.get("__type").and_then(|d| d.clone().into_string().ok()).as_deref() == Some("post_effect") {
+                if scope_effect_map
+                    .get("__type")
+                    .and_then(|d| d.clone().into_string().ok())
+                    .as_deref()
+                    == Some("post_effect")
+                {
                     if let Some(id_dyn) = scope_effect_map.get("__id") {
                         if let Ok(id) = id_dyn.as_int() {
                             let key = format!("{}", id);
@@ -2709,15 +3146,13 @@ feedback.is_enabled = || {{
 
             // If scope is large, log what types of variables are in it
             if scope_len > 50 {
-                let mut type_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+                let mut type_counts: std::collections::HashMap<String, usize> =
+                    std::collections::HashMap::new();
                 for (_name, _is_const, value) in self.scope.iter() {
                     let type_name = value.type_name().to_string();
                     *type_counts.entry(type_name).or_insert(0) += 1;
                 }
-                log::warn!(
-                    "[PERF] Scope variable types: {:?}",
-                    type_counts
-                );
+                log::warn!("[PERF] Scope variable types: {:?}", type_counts);
             }
         }
 
@@ -2733,13 +3168,19 @@ feedback.is_enabled = || {{
                 Err(_) => continue,
             };
             let key = format!("{}", id);
-            let effect_map = match post_effects.get(key.as_str()).and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+            let effect_map = match post_effects
+                .get(key.as_str())
+                .and_then(|d| d.clone().try_cast::<rhai::Map>())
+            {
                 Some(m) => m,
                 None => continue,
             };
 
             // Get effect type
-            let effect_id = match effect_map.get("__effect_id").and_then(|d| d.clone().into_string().ok()) {
+            let effect_id = match effect_map
+                .get("__effect_id")
+                .and_then(|d| d.clone().into_string().ok())
+            {
                 Some(s) => s.to_string(),
                 None => continue,
             };
@@ -2755,33 +3196,60 @@ feedback.is_enabled = || {{
             // Sync effect parameters based on effect type
             match effect_id.as_str() {
                 "bloom" => {
-                    if let Some(v) = effect_map.get("threshold").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("threshold")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("threshold", v);
                     }
-                    if let Some(v) = effect_map.get("intensity").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("intensity")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("intensity", v);
                     }
-                    if let Some(v) = effect_map.get("radius").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("radius")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("radius", v);
                     }
-                    if let Some(v) = effect_map.get("downsample").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("downsample")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("downsample", v);
                     }
                 }
                 "color_grade" => {
-                    if let Some(v) = effect_map.get("brightness").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("brightness")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("brightness", v);
                     }
-                    if let Some(v) = effect_map.get("contrast").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("contrast")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("contrast", v);
                     }
-                    if let Some(v) = effect_map.get("saturation").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("saturation")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("saturation", v);
                     }
-                    if let Some(v) = effect_map.get("gamma").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("gamma")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("gamma", v);
                     }
-                    if let Some(tint) = effect_map.get("tint").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
+                    if let Some(tint) = effect_map
+                        .get("tint")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
                         let r = Self::eval_color_channel(tint.get("r"), 1.0, eval_ctx, frame_cache);
                         let g = Self::eval_color_channel(tint.get("g"), 1.0, eval_ctx, frame_cache);
                         let b = Self::eval_color_channel(tint.get("b"), 1.0, eval_ctx, frame_cache);
@@ -2790,32 +3258,56 @@ feedback.is_enabled = || {{
                     }
                 }
                 "vignette" => {
-                    if let Some(v) = effect_map.get("intensity").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("intensity")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("intensity", v);
                     }
-                    if let Some(v) = effect_map.get("smoothness").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("smoothness")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("smoothness", v);
                     }
-                    if let Some(color) = effect_map.get("color").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
-                        let r = Self::eval_color_channel(color.get("r"), 0.0, eval_ctx, frame_cache);
-                        let g = Self::eval_color_channel(color.get("g"), 0.0, eval_ctx, frame_cache);
-                        let b = Self::eval_color_channel(color.get("b"), 0.0, eval_ctx, frame_cache);
-                        let a = Self::eval_color_channel(color.get("a"), 1.0, eval_ctx, frame_cache);
+                    if let Some(color) = effect_map
+                        .get("color")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
+                        let r =
+                            Self::eval_color_channel(color.get("r"), 0.0, eval_ctx, frame_cache);
+                        let g =
+                            Self::eval_color_channel(color.get("g"), 0.0, eval_ctx, frame_cache);
+                        let b =
+                            Self::eval_color_channel(color.get("b"), 0.0, eval_ctx, frame_cache);
+                        let a =
+                            Self::eval_color_channel(color.get("a"), 1.0, eval_ctx, frame_cache);
                         instance.set_param("color", EffectParamValue::Vec4([r, g, b, a]));
                     }
                 }
                 "distortion" => {
-                    if let Some(v) = effect_map.get("amount").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("amount")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("amount", v);
                     }
-                    if let Some(center) = effect_map.get("center").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
-                        let x = Self::eval_color_channel(center.get("x"), 0.5, eval_ctx, frame_cache);
-                        let y = Self::eval_color_channel(center.get("y"), 0.5, eval_ctx, frame_cache);
+                    if let Some(center) = effect_map
+                        .get("center")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
+                        let x =
+                            Self::eval_color_channel(center.get("x"), 0.5, eval_ctx, frame_cache);
+                        let y =
+                            Self::eval_color_channel(center.get("y"), 0.5, eval_ctx, frame_cache);
                         instance.set_param("center", EffectParamValue::Vec2([x, y]));
                     }
                 }
                 "zoom_wrap" => {
-                    if let Some(v) = effect_map.get("amount").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("amount")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("amount", v);
                     }
                     // wrap_mode: 0 = repeat, 1 = mirror
@@ -2826,7 +3318,7 @@ feedback.is_enabled = || {{
                                 _ => 0.0, // default to repeat
                             }
                         } else if let Ok(f) = mode.as_float() {
-                            f as f32
+                            f
                         } else if let Ok(i) = mode.as_int() {
                             i as f32
                         } else {
@@ -2834,52 +3326,92 @@ feedback.is_enabled = || {{
                         };
                         instance.set_param("wrap_mode", EffectParamValue::Float(mode_val));
                     }
-                    if let Some(center) = effect_map.get("center").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
-                        let x = Self::eval_color_channel(center.get("x"), 0.5, eval_ctx, frame_cache);
-                        let y = Self::eval_color_channel(center.get("y"), 0.5, eval_ctx, frame_cache);
+                    if let Some(center) = effect_map
+                        .get("center")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
+                        let x =
+                            Self::eval_color_channel(center.get("x"), 0.5, eval_ctx, frame_cache);
+                        let y =
+                            Self::eval_color_channel(center.get("y"), 0.5, eval_ctx, frame_cache);
                         instance.set_param("center", EffectParamValue::Vec2([x, y]));
                     }
                 }
                 "radial_blur" => {
-                    if let Some(v) = effect_map.get("strength").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("strength")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("strength", v);
                     }
-                    if let Some(v) = effect_map.get("samples").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("samples")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("samples", v);
                     }
-                    if let Some(center) = effect_map.get("center").and_then(|d| d.clone().try_cast::<rhai::Map>()) {
-                        let x = Self::eval_color_channel(center.get("x"), 0.5, eval_ctx, frame_cache);
-                        let y = Self::eval_color_channel(center.get("y"), 0.5, eval_ctx, frame_cache);
+                    if let Some(center) = effect_map
+                        .get("center")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
+                        let x =
+                            Self::eval_color_channel(center.get("x"), 0.5, eval_ctx, frame_cache);
+                        let y =
+                            Self::eval_color_channel(center.get("y"), 0.5, eval_ctx, frame_cache);
                         instance.set_param("center", EffectParamValue::Vec2([x, y]));
                     }
                 }
                 "directional_blur" => {
-                    if let Some(v) = effect_map.get("amount").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("amount")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("amount", v);
                     }
-                    if let Some(v) = effect_map.get("angle").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("angle")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("angle", v);
                     }
-                    if let Some(v) = effect_map.get("samples").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("samples")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("samples", v);
                     }
                 }
                 "chromatic_aberration" => {
-                    if let Some(v) = effect_map.get("amount").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("amount")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("amount", v);
                     }
-                    if let Some(v) = effect_map.get("angle").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("angle")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("angle", v);
                     }
                 }
                 "grain" => {
-                    if let Some(v) = effect_map.get("amount").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("amount")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("amount", v);
                     }
-                    if let Some(v) = effect_map.get("scale").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("scale")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("scale", v);
                     }
-                    if let Some(v) = effect_map.get("seed").and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache)) {
+                    if let Some(v) = effect_map
+                        .get("seed")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
                         instance.set_param("seed", v);
                     }
                 }
@@ -2897,7 +3429,7 @@ feedback.is_enabled = || {{
         cache: &mut HashMap<crate::signal::SignalId, f32>,
     ) -> Option<EffectParamValue> {
         if let Ok(f) = value.as_float() {
-            return Some(EffectParamValue::Float(f as f32));
+            return Some(EffectParamValue::Float(f));
         }
         if let Ok(i) = value.as_int() {
             return Some(EffectParamValue::Float(i as f32));
@@ -2926,7 +3458,7 @@ feedback.is_enabled = || {{
         };
 
         if let Ok(f) = value.as_float() {
-            return f as f32;
+            return f;
         }
         if let Ok(i) = value.as_int() {
             return i as f32;
@@ -2951,16 +3483,12 @@ feedback.is_enabled = || {{
         eval_ctx: &mut EvalContext<'_>,
         _frame_cache: &mut HashMap<crate::signal::SignalId, f32>,
     ) {
-        use crate::feedback::FeedbackConfig;
-
         // Get the active feedback config from thread-local storage
         // (set by native __feedback_enable function)
         // With the new fluent builder API, the config is already a FeedbackConfig type.
-        let config = PENDING_FEEDBACK_CONFIG.with(|cell| {
-            cell.borrow().clone()
-        });
+        let config = PENDING_FEEDBACK_CONFIG.with(|cell| cell.borrow().clone());
 
-        self.feedback_config = config.unwrap_or_else(FeedbackConfig::default);
+        self.feedback_config = config.unwrap_or_default();
 
         // Evaluate any Signal parameters to produce the final uniforms for GPU.
         // This resolves signal graphs to their current f32 values.
@@ -2976,8 +3504,8 @@ feedback.is_enabled = || {{
         eval_ctx: &mut EvalContext<'_>,
         scene_ids: &std::collections::HashSet<i64>,
     ) {
-        use crate::particle_rhai::ParticleSystemHandle;
         use crate::particle_eval::{update_particle_system, ParticleEvalContext};
+        use crate::particle_rhai::ParticleSystemHandle;
 
         // Get the __particle_systems Map from scope
         let particle_systems_map = match self.scope.get_value::<rhai::Map>("__particle_systems") {
@@ -2986,11 +3514,11 @@ feedback.is_enabled = || {{
         };
 
         // Build evaluation context for particles
-        let current_bpm = 120.0; // Default BPM, could be passed from musical_time
+        let current_bpm = eval_ctx.current_bpm().max(f32::EPSILON);
         let secs_per_beat = 60.0 / current_bpm;
         let particle_ctx = ParticleEvalContext {
             current_time_secs: eval_ctx.time,
-            current_beat: eval_ctx.time / secs_per_beat,
+            current_beat: eval_ctx.beat_position(),
             secs_per_beat,
             dt: eval_ctx.dt,
             dt_beats: eval_ctx.dt / secs_per_beat,
@@ -3029,13 +3557,14 @@ feedback.is_enabled = || {{
                 system.config.base_scale = handle.system.config.base_scale;
             } else {
                 // Insert new system
-                self.particle_systems.insert(entity_id, handle.system.clone());
+                self.particle_systems
+                    .insert(entity_id, handle.system.clone());
             }
 
             // Update the particle system (spawn/cull particles)
             if let Some(system) = self.particle_systems.get_mut(&entity_id) {
                 if system.visible {
-                    update_particle_system(system, &particle_ctx);
+                    update_particle_system(system, &particle_ctx, eval_ctx);
                 }
             }
         }
@@ -3055,7 +3584,9 @@ feedback.is_enabled = || {{
 
         // For now, let's create normally and map IDs later
         // This is a hack but works for MVP
-        self.scene_graph.entities.insert(id, SceneEntity::Mesh(mesh));
+        self.scene_graph
+            .entities
+            .insert(id, SceneEntity::Mesh(mesh));
     }
 
     /// Create a line with a specific ID (for syncing from script).
@@ -3063,7 +3594,9 @@ feedback.is_enabled = || {{
         use crate::scene_graph::SceneEntity;
 
         let line = SceneLineStrip::new(max_points, mode);
-        self.scene_graph.entities.insert(id, SceneEntity::Line(line));
+        self.scene_graph
+            .entities
+            .insert(id, SceneEntity::Line(line));
     }
 
     /// Create a group with a specific ID (for syncing from script).
@@ -3071,7 +3604,9 @@ feedback.is_enabled = || {{
         use crate::scene_graph::{Group, SceneEntity};
 
         let group = Group::new();
-        self.scene_graph.entities.insert(id, SceneEntity::Group(group));
+        self.scene_graph
+            .entities
+            .insert(id, SceneEntity::Group(group));
     }
 
     /// Create a point cloud with a specific ID (for syncing from script).
@@ -3087,7 +3622,9 @@ feedback.is_enabled = || {{
         use crate::scene_graph::SceneEntity;
 
         let cloud = crate::scene_graph::PointCloud::new(count, spread, mode, seed, point_size);
-        self.scene_graph.entities.insert(id, SceneEntity::PointCloud(cloud));
+        self.scene_graph
+            .entities
+            .insert(id, SceneEntity::PointCloud(cloud));
     }
 
     fn create_radial_wave_with_id(
@@ -3101,7 +3638,9 @@ feedback.is_enabled = || {{
         use crate::scene_graph::SceneEntity;
 
         let wave = RadialWave::new(base_radius, amplitude, wave_frequency, resolution);
-        self.scene_graph.entities.insert(id, SceneEntity::RadialWave(wave));
+        self.scene_graph
+            .entities
+            .insert(id, SceneEntity::RadialWave(wave));
     }
 
     fn create_ribbon_with_id(
@@ -3115,7 +3654,9 @@ feedback.is_enabled = || {{
         use crate::scene_graph::SceneEntity;
 
         let ribbon = Ribbon::new(max_points, mode, width, twist);
-        self.scene_graph.entities.insert(id, SceneEntity::Ribbon(ribbon));
+        self.scene_graph
+            .entities
+            .insert(id, SceneEntity::Ribbon(ribbon));
     }
 
     /// Check if a script is loaded.
@@ -3365,7 +3906,8 @@ feedback.is_enabled = || {{
         // Try to evaluate from parsed declaration
         if let Some(expr) = self.parsed_signal_decls.get(name).cloned() {
             if let Some(signal) = self.evaluate_signal_expression(&expr) {
-                self.evaluated_signals.insert(name.to_string(), signal.clone());
+                self.evaluated_signals
+                    .insert(name.to_string(), signal.clone());
                 return Some(signal);
             }
         }
@@ -3384,7 +3926,10 @@ feedback.is_enabled = || {{
             Ok(eval_ast) => {
                 // Merge with main AST to access the same scope/definitions
                 let merged = ast.clone().merge(&eval_ast);
-                match self.engine.eval_ast_with_scope::<Dynamic>(&mut self.scope, &merged) {
+                match self
+                    .engine
+                    .eval_ast_with_scope::<Dynamic>(&mut self.scope, &merged)
+                {
                     Ok(result) => result.try_cast::<Signal>(),
                     Err(e) => {
                         log::debug!("Failed to evaluate signal expression '{}': {}", expr, e);
@@ -3478,7 +4023,7 @@ fn parse_deformation(
         cache: &mut std::collections::HashMap<crate::signal::SignalId, f32>,
     ) -> f32 {
         if let Ok(f) = value.as_float() {
-            return f as f32;
+            return f;
         }
         if let Ok(i) = value.as_int() {
             return i as f32;
@@ -3494,67 +4039,100 @@ fn parse_deformation(
         default
     }
 
-    let deform_type = deform_map.get("__type")
+    let deform_type = deform_map
+        .get("__type")
         .and_then(|d| d.clone().into_string().ok())?;
 
     match deform_type.as_str() {
         "deform_twist" => {
-            let axis = deform_map.get("axis")
+            let axis = deform_map
+                .get("axis")
                 .and_then(|d| d.clone().into_string().ok())
                 .and_then(|s| DeformAxis::from_str(&s))
                 .unwrap_or(DeformAxis::Y);
-            let amount = deform_map.get("amount")
+            let amount = deform_map
+                .get("amount")
                 .map(|d| eval_f32(d, 0.0, ctx, cache))
                 .unwrap_or(0.0);
-            let center = deform_map.get("center")
+            let center = deform_map
+                .get("center")
                 .map(|d| eval_f32(d, 0.0, ctx, cache))
                 .unwrap_or(0.0);
-            Some(Deformation::Twist { axis, amount, center })
+            Some(Deformation::Twist {
+                axis,
+                amount,
+                center,
+            })
         }
         "deform_bend" => {
-            let axis = deform_map.get("axis")
+            let axis = deform_map
+                .get("axis")
                 .and_then(|d| d.clone().into_string().ok())
                 .and_then(|s| DeformAxis::from_str(&s))
                 .unwrap_or(DeformAxis::Y);
-            let amount = deform_map.get("amount")
+            let amount = deform_map
+                .get("amount")
                 .map(|d| eval_f32(d, 0.0, ctx, cache))
                 .unwrap_or(0.0);
-            let center = deform_map.get("center")
+            let center = deform_map
+                .get("center")
                 .map(|d| eval_f32(d, 0.0, ctx, cache))
                 .unwrap_or(0.0);
-            Some(Deformation::Bend { axis, amount, center })
+            Some(Deformation::Bend {
+                axis,
+                amount,
+                center,
+            })
         }
         "deform_wave" => {
-            let axis = deform_map.get("axis")
+            let axis = deform_map
+                .get("axis")
                 .and_then(|d| d.clone().into_string().ok())
                 .and_then(|s| DeformAxis::from_str(&s))
                 .unwrap_or(DeformAxis::X);
-            let direction = deform_map.get("direction")
+            let direction = deform_map
+                .get("direction")
                 .and_then(|d| d.clone().into_string().ok())
                 .and_then(|s| DeformAxis::from_str(&s))
                 .unwrap_or(DeformAxis::Y);
-            let amplitude = deform_map.get("amplitude")
+            let amplitude = deform_map
+                .get("amplitude")
                 .map(|d| eval_f32(d, 0.0, ctx, cache))
                 .unwrap_or(0.0);
-            let frequency = deform_map.get("frequency")
+            let frequency = deform_map
+                .get("frequency")
                 .map(|d| eval_f32(d, 1.0, ctx, cache))
                 .unwrap_or(1.0);
-            let phase = deform_map.get("phase")
+            let phase = deform_map
+                .get("phase")
                 .map(|d| eval_f32(d, 0.0, ctx, cache))
                 .unwrap_or(0.0);
-            Some(Deformation::Wave { axis, direction, amplitude, frequency, phase })
+            Some(Deformation::Wave {
+                axis,
+                direction,
+                amplitude,
+                frequency,
+                phase,
+            })
         }
         "deform_noise" => {
-            let scale = deform_map.get("scale")
+            let scale = deform_map
+                .get("scale")
                 .map(|d| eval_f32(d, 1.0, ctx, cache))
                 .unwrap_or(1.0);
-            let amplitude = deform_map.get("amplitude")
+            let amplitude = deform_map
+                .get("amplitude")
                 .map(|d| eval_f32(d, 0.0, ctx, cache))
                 .unwrap_or(0.0);
-            let seed = deform_map.get("seed")
+            let seed = deform_map
+                .get("seed")
                 .and_then(|d| d.as_int().ok())
                 .unwrap_or(0) as u32;
-            Some(Deformation::Noise { scale, amplitude, seed })
+            Some(Deformation::Noise {
+                scale,
+                amplitude,
+                seed,
+            })
         }
         _ => None,
     }
@@ -3572,7 +4150,7 @@ fn parse_material_param_value(
 
     // Try as float
     if let Ok(f) = value.as_float() {
-        return Some(ParamValue::Float(f as f32));
+        return Some(ParamValue::Float(f));
     }
 
     // Try as int
@@ -3596,16 +4174,34 @@ fn parse_material_param_value(
     if let Some(map) = value.clone().try_cast::<rhai::Map>() {
         // Check if it's a color (has r component)
         if map.contains_key("r") {
-            let r = map.get("r").and_then(|d| eval_or_signal_f32(d, ctx, cache)).unwrap_or(1.0);
-            let g = map.get("g").and_then(|d| eval_or_signal_f32(d, ctx, cache)).unwrap_or(1.0);
-            let b = map.get("b").and_then(|d| eval_or_signal_f32(d, ctx, cache)).unwrap_or(1.0);
-            let a = map.get("a").and_then(|d| eval_or_signal_f32(d, ctx, cache)).unwrap_or(1.0);
+            let r = map
+                .get("r")
+                .and_then(|d| eval_or_signal_f32(d, ctx, cache))
+                .unwrap_or(1.0);
+            let g = map
+                .get("g")
+                .and_then(|d| eval_or_signal_f32(d, ctx, cache))
+                .unwrap_or(1.0);
+            let b = map
+                .get("b")
+                .and_then(|d| eval_or_signal_f32(d, ctx, cache))
+                .unwrap_or(1.0);
+            let a = map
+                .get("a")
+                .and_then(|d| eval_or_signal_f32(d, ctx, cache))
+                .unwrap_or(1.0);
             return Some(ParamValue::Vec4([r, g, b, a]));
         }
         // Check if it's a vec (has x component)
         if map.contains_key("x") {
-            let x = map.get("x").and_then(|d| eval_or_signal_f32(d, ctx, cache)).unwrap_or(0.0);
-            let y = map.get("y").and_then(|d| eval_or_signal_f32(d, ctx, cache)).unwrap_or(0.0);
+            let x = map
+                .get("x")
+                .and_then(|d| eval_or_signal_f32(d, ctx, cache))
+                .unwrap_or(0.0);
+            let y = map
+                .get("y")
+                .and_then(|d| eval_or_signal_f32(d, ctx, cache))
+                .unwrap_or(0.0);
             let z = map.get("z").and_then(|d| eval_or_signal_f32(d, ctx, cache));
             let w = map.get("w").and_then(|d| eval_or_signal_f32(d, ctx, cache));
 
@@ -3629,7 +4225,7 @@ fn eval_or_signal_f32(
     use crate::signal::Signal;
 
     if let Ok(f) = value.as_float() {
-        return Some(f as f32);
+        return Some(f);
     }
     if let Ok(i) = value.as_int() {
         return Some(i as f32);
@@ -3652,24 +4248,36 @@ fn parse_show_events_options(options: &rhai::Map) -> ShowEventsOptions {
     // Parse color
     if let Some(color_dyn) = options.get("color") {
         if let Some(color_map) = color_dyn.clone().try_cast::<rhai::Map>() {
-            opts.color[0] = color_map.get("r").and_then(|d| d.as_float().ok()).unwrap_or(1.0) as f32;
-            opts.color[1] = color_map.get("g").and_then(|d| d.as_float().ok()).unwrap_or(0.5) as f32;
-            opts.color[2] = color_map.get("b").and_then(|d| d.as_float().ok()).unwrap_or(0.0) as f32;
-            opts.color[3] = color_map.get("a").and_then(|d| d.as_float().ok()).unwrap_or(1.0) as f32;
+            opts.color[0] = color_map
+                .get("r")
+                .and_then(|d| d.as_float().ok())
+                .unwrap_or(1.0);
+            opts.color[1] = color_map
+                .get("g")
+                .and_then(|d| d.as_float().ok())
+                .unwrap_or(0.5);
+            opts.color[2] = color_map
+                .get("b")
+                .and_then(|d| d.as_float().ok())
+                .unwrap_or(0.0);
+            opts.color[3] = color_map
+                .get("a")
+                .and_then(|d| d.as_float().ok())
+                .unwrap_or(1.0);
         }
     }
 
     // Parse size
     if let Some(size_dyn) = options.get("size") {
         if let Ok(size) = size_dyn.as_float() {
-            opts.size = size as f32;
+            opts.size = size;
         }
     }
 
     // Parse duration_beats
     if let Some(duration_dyn) = options.get("duration_beats") {
         if let Ok(duration) = duration_dyn.as_float() {
-            opts.duration_beats = duration as f32;
+            opts.duration_beats = duration;
         }
     }
 
@@ -3683,7 +4291,7 @@ fn parse_show_events_options(options: &rhai::Map) -> ShowEventsOptions {
     // Parse spread_spacing
     if let Some(spacing_dyn) = options.get("spread_spacing") {
         if let Ok(spacing) = spacing_dyn.as_float() {
-            opts.spread_spacing = spacing as f32;
+            opts.spread_spacing = spacing;
         }
     }
 
@@ -3760,8 +4368,12 @@ mod tests {
 
         // Make a composed signal and a custom signal with the SAME name available:
         // the two namespaces must stay isolated.
-        engine.set_available_composed_signals(vec![("intensity".to_string(), "intensity".to_string())]);
-        engine.set_available_custom_signals(vec![("intensity".to_string(), "intensity".to_string())]);
+        engine.set_available_composed_signals(vec![(
+            "intensity".to_string(),
+            "intensity".to_string(),
+        )]);
+        engine
+            .set_available_custom_signals(vec![("intensity".to_string(), "intensity".to_string())]);
 
         let script = r#"
             let cube;
@@ -3806,11 +4418,19 @@ mod tests {
             None,
         );
 
-        assert!(engine.last_error.is_none(), "script error: {:?}", engine.last_error);
+        assert!(
+            engine.last_error.is_none(),
+            "script error: {:?}",
+            engine.last_error
+        );
 
         // The composed signal drove the scale; the same-named custom signal
         // drove the rotation - each namespace read its own map.
-        let (_, entity) = engine.scene_graph.scene_entities().next().expect("cube in scene");
+        let (_, entity) = engine
+            .scene_graph
+            .scene_entities()
+            .next()
+            .expect("cube in scene");
         assert!((entity.transform().scale.x - 0.75).abs() < 0.001);
         assert!((entity.transform().rotation.y - 0.25).abs() < 0.001);
     }
@@ -3854,7 +4474,11 @@ mod tests {
             }
         "#;
 
-        assert!(engine.load_script(script), "load error: {:?}", engine.last_error);
+        assert!(
+            engine.load_script(script),
+            "load error: {:?}",
+            engine.last_error
+        );
 
         let mut input_signals: SignalMap = HashMap::new();
         input_signals.insert(
@@ -3884,7 +4508,11 @@ mod tests {
             "float-literal API call failed: {:?}",
             engine.last_error
         );
-        let (_, entity) = engine.scene_graph.scene_entities().next().expect("cube in scene");
+        let (_, entity) = engine
+            .scene_graph
+            .scene_entities()
+            .next()
+            .expect("cube in scene");
         assert!(entity.transform().scale.x.is_finite());
     }
 
@@ -3917,7 +4545,9 @@ mod tests {
         assert_eq!(engine.scene_graph.scene_entities().count(), 1);
 
         // Check the line has the expected number of points
-        let line_count = engine.scene_graph.lines()
+        let line_count = engine
+            .scene_graph
+            .lines()
             .next()
             .map(|(_, line)| line.count)
             .expect("Expected line entity");
@@ -4017,7 +4647,10 @@ mod tests {
         run_update(&mut engine, &signals);
 
         let diags = engine.take_diagnostics();
-        assert!(diags.is_empty(), "Expected no runtime diagnostics after failed load");
+        assert!(
+            diags.is_empty(),
+            "Expected no runtime diagnostics after failed load"
+        );
     }
 
     #[test]
@@ -4066,9 +4699,21 @@ mod tests {
         let pos2 = meshes[1].1.transform.position.x;
 
         // One should be at -2.0, the other at 2.0
-        let (min_x, max_x) = if pos1 < pos2 { (pos1, pos2) } else { (pos2, pos1) };
-        assert!((min_x - (-2.0)).abs() < 0.01, "Expected one cube at x=-2.0, got {}", min_x);
-        assert!((max_x - 2.0).abs() < 0.01, "Expected one cube at x=2.0, got {}", max_x);
+        let (min_x, max_x) = if pos1 < pos2 {
+            (pos1, pos2)
+        } else {
+            (pos2, pos1)
+        };
+        assert!(
+            (min_x - (-2.0)).abs() < 0.01,
+            "Expected one cube at x=-2.0, got {}",
+            min_x
+        );
+        assert!(
+            (max_x - 2.0).abs() < 0.01,
+            "Expected one cube at x=2.0, got {}",
+            max_x
+        );
     }
 
     #[test]
@@ -4113,13 +4758,37 @@ mod tests {
         let pos2_z = meshes[1].1.transform.position.z;
 
         // One should be at x=0.0, z=-1.0, the other at x=1.0, z=0.0
-        let (min_x, max_x) = if pos1_x < pos2_x { (pos1_x, pos2_x) } else { (pos2_x, pos1_x) };
-        let (min_z, max_z) = if pos1_z < pos2_z { (pos1_z, pos2_z) } else { (pos2_z, pos1_z) };
+        let (min_x, max_x) = if pos1_x < pos2_x {
+            (pos1_x, pos2_x)
+        } else {
+            (pos2_x, pos1_x)
+        };
+        let (min_z, max_z) = if pos1_z < pos2_z {
+            (pos1_z, pos2_z)
+        } else {
+            (pos2_z, pos1_z)
+        };
 
-        assert!((min_x - 0.0).abs() < 0.01, "Expected one cube at x=0.0, got {}", min_x);
-        assert!((max_x - 1.0).abs() < 0.01, "Expected one cube at x=1.0, got {}", max_x);
-        assert!((min_z - (-1.0)).abs() < 0.01, "Expected one cube at z=-1.0, got {}", min_z);
-        assert!((max_z - 0.0).abs() < 0.01, "Expected one cube at z=0.0, got {}", max_z);
+        assert!(
+            (min_x - 0.0).abs() < 0.01,
+            "Expected one cube at x=0.0, got {}",
+            min_x
+        );
+        assert!(
+            (max_x - 1.0).abs() < 0.01,
+            "Expected one cube at x=1.0, got {}",
+            max_x
+        );
+        assert!(
+            (min_z - (-1.0)).abs() < 0.01,
+            "Expected one cube at z=-1.0, got {}",
+            min_z
+        );
+        assert!(
+            (max_z - 0.0).abs() < 0.01,
+            "Expected one cube at z=0.0, got {}",
+            max_z
+        );
     }
 
     #[test]
@@ -4407,8 +5076,14 @@ mod tests {
 
         let debug_opts = get_script_debug_options();
         assert!(debug_opts.wireframe, "wireframe should be enabled");
-        assert!(debug_opts.bounding_boxes, "bounding_boxes should be enabled");
-        assert!(debug_opts.isolated_entity.is_some(), "isolation should be set");
+        assert!(
+            debug_opts.bounding_boxes,
+            "bounding_boxes should be enabled"
+        );
+        assert!(
+            debug_opts.isolated_entity.is_some(),
+            "isolation should be set"
+        );
 
         // Second update after threshold - isolation and wireframe should be cleared
         let signals = make_signals(0.6, 0.016, 0.0, 0.0);
@@ -4416,8 +5091,14 @@ mod tests {
 
         let debug_opts = get_script_debug_options();
         assert!(!debug_opts.wireframe, "wireframe should be disabled");
-        assert!(debug_opts.bounding_boxes, "bounding_boxes should still be enabled");
-        assert!(debug_opts.isolated_entity.is_none(), "isolation should be cleared");
+        assert!(
+            debug_opts.bounding_boxes,
+            "bounding_boxes should still be enabled"
+        );
+        assert!(
+            debug_opts.isolated_entity.is_none(),
+            "isolation should be cleared"
+        );
 
         // Reset for other tests
         reset_script_debug_options();

@@ -24,8 +24,7 @@ export function AuthoredStreamInspector({ nodeId }: AuthoredStreamInspectorProps
     useShallow((s) => (streamId ? s.streams.get(streamId) : undefined))
   );
 
-  const { deleteStream, renameStream, toggleStreamVisibility, inspectStream } =
-    useAuthoredEventActions();
+  const { deleteStream, renameStream, toggleStreamVisibility } = useAuthoredEventActions();
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
@@ -73,11 +72,7 @@ export function AuthoredStreamInspector({ nodeId }: AuthoredStreamInspectorProps
   }, [streamId, toggleStreamVisibility]);
 
   if (!stream || !streamId) {
-    return (
-      <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">
-        Stream not found.
-      </div>
-    );
+    return <div className="p-4 text-sm text-zinc-500 dark:text-zinc-400">Stream not found.</div>;
   }
 
   // Get source info for display
@@ -130,9 +125,7 @@ export function AuthoredStreamInspector({ nodeId }: AuthoredStreamInspectorProps
             <Input
               type="text"
               value={editName}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setEditName(e.target.value)
-              }
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditName(e.target.value)}
               onKeyDown={handleKeyDown}
               className="h-8 text-sm"
               autoFocus
@@ -146,29 +139,16 @@ export function AuthoredStreamInspector({ nodeId }: AuthoredStreamInspectorProps
             >
               <Check className="h-4 w-4" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={handleCancelEdit}
-            >
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleCancelEdit}>
               <X className="h-4 w-4" />
             </Button>
           </div>
         ) : (
           <div className="flex items-center justify-between">
-            <span
-              className="text-sm font-medium"
-              style={{ color: stream.color.stroke }}
-            >
+            <span className="text-sm font-medium" style={{ color: stream.color.stroke }}>
               {stream.name}
             </span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              onClick={handleStartEdit}
-            >
+            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleStartEdit}>
               <Pencil className="h-3.5 w-3.5" />
             </Button>
           </div>

@@ -23,22 +23,26 @@ Thank you for your interest in contributing to Octoseq! This document provides g
 ### Initial Setup
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/your-org/octoseq.git
    cd octoseq
    ```
 
 2. **Install dependencies**
+
    ```bash
    pnpm install
    ```
 
 3. **Build WASM packages**
+
    ```bash
    pnpm build:wasm
    ```
 
 4. **Start development server**
+
    ```bash
    pnpm dev
    ```
@@ -57,6 +61,7 @@ Thank you for your interest in contributing to Octoseq! This document provides g
 ### Making Changes
 
 1. **Create a feature branch**
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -67,6 +72,7 @@ Thank you for your interest in contributing to Octoseq! This document provides g
    - Update documentation as needed
 
 3. **Run quality checks**
+
    ```bash
    pnpm typecheck  # TypeScript type checking
    pnpm lint       # ESLint
@@ -74,6 +80,7 @@ Thank you for your interest in contributing to Octoseq! This document provides g
    ```
 
 4. **Commit your changes**
+
    ```bash
    git add .
    git commit -m "feat: add new feature"
@@ -129,6 +136,7 @@ cargo test   # Run tests
   - Use `React.memo()` for expensive components
 
 **Example:**
+
 ```typescript
 import type { FC } from 'react';
 import { useState, useCallback } from 'react';
@@ -164,6 +172,7 @@ export const MyComponent: FC<MyComponentProps> = ({ value, onChange }) => {
 - **Platform Code**: Use `#[cfg(target_arch = "wasm32")]` for WASM-specific code
 
 **Example:**
+
 ```rust
 use anyhow::{Result, Context};
 
@@ -197,9 +206,10 @@ pub fn process_data(input: &[f32]) -> Result<Vec<f32>> {
 - Use selectors to prevent unnecessary re-renders
 
 **Example:**
+
 ```typescript
 // stores/myStore.ts
-import { create } from 'zustand';
+import { create } from "zustand";
 
 interface MyState {
   count: number;
@@ -214,8 +224,8 @@ export const useMyStore = create<MyState>((set) => ({
 }));
 
 // In component:
-const count = useMyStore(state => state.count); // Only re-renders when count changes
-const increment = useMyStore(state => state.increment); // Stable reference
+const count = useMyStore((state) => state.count); // Only re-renders when count changes
+const increment = useMyStore((state) => state.increment); // Stable reference
 ```
 
 ## Testing
@@ -243,21 +253,22 @@ cargo test
 - Mock external dependencies (audio files, network requests)
 
 **Example:**
-```typescript
-import { describe, it, expect } from 'vitest';
-import { calculateRMS } from './audio';
 
-describe('calculateRMS', () => {
-  it('should return 0 for empty array', () => {
+```typescript
+import { describe, it, expect } from "vitest";
+import { calculateRMS } from "./audio";
+
+describe("calculateRMS", () => {
+  it("should return 0 for empty array", () => {
     expect(calculateRMS([])).toBe(0);
   });
 
-  it('should calculate RMS correctly for known values', () => {
+  it("should calculate RMS correctly for known values", () => {
     const samples = [1, -1, 1, -1];
     expect(calculateRMS(samples)).toBeCloseTo(1.0, 5);
   });
 
-  it('should handle DC offset', () => {
+  it("should handle DC offset", () => {
     const samples = [2, 2, 2, 2];
     expect(calculateRMS(samples)).toBe(2.0);
   });
@@ -267,6 +278,7 @@ describe('calculateRMS', () => {
 ## Pull Request Process
 
 1. **Ensure quality checks pass**
+
    ```bash
    pnpm typecheck
    pnpm lint
@@ -307,12 +319,13 @@ Octoseq follows key design principles that all contributions should respect:
 - Ensure frame-by-frame reproducibility
 
 **Example:**
+
 ```typescript
 // ❌ Bad - non-deterministic
 const jitter = Math.random() * 10;
 
 // ✅ Good - seeded randomness
-const rng = seedrandom('my-seed-123');
+const rng = seedrandom("my-seed-123");
 const jitter = rng() * 10;
 ```
 
@@ -321,11 +334,13 @@ const jitter = rng() * 10;
 **All numeric parameters should accept Signals.** A Signal resolves to a number at runtime, enabling audio-reactive control.
 
 When implementing APIs:
+
 - If a parameter is `number`/`f32`, it should accept `Signal | number`
 - Document which parameters support Signals
 - Evaluate Signals during scene sync, before rendering
 
 **Example:**
+
 ```typescript
 // ❌ Limited
 function setOpacity(value: number) { ... }
@@ -365,6 +380,7 @@ setOpacity(myBand.rms);  // Audio-reactive
 - Use Zustand's immutable state updates
 
 **Example:**
+
 ```typescript
 // ❌ Mutation
 function updateBand(band: Band, newValue: number) {

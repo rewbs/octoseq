@@ -120,9 +120,7 @@ export function SearchControlsPanel() {
           <input
             type="checkbox"
             checked={!!searchControls.applySoftmax}
-            onChange={(e) =>
-              handleChange({ ...searchControls, applySoftmax: e.target.checked })
-            }
+            onChange={(e) => handleChange({ ...searchControls, applySoftmax: e.target.checked })}
             disabled={disabled || refinementOn}
           />
           <span>Apply softmax to similarity curve (baseline only)</span>

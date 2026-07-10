@@ -136,17 +136,13 @@ export const useBandEditingStore = create<BandEditingState & BandEditingActions>
               };
             }
             const removed = new Set(ids);
-            const mutedBandIds = new Set(
-              [...state.mutedBandIds].filter((id) => !removed.has(id))
-            );
+            const mutedBandIds = new Set([...state.mutedBandIds].filter((id) => !removed.has(id)));
             const hiddenEventBandIds = new Set(
               [...state.hiddenEventBandIds].filter((id) => !removed.has(id))
             );
             return {
               soloedBandId:
-                state.soloedBandId && removed.has(state.soloedBandId)
-                  ? null
-                  : state.soloedBandId,
+                state.soloedBandId && removed.has(state.soloedBandId) ? null : state.soloedBandId,
               mutedBandIds,
               hiddenEventBandIds,
             };

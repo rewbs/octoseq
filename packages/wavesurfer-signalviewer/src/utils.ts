@@ -125,13 +125,7 @@ export function interpolateValue(
   const v0 = values[idx];
   const v1 = values[idx + 1];
 
-  if (
-    t0 === undefined ||
-    t1 === undefined ||
-    v0 === undefined ||
-    v1 === undefined
-  )
-    return null;
+  if (t0 === undefined || t1 === undefined || v0 === undefined || v1 === undefined) return null;
 
   // Linear interpolation
   const t = (time - t0) / (t1 - t0);
@@ -159,9 +153,7 @@ export function percentile(sortedValues: Float32Array, p: number): number {
 /**
  * Parse a CSS color string to RGBA components (0-255)
  */
-export function parseColor(
-  color: string
-): { r: number; g: number; b: number; a: number } | null {
+export function parseColor(color: string): { r: number; g: number; b: number; a: number } | null {
   // Handle hex colors
   if (color.startsWith("#")) {
     const hex = color.slice(1);
@@ -193,9 +185,7 @@ export function parseColor(
   }
 
   // Handle rgba/rgb
-  const rgbaMatch = color.match(
-    /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/
-  );
+  const rgbaMatch = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
   if (rgbaMatch) {
     return {
       r: parseInt(rgbaMatch[1] ?? "0", 10),
@@ -211,11 +201,7 @@ export function parseColor(
 /**
  * Interpolate between two colors
  */
-export function interpolateColor(
-  color1: string,
-  color2: string,
-  t: number
-): string {
+export function interpolateColor(color1: string, color2: string, t: number): string {
   const c1 = parseColor(color1);
   const c2 = parseColor(color2);
 
@@ -298,10 +284,7 @@ export const COLOR_MAPS = {
 /**
  * Get color from a color map at a normalized position (0-1)
  */
-export function colorMapValue(
-  colorMap: keyof typeof COLOR_MAPS,
-  t: number
-): string {
+export function colorMapValue(colorMap: keyof typeof COLOR_MAPS, t: number): string {
   const colors = COLOR_MAPS[colorMap];
   const clampedT = clamp(t, 0, 1);
 
@@ -324,16 +307,13 @@ export function colorMapValue(
 /**
  * Create a canvas with proper DPI scaling
  */
-export function createScaledCanvas(
-  container: HTMLElement
-): {
+export function createScaledCanvas(container: HTMLElement): {
   canvas: HTMLCanvasElement;
   ctx: CanvasRenderingContext2D;
   resize: () => void;
 } {
   const canvas = document.createElement("canvas");
-  canvas.style.cssText =
-    "position:absolute;left:0;top:0;width:100%;height:100%;";
+  canvas.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;";
 
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Failed to get 2D context");

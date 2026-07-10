@@ -121,12 +121,9 @@ impl MeshAsset {
             ..Default::default()
         };
 
-        let (models, _materials) = tobj::load_obj_buf(
-            &mut cursor,
-            &load_options,
-            |_| Ok((vec![], HashMap::new())),
-        )
-        .map_err(|e| format!("Failed to parse OBJ: {}", e))?;
+        let (models, _materials) =
+            tobj::load_obj_buf(&mut cursor, &load_options, |_| Ok((vec![], HashMap::new())))
+                .map_err(|e| format!("Failed to parse OBJ: {}", e))?;
 
         if models.is_empty() {
             return Err("OBJ file contains no models".to_string());
