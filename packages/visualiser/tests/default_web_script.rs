@@ -26,7 +26,6 @@ fn web_default_script_loads_and_initializes() {
             "dt",
             "amplitude",
             "flux",
-            "rms",
             "energy",
             "centroid",
             "onset",
@@ -51,7 +50,7 @@ fn web_default_script_loads_and_initializes() {
     );
 
     let mut input_signals = SignalMap::new();
-    for name in ["energy", "onset", "flux", "rms"] {
+    for name in ["energy", "onset", "flux"] {
         input_signals.insert(
             name.to_string(),
             Rc::new(InputSignal::new(vec![0.5; 100], 100.0)),

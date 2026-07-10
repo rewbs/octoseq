@@ -40,7 +40,7 @@ ring.color.g = onset.scale(0.55).add(0.25);
 ring.color.b = energy.scale(0.35).add(0.65);
 ring.emissive = onset.scale(1.5).add(0.35);
 
-let wave = radial.wave(inputs.mix.rms.smooth.moving_average(0.1), #{
+let wave = radial.wave(energy, #{
     base_radius: 2.75,
     amplitude: energy.scale(1.1).add(0.15),
     wave_frequency: 10.0,
@@ -128,3 +128,14 @@ fn init(ctx) {
 
 fn update(dt, frame) {
 }`;
+
+const NEON_REACTOR_MARKER = "// Neon Reactor\n";
+const LEGACY_NEON_REACTOR_WAVE =
+  "let wave = radial.wave(inputs.mix.rms.smooth.moving_average(0.1), #{";
+const NEON_REACTOR_WAVE = "let wave = radial.wave(energy, #{";
+
+/** Upgrade only the short-lived starter that referenced an unavailable RMS signal. */
+export function migrateDefaultScript(content: string): string {
+  if (!content.startsWith(NEON_REACTOR_MARKER)) return content;
+  return content.replace(LEGACY_NEON_REACTOR_WAVE, NEON_REACTOR_WAVE);
+}

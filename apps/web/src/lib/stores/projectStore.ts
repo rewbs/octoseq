@@ -24,7 +24,7 @@ import type {
   AudioLoadStatus,
 } from "./types/project";
 import { validateProject, validateProjectIds } from "@/lib/projectValidation";
-import { DEFAULT_SCRIPT } from "../scripting/defaultScripts";
+import { DEFAULT_SCRIPT, migrateDefaultScript } from "../scripting/defaultScripts";
 
 // ----------------------------
 // Store State
@@ -785,10 +785,25 @@ export const useProjectStore = create<ProjectStore>()(
       },
 
       setActiveProject: (project) => {
+        let wasMigrated = false;
+        const scripts = project.scripts.scripts.map((script) => {
+          const content = migrateDefaultScript(script.content);
+          if (content === script.content) return script;
+          wasMigrated = true;
+          return { ...script, content, modifiedAt: new Date().toISOString() };
+        });
+        const activeProject = wasMigrated
+          ? {
+              ...project,
+              modifiedAt: new Date().toISOString(),
+              scripts: { ...project.scripts, scripts },
+            }
+          : project;
+
         set(
           {
-            activeProject: project,
-            isDirty: false,
+            activeProject,
+            isDirty: wasMigrated,
             audioLoadStatus: new Map(),
             audioLoadErrors: new Map(),
           },
