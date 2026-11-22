@@ -35,3 +35,6 @@ packages/visualiser/target
 apps/web/public/monaco/
 
 .vscode/.chrome
+
+# Build loop working files (tools/loop)
+.loop/

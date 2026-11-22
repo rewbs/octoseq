@@ -133,8 +133,9 @@ no model.
 
 Each of these can be a local open model (which is where Python comes in) or a hosted
 API. Music.ai, for one, offers beats, chords, key and sections as API modules
-alongside stems. Which to use for each part is an engineering choice, to be made by
-comparing candidates on the test tracks. Python, where used, stays confined to this
+alongside stems. Both are supported: the most capable hosted APIs are integrated, and
+local models remain an option for every part. Which to use by default for each part
+is settled by comparing candidates on the test tracks. Python, where used, stays confined to this
 worker; prefer models that export to ONNX so it can be removed later.
 
 - The existing Interpretation Package v1
@@ -282,17 +283,17 @@ exit test passes.
 
 ## Decisions
 
-| Question       | Decision                                                                         |
-| -------------- | -------------------------------------------------------------------------------- |
-| Primary output | Rendered video; live preview is first-class                                      |
-| Audience       | Local tool first; hosted upload service after outputs are proven fun             |
-| Analysis stack | Python accepted, confined to the batch worker                                    |
-| Stems          | User-supplied, or one of three hosted providers behind one interface             |
-| Determinism    | Rendering is deterministic for audio + show and audio + scene; generation varies |
-| Timeline UI    | Thin local web page over the WASM engine                                         |
-| Prompt depth   | Depth 1 now; 2 and 3 are future items                                            |
-| 3D direction   | Deep import from Blender into Octoseq's engine, with Blender as baker            |
-| Renderer       | Keep the existing engine; do not adopt Bevy or three.js                          |
+| Question       | Decision                                                                                                                |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Primary output | Rendered video; live preview is first-class                                                                             |
+| Audience       | Local tool first; hosted upload service after outputs are proven fun                                                    |
+| Analysis stack | Hosted APIs and local models both supported, per bundle part, behind one interface; Python confined to the batch worker |
+| Stems          | User-supplied, or one of three hosted providers behind one interface                                                    |
+| Determinism    | Rendering is deterministic for audio + show and audio + scene; generation varies                                        |
+| Timeline UI    | Thin local web page over the WASM engine                                                                                |
+| Prompt depth   | Depth 1 now; 2 and 3 are future items                                                                                   |
+| 3D direction   | Deep import from Blender into Octoseq's engine, with Blender as baker                                                   |
+| Renderer       | Keep the existing engine; do not adopt Bevy or three.js                                                                 |
 
 ## Deferred
 
@@ -301,6 +302,13 @@ exit test passes.
   animation data. Revisit after milestone 4.
 - **Unbaked 3D in the engine.** If live lights or signal-driven rigs are wanted
   inside Octoseq's own engine, reconsider adopting Bevy at that point.
+
+## How it gets built
+
+Work proceeds in autonomous chunks checked by an automated render-and-score loop,
+with human judgement batched at the end of each chunk. See
+[../loop/README.md](../loop/README.md) and the queue in
+[../loop/queue.md](../loop/queue.md).
 
 ## Still to specify
 

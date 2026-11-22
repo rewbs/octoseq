@@ -140,6 +140,29 @@ pnpm build:wasm
 
 MIR analysis runs in Web Workers to avoid blocking the UI thread.
 
+## Build Loop (redesign work)
+
+Octoseq is being redesigned (see
+[docs/design/redesign-deliverable.md](docs/design/redesign-deliverable.md)). That work
+is built with an automated render-and-score loop so it can proceed in large chunks
+without waiting on a person. Read [docs/loop/README.md](docs/loop/README.md) before
+starting redesign work.
+
+```bash
+python3 tools/loop/run.py        # render every scene on every test track and score it
+python3 tools/loop/selftest.py   # after changing tools/loop/analyse.py or metrics.py
+```
+
+- Run the loop after any change to the engine, scenes or analysis, and look at the
+  contact sheets it writes, not only the numbers.
+- Do not stop for a judgement call. Take the most reversible default and record it
+  in [docs/loop/queue.md](docs/loop/queue.md); that file is the batched list of
+  everything waiting on the project owner.
+- A hard-gate failure means the output is broken. Do not loosen a gate to make a run
+  pass; gates change only in response to human ratings.
+- Headless rendering needs a Vulkan driver. Without a GPU:
+  `apt-get install -y mesa-vulkan-drivers`.
+
 ## Coding Conventions
 
 ### TypeScript

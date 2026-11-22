@@ -1,0 +1,19 @@
+{
+  "_comment": "Thresholds for tools/loop. 'hard' gates fail the run: they mean the output is broken. 'target' gates only warn: they describe where the redesign is heading and are expected to fail until that work lands. All values are provisional until calibrated against human ratings (see docs/loop/README.md).",
+  "hard": {
+    "black_fraction": { "max": 0.25, "why": "mostly black output" },
+    "blown_fraction": { "max": 0.05, "why": "blown-out white frames" },
+    "static_fraction": { "max": 0.25, "why": "picture is frozen" },
+    "max_flashes_per_sec": { "max": 3.0, "why": "strobing above the WCAG 2.3.1 limit" }
+  },
+  "target": {
+    "active_area": {
+      "min": 0.5,
+      "why": "most of the frame should be filled, not objects on black"
+    },
+    "jerkiness": { "max": 0.6, "why": "motion should flow rather than jump" },
+    "audio_sync": { "min": 0.2, "why": "the picture should visibly follow the music" },
+    "variety": { "min": 0.15, "why": "the look should evolve over the clip" },
+    "colourfulness": { "min": 0.08, "why": "avoid washed-out or grey output" }
+  }
+}
