@@ -38,3 +38,4 @@ apps/web/public/monaco/
 
 # Build loop working files (tools/loop)
 .loop/
+__pycache__/
