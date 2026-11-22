@@ -57,11 +57,11 @@ Dropped:
 
 Three artefacts, each generated from the one before.
 
-| Artefact            | What it is                                                                                       | Written by                                    |
-| ------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------- |
-| **Analysis bundle** | Everything extracted from the track, cached and pinned per audio file                            | Machine only                                  |
-| **Show file**       | A short timeline: scene per section, transitions, style, seed, the prompt, and human overrides   | The director (automatic), then edited by a human |
-| **Render**          | Video with the audio muxed in, plus a lower-quality live preview from the same engine            | Engine                                        |
+| Artefact            | What it is                                                                                     | Written by                                       |
+| ------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **Analysis bundle** | Everything extracted from the track, cached and pinned per audio file                          | Machine only                                     |
+| **Show file**       | A short timeline: scene per section, transitions, style, seed, the prompt, and human overrides | The director (automatic), then edited by a human |
+| **Render**          | Video with the audio muxed in, plus a lower-quality live preview from the same engine          | Engine                                           |
 
 ### Analysis bundle
 
@@ -189,13 +189,13 @@ fine.
 
 ## What happens to the existing code
 
-| Area                              | Fate                                                                    |
-| --------------------------------- | ----------------------------------------------------------------------- |
-| `packages/visualiser` (Rust)      | Kept and extended; the core of the new system                           |
-| Interpretation Package v1         | Evolves into the analysis bundle                                        |
-| Rhai scripting API                | Kept as the scene-authoring layer                                       |
-| `packages/mir` (TypeScript)       | No longer the analysis backbone; replaced by the analysis worker        |
-| `apps/web`                        | Frozen. The timeline page is new and small; reuse pieces where they fit |
+| Area                         | Fate                                                                    |
+| ---------------------------- | ----------------------------------------------------------------------- |
+| `packages/visualiser` (Rust) | Kept and extended; the core of the new system                           |
+| Interpretation Package v1    | Evolves into the analysis bundle                                        |
+| Rhai scripting API           | Kept as the scene-authoring layer                                       |
+| `packages/mir` (TypeScript)  | No longer the analysis backbone; replaced by the analysis worker        |
+| `apps/web`                   | Frozen. The timeline page is new and small; reuse pieces where they fit |
 
 ## Milestones
 
@@ -216,15 +216,15 @@ exit test passes.
 
 ## Decisions
 
-| Question                 | Decision                                                                        |
-| ------------------------ | ------------------------------------------------------------------------------- |
-| Primary output           | Rendered video; live preview is first-class                                     |
-| Audience                 | Local tool first; hosted upload service after outputs are proven fun            |
-| Analysis stack           | Python accepted, confined to the batch worker; stems via external API           |
-| Timeline UI              | Thin local web page over the WASM engine                                        |
-| Prompt depth             | Depth 1 now; 2 and 3 are future items                                           |
-| 3D direction             | Deep import from Blender into Octoseq's engine, with Blender as baker           |
-| Renderer                 | Keep the existing engine; do not adopt Bevy or three.js                         |
+| Question       | Decision                                                              |
+| -------------- | --------------------------------------------------------------------- |
+| Primary output | Rendered video; live preview is first-class                           |
+| Audience       | Local tool first; hosted upload service after outputs are proven fun  |
+| Analysis stack | Python accepted, confined to the batch worker; stems via external API |
+| Timeline UI    | Thin local web page over the WASM engine                              |
+| Prompt depth   | Depth 1 now; 2 and 3 are future items                                 |
+| 3D direction   | Deep import from Blender into Octoseq's engine, with Blender as baker |
+| Renderer       | Keep the existing engine; do not adopt Bevy or three.js               |
 
 ## Deferred
 
