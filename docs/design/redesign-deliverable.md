@@ -47,32 +47,96 @@ Dropped:
 
 - **Automation decides by default; humans override.** This reverses the current
   "automation proposes, humans promote" rule.
-- **Determinism is defined at the render boundary:** the same analysis bundle, show
-  file and engine version produce identical frames. Steps that are not reproducible
-  (external stem separation, a language model choosing scenes) record their output
-  so they are never re-run during a render.
+- **Rendering is deterministic; generation is not.** See
+  [Determinism](#determinism) below.
 - "Signals everywhere" and "whole-track analysis" are unchanged.
+
+## Determinism
+
+Two guarantees:
+
+- A given audio track plus a given **show** always renders the same frames.
+- A given audio track plus a given **scene** always renders the same frames.
+
+One non-guarantee, which is deliberate:
+
+- The scenes and show **generated** for a track can, and should, vary from run to
+  run. A language model may be used anywhere in analysis and generation.
+
+Consequences for the design:
+
+- **Analysis runs once per track and is stored.** Stem separation and any
+  model-based analysis may give different results on a second run, so "a given audio
+  track" means the audio together with its stored analysis bundle. Re-analysing is an
+  explicit action that produces a new bundle; it never happens during a render.
+- **Generation never uses a fixed default seed.** Each run of the director makes
+  fresh choices. What it chose is written to the show file, which is what makes the
+  result replayable.
+- **A show pins the exact scenes it uses.** Updating or regenerating a scene must
+  not change how an existing show renders.
+- **Rendering calls no model and no external service.**
 
 ## Architecture
 
 Three artefacts, each generated from the one before.
 
-| Artefact            | What it is                                                                                     | Written by                                       |
-| ------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| **Analysis bundle** | Everything extracted from the track, cached and pinned per audio file                          | Machine only                                     |
-| **Show file**       | A short timeline: scene per section, transitions, style, seed, the prompt, and human overrides | The director (automatic), then edited by a human |
-| **Render**          | Video with the audio muxed in, plus a lower-quality live preview from the same engine          | Engine                                           |
+| Artefact            | What it is                                                                                              | Written by                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **Analysis bundle** | Everything extracted from the track, produced once and stored per audio file                            | Machine only                                     |
+| **Show file**       | A short timeline: scene per section, transitions, style, the prompt, pinned scenes, and human overrides | The director (automatic), then edited by a human |
+| **Render**          | Video with the audio muxed in, plus a lower-quality live preview from the same engine                   | Engine                                           |
 
 ### Analysis bundle
 
 Target contents: stems, beats and downbeats, tempo, sections (intro, verse, drop and
 so on), drum hits by type, vocal activity, melody contour, key, and a slow energy arc.
 
-- A batch worker runs once per track and writes the bundle. This is the only place
-  Python is allowed. The director, engine, preview and render contain none.
-- Stem separation goes to an external API; its output is stored in the bundle.
-- Prefer models that export to ONNX, so the worker can later be replaced by Rust
-  without changing anything downstream.
+The bundle has two parts. **Signals and events** are what scenes bind to.
+**Descriptions** (genre, mood, lyrical themes and similar, possibly written by a
+language model) are read only by the director.
+
+A batch worker runs once per track and writes the bundle. It is built from
+interchangeable analysers, each responsible for one part of the bundle, so a part can
+come from a hosted API, a local model or plain signal processing without anything
+downstream changing.
+
+#### Stems
+
+Stems come from one of four sources behind a single interface, and are normalised to
+a common set (vocals, drums, bass, other, plus any extras the source provides):
+
+- **Supplied by the user.** The user points at existing stem files and labels them;
+  no separation runs.
+- **Three hosted providers.** No reliable usage ranking of stem separation APIs
+  exists, so "most popular" is a judgement. Proposed three: **LALAL.AI**,
+  **Music.ai** (the company behind Moises) and **hosted Demucs on fal.ai** (an open
+  model with a public per-second price). AudioShake is the obvious fourth and should
+  be easy to add behind the same interface.
+
+The bundle records which source produced the stems.
+
+#### Analysis models
+
+"Analysis models" means the trained models that turn audio into musical facts, as
+opposed to formula-based signal processing (loudness, spectrum, onsets), which needs
+no model.
+
+| Bundle part             | Needs                                            |
+| ----------------------- | ------------------------------------------------ |
+| Beats, downbeats, tempo | A beat-tracking model                            |
+| Sections                | A structure model                                |
+| Drum hits by type       | A drum transcription model, run on the drum stem |
+| Melody contour          | A pitch-tracking model, run on vocals or other   |
+| Key and chords          | A harmony model                                  |
+| Energy arc, onsets      | Signal processing only                           |
+| Descriptions            | A language model or tagging model                |
+
+Each of these can be a local open model (which is where Python comes in) or a hosted
+API. Music.ai, for one, offers beats, chords, key and sections as API modules
+alongside stems. Which to use for each part is an engineering choice, to be made by
+comparing candidates on the test tracks. Python, where used, stays confined to this
+worker; prefer models that export to ONNX so it can be removed later.
+
 - The existing Interpretation Package v1
   ([phase3-interpretation-package.md](phase3-interpretation-package.md)) is the
   starting point for the bundle format.
@@ -98,8 +162,9 @@ scene author's language, not something a user has to touch.
 
 The director turns a bundle (and optionally a prompt) into a show file.
 
-- **Default:** rule-based and seeded. It changes scene at section boundaries, matches
-  scene intensity to the energy arc, and can be re-rolled with a new seed.
+- **Default:** rule-based. It changes scene at section boundaries and matches scene
+  intensity to the energy arc. Each run makes different choices; running it again is
+  how you re-roll.
 - **Prompted:** a language model sees a summary of the bundle, the scene catalogue
   and the prompt, and returns a show file. The prompt and every choice are recorded
   in the show file. Rendering never calls a model.
@@ -121,7 +186,7 @@ _Illustrative:_
 
 ```toml
 track = "dontstop.mp3"
-seed = 7
+seed = 7               # chosen fresh by the director, then fixed for rendering
 prompt = "dark, slow, monochrome"
 
 [style]
@@ -200,7 +265,8 @@ fine.
 ## Milestones
 
 1. **Proof of fun.** One command, track to mp4, no UI and no prompt.
-   - Analysis worker writes the bundle
+   - Analysis worker writes the bundle; stems from user files or any of the three
+     providers
    - Engine: role binding, feedback-first compositing, blended transitions
    - 3–5 scenes with shared style controls; rule-based director
    - **Exit test:** ten tracks across genres, each watchable to the end unedited
@@ -216,15 +282,17 @@ exit test passes.
 
 ## Decisions
 
-| Question       | Decision                                                              |
-| -------------- | --------------------------------------------------------------------- |
-| Primary output | Rendered video; live preview is first-class                           |
-| Audience       | Local tool first; hosted upload service after outputs are proven fun  |
-| Analysis stack | Python accepted, confined to the batch worker; stems via external API |
-| Timeline UI    | Thin local web page over the WASM engine                              |
-| Prompt depth   | Depth 1 now; 2 and 3 are future items                                 |
-| 3D direction   | Deep import from Blender into Octoseq's engine, with Blender as baker |
-| Renderer       | Keep the existing engine; do not adopt Bevy or three.js               |
+| Question       | Decision                                                                         |
+| -------------- | -------------------------------------------------------------------------------- |
+| Primary output | Rendered video; live preview is first-class                                      |
+| Audience       | Local tool first; hosted upload service after outputs are proven fun             |
+| Analysis stack | Python accepted, confined to the batch worker                                    |
+| Stems          | User-supplied, or one of three hosted providers behind one interface             |
+| Determinism    | Rendering is deterministic for audio + show and audio + scene; generation varies |
+| Timeline UI    | Thin local web page over the WASM engine                                         |
+| Prompt depth   | Depth 1 now; 2 and 3 are future items                                            |
+| 3D direction   | Deep import from Blender into Octoseq's engine, with Blender as baker            |
+| Renderer       | Keep the existing engine; do not adopt Bevy or three.js                          |
 
 ## Deferred
 
@@ -236,8 +304,17 @@ exit test passes.
 
 ## Still to specify
 
-- Which analysis models and which stem separation provider
+These are engineering choices, to be settled by building the first scene end to end
+rather than decided up front:
+
+- Which analyser to use for each part of the bundle
 - The role set and the shared style controls (the lists above are starting points)
 - The show file schema, and how overrides survive a re-run of the director
 - The scene contract: how a scene declares roles, style controls and model slots
-- The ten-track test set for milestone 1
+
+Needed from the project owner:
+
+- The ten-track test set for milestone 1. `data/` already holds two tracks. Useful
+  spread for the rest: fast and slow, with and without vocals, with and without
+  drums, at least one with an obvious build and drop, at least one ambient.
+- API keys for the stem providers, when that work starts
