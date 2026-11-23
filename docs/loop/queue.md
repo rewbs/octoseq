@@ -13,8 +13,27 @@ listed as blocked. See [README.md](README.md) for how this queue is used.
 
 ## Taste reviews
 
-None pending. Review pack 1 arrives at the end of chunk 4 (first scenes and
-director): a page of clips, each with a 1–5 rating and a comment box.
+Review pack 1 arrives at the end of chunk 4 (first scenes and director).
+
+### Review 1 (23 November 2026): the first scene, `vortex`, on both test tracks
+
+Rated **2 out of 5**, all three videos. "It makes sense, but it's not punchy, it's
+ugly and it's boring." It follows the music but is too smooth; the colour (nearly all
+magenta) is ugly; it gets boring in under ten seconds.
+
+Every one of those clips had passed every gate and target, so the targets were wrong.
+What changed in response:
+
+| What you said             | What the loop measured on those clips                                    | New target              |
+| ------------------------- | ------------------------------------------------------------------------ | ----------------------- |
+| Not punchy, too smooth    | `punch` 1.1: the picture moves no more on a hit than between hits         | at least 2.0            |
+| Too smooth                | `jerkiness` 0.54 to 0.59, held under its old target of 0.6               | under 1.0 (was 0.6)     |
+| Boring in under 10 s      | `look_change` 0.10 to 0.16: much the same picture as eight seconds before | at least 0.4            |
+| Ugly, all one colour      | `one_hue_share` 0.69 to 0.76                                             | at most 0.6             |
+| Ugly                      | `wash` 0.21 to 0.33: a fog of saturated mid-tone                          | at most 0.2             |
+
+The old `vortex` scene fails four of these and is kept only as a known-bad example.
+The thresholds rest on one review of one scene; they are there to be moved by the next.
 
 The five existing example scenes were not sent for review. Fed the loop's stand-in
 analysis of the two test tracks, nine of the ten renders fail a hard gate (frozen,
@@ -127,6 +146,21 @@ Say so to reverse any of these.
 | D63 | A role that was looked for and found empty is now bound to an empty stream: a track with no hi-hats has a `hat` role with nothing in it. Only a role nobody looked for (`downbeat` without bar lines) is left unbound. (This revises D52.) | The 18-second test track has no hi-hats and the first scene could not load on it. "No hats" is a true fact about the track, not a missing input; the director can still prefer scenes whose roles are busy |
 | D64 | To meet the jerkiness target the scene was slowed down and its lines thickened | The metric rises when fine detail crosses more than a pixel a frame, which is real shimmer. The proper cure is sub-frame accumulation (motion blur), which is in the design and not built |
 | D65 | `tools/loop/video.py` is the one command: track in, mp4 out, at 960x540 and 30 frames a second unless told otherwise. With one scene and no director it plays that scene for the whole track | It makes whole-track videos to look at now, and is where the director will plug in. Over the whole 283-second test track the scene meets every gate and target, but the picture barely changes in five minutes, which the numbers do not catch: that is the case for more scenes and a director, not for tuning this one |
+
+### Taken after review 1
+
+| #   | Decision | Why this default |
+| --- | -------- | ---------------- |
+| D66 | Three new scenes replace `vortex`: `pulse` (rings thrown from the centre), `columns` (a row of rings drawing columns of light) and `swirl` (arcs winding out in a spiral). All use instant attacks, a black background and three colours | Your words: not punchy, ugly, boring. Each scene is a different composition so that a cut is a real change. `vortex` is kept as `tools/loop/fixtures/scenes/rated-2-vortex.rhai`, the clip the new targets were set against |
+| D67 | Every scene has one style line (three colours and a speed) that the director fills in. Five palettes, each spread round the colour wheel | The smallest shared style control that lets one decision mean the same thing in every scene. More controls (density, symmetry) wait until a scene needs them |
+| D68 | The director holds no look longer than 9 seconds and no shorter than 3 | You were bored in under ten. This also answers D49 from the other side: a section boundary every 8 seconds is too fine for "sections" but about right for how often the picture should change |
+| D69 | A scene change is a cut: the new scene starts drawing over the last scene's picture, which its own feedback then sweeps away | It comes free with the draw-over blend and reads as a transition. The design's blended warp fields are not built |
+| D70 | A show is JSON, not TOML, and has no overrides section yet | It is what the renderer reads today. The file format is still to be settled, with the editor |
+| D71 | A new role, `hit`: kicks and snares thinned so that no two are closer than 0.5 s. Scenes use it for anything that flashes or jolts the whole frame, and `kick`, `snare`, `hat` only for local movement | Whole-frame brightness changes on every kick and hat break the strobe gate (three flashes a second) on fast music. At 0.4 s one show sat exactly on the limit; 0.5 s leaves room. `punch` is measured on the same stream |
+| D72 | A render now fails if its script fails. Before, a scene whose `init()` stopped halfway was rendered with whatever it had set up, and the error was dropped | This is how I found that **all five original example scenes fail on their first frame and always have**: they set `entity.params.…` where the engine has `materialParams`, or trip a sandbox limit. That is why they were "frozen". They are out of the default loop; fixing or retiring them is your call |
+| D73 | Three engine bugs fixed on the way, each with a test or a visible check: an entity built in a loop lost everything set on it; a scene could hold only about a dozen entities (a 500-entry map limit, counted through nested maps, now 50,000); and every object sharing a material got the last object's material settings | The scenes could not be written without them. All three change what existing scripts do, in the direction of doing what the script says |
+| D74 | Shortening trails to cut the `wash` figure was tried and reverted | It took wash under target on two shows and pushed two others over hard gates (strobe rate; too dark). Wash stands at 0.19 to 0.30 against a target of 0.2, and I do not know yet whether that figure tracks what you called ugly |
+| D75 | Palette colours reach the screen paler than written: the engine works in linear light, so a channel set to 0.1 shows at about 0.35. `--vivid` converts them first. It is not the default | With it, one of the four default shows fails the mostly-black hard gate (0.27 against 0.25), and `wash` rises (0.30 to 0.40 on one show) although the picture looks less washed to me, which says the `wash` figure does not measure what I meant it to. Review 2 has the same show both ways; your answer decides the default and what replaces `wash` |
 
 ## Answered
 

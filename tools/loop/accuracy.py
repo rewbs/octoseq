@@ -463,7 +463,7 @@ def instrument_checks(tracks: list[dict], check_determinism: bool) -> list[dict]
         add("degraded variants stay aligned with the original", worst_offset[0] <= 2.0, f"worst shift {worst_offset[0]:.2f} ms ({worst_offset[1]})")
 
     engine = ROOT / "packages" / "visualiser" / "target" / "release" / ("visualiser" + modref.EXE)
-    scene = ROOT / "example-scripts" / "01-spectral-flower.rhai"
+    scene = ROOT / "scenes" / "pulse.rhai"
     if synthetic and engine.exists() and scene.exists():
         import perfect_bundle
 

@@ -9,6 +9,7 @@ strobe from a slow fade would make every loop result meaningless.
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import wave
@@ -18,6 +19,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 import analyse  # noqa: E402
+import director  # noqa: E402
 import metrics  # noqa: E402
 
 FPS = 30
@@ -128,8 +130,94 @@ def test_metrics() -> None:
     check("clip that changes look has more variety", varied["variety"] > flow["variety"] + 0.05, f"-> {varied['variety']:.2f} vs {flow['variety']:.2f}")
 
 
+    # --- What review 1 found, and the metrics that now catch it.
+    hits = np.arange(1.0, 9.0, 0.5)
+    hit_pkg = {"signals": [], "eventStreams": [{"name": "kick", "events": [{"time": float(h), "weight": 1.0} for h in hits]}]}
+    base = 0.5 + 0.2 * np.sin(xx / 9.0)[None] * np.ones((n, 1, 1))
+    # The same pattern growing brighter around each hit: once as a bell centred on the hit, once as a jump at it.
+    bell = sum(np.exp(-0.5 * ((t - h) / 0.08) ** 2) for h in hits)
+    jump = sum(np.where(t >= h, np.exp(-(t - h) / 0.12), 0.0) for h in hits)
+    eased = metrics.compute(frames_from_luma(base * (0.7 + 0.3 * bell[:, None, None])), FPS, hit_pkg)
+    struck = metrics.compute(frames_from_luma(base * (0.7 + 0.3 * jump[:, None, None])), FPS, hit_pkg)
+    check("a picture that jumps on the hits has punch", struck["punch"] > 3.0, f"-> {struck['punch']:.1f}")
+    check("a picture that eases through the hits has less", eased["punch"] < 0.6 * struck["punch"], f"-> {eased['punch']:.1f} vs {struck['punch']:.1f}")
+    check("no hits, no punch score", "punch" not in flow)
+
+    long_n = FPS * 24
+    long_t = np.arange(long_n) / FPS
+    rings = 0.5 + 0.35 * np.sin(np.hypot(xx - W / 2, yy - H / 2)[None] / 4.0 - long_t[:, None, None] * 3.0)
+    same = metrics.compute(frames_from_luma(rings), FPS, pkg)
+    cut = rings.copy()
+    bars = 0.5 + 0.35 * np.sin(xx[None] / 5.0 + long_t[:, None, None] * 3.0) * np.ones((long_n, H, 1))
+    for start in range(8, 24, 16):
+        cut[start * FPS : (start + 8) * FPS] = bars[start * FPS : (start + 8) * FPS]
+    changed = metrics.compute(frames_from_luma(cut), FPS, pkg)
+    check("one composition held throughout does not change look", same["look_change"] < 0.1, f"-> {same['look_change']:.2f}")
+    check("a cut to another composition does", changed["look_change"] > same["look_change"] + 0.25, f"-> {changed['look_change']:.2f}")
+
+    def coloured(hues: list[float], level: float) -> np.ndarray:
+        """Vertical stripes of the given hues at one brightness."""
+        import colorsys
+
+        frame = np.zeros((H, W, 3), dtype=np.uint8)
+        for i, hue in enumerate(hues):
+            a, b = i * W // len(hues), (i + 1) * W // len(hues)
+            frame[:, a:b] = (np.array(colorsys.hsv_to_rgb(hue, 0.9, level)) * 255).astype(np.uint8)
+        return np.repeat(frame[None], FPS * 2, axis=0)
+
+    fog = metrics.compute(coloured([0.85, 0.86, 0.84], 0.75), FPS, pkg)
+    several = metrics.compute(coloured([0.0, 0.33, 0.6], 0.75), FPS, pkg)
+    dark = coloured([0.0, 0.33, 0.6], 0.9)
+    dark[:, :, : W // 2 : 2] = 0  # the same colours as sparse bright lines on black
+    lines = metrics.compute(dark, FPS, pkg)
+    check("one colour everywhere is flagged", fog["one_hue_share"] > 0.9, f"-> {fog['one_hue_share']:.2f}")
+    check("three colours are not", several["one_hue_share"] < 0.6, f"-> {several['one_hue_share']:.2f}")
+    check("a frame of saturated mid-tone is a wash", fog["wash"] > 0.8, f"-> {fog['wash']:.2f}")
+    check("bright colour on black is less of one", lines["wash"] < fog["wash"] - 0.2, f"-> {lines['wash']:.2f}")
+
+
+def test_director() -> None:
+    """The director's rules, on a made-up bundle: 60 s, sections at 0, 20 and 26 s, a beat every half second."""
+    package = {
+        "durationSec": 60.0,
+        "roles": {r: {"events": r} for r in ("hit", "kick", "snare", "hat", "beat", "section")}
+        | {"energy": {"signal": "energy"}, "bass": {"band": "Bass", "feature": "energy"}, "section_intensity": {"custom": "section_intensity"}},
+        "eventStreams": [
+            {"name": "section", "events": [{"time": 0.0, "weight": 1.0}, {"time": 20.0, "weight": 0.5}, {"time": 26.0, "weight": 0.5}]},
+            {"name": "beat", "events": [{"time": i * 0.5, "weight": 1.0} for i in range(120)]},
+        ],
+        "customSignals": [{"id": "x", "name": "section_intensity", "rate": 1.0, "values": [0.2] * 20 + [1.0] * 40}],
+    }
+    show = director.direct(package, seed=11)
+    starts = [s["start"] for s in show["segments"]]
+    holds = [b - a for a, b in zip(starts, starts[1:] + [60.0])]
+    check("director: no look is held longer than the limit", max(holds) <= director.MAX_HOLD_S + 1e-6, f"-> longest {max(holds):.1f} s")
+    check("director: nor shorter than the minimum", min(holds) >= director.MIN_HOLD_S, f"-> shortest {min(holds):.1f} s")
+    check("director: cuts at every section start", all(t in starts for t in (0.0, 20.0, 26.0)))
+    check("director: cuts inside a section land on the beat", all(abs(t * 2 - round(t * 2)) < 1e-6 for t in starts))
+    scenes = [s["scene"] for s in show["segments"]]
+    check("director: never the same scene twice running", all(a != b for a, b in zip(scenes, scenes[1:])))
+    palettes = {s["start"]: s["palette"] for s in show["segments"]}
+    kept = all(s["palette"] == p["palette"] for p, s in zip(show["segments"], show["segments"][1:]) if not s["new_section"])
+    check("director: a new palette at each section, the same one within it", kept and palettes[20.0] != palettes[starts[starts.index(20.0) - 1]])
+    check("director: louder sections run faster", show["segments"][-1]["speed"] > show["segments"][0]["speed"])
+    check("director: the same seed gives the same show", director.direct(package, seed=11) == show)
+    vivid = director.direct(package, seed=11, vivid=True)
+    same_cuts = [(s["start"], s["scene"], s["palette"]) for s in vivid["segments"]] == [(s["start"], s["scene"], s["palette"]) for s in show["segments"]]
+    darker = all(v <= c for a, b in zip(vivid["segments"], show["segments"]) for x, y in zip(a["colours"], b["colours"]) for v, c in zip(x, y))
+    check("director: a vivid show is the same show in stronger colours", same_cuts and darker and vivid != show)
+    others = {json.dumps(director.direct(package)["segments"]) for _ in range(6)}
+    check("director: without a seed, runs differ", len(others) > 1, f"-> {len(others)} different shows in 6 runs")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = director.write(show, Path(tmp))
+        written = json.loads(path.read_text())
+        first = (Path(tmp) / written["segments"][0]["script"]).read_text()
+        check("director: the show pins a dressed copy of each scene", "// @style" in first and str(show["segments"][0]["speed"]) in first)
+
+
 if __name__ == "__main__":
     test_analyser()
     test_metrics()
+    test_director()
     print(f"\n{len(failures)} failed" if failures else "\nall instrument checks passed")
     sys.exit(1 if failures else 0)

@@ -38,11 +38,11 @@ python3 tools/loop/accuracy.py --quick   # the accuracy loop on the committed fi
 python3 tools/loop/run.py --seconds 5    # every scene on every test track, briefly
 ```
 
-`run.py` exits non-zero when a clip fails a hard gate. Until the feedback-first
-rendering work lands, most of the example scenes do (frozen, or blown out to white),
-so a non-zero exit there is the scenes, not the setup. The setup is right if every
+`run.py` exits non-zero when a clip fails a hard gate or an engine check fails. A
+short clip can trip a gate a full-length one does not, so the setup is right if every
 clip renders and `run.py` with no arguments reports no changes against the saved
-baseline.
+baseline. (The scripts in `example-scripts/` are not part of a plain run: each stops
+on a script error on its first frame.)
 
 The first full `accuracy.py` run renders every module in the corpus; later runs reuse
 the cache in `.loop/`. `--jobs` sets how many modules are analysed at once (default 4);

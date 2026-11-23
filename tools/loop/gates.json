@@ -24,8 +24,8 @@
       "why": "most of the frame should be filled, not objects on black"
     },
     "jerkiness": {
-      "max": 0.6,
-      "why": "motion should flow rather than jump"
+      "max": 1.0,
+      "why": "motion should not flicker (review 1: a clip held under 0.6 was rated too smooth, so smoothness is no longer a target in itself)"
     },
     "audio_sync": {
       "min": 0.2,
@@ -38,6 +38,22 @@
     "colourfulness": {
       "min": 0.08,
       "why": "avoid washed-out or grey output"
+    },
+    "punch": {
+      "min": 2.0,
+      "why": "the picture should jump on the music's hits, not ease through them (review 1: about 1.1 was rated 'not punchy')"
+    },
+    "look_change": {
+      "min": 0.4,
+      "why": "the picture should not look the same as eight seconds ago (review 1: 0.10 to 0.16 was 'boring after less than 10 s')"
+    },
+    "one_hue_share": {
+      "max": 0.6,
+      "why": "not one colour everywhere (review 1: 0.69 to 0.76, nearly all magenta, was rated ugly)"
+    },
+    "wash": {
+      "max": 0.2,
+      "why": "not a fog of saturated mid-tone colour (review 1: 0.21 to 0.33 was rated ugly)"
     }
   },
   "accuracy": {

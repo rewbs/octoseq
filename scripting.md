@@ -545,6 +545,7 @@ Signal API.
 | `downbeat`                | events | The first beat of every bar                                 |
 | `onset`                   | events | Every audible event                                         |
 | `kick`, `snare`, `hat`    | events | Drum hits by type                                           |
+| `hit`                     | events | The blows the whole frame may answer, at least 0.5 s apart  |
 | `section`                 | events | The start of each section; weight is the size of the change |
 | `energy`                  | signal | Overall loudness, 0 to 1                                    |
 | `brightness`              | signal | Where the spectrum's weight sits, dark to bright            |
@@ -2733,7 +2734,7 @@ like any other signal. This is signal composition, not imperative branching.
 | Operations per frame       | 100,000           |
 | Max string size            | 10,000 characters |
 | Max array size             | 100,000 elements  |
-| Max map size               | 500 entries       |
+| Max map size               | 50,000 entries    |
 | Log messages per frame     | 100               |
 
 ---

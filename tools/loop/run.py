@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """The build loop: render every scene on every test track and score the result.
 
-    python3 tools/loop/run.py                      # all scenes x all tracks, 30 s each
-                                                   # (scenes/ and example-scripts/; data/ and two fixture modules)
+    python3 tools/loop/run.py                      # a directed show and every scene, on every track, 30 s each
+                                                   # (data/ and two fixture modules)
+    python3 tools/loop/run.py --scenes director    # only the directed shows
     python3 tools/loop/run.py --seconds 0          # whole tracks
     python3 tools/loop/run.py --scenes 'scenes/*.rhai' --tracks data/super.mp3
     python3 tools/loop/run.py --save-baseline      # accept this run as the baseline
@@ -35,6 +36,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+import director  # noqa: E402
 import metrics  # noqa: E402
 import perfect_bundle  # noqa: E402
 import roles  # noqa: E402
@@ -53,10 +55,12 @@ BASELINE = Path(__file__).parent / "baseline.json"
 CHECK_SCENES = Path(__file__).parent / "fixtures" / "scenes"
 
 # What a plain run covers: the real test tracks plus one training and one held-out
-# fixture module (rendered from perfect bundles), against the new scenes and the
-# older example scripts.
+# fixture module (rendered from perfect bundles). Each gets a directed show, which is
+# what a viewer sees, and each scene on its own, which is how a scene is debugged.
 DEFAULT_TRACKS = ["data/*.mp3", "tools/loop/fixtures/modules/synth-0001.mod", "tools/loop/fixtures/modules/synth-0101.mod"]
-DEFAULT_SCENES = ["scenes/*.rhai", "example-scripts/*.rhai"]
+DIRECTED = Path("director")  # in place of a scene: let the director make a show for the track
+DIRECTED_SEED = 1  # the loop's shows must not change from run to run, so it fixes the director's seed
+DEFAULT_SCENES = ["director", "scenes/*.rhai"]
 MODULE_SUFFIXES = {".mod", ".xm", ".s3m", ".it", ".mptm"}
 DETERMINISM_SECONDS = 3.0
 SHEET_COLS, SHEET_ROWS = 6, 4
@@ -84,11 +88,13 @@ def engine_path(path: Path) -> str:
 
 
 def render_frames(package: Path, scene: Path, out: Path, seconds: float, args) -> tuple[bool, str]:
+    """Render a scene, or a show if `scene` is a show.json, to numbered frames."""
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
     cmd = [
-        str(ENGINE), "render", "--package", engine_path(package), "--script", engine_path(scene),
+        str(ENGINE), "render", "--package", engine_path(package),
+        "--show" if scene.name == "show.json" else "--script", engine_path(scene),
         "--out", engine_path(out), "--fps", str(args.fps), "--width", str(args.width),
         "--height", str(args.height), "--duration", f"{seconds:.3f}", "--quiet",
     ]  # fmt: skip
@@ -144,7 +150,7 @@ def run_pair(track: Path, scene: Path, run_dir: Path, gates: dict, args) -> dict
     name = f"{track.stem}__{scene.stem}"
     out = run_dir / name
     out.mkdir(parents=True, exist_ok=True)
-    result: dict = {"id": name, "track": str(track.relative_to(ROOT)), "scene": str(scene.relative_to(ROOT))}
+    result: dict = {"id": name, "track": str(track.relative_to(ROOT)), "scene": "director" if scene == DIRECTED else str(scene.relative_to(ROOT))}
 
     audio = track
     if track.suffix.lower() in MODULE_SUFFIXES:
@@ -159,6 +165,14 @@ def run_pair(track: Path, scene: Path, run_dir: Path, gates: dict, args) -> dict
     if args.seconds > 0:
         seconds = min(seconds, args.seconds)
     result["seconds"] = round(seconds, 2)
+    if scene == DIRECTED:
+        try:
+            show = director.direct(package, DIRECTED_SEED)
+        except ValueError as error:
+            result.update(status="fail", hard=[f"director: {error}"], target=[])
+            return result
+        scene = director.write(show, out / "show")
+        result["looks"] = sum(s["start"] < seconds for s in show["segments"])
 
     frames_dir = out / "frames"
     started = time.time()
@@ -224,7 +238,7 @@ def engine_checks(track: Path, run_dir: Path, gates: dict, args) -> list[dict]:
     return checks
 
 
-SUMMARY_COLUMNS = ["active_area", "jerkiness", "audio_sync", "variety", "colourfulness", "motion"]
+SUMMARY_COLUMNS = ["punch", "look_change", "one_hue_share", "wash", "active_area", "jerkiness", "audio_sync", "variety", "colourfulness"]
 
 
 def write_report(run_dir: Path, results: list[dict], baseline: dict | None, checks: list[dict] | None = None) -> None:
@@ -284,7 +298,10 @@ def main() -> int:
             sys.exit(f"nothing matches {patterns}")
         return found
 
-    tracks, scenes = expand(args.tracks), expand(args.scenes)
+    tracks = expand(args.tracks)
+    scenes = [DIRECTED] if "director" in args.scenes else []
+    if [s for s in args.scenes if s != "director"]:
+        scenes += expand([s for s in args.scenes if s != "director"])
     if not args.no_build:
         build_engine()
     gates = json.loads(GATES.read_text())

@@ -20,6 +20,8 @@ events and `energy` being a signal on every bundle.
               downbeat          the first beat of every bar
               onset             every audible event
               kick, snare, hat  drum hits by type
+              hit               the blows the whole picture may answer: kicks and snares, or the
+                                strongest onsets where there are none, never closer than 0.5 s
               section           the start of each section; weight is how big the change is
 
     signals   energy            overall loudness, 0 to 1
@@ -48,9 +50,10 @@ import numpy as np
 import analyse
 import analysers
 
-ROLES_VERSION = "roles-1"
+ROLES_VERSION = "roles-3"
 DERIVED_RATE = 50.0  # samples per second of the derived signals: smooth at any frame rate
-EVENT_ROLES = ("beat", "downbeat", "onset", "kick", "snare", "hat", "section")
+EVENT_ROLES = ("beat", "downbeat", "onset", "kick", "snare", "hat", "hit", "section")
+HIT_MIN_GAP_S = 0.5  # whole-frame blows this far apart stay under the three-flashes-a-second limit
 SIGNAL_ROLES = ("energy", "brightness", "flux", "onset_strength", "bass", "drums", "beat_phase", "bar_phase", "section_progress", "section_intensity")
 
 
@@ -96,6 +99,27 @@ def section_signals(starts: list[float], duration: float, energy: np.ndarray, en
         level.append(float(np.mean(chunk)) if len(chunk) else 0.0)
     level = np.array(level) / (max(level) or 1.0)
     return progress, level[i]
+
+
+def hits(package: dict, drums: dict[str, list[tuple[float, float]]] | None) -> list[tuple[float, float]]:
+    """The moments worth a whole-frame blow, heaviest first, kept at least HIT_MIN_GAP_S apart.
+
+    Kicks and snares when the bundle has enough of them; otherwise the strongest
+    third of its onsets. Scenes use `kick`, `snare` and `hat` for small local
+    movements at any rate, and `hit` for anything that flashes or jolts the frame.
+    """
+    candidates = [(t, w) for kind in ("kick", "snare") for t, w in (drums or {}).get(kind, [])]
+    if len(candidates) < 8:
+        streams = {s["name"]: s["events"] for s in package.get("eventStreams", [])}
+        events = streams.get("events") or streams.get("onsetPeaks") or []
+        if events:
+            floor = float(np.percentile([e["weight"] for e in events], 67))
+            candidates = [(e["time"], e["weight"]) for e in events if e["weight"] >= floor]
+    kept: list[tuple[float, float]] = []
+    for t, w in sorted(candidates, key=lambda c: (-c[1], c[0])):
+        if all(abs(t - other) >= HIT_MIN_GAP_S for other, _ in kept):
+            kept.append((t, w))
+    return sorted(kept)
 
 
 def bind(
@@ -150,6 +174,10 @@ def bind(
         for kind in ("kick", "snare", "hat"):
             _stream(package, kind, drums.get(kind) or [])
             roles[kind] = {"events": kind}
+    blows = hits(package, drums)
+    if blows:
+        _stream(package, "hit", blows)
+        roles["hit"] = {"events": "hit"}
     if sections is not None and "energy" in signal_names:
         _stream(package, "section", sections or [(0.0, 1.0)])
         roles["section"] = {"events": "section"}

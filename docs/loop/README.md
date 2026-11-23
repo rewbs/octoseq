@@ -28,21 +28,32 @@ Neither needs a person to run or to judge.
 ## One command
 
 ```bash
-python3 tools/loop/video.py data/dontstop.mp3       # -> .loop/videos/dontstop.mp4
+python3 tools/loop/video.py data/dontstop.mp3            # -> .loop/videos/dontstop-<seed>.mp4
+python3 tools/loop/video.py data/dontstop.mp3            # again: a different show
+python3 tools/loop/video.py data/dontstop.mp3 --seed 7   # the show seed 7 made before
 python3 tools/loop/video.py song.xm --width 1280 --height 720
+python3 tools/loop/video.py data/dontstop.mp3 --seed 7 --vivid   # the same show in stronger colours
 ```
 
-Track in, video out: it builds the bundle (once per track), picks a scene the bundle
-has the roles for, renders every frame and muxes the audio in. This is milestone 1's
-command in its first form. There is one scene and no director yet, so one scene plays
-for the whole track.
+Track in, video out. It builds the bundle (once per track), has the director make a
+show, renders every frame and muxes the audio in.
+
+The **director** (`tools/loop/director.py`) decides which scene plays when and in
+what colours. Its rules: cut at section starts; hold no look longer than nine
+seconds, cutting longer sections again on the beat; never the same scene twice
+running; a new palette at each section and the same one within it; louder sections
+run faster. The rest is chance, from a seed drawn fresh each run and written into the
+show. A show is a directory under `.loop/shows/` holding `show.json` and a copy of
+each scene as it was, with its colours and speed filled in, so the show keeps
+rendering the same frames after the scenes it came from have changed.
 
 ## Running the render loop
 
 ```bash
 python3 tools/loop/run.py                # every scene on every test track, 30 s each
 python3 tools/loop/run.py --seconds 0    # whole tracks
-python3 tools/loop/run.py --scenes 'example-scripts/05-*.rhai' --tracks data/super.mp3
+python3 tools/loop/run.py --scenes scenes/pulse.rhai --tracks data/super.mp3
+python3 tools/loop/run.py --scenes director            # only the directed shows
 python3 tools/loop/run.py --tracks tools/loop/fixtures/modules/synth-0001.mod
 python3 tools/loop/run.py --save-baseline
 python3 tools/loop/selftest.py           # checks the render loop's own instruments
@@ -79,10 +90,17 @@ known-correct events rather than analysis (see "Perfect bundles" below).
 | Audio sync       | target | Picture that does not follow the music                       |
 | Variety          | target | A look that never changes over the clip                      |
 | Colourfulness    | target | Grey, washed-out output                                      |
+| Punch            | target | A picture that eases through the music's hits instead of jumping on them |
+| Look change      | target | The same picture as eight seconds ago                        |
+| One-hue share    | target | One colour everywhere                                        |
+| Wash             | target | A fog of saturated mid-tone colour                           |
 
 Before the clips, each run also checks the engine with scenes whose right answer is
 known (`tools/loop/fixtures/scenes/`): a feedback loop built to run away must stay
 below white, and the same loop with the bound switched off must blow out.
+
+The last four targets, and a looser jerkiness one, came out of review 1, where a clip
+that met every target of the time was rated 2 out of 5 (see [queue.md](queue.md)).
 
 Hard gates mean the output is broken. Targets describe where the redesign is heading;
 they only warn, and most are expected to fail until the feedback-first rendering work
@@ -320,7 +338,7 @@ Figures are held-out results from the scoreboard when this plan was written.
 | **1g. Bundle and worker**                                   | Bundle schema validates; the worker assembles the bundle from the best analyser per part as chosen by the accuracy loop; a stored bundle is reused, never recomputed; every scoreboard target met or its shortfall explained in the queue                                                                                                                                                                                                        | None                                                               |
 | **2. Role binding** (done) | Engine tests pass; a scene asking for an unavailable role fails with a clear error; every scene renders on every track. Scenes declare roles and read `roles.<name>`; bundles bind sixteen of them; the accuracy loop checks on every run that a role-reading scene renders and that one needing a missing role is refused by name | None |
 | **3. Feedback-first rendering** (part done) | No hard-gate failures on any scene. Active area and jerkiness targets met on a reference scene; deterministic; the WASM build still compiles. Done: feedback is bounded by default; a blend mode draws each frame over the last, so the previous frame is the base layer; warps no longer shear on a wide frame; and a reference scene, `scenes/vortex.rhai`, meets every gate and target on three of four default tracks, deterministically, with the WASM build compiling. Not done: HDR buffers with tone mapping (the tunnel example still whites out, from its own emissive mesh, D55), blended transitions between scenes, sub-frame accumulation, and feedback settings that do not depend on the frame rate (D61). The five older example scenes still fail as before | None |
-| **4. Scenes, director, one command**                        | Every scene passes hard gates and targets over whole tracks, first on perfect bundles and then on analysed bundles of the same modules; audio sync on the analysed bundle within 10% of the perfect bundle; two runs of the director differ; each resulting show re-renders identically                                                                                                                                                          | Review pack 1: rate the clips                                      |
+| **4. Scenes, director, one command** (first version out for review) | Every scene passes hard gates and targets over whole tracks, first on perfect bundles and then on analysed bundles of the same modules; audio sync on the analysed bundle within 10% of the perfect bundle; two runs of the director differ; each resulting show re-renders identically. Done: three scenes with a shared style line, a rule-based director, and `video.py`. Directed shows pass every hard gate on all four default tracks, differ from run to run and re-render identically. Not done: the `wash` target is missed on three of the four shows; scenes are not yet checked over whole tracks or against analysed bundles of the same modules; transitions are a cut onto the last scene's fading picture, not a blend of warp fields | Review 2: rate the new videos |
 
 Chunks 1a to 1f are independent and can run in any order; 1a first is best, because
 every later number is more trustworthy on a wider corpus.

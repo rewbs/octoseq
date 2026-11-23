@@ -118,6 +118,130 @@ def _variety(frames: np.ndarray, fps: float, window_s: float = 5.0) -> float:
     return float(np.mean(dists))
 
 
+def _hit_times(package: dict) -> list[float]:
+    """The moments the picture ought to hit.
+
+    The bundle's own `hit` stream where it has one: the blows it says a whole frame
+    may answer, which are spaced so that answering every one cannot strobe. Failing
+    that its kicks, and failing those its strongest onsets.
+    """
+    streams = {s["name"]: s["events"] for s in package.get("eventStreams", [])}
+    blows = streams.get("hit") or []
+    kicks = streams.get("kick") or []
+    if len(blows) >= 4:
+        chosen = blows
+    elif len(kicks) >= 4:
+        chosen = kicks
+    else:
+        events = streams.get("events") or streams.get("onsetPeaks") or []
+        if len(events) < 4:
+            return []
+        floor = float(np.percentile([e["weight"] for e in events], 67))
+        chosen = [e for e in events if e["weight"] >= floor]
+    times, last = [], -1.0
+    for t in sorted(float(e["time"]) for e in chosen):
+        if t - last >= 0.25:  # one hit per quarter second: closer ones are a roll, not separate blows
+            times.append(t)
+            last = t
+    return times
+
+
+def _punch(motion: np.ndarray, fps: float, package: dict) -> float | None:
+    """How hard the picture moves on a hit, against how much it moves the rest of the time.
+
+    For each hit, the largest frame-to-frame change in the three frames from the
+    hit on, divided by the clip's median change. A picture that eases through its
+    hits scores about 1; one that jumps on them scores several times that. None if
+    the bundle has no hits to judge by.
+    """
+    hits = [t for t in _hit_times(package) if 0.5 <= t < len(motion) / fps - 0.5]
+    typical = float(np.median(motion))
+    if len(hits) < 4 or typical < 1e-6:
+        return None
+    blows = [float(motion[int(round(t * fps)) : int(round(t * fps)) + 3].max()) for t in hits]
+    return float(min(np.median(blows) / typical, 50.0))
+
+
+def _composition(chunk: np.ndarray) -> np.ndarray:
+    """Where the brightness and the edges of a stretch of video sit in the frame.
+
+    Three maps on a 9x16 grid, averaged over the stretch: brightness, and the
+    strength of horizontal and of vertical edges. Averaging over time makes it a
+    description of the composition rather than of any one moment, so a pattern
+    that moves but keeps its shape gives the same answer throughout.
+    """
+    grey = _luma(chunk)
+    across = np.abs(np.diff(grey, axis=2, append=grey[:, :, -1:]))
+    down = np.abs(np.diff(grey, axis=1, append=grey[:, -1:, :]))
+    maps = []
+    for field in (grey, across, down):
+        cells = field.mean(axis=0).reshape(9, METRIC_H // 9, 16, METRIC_W // 16).mean(axis=(1, 3))
+        maps.append((cells - cells.mean()).ravel())
+    return np.concatenate(maps)
+
+
+def _look_change(frames: np.ndarray, fps: float, window_s: float = 4.0, apart_s: float = 8.0) -> float | None:
+    """How different the picture is from what it was eight seconds earlier.
+
+    Each four-second window is summarised by its composition (see above) and by its
+    colours. A window is compared with the one eight seconds on: half the score is
+    how unlike the two compositions are (1 minus their correlation), half is how
+    far apart the colours are. One composition held for a whole clip scores near 0,
+    however much it moves or pulses; a change of scene scores near 1. None for
+    clips too short to compare.
+    """
+    step = max(1, int(window_s * fps))
+    summaries = []
+    for start in range(0, len(frames) - step + 1, step):
+        chunk = frames[start : start + step : max(1, step // 20)]
+        bins = (chunk // 64).astype(np.int32)
+        hist = np.bincount((bins[..., 0] * 16 + bins[..., 1] * 4 + bins[..., 2]).ravel(), minlength=64).astype(np.float32)
+        summaries.append((hist / hist.sum(), _composition(chunk)))
+    gap = max(1, int(round(apart_s / window_s)))
+    flat = 0.002 * np.sqrt(3 * 9 * 16)  # below this a composition is featureless: nothing to correlate
+    scores = []
+    for a, b in zip(summaries[:-gap], summaries[gap:]):
+        size_a, size_b = float(np.linalg.norm(a[1])), float(np.linalg.norm(b[1]))
+        if size_a < flat and size_b < flat:
+            alike = 1.0
+        elif size_a < flat or size_b < flat:
+            alike = 0.0
+        else:
+            alike = max(float(a[1] @ b[1]) / (size_a * size_b), 0.0)
+        scores.append(0.5 * (1.0 - alike) + 0.5 * 0.5 * float(np.abs(a[0] - b[0]).sum()))
+    return float(np.mean(scores)) if scores else None
+
+
+def _palette(frames: np.ndarray) -> tuple[float, float, float]:
+    """Three things about colour and tone that the eye judges at a glance.
+
+    - one-hue share: of the pixels with any real colour, the share that sits in the
+      commonest sixth of the colour wheel. Near 1 is a single-colour wash.
+    - contrast: the gap between the dark and the bright parts of a typical frame
+      (5th to 95th percentile of brightness). Low is flat, whatever the colour.
+    - wash: the share of the frame that is saturated mid-tone colour, neither dark
+      nor bright. High is the look of coloured fog.
+    """
+    sample = frames[:: max(1, len(frames) // 60)].astype(np.float32) / 255.0
+    top, bottom = sample.max(axis=-1), sample.min(axis=-1)
+    chroma = top - bottom
+    saturation = chroma / np.maximum(top, 1e-6)
+    r, g, b = sample[..., 0], sample[..., 1], sample[..., 2]
+    safe = np.maximum(chroma, 1e-6)
+    hue = np.where(top == r, ((g - b) / safe) % 6.0, np.where(top == g, (b - r) / safe + 2.0, (r - g) / safe + 4.0)) / 6.0
+    coloured = (saturation > 0.25) & (top > 0.15)
+    if coloured.mean() < 0.01:
+        one_hue = 0.0
+    else:
+        counts = np.bincount((hue[coloured] * 12).astype(int) % 12, minlength=12).astype(np.float64)
+        pairs = counts + np.roll(counts, 1)  # a sixth of the wheel: two neighbouring twelfths
+        one_hue = float(pairs.max() / counts.sum())
+    luma = _luma(frames[:: max(1, len(frames) // 60)])
+    contrast = float(np.mean(np.percentile(luma, 95, axis=(1, 2)) - np.percentile(luma, 5, axis=(1, 2))))
+    wash = float(((saturation > 0.5) & (luma > 0.2) & (luma < 0.7)).mean())
+    return one_hue, contrast, wash
+
+
 def _best_correlation(a: np.ndarray, b: np.ndarray, fps: float, max_lag_s: float = 0.25):
     """Peak normalised correlation of two series within a small lag window.
 
@@ -185,7 +309,8 @@ def compute(frames: np.ndarray, fps: float, package: dict) -> dict:
         if corr > sync:
             sync, sync_lag = corr, lag
 
-    return {
+    one_hue, contrast, wash = _palette(frames)
+    out = {
         "frames": n,
         "mean_luma": float(frame_luma.mean()),
         "black_fraction": float((frame_luma < 0.02).mean()),
@@ -200,4 +325,14 @@ def compute(frames: np.ndarray, fps: float, package: dict) -> dict:
         "variety": _variety(frames, fps),
         "audio_sync": float(sync),
         "audio_sync_lag_s": float(sync_lag),
+        "one_hue_share": one_hue,
+        "contrast": contrast,
+        "wash": wash,
     }
+    # Left out, not zero, when there is nothing to judge them by.
+    punch, look_change = _punch(motion, fps, package), _look_change(frames, fps)
+    if punch is not None:
+        out["punch"] = punch
+    if look_change is not None:
+        out["look_change"] = look_change
+    return out
