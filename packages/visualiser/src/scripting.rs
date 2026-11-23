@@ -1050,7 +1050,7 @@ mesh.cube = || {{
     entity.materialParams = #{{}};
     entity.lit = true;
     entity.emissive = 0.0;
-    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, radius_x: 1.0, radius_z: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
+    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
 
     // Instance method - creates a new entity sharing geometry with copied properties
     entity.instance = || {{
@@ -1104,7 +1104,7 @@ mesh.plane = || {{
     entity.materialParams = #{{}};
     entity.lit = true;
     entity.emissive = 0.0;
-    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, radius_x: 1.0, radius_z: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
+    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
 
     // Instance method - creates a new entity sharing geometry with copied properties
     entity.instance = || {{
@@ -1158,7 +1158,7 @@ mesh.sphere = || {{
     entity.materialParams = #{{}};
     entity.lit = true;
     entity.emissive = 0.0;
-    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, radius_x: 1.0, radius_z: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
+    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
 
     // Instance method - creates a new entity sharing geometry with copied properties
     entity.instance = || {{
@@ -1213,7 +1213,7 @@ mesh.load = |asset_id| {{
     entity.materialParams = #{{}};
     entity.lit = true;
     entity.emissive = 0.0;
-    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, radius_x: 1.0, radius_z: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
+    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
 
     // Instance method - creates a new entity sharing geometry with copied properties
     entity.instance = || {{
@@ -1285,7 +1285,7 @@ radial.ring = |options| {{
     entity.materialParams = #{{}};
     entity.lit = true;
     entity.emissive = 0.0;
-    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, radius_x: 1.0, radius_z: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
+    entity.shadow = #{{ enabled: false, plane_y: 0.0, opacity: 0.5, radius: 1.0, softness: 0.3, offset_x: 0.0, offset_z: 0.0, color: #{{ r: 0.0, g: 0.0, b: 0.0 }} }};
 
     // Setter methods for fluent API
     entity.set_radius = |r| {{ this.__radius = r; this }};
@@ -2662,6 +2662,17 @@ feedback.is_enabled = || {{
                         {
                             mesh.shadow.opacity = opacity;
                         }
+                        // "radius" sets both axes. "radius_x" and "radius_z" are unset
+                        // by default and, once a script sets one, override "radius"
+                        // for that axis. The order matters: "radius" always has a
+                        // value, so applying it last would undo the per-axis radii.
+                        if let Some(radius) = shadow_map
+                            .get("radius")
+                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
+                        {
+                            mesh.shadow.radius_x = radius;
+                            mesh.shadow.radius_z = radius;
+                        }
                         if let Some(radius_x) = shadow_map
                             .get("radius_x")
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
@@ -2673,14 +2684,6 @@ feedback.is_enabled = || {{
                             .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
                         {
                             mesh.shadow.radius_z = radius_z;
-                        }
-                        // Also support single "radius" for uniform shadows
-                        if let Some(radius) = shadow_map
-                            .get("radius")
-                            .and_then(|d| eval_f32_opt(d, &mut eval_ctx, &mut frame_cache))
-                        {
-                            mesh.shadow.radius_x = radius;
-                            mesh.shadow.radius_z = radius;
                         }
                         if let Some(softness) = shadow_map
                             .get("softness")
@@ -4360,6 +4363,74 @@ mod tests {
         // Check rotation was set
         let (_, entity) = engine.scene_graph.scene_entities().next().unwrap();
         assert!((entity.transform().rotation.y - 1.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_shadow_radius_per_axis_overrides_uniform() {
+        let mut engine = ScriptEngine::new();
+
+        let script = r#"
+            let untouched = mesh.cube();
+            let uniform = mesh.cube();
+            let ellipse = mesh.cube();
+            let mixed = mesh.cube();
+            let instanced;
+
+            fn init(ctx) {
+                untouched.position.x = 0.0;
+                scene.add(untouched);
+
+                uniform.position.x = 1.0;
+                uniform.shadow.radius = 1.5;
+                scene.add(uniform);
+
+                ellipse.position.x = 2.0;
+                ellipse.shadow.radius_x = 2.5;
+                ellipse.shadow.radius_z = 0.5;
+                scene.add(ellipse);
+
+                // Per-axis wins whichever is assigned first.
+                mixed.position.x = 3.0;
+                mixed.shadow.radius_x = 3.0;
+                mixed.shadow.radius = 2.0;
+                scene.add(mixed);
+
+                instanced = ellipse.instance();
+                instanced.position.x = 4.0;
+                scene.add(instanced);
+            }
+
+            fn update(dt, frame) {
+            }
+        "#;
+
+        assert!(engine.load_script(script));
+        run_update(&mut engine, &make_signals(0.0, 0.016, 0.0, 0.0));
+
+        // Keyed by the x position each mesh was given above.
+        let mut radii: Vec<(f32, f32, f32)> = engine
+            .scene_graph
+            .meshes()
+            .map(|(_, mesh)| {
+                (
+                    mesh.transform.position.x,
+                    mesh.shadow.radius_x,
+                    mesh.shadow.radius_z,
+                )
+            })
+            .collect();
+        radii.sort_by(|a, b| a.0.total_cmp(&b.0));
+
+        assert_eq!(
+            radii,
+            vec![
+                (0.0, 1.0, 1.0), // untouched: the default radius
+                (1.0, 1.5, 1.5), // uniform radius sets both axes
+                (2.0, 2.5, 0.5), // per-axis radii are used as given
+                (3.0, 3.0, 2.0), // radius_x overrides radius; z follows radius
+                (4.0, 2.5, 0.5), // an instance copies its source's shadow
+            ]
+        );
     }
 
     #[test]

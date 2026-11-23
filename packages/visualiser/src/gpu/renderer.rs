@@ -916,10 +916,12 @@ impl Renderer {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format,
-                    // Multiply blend for shadow (darkens the background)
+                    // The shadow colour is laid over the background by its alpha
+                    // (opacity x edge falloff). For the default black shadow this is
+                    // background * (1 - alpha): a plain darkening.
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::Zero,
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
                             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                             operation: wgpu::BlendOperation::Add,
                         },
