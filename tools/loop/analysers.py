@@ -5,6 +5,7 @@ An analyser is a function `(audio_path, params) -> dict` that returns any of:
     onsets    list of (time_s, weight)
     kinds     list of "percussive" or "soft", one per onset (optional)
     beats     list of time_s
+    downbeats list of time_s (optional)
     bpm       float
     sections  list of boundary time_s
     stems     dict of name -> mono float array at STEM_RATE ("drums", "bass", "other")
@@ -20,6 +21,7 @@ any serious analyser should beat them.
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 from pathlib import Path
 
@@ -126,12 +128,40 @@ def bandsplit(audio: Path, params: dict | None = None) -> dict:
     return dict(stems={name: _istft(spec * m, n_fft, hop, len(x)) for name, m in masks.items()})
 
 
+_beat_this_model = None
+
+
+def beat_this(audio: Path, params: dict | None = None) -> dict:
+    """Beats and downbeats from the Beat This model (Foscarin, Schlueter and Widmer, 2024).
+
+    A trained transformer, run locally on the CPU. Needs the optional model
+    environment: see tools/loop/models/setup.sh.
+    """
+    global _beat_this_model
+    if _beat_this_model is None:
+        import torch
+        from beat_this.inference import Audio2Beats
+
+        torch.set_num_threads(1)  # the accuracy loop already runs one analysis per core
+        _beat_this_model = Audio2Beats(checkpoint_path="final0", device="cpu", dbn=False)
+    beats, downbeats = _beat_this_model(decode(audio), STEM_RATE)
+    bpm = float(60.0 / np.median(np.diff(beats))) if len(beats) > 1 else 0.0
+    return dict(beats=[float(b) for b in beats], downbeats=[float(b) for b in downbeats], bpm=bpm)
+
+
 ANALYSERS = {
     "standin": standin,
     "energy": energy,
     "novelty": novelty,
     "bandsplit": bandsplit,
 }
+
+# Model-based analysers are registered only where their packages are installed, so
+# the loop runs without them. Use the model environment's Python to include them.
+MODELS = set()
+if importlib.util.find_spec("beat_this") and importlib.util.find_spec("torch"):
+    ANALYSERS["beat_this"] = beat_this
+    MODELS.add("beat_this")
 
 # Which analysers accept the tunable parameter set of analyse.py.
 TUNABLE = {"standin"}

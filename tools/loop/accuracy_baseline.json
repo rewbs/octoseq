@@ -10,9 +10,10 @@
     },
     "beats": {
       "analyser": "standin",
-      "score": 0.9433,
+      "score": 0.9332,
       "candidates": {
-        "standin": 0.9433
+        "standin": 0.9332,
+        "beat_this": 0.9301
       }
     },
     "sections": {
@@ -48,6 +49,9 @@
     "attack_window_s": 0.3,
     "soft_attack_s": 0.04,
     "soft_shift_s": 0.0,
-    "retime_soft": false
+    "retime_soft": false,
+    "beat_tracker": "grid",
+    "beat_tightness": 100.0,
+    "beat_auto_margin": 0.9
   }
 }

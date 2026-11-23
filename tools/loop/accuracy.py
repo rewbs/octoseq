@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import time
@@ -104,26 +105,37 @@ def score_split(results: dict, tracks: list[dict], variant_names: tuple[str, ...
     """Scores for one analyser on one split: per variant, plus the mean over variants."""
     out: dict = {"variants": {}}
     for variant in variant_names:
-        tallies, beats, sections = [], [], []
+        tallies, beats, sections, downbeats = [], [], [], []
         for track in tracks:
             result = results[track["id"]][variant]
             ref = track["reference"]
             if result.get("onsets") is not None:
                 tallies.append(score.onset_tallies(ref["merged"], [t for t, _ in result["onsets"]], kinds=result.get("kinds")))
-            if result.get("beats") is not None and ref["grid"]["steady_tempo"]:
-                beats.append(score.beat_scores(ref["grid"]["beats"], result["beats"], ref["grid"]["bpm"], result.get("bpm") or 0.0))
+            if result.get("beats") is not None and len(ref["grid"]["beats"]) > 8:
+                b = score.beat_scores(ref["grid"]["beats"], result["beats"], ref["grid"]["bpm"], result.get("bpm") or 0.0)
+                b["steady"] = ref["grid"]["steady_tempo"]
+                beats.append(b)
+                if result.get("downbeats") and len(ref["grid"]["downbeats"]) > 4:
+                    downbeats.append(score._f(np.array(ref["grid"]["downbeats"]), np.array(result["downbeats"]), score.BEAT_TOLERANCE_S)[2])
             if result.get("sections") is not None and len(ref["sections"]) > 1:
                 sections.append(score.section_scores(ref["sections"], result["sections"]))
         entry: dict = {}
         if tallies:
             entry["onsets"] = score.onset_summary(score.pool(tallies))
         if beats:
+            # Tempo is only well defined where the reference grid is regular. Beat F is
+            # scored on every module, including those with short bars or tempo slides.
+            steady = [b for b in beats if b["steady"]] or beats
+            irregular = [b for b in beats if not b["steady"]]
             entry["beats"] = dict(
                 f=round(float(np.mean([b["f"] for b in beats])), 4),
                 best_f=round(float(np.mean([b["best_f"] for b in beats])), 4),
-                tempo_exact=round(float(np.mean([abs(b["tempo_ratio"] - 1) < 0.02 for b in beats])), 4),
-                tempo_octave=round(float(np.mean([min(abs(b["tempo_ratio"] * m - 1) for m in (1 / 3, 0.5, 1, 2, 3)) < 0.02 for b in beats])), 4),
-                tracks=len(beats),
+                best_f_steady=round(float(np.mean([b["best_f"] for b in steady])), 4),
+                best_f_irregular=round(float(np.mean([b["best_f"] for b in irregular])), 4) if irregular else None,
+                tempo_exact=round(float(np.mean([abs(b["tempo_ratio"] - 1) < 0.02 for b in steady])), 4),
+                tempo_octave=round(float(np.mean([min(abs(b["tempo_ratio"] * m - 1) for m in (1 / 3, 0.5, 1, 2, 3)) < 0.02 for b in steady])), 4),
+                tracks=len(beats), irregular_tracks=len(irregular),
+                downbeat_f=round(float(np.mean(downbeats)), 4) if downbeats else None,
             )  # fmt: skip
         if sections:
             entry["sections"] = {k: round(float(np.mean([s[k] for s in sections])), 4) for k in ("f_0.5s", "f_3s")} | {"tracks": len(sections)}
@@ -273,7 +285,7 @@ def instrument_checks(tracks: list[dict], check_determinism: bool) -> list[dict]
         worst_offset = max(offsets)
         add("degraded variants stay aligned with the original", worst_offset[0] <= 2.0, f"worst shift {worst_offset[0]:.2f} ms ({worst_offset[1]})")
 
-    engine = ROOT / "packages" / "visualiser" / "target" / "release" / "visualiser"
+    engine = ROOT / "packages" / "visualiser" / "target" / "release" / ("visualiser" + modref.EXE)
     scene = ROOT / "example-scripts" / "01-spectral-flower.rhai"
     if synthetic and engine.exists() and scene.exists():
         import perfect_bundle
@@ -284,7 +296,7 @@ def instrument_checks(tracks: list[dict], check_determinism: bool) -> list[dict]
                "--fps", "10", "--width", "160", "--height", "90", "--duration", "1", "--quiet"]  # fmt: skip
         result = subprocess.run(cmd, capture_output=True, text=True)
         rendered = len(list(frames.glob("frame_*.png"))) if frames.exists() else 0
-        subprocess.run(["rm", "-rf", str(frames)], check=False)
+        shutil.rmtree(frames, ignore_errors=True)
         add("engine renders a scene from a perfect bundle", result.returncode == 0 and rendered > 0, f"{rendered} frames" if result.returncode == 0 else result.stderr.strip()[-200:])
 
     if check_determinism and tracks:
@@ -293,7 +305,8 @@ def instrument_checks(tracks: list[dict], check_determinism: bool) -> list[dict]
         for directory in (first, again):
             modref.render(t["path"], directory, stems=True)
         same = all(modref.sha256(first / name) == modref.sha256(again / name) for name in ("mix.wav", "events.json", "stems/ch00.wav"))
-        subprocess.run(["rm", "-rf", str(first), str(again)], check=False)
+        for directory in (first, again):
+            shutil.rmtree(directory, ignore_errors=True)
         add("module rendering is deterministic", same, "two renders identical" if same else "two renders differ")
     return checks
 
@@ -450,6 +463,10 @@ def write_scoreboard(report: dict, gates: dict) -> None:
         beats = scores[name]["heldout"]["variants"]["clean"]["beats"]
         row("Beats", "F at any metrical level, mean over variants", f"{chosen['beats']['score']:.3f}", f"at least {gates['beat_f']['min']}", chosen["beats"]["score"] >= gates["beat_f"]["min"], name)
         row("Beats", "F at the module's own level", f"{beats['f']:.3f}", "tracked", None, name)
+        if beats.get("best_f_irregular") is not None:
+            row("Beats", f"F at any level on the {beats['irregular_tracks']} modules with irregular beat grids", f"{beats['best_f_irregular']:.3f}", "tracked", None, name)
+        if beats.get("downbeat_f") is not None:
+            row("Beats", "downbeat F against the module's own bar setting", f"{beats['downbeat_f']:.3f}", "tracked", None, name)
         row("Beats", "tempo right at some metrical level", f"{beats['tempo_octave'] * 100:.0f}%", f"at least {gates['tempo_right']['min'] * 100:.0f}%", beats["tempo_octave"] >= gates["tempo_right"]["min"], name)
     if "sections" in chosen:
         name = chosen["sections"]["analyser"]
@@ -510,8 +527,11 @@ def run(args, params: dict | None = None, pool=None) -> dict:
         scores: dict = {}
         timed = [n for n in names if n != "bandsplit"]
         for split, tracks in splits.items():
-            results = analyse_all(timed, tracks, variant_names, params, pool)
-            for name in timed:
+            # Models are slow and are never tuned here, so they are only run where
+            # they are judged: on the held-out split.
+            run_here = [n for n in timed if split == "heldout" or n not in analysers.MODELS]
+            results = analyse_all(run_here, tracks, variant_names, params, pool)
+            for name in run_here:
                 scores.setdefault(name, {})[split] = score_split(results[name], tracks, variant_names)
         if not args.quick:
             for name in names:

@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 SAMPLE_RATE = 22050
-ANALYSER_VERSION = "standin-6"
+ANALYSER_VERSION = "standin-7"
 
 # Every tunable setting of the analysis. tools/loop/tune.py searches these against
 # tracker-module ground truth; if it finds a better set it writes params.json next
@@ -38,6 +38,9 @@ DEFAULT_PARAMS = {
     "soft_attack_s": 0.04,  # a measured rise slower than this makes the event "soft"
     "soft_shift_s": 0.0,  # added to the time of soft events, to cancel systematic lateness
     "retime_soft": False,  # move soft events to the middle of their rise (see profile_attacks)
+    "beat_tracker": "grid",  # "grid": one tempo and phase throughout; "follow": see follow_beats; "auto": whichever fits
+    "beat_tightness": 100.0,  # for "follow": how strongly beats are held to the estimated tempo
+    "beat_auto_margin": 0.9,  # for "auto": keep the grid unless it catches less than this share of what following does
 }
 PARAMS_FILE = Path(__file__).parent / "params.json"
 
@@ -272,6 +275,44 @@ def estimate_tempo(onset: np.ndarray, frame_rate: float) -> tuple[float, float]:
     return best_bpm, best_phase
 
 
+def follow_beats(onset: np.ndarray, frame_rate: float, bpm: float, tightness: float) -> list[float]:
+    """Beats that follow the music rather than a fixed grid.
+
+    Dynamic programming over the onset envelope (after Ellis, 2007): each beat is
+    placed to land on strong onsets while staying close to one tempo period after
+    the previous beat. Unlike a fixed grid it can re-align after a bar that is cut
+    short and can follow a tempo that drifts.
+
+    Not used by default. On training modules, choosing automatically between this
+    and the fixed grid lifted modules with irregular beat grids from 0.81 to 0.90
+    for little cost elsewhere, but on held-out modules it scored below the plain
+    grid (0.927 against 0.933), so it did not earn its place.
+    """
+    n = len(onset)
+    period = 60.0 / bpm * frame_rate
+    spread = float(onset.std()) or 1.0
+    local = onset / spread
+    score = local.copy()
+    back = np.full(n, -1, dtype=np.int64)
+    lo_off, hi_off = int(round(2.0 * period)), max(1, int(round(0.5 * period)))
+    offsets = np.arange(-lo_off, -hi_off + 1)
+    penalty = -tightness * np.log(-offsets / period) ** 2
+    for t in range(hi_off, n):
+        first = max(0, lo_off - t)  # drop candidates before the start of the track
+        candidates = score[t + offsets[first:]] + penalty[first:]
+        best = int(np.argmax(candidates))
+        if candidates[best] > 0:
+            score[t] = local[t] + candidates[best]
+            back[t] = t + offsets[first + best]
+    tail = max(0, n - int(round(period)))
+    t = tail + int(np.argmax(score[tail:]))
+    beats = []
+    while t >= 0:
+        beats.append(t)
+        t = int(back[t])
+    return [float(b) / frame_rate for b in reversed(beats)]
+
+
 def _signal(name: str, values: np.ndarray, frame_rate: float) -> dict:
     return {"name": name, "rate": frame_rate, "values": np.round(values, 5).tolist()}
 
@@ -301,9 +342,18 @@ def _core(audio: Path, params: dict) -> dict:
 
 def detect(audio: Path, params: dict | None = None) -> dict:
     """Onsets and beat grid only, for the accuracy loop. Times in seconds."""
-    core = _core(audio, params or load_params())
+    params = params or load_params()
+    core = _core(audio, params)
     period = 60.0 / core["bpm"]
     beats = np.arange(core["first_beat"], core["duration"], period)
+    if params["beat_tracker"] in ("follow", "auto"):
+        followed = follow_beats(core["onset"], core["frame_rate"], core["bpm"], params["beat_tightness"])
+        # "auto": a regular grid is the better answer for regular music, because it
+        # carries straight through quiet passages. Following is only preferred when
+        # the grid visibly misses onsets that following catches.
+        caught = lambda times: float(np.interp(np.asarray(times) * core["frame_rate"], np.arange(len(core["onset"])), core["onset"]).mean()) if len(times) else 0.0  # noqa: E731
+        if params["beat_tracker"] == "follow" or caught(beats) < params["beat_auto_margin"] * caught(followed):
+            beats = followed
     return dict(
         duration=core["duration"], bpm=core["bpm"], beats=[float(b) for b in beats],
         onsets=[(float(t), float(w)) for t, w in core["peaks"]],

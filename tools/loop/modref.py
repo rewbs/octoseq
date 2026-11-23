@@ -23,12 +23,14 @@ import hashlib
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
-MODRENDER = ROOT / ".loop" / "bin" / "modrender"
+EXE = ".exe" if sys.platform == "win32" else ""  # so the same paths work on Windows
+MODRENDER = ROOT / ".loop" / "bin" / ("modrender" + EXE)
 REFERENCE_VERSION = "ref-8"
 # The single time an event is taken to be "heard" at: halfway up its rise. For a fast
 # attack this is within a millisecond or two of the onset, the steepest rise and the

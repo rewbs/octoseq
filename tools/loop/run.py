@@ -39,7 +39,7 @@ import perfect_bundle  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 LOOP_DIR = ROOT / ".loop"
 ENGINE_DIR = ROOT / "packages" / "visualiser"
-ENGINE = ENGINE_DIR / "target" / "release" / "visualiser"
+ENGINE = ENGINE_DIR / "target" / "release" / ("visualiser.exe" if sys.platform == "win32" else "visualiser")
 GATES = Path(__file__).parent / "gates.json"
 BASELINE = Path(__file__).parent / "baseline.json"
 
