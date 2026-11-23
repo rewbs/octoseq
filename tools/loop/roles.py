@@ -38,24 +38,18 @@ events and `energy` being a signal on every bundle.
               section_progress  0 to 1 across each section
               section_intensity how loud each section is against the loudest, held for the section
 
-`standin_bundle_cached` builds the bundle the render loop uses for an audio file: the
-stand-in analysis plus drum hits and sections from the analysers the accuracy loop
-scores (for each, the one that does best on held-out modules of those this machine
-can run). It is the seed of the analysis worker (chunk 1g), not the worker itself.
+Which analyser supplies those facts, and where the finished bundle is kept, is the
+analysis worker's business (worker.py).
 """
 
 from __future__ import annotations
 
-import json
-import subprocess
-import sys
 from pathlib import Path
 
 import numpy as np
 
 import analyse
 import analysers
-import stems as stem_sources
 
 ROLES_VERSION = "roles-4"
 DERIVED_RATE = 50.0  # samples per second of the derived signals: smooth at any frame rate
@@ -230,83 +224,3 @@ def stem_levels(files: dict[str, Path], params: dict) -> tuple[list[dict], list[
         for feature, values in (("amplitude", amplitude), ("energy", amplitude**2)):
             signals.append({"stemId": stem_id, "label": label.capitalize(), "feature": feature, "rate": frame_rate, "values": np.round(values, 5).tolist()})
     return signals, available
-
-
-def local_stems(audio: Path) -> dict[str, Path] | None:
-    """The stems local Demucs separates from a track, or None where it cannot run.
-
-    Separation is kept in the stem cache, so a track pays for it once. When this
-    Python has no Demucs but the model environment exists, the separation is run
-    there. With neither, the caller falls back to listening to the mix.
-    """
-    try:
-        return dict(stem_sources.separate("demucs", audio).files)
-    except stem_sources.Unavailable:
-        if not MODEL_PYTHON.exists():
-            return None
-    done = subprocess.run([str(MODEL_PYTHON), str(Path(__file__).with_name("stems.py")), "demucs", str(audio)], capture_output=True, text=True, stdin=subprocess.DEVNULL)
-    if done.returncode != 0:
-        print(f"drum stem: local Demucs failed on {audio.name}, using the mix ({done.stderr.strip().splitlines()[-1] if done.stderr.strip() else 'no message'})", file=sys.stderr)
-        return None
-    try:
-        return dict(stem_sources.separate("demucs", audio).files)
-    except stem_sources.StemError:
-        return None
-
-
-def local_drum_stem(audio: Path) -> Path | None:
-    """The drum stem alone (see `local_stems`)."""
-    return (local_stems(audio) or {}).get("drums")
-
-
-def standin_bundle_cached(audio: Path, cache_dir: Path, drum_source: str | None = None) -> Path:
-    """The bundle the render loop uses for an audio file, with roles. Built once and reused.
-
-    The stand-in analysis, plus kick/snare/hat and section starts, each from an
-    analyser registered in analysers.py. Drum hits are heard in the drum stem that
-    local Demucs separates when that can run (0.73 against 0.57 for the mix on the
-    scoreboard's held-out modules), and in the mix otherwise; `drum_source` ("stem"
-    or "mix") forces one. Where the stem is all but silent the track has no drums,
-    and the mix is used after all: its low, middle and high bands then stand in for
-    kick, snare and hat, so that scenes built on drums still move to drumless
-    music. The bundle records which in `drumSource`. The stems are
-    not put in the bundle, so there is no `drums` role, and there are no downbeats,
-    so no `downbeat` or `bar_phase`.
-    """
-    params = analyse.load_params()
-    forced = drum_source is not None
-    stems = None if drum_source == "mix" else local_stems(audio)
-    drum_stem = (stems or {}).get("drums")
-    if drum_source == "stem" and drum_stem is None:
-        raise stem_sources.Unavailable("no drum stem: local Demucs cannot run here (tools/loop/models/setup.sh)")
-    drum_source = "stem" if drum_stem else "mix"
-    drum_params = analysers.drum_params(drum_source)
-    drum_key = analyse.params_key(drum_params) + (("-stem-forced" if forced else f"-stem-or-mix{DRUMLESS_DB:g}") if drum_stem else "") + ("-stemlevels2" if stems else "")
-    key = f"{analyse.file_sha256(audio)[:16]}-{analyse.ANALYSER_VERSION}-{analyse.params_key(params)}-{ROLES_VERSION}-{drum_key}-novelty_grid"
-    out = cache_dir / key / "package.json"
-    if out.exists():
-        return out
-    package = analyse.analyse(audio, params)
-    grid = analyse.detect(audio, params)
-    heard = analysers.decode(drum_stem or audio)
-    if drum_stem and not forced:
-        mix = analysers.decode(audio)
-        level = 20.0 * np.log10(max(float(np.sqrt(np.mean(heard**2))), 1e-9) / max(float(np.sqrt(np.mean(mix**2))), 1e-9))
-        if level < DRUMLESS_DB:
-            heard, drum_source, drum_params = mix, "mix (no drums in the track)", analysers.drum_params("mix")
-    hits = analysers.drum_hits(analysers.drum_envelopes(heard), drum_params)
-    package["drumSource"] = drum_source
-    if stems:
-        # The band taken apart: each stem's level goes in, so a scene can follow the
-        # drums, the bass, the voice and the rest separately.
-        package["stemSignals"], package["availableStems"] = stem_levels(stems, params)
-    starts = analysers.novelty_grid(audio)["sections"]
-    bind(
-        package,
-        beats=grid["beats"],
-        sections=[(0.0, 1.0)] + [(t, 0.5) for t in starts],
-        drums={kind: [(t, 1.0) for t in times] for kind, times in hits.items()},
-    )
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(package))
-    return out

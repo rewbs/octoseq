@@ -23,6 +23,7 @@ import director  # noqa: E402
 import motion  # noqa: E402
 import show as shows  # noqa: E402
 import metrics  # noqa: E402
+import worker  # noqa: E402
 
 FPS = 30
 H, W = metrics.METRIC_H, metrics.METRIC_W
@@ -235,7 +236,7 @@ if __name__ == "__main__":
     test_analyser()
     test_metrics()
     test_director()
-    for name, ok, detail in motion.selftest() + shows.selftest():
+    for name, ok, detail in motion.selftest() + shows.selftest() + worker.selftest():
         check(name, ok, detail)
     print(f"\n{len(failures)} failed" if failures else "\nall instrument checks passed")
     sys.exit(1 if failures else 0)

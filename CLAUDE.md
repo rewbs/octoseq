@@ -197,6 +197,11 @@ python3 tools/loop/accuracy.py   # score analysis timing against tracker-module 
   acts once a step must be scaled to the step's length, or it runs four times as fast
   at 120 steps a second; the render loop checks that a 30 fps render made with
   `--step-rate 120` is the 120 fps render, byte for byte.
+- An audio file's analysis bundle is made once by `tools/loop/worker.py` and kept in
+  `.loop/analysis`; shows are only reproducible while it is. Do not clear that
+  directory casually. The worker takes each part's analyser from
+  `accuracy_baseline.json`, so saving the accuracy baseline is what changes how later
+  bundles are made.
 - Stem sources live behind `tools/loop/stems.py`. The hosted ones cost money per new
   file: results are cached and their scores recorded, so never clear
   `.loop/cache/stems` casually. Keys come from the environment or `.env`; never

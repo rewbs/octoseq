@@ -57,6 +57,40 @@ old picture's trails bend towards the new scene's motion while the new scene
 arrives. A show's segment asks for one with `"transition": <seconds>`; without it
 the segment cuts in.
 
+### The bundle and the worker
+
+`tools/loop/worker.py` makes a track's analysis bundle: its signals, its events and
+the roles they are bound to.
+
+```bash
+python3 tools/loop/worker.py analyse data/dontstop.mp3      # make the bundle, or say where it is
+python3 tools/loop/worker.py show data/dontstop.mp3         # what made each part of it
+python3 tools/loop/worker.py choices                        # which analyser does each part here, and why
+python3 tools/loop/worker.py analyse song.mp3 --reanalyse   # a new bundle; the old one is kept
+python3 tools/loop/worker.py analyse song.mp3 --stems user --stem-dir song.stems
+```
+
+A bundle has five parts: onsets, beats, sections, drum hits and stems. Each comes
+from one analyser, and the worker does not decide which. It reads the scores the
+accuracy loop saved (`accuracy_baseline.json`) and takes the best that can run on the
+machine, with three rules on top: a hosted service is never picked on its own,
+because it bills for every new file; a tie goes to whatever is cheapest to run; and
+a stem separation under the scoreboard's target is left out. So registering a better
+analyser changes what the worker uses the next time the accuracy baseline is saved,
+with nothing to change here.
+
+A bundle is made once for each audio file and kept in `.loop/analysis/`. A model does
+not give the same answer twice, so a show keeps rendering the same frames only if its
+track's bundle is kept. `video.py` uses the stored bundle even when the analysis has
+since improved, and says so; `--reanalyse` makes a new one. The render loop is the
+exception: its job is to measure the analysis as it now is, so it replaces a bundle
+that an older analysis made. A replaced bundle goes to the track's history, and a
+show made on it is still played on it.
+
+Every bundle records what made each part, and is checked before it is stored
+(`worker.py check`): a role bound to something the bundle does not have is refused
+by the worker, not discovered by a scene.
+
 ### Frame rate and step rate
 
 The engine steps once for each frame it saves unless told otherwise, and a scene
@@ -463,7 +497,7 @@ Figures are held-out results from the scoreboard when this plan was written.
 | **1d. Sections** (not done) | Boundary F within 3 s at least 0.75; at least one real analyser registered. It stands at 0.54 (`novelty_grid`: the first detector's boundaries moved onto a sixteen-beat grid, which the bundle now uses), up from 0.52. A second signal-processing analyser led on training and lost on held-out modules; a learned detector did worse; the All-In-One model would not install on this machine. The reference may also be too fine-grained to be the right target (D49) | A Music.ai key; a decision on D49 |
 | **1e. Stems** (done, one provider unverified)               | User-supplied stems, the three hosted providers and one local model all registered as analysers; the best improves on the unseparated mix by at least 3 dB against true stems. Met: LALAL.AI improves on the mix by 17.9 dB, local Demucs by 6.3 dB and Demucs on fal.ai by 6.1 dB, against 2.5 dB for the band-split baseline. LALAL.AI and fal.ai are verified against the live services; Music.ai is written from its documentation and has not been run | A Music.ai key and workflow, to verify that adaptor                |
 | **1f. Drum hits by type** (done) | The reference and scorer extended to kick, snare and hat; at least one analyser scored on it. Two are: a detector on the full mix scores a mean F of 0.57 on held-out modules (kick 0.47, snare 0.46, hat 0.79), and the same detector on the drum stem Demucs separates scores 0.73 (kick 0.74, snare 0.59, hat 0.85) | None |
-| **1g. Bundle and worker**                                   | Bundle schema validates; the worker assembles the bundle from the best analyser per part as chosen by the accuracy loop; a stored bundle is reused, never recomputed; every scoreboard target met or its shortfall explained in the queue                                                                                                                                                                                                        | None                                                               |
+| **1g. Bundle and worker** (done)                                   | Bundle schema validates; the worker assembles the bundle from the best analyser per part as chosen by the accuracy loop; a stored bundle is reused, never recomputed; every scoreboard target met or its shortfall explained in the queue. Done: `tools/loop/worker.py` (D104). On this machine it picks the analysers the bundles already used and makes the same bundle for both test tracks as the code it replaced. Three targets are unmet and the queue says why: beats and tempo (D29), sections (D49)                                                                                                                                                                                                        | None                                                               |
 | **2. Role binding** (done) | Engine tests pass; a scene asking for an unavailable role fails with a clear error; every scene renders on every track. Scenes declare roles and read `roles.<name>`; bundles bind sixteen of them; the accuracy loop checks on every run that a role-reading scene renders and that one needing a missing role is refused by name | None |
 | **3. Feedback-first rendering** (done) | No hard-gate failures on any scene. Active area and jerkiness targets met on a reference scene; deterministic; the WASM build still compiles. Done: feedback is bounded by default; a blend mode draws each frame over the last, so the previous frame is the base layer; warps no longer shear on a wide frame; and a reference scene, `scenes/vortex.rhai`, meets every gate and target on three of four default tracks, deterministically, with the WASM build compiling. Blended transitions between the scenes of a show are done (both scenes draw, and their pictures and warp fields are mixed in one feedback loop; the loop checks a blend shows both scenes and leaves the background alone, and that a cut does neither). Feedback settings mean the same at any frame rate (D97); the engine can take several steps a frame, so that a 30 fps render is the 120 fps picture (`--step-rate`, D98); and the loop is kept in 16-bit float between steps (D99). Everything is drawn in 16-bit float and tone-mapped in one last pass (D102), and a shutter averages the steps of a frame for motion blur (D103). Whether the tunnel example still whites out (D55) cannot be checked until that scene runs at all (D72). The five older example scenes still fail as before | None |
 | **4. Scenes, director, one command** (first version out for review) | Every scene passes hard gates and targets over whole tracks, first on perfect bundles and then on analysed bundles of the same modules; audio sync on the analysed bundle within 10% of the perfect bundle; two runs of the director differ; each resulting show re-renders identically. Done: three scenes with a shared style line, a rule-based director, and `video.py`. Directed shows pass every hard gate on all four default tracks, differ from run to run and re-render identically. Over whole tracks (one run by hand, 23 November 2026, not yet part of the default loop): 24 clips, none fails a hard gate; the directed shows meet `punch`, `look_change` and `one_hue_share` on every track. `wash` was above its old limit on every directed show (0.23 to 0.33); it is no longer a target (D85). On analysed bundles of the two fixture modules, audio sync reaches the perfect bundle's on four of the six scene renders and is 70% and 83% of it on the other two; `punch` is 3.9 to 7.5 against about 8. That is with drum hits heard in the Demucs drum stem. Heard in the mix, as they were before, sync was within 10% on two of six and 40% to 74% on the rest, and `punch` 3.2 to 5.7. Scene changes inside a section are blended; the web preview cannot play a show yet, cut or blended | Review 2: rate the new videos |
@@ -473,9 +507,11 @@ every later number is more trustworthy on a wider corpus.
 
 ## Limits of the loops today
 
-- **Stand-in analysis.** `tools/loop/analyse.py` uses signal processing only: no
-  stems, no sections, a single global tempo. It exists so the loops can run before
-  chunk 1 delivers the real worker.
+- **Mostly signal processing.** The worker is built, but of the analysers it has to
+  choose from only the stems come from a model. Onsets, beats and sections are
+  signal processing, with a single global tempo, and beats and sections are short
+  of their targets. The bundle has no key, melody contour, vocal activity or
+  descriptions yet: nothing is registered that produces them.
 - **Two real test tracks.** `data/` has one 18-second and one 283-second track. The
   milestone 1 exit test needs ten.
 - **Rendering speed.** Software rendering is fine for 480x270 checks; full-resolution

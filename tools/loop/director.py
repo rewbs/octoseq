@@ -202,7 +202,7 @@ def describe(show: dict) -> str:
 
 def main() -> int:
     import perfect_bundle
-    import roles
+    import worker
     import run
 
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
@@ -215,7 +215,7 @@ def main() -> int:
     if track.suffix.lower() in run.MODULE_SUFFIXES:
         package_path = perfect_bundle.build(track) / "package.json"
     else:
-        package_path = roles.standin_bundle_cached(track, run.LOOP_DIR / "cache")
+        package_path = worker.bundle(track)
     show = direct(json.loads(package_path.read_text()), args.seed, vivid=args.vivid)
     show["bundle_sha256"] = hashlib.sha256(package_path.read_bytes()).hexdigest()
     path = write(show, args.out or SHOWS / f"{track.stem}-{show['seed']}{'-vivid' if args.vivid else ''}")

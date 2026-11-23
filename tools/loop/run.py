@@ -42,7 +42,7 @@ import director  # noqa: E402
 import metrics  # noqa: E402
 import motion  # noqa: E402
 import perfect_bundle  # noqa: E402
-import roles  # noqa: E402
+import worker  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 LOOP_DIR = ROOT / ".loop"
@@ -167,7 +167,7 @@ def run_pair(track: Path, scene: Path, run_dir: Path, gates: dict, args) -> dict
         package_path, audio = bundle / "package.json", bundle / perfect_bundle.AUDIO
         result["perfect_bundle"] = True
     else:
-        package_path = roles.standin_bundle_cached(track, LOOP_DIR / "cache")
+        package_path = worker.bundle(track, stale="reanalyse")
     package = json.loads(package_path.read_text())
     seconds = package["durationSec"]
     if args.seconds > 0:
@@ -295,7 +295,7 @@ def light_checks(track: Path, out: Path, args) -> list[dict]:
         bundle = perfect_bundle.build(track)
         package_path = bundle / "package.json"
     else:
-        package_path = roles.standin_bundle_cached(track, LOOP_DIR / "cache")
+        package_path = worker.bundle(track, stale="reanalyse")
     frames_dir = out / "brighter-than-white" / "frames"
     plain = argparse.Namespace(**{**vars(args), "step_rate": 0, "shutter": 0.0})
     ok, log = render_frames(package_path, CHECK_SCENES / "brighter-than-white.rhai", frames_dir, 1.0, plain)
@@ -351,7 +351,7 @@ def frame_rate_checks(track: Path, out: Path, args) -> list[dict]:
         bundle = perfect_bundle.build(track)
         package_path, audio = bundle / "package.json", bundle / perfect_bundle.AUDIO
     else:
-        package_path, audio = roles.standin_bundle_cached(track, LOOP_DIR / "cache"), track
+        package_path, audio = worker.bundle(track, stale="reanalyse"), track
     package = json.loads(package_path.read_text())
     seconds = min(8.0, float(package["durationSec"]))
     renders = {"30": (30, 0, 0.0), "120": (120, 0, 0.0), "30-stepped": (30, 120, 0.0), "30-blurred": (30, 120, 1.0)}
@@ -423,7 +423,7 @@ def transition_checks(track: Path, out: Path, args) -> list[dict]:
         bundle = perfect_bundle.build(track)
         package_path, audio = bundle / "package.json", bundle / perfect_bundle.AUDIO
     else:
-        package_path, audio = roles.standin_bundle_cached(track, LOOP_DIR / "cache"), track
+        package_path, audio = worker.bundle(track, stale="reanalyse"), track
     seconds, at = 6.0, dict(before=1.5, during=3.0, after=5.5)
     seen: dict[str, dict[str, tuple[float, float]]] = {}
     background = 0.0

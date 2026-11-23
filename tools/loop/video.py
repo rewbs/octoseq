@@ -37,7 +37,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import director  # noqa: E402
 import perfect_bundle  # noqa: E402
-import roles  # noqa: E402
+import worker  # noqa: E402
 import show as shows  # noqa: E402
 import run  # noqa: E402
 
@@ -60,6 +60,7 @@ def main() -> int:
     parser.add_argument("--shutter", type=float, default=0.0, help="motion blur: the share of each frame its shutter is open, 0 (off) to 1; a frame is the average of the steps taken meanwhile, so it needs --step-rate at several times --fps. 0.5 is a film camera's usual setting")
     parser.add_argument("--width", type=int, default=960)
     parser.add_argument("--height", type=int, default=540)
+    parser.add_argument("--reanalyse", action="store_true", help="analyse the track again instead of using its stored bundle; the old bundle is kept, and shows made on it still play on it")
     parser.add_argument("--no-build", action="store_true", help="skip cargo build")
     args = parser.parse_args()
 
@@ -74,7 +75,10 @@ def main() -> int:
         bundle = perfect_bundle.build(track)
         package_path, audio = bundle / "package.json", bundle / perfect_bundle.AUDIO
     else:
-        package_path, audio = roles.standin_bundle_cached(track, run.LOOP_DIR / "cache"), track
+        try:
+            package_path, audio = worker.bundle(track, force=args.reanalyse), track
+        except worker.WorkerError as error:
+            sys.exit(f"analysis failed: {error}")
     package = json.loads(package_path.read_text())
     seconds = package["durationSec"] if args.seconds <= 0 else min(package["durationSec"], args.seconds)
 
@@ -83,8 +87,16 @@ def main() -> int:
         problems = shows.validate(shown, directory)
         if problems:
             sys.exit("this show cannot be played:\n  " + "\n  ".join(problems))
-        if shown.get("bundle_sha256") not in (None, hashlib.sha256(package_path.read_bytes()).hexdigest()):
-            print("note: the track's analysis has changed since this show was made; its cuts may no longer sit on the music", flush=True)
+        wanted = shown.get("bundle_sha256")
+        if wanted not in (None, hashlib.sha256(package_path.read_bytes()).hexdigest()):
+            made_on = None if track.suffix.lower() in run.MODULE_SUFFIXES else worker.find(track, wanted)
+            if made_on:
+                # A show plays on the bundle it was made on, so that it keeps rendering the same frames.
+                package_path = made_on
+                package = json.loads(package_path.read_text())
+                print("note: the track has been analysed again since this show was made; the show is played on the bundle it was made on", flush=True)
+            else:
+                print("note: the track's analysis has changed since this show was made and the bundle it was made on is gone; its cuts may no longer sit on the music", flush=True)
         script, label = directory / "show.json", directory.name.removeprefix(f"{track.stem}-")
         print(f"{track.name}: {shows.listing(shown)}", flush=True)
     elif args.scene:

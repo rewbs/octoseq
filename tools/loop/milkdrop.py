@@ -34,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import metrics  # noqa: E402
 import motion  # noqa: E402
 import perfect_bundle  # noqa: E402
-import roles  # noqa: E402
+import worker  # noqa: E402
 import run  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -65,7 +65,7 @@ def bundle(track: Path) -> tuple[Path, Path]:
     if track.suffix.lower() in run.MODULE_SUFFIXES:
         directory = perfect_bundle.build(track)
         return directory / "package.json", directory / perfect_bundle.AUDIO
-    return roles.standin_bundle_cached(track, run.LOOP_DIR / "cache"), track
+    return worker.bundle(track, stale="reanalyse"), track
 
 
 def render_clip(preset_paths: list[Path], audio: Path, clip: Path, seconds: float, args, hold: float = 0.0) -> tuple[bool, str]:
