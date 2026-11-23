@@ -16,11 +16,11 @@ import numpy as np
 
 VARIANTS = {
     "clean": None,
-    "reverb": ["-af", "aecho=0.8:0.6:23|47|83|131:0.35|0.3|0.22|0.15", "-c:a", "pcm_s16le"],
-    "compress": ["-af", "acompressor=threshold=-26dB:ratio=8:attack=3:release=60:makeup=8,alimiter=limit=0.9:latency=1", "-c:a", "pcm_s16le"],
+    "reverb": ["-af", "aecho=0.8:0.6:23|47|83|131:0.35|0.3|0.22|0.15", "-c:a", "flac", "-sample_fmt", "s16"],
+    "compress": ["-af", "acompressor=threshold=-26dB:ratio=8:attack=3:release=60:makeup=8,alimiter=limit=0.9:latency=1", "-c:a", "flac", "-sample_fmt", "s16"],
     "mp3": ["-c:a", "libmp3lame", "-b:a", "96k"],
 }
-SUFFIX = {"reverb": ".wav", "compress": ".wav", "mp3": ".mp3"}
+SUFFIX = {"reverb": ".flac", "compress": ".flac", "mp3": ".mp3"}
 
 
 def make(source: Path, out_dir: Path, names: tuple[str, ...] = tuple(VARIANTS)) -> dict[str, Path]:

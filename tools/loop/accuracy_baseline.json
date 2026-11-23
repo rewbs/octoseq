@@ -2,24 +2,24 @@
   "chosen": {
     "onsets": {
       "analyser": "standin",
-      "score": 0.8181,
+      "score": 0.8641,
       "candidates": {
-        "standin": 0.8181,
-        "energy": 0.7017
+        "standin": 0.8641,
+        "energy": 0.7058
       }
     },
     "beats": {
       "analyser": "standin",
-      "score": 0.9019,
+      "score": 0.9433,
       "candidates": {
-        "standin": 0.9019
+        "standin": 0.9433
       }
     },
     "sections": {
       "analyser": "novelty",
-      "score": 0.6072,
+      "score": 0.5201,
       "candidates": {
-        "novelty": 0.6072
+        "novelty": 0.5201
       }
     },
     "stems": {
@@ -31,9 +31,10 @@
     }
   },
   "corpus": {
-    "train": 21,
-    "heldout": 27,
-    "sources": "24 synthetic, 24 downloaded, 0 local"
+    "train": 97,
+    "heldout": 117,
+    "left_out": 4,
+    "sources": "24 synthetic, 190 downloaded, 0 local"
   },
   "params": {
     "n_fft": 2048,
@@ -43,6 +44,10 @@
     "threshold_window_s": 2.0,
     "threshold_k": 0.2,
     "min_gap_s": 0.08,
-    "onset_shift_s": 0.0106
+    "onset_shift_s": 0.0106,
+    "attack_window_s": 0.3,
+    "soft_attack_s": 0.04,
+    "soft_shift_s": 0.0,
+    "retime_soft": false
   }
 }

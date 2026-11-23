@@ -3,6 +3,7 @@
 An analyser is a function `(audio_path, params) -> dict` that returns any of:
 
     onsets    list of (time_s, weight)
+    kinds     list of "percussive" or "soft", one per onset (optional)
     beats     list of time_s
     bpm       float
     sections  list of boundary time_s
@@ -36,7 +37,7 @@ def decode(audio: Path, rate: int = STEM_RATE) -> np.ndarray:
 
 def standin(audio: Path, params: dict | None = None) -> dict:
     result = analyse.detect(audio, params)
-    return dict(onsets=result["onsets"], beats=result["beats"], bpm=result["bpm"])
+    return dict(onsets=result["onsets"], kinds=result["kinds"], beats=result["beats"], bpm=result["bpm"])
 
 
 def energy(audio: Path, params: dict | None = None) -> dict:

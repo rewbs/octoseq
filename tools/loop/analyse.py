@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 SAMPLE_RATE = 22050
-ANALYSER_VERSION = "standin-3"
+ANALYSER_VERSION = "standin-6"
 
 # Every tunable setting of the analysis. tools/loop/tune.py searches these against
 # tracker-module ground truth; if it finds a better set it writes params.json next
@@ -34,6 +34,10 @@ DEFAULT_PARAMS = {
     "threshold_k": 0.1,  # how far above that median a peak must be, in standard deviations
     "min_gap_s": 0.08,  # closest two onsets may be
     "onset_shift_s": 0.0,  # added to every onset time, to cancel systematic lateness
+    "attack_window_s": 0.3,  # how long after a detection its attack is followed
+    "soft_attack_s": 0.04,  # a measured rise slower than this makes the event "soft"
+    "soft_shift_s": 0.0,  # added to the time of soft events, to cancel systematic lateness
+    "retime_soft": False,  # move soft events to the middle of their rise (see profile_attacks)
 }
 PARAMS_FILE = Path(__file__).parent / "params.json"
 
@@ -145,8 +149,80 @@ def pick_peaks(env: np.ndarray, frame_rate: float, params: dict) -> list[tuple[f
         denom = a - 2 * b + c
         offset = 0.5 * (a - c) / denom if abs(denom) > 1e-12 else 0.0
         time = (i + float(np.clip(offset, -0.5, 0.5))) / frame_rate + params["onset_shift_s"]
-        peaks.append((max(0.0, time), b))
+        peaks.append((max(0.0, time), b, i))
     return peaks
+
+
+def _crossing(env: np.ndarray, level: float) -> float:
+    """Fractional index at which a rising envelope first reaches `level`."""
+    above = np.flatnonzero(env >= level)
+    if not len(above) or above[0] == 0:
+        return 0.0
+    i = int(above[0])
+    span = env[i] - env[i - 1]
+    return i - 1 + (float((level - env[i - 1]) / span) if span > 0 else 1.0)
+
+
+PROFILE_N_FFT, PROFILE_HOP = 512, 110  # a second, finer analysis used only to time attacks (5 ms steps)
+
+
+def profile_attacks(fine: np.ndarray, peaks: list[tuple[float, float, int]], params: dict) -> list[dict]:
+    """Time the attack that follows each detected onset.
+
+    The onset detector fires where new sound first appears, which for a slow attack
+    is well before it is heard to arrive. For each detection this follows the level
+    of the frequencies that get louder after it, on a 5 ms grid, and reports where
+    that rise starts, where it is halfway and where it peaks. An event whose rise is
+    slow is labelled soft.
+
+    With `retime_soft`, soft events are also moved to the halfway point. That is
+    off by default: on held-out modules it improved soft-event timing by about 2 ms
+    and recall by under a point, and cost slightly more than that on percussive
+    events. The attack-type labels themselves are barely better than calling
+    everything percussive, so treat them as a placeholder for a better analyser.
+    """
+    rate = SAMPLE_RATE / PROFILE_HOP
+    n = len(fine)
+    lead = 8  # frames examined before the detection (40 ms)
+    reach = max(6, int(round(params["attack_window_s"] * rate)))
+    hold = 8  # a peak stands if nothing exceeds it within this many frames (40 ms)
+    frames = [int(round(time * rate)) for time, _, _ in peaks]
+    events = []
+    for k, (time, weight, _) in enumerate(peaks):
+        event = dict(time=time, onset=time, peak=time, attack_s=0.0, kind="percussive", weight=weight)
+        events.append(event)
+        f0 = frames[k]
+        start = f0 - lead
+        end = min(n - 1, f0 + reach, frames[k + 1] - 2 if k + 1 < len(peaks) else n - 1)
+        if start < 0 or end - f0 < 4:
+            continue
+        seg = fine[start : end + 1]
+        before = seg[: lead - 3].mean(axis=0)
+        gain = np.maximum(seg[lead:].max(axis=0) - before, 0.0)  # the bins that get louder
+        if float(gain.sum()) <= 0.0:
+            continue
+        env = seg @ (gain / gain.sum())
+        env = np.convolve(np.pad(env, 1, mode="edge"), np.ones(3) / 3, mode="valid")
+        low = int(np.argmin(env[: lead + 3]))
+        top = low
+        for j in range(low + 1, len(env)):
+            if env[j] > env[top]:
+                top = j
+            elif j - top >= hold:
+                break
+        rise = float(env[top] - env[low])
+        if top - low < 2 or rise <= 0.0:
+            continue
+        run = env[low : top + 1]
+        at = lambda fraction: (start + low + _crossing(run, env[low] + fraction * rise)) / rate  # noqa: E731
+        attack = at(0.9) - at(0.1)
+        half = at(0.5)
+        event.update(onset=max(0.0, at(0.05)), peak=at(0.95), attack_s=attack)
+        if attack > params["soft_attack_s"] and half - time > 0.5 * params["soft_attack_s"]:
+            event["kind"] = "soft"
+            if params["retime_soft"]:
+                event["time"] = max(0.0, half + params["soft_shift_s"])
+    return events
 
 
 def estimate_tempo(onset: np.ndarray, frame_rate: float) -> tuple[float, float]:
@@ -213,10 +289,13 @@ def _core(audio: Path, params: dict) -> dict:
     flux = flux_of(mag, params["log_gain"])
     onset = onset_of(flux, frame_rate, params["floor_window_s"])
     bpm, first_beat = estimate_tempo(onset, frame_rate)
+    fine = spectrogram(samples, PROFILE_N_FFT, PROFILE_HOP)
+    events = profile_attacks(fine, pick_peaks(onset, frame_rate, params), params)
+    events.sort(key=lambda e: e["time"])
     return dict(
         samples=samples, duration=len(samples) / SAMPLE_RATE, frame_rate=frame_rate, mag=mag,
-        flux=flux, onset=onset, bpm=bpm, first_beat=first_beat,
-        peaks=pick_peaks(onset, frame_rate, params),
+        flux=flux, onset=onset, bpm=bpm, first_beat=first_beat, events=events,
+        peaks=[(e["time"], e["weight"]) for e in events],
     )  # fmt: skip
 
 
@@ -228,6 +307,8 @@ def detect(audio: Path, params: dict | None = None) -> dict:
     return dict(
         duration=core["duration"], bpm=core["bpm"], beats=[float(b) for b in beats],
         onsets=[(float(t), float(w)) for t, w in core["peaks"]],
+        kinds=[e["kind"] for e in core["events"]],
+        events=[{k: (round(float(v), 5) if k != "kind" else v) for k, v in e.items()} for e in core["events"]],
     )  # fmt: skip
 
 
@@ -266,7 +347,7 @@ def analyse(audio: Path, params: dict | None = None) -> dict:
                 "bandId": band_id, "label": label, "feature": feature,
                 "rate": frame_rate, "values": np.round(values, 5).tolist(),
             })  # fmt: skip
-        band_events.append({"bandId": band_id, "events": _events(pick_peaks(b_onset, frame_rate, params))})
+        band_events.append({"bandId": band_id, "events": _events([(t, w) for t, w, _ in pick_peaks(b_onset, frame_rate, params)])})
         band_defs.append({
             "id": band_id, "label": label, "sourceId": "mixdown", "enabled": True,
             "timeScope": {"kind": "global"},
@@ -289,7 +370,11 @@ def analyse(audio: Path, params: dict | None = None) -> dict:
         "stemSignals": [],
         "customSignals": [],
         "composedSignals": [],
-        "eventStreams": [{"name": "onsetPeaks", "events": _events(core["peaks"])}],
+        "eventStreams": [
+            {"name": "onsetPeaks", "events": _events(core["peaks"])},
+            {"name": "percussive", "events": _events([(e["time"], e["weight"]) for e in core["events"] if e["kind"] == "percussive"])},
+            {"name": "soft", "events": _events([(e["time"], e["weight"]) for e in core["events"] if e["kind"] == "soft"])},
+        ],
         "authoredEventStreams": [],
         "bandEvents": band_events,
         "musicalTime": {

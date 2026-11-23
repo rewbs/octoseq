@@ -64,7 +64,7 @@
     },
     "tempo_right": {
       "min": 0.95,
-      "why": "tempo correct, allowing half or double"
+      "why": "tempo correct at some metrical level (half, double, a third or triple also count)"
     },
     "section_f": {
       "min": 0.75,

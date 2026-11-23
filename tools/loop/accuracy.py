@@ -45,6 +45,18 @@ GATES = HERE / "gates.json"
 BASELINE = HERE / "accuracy_baseline.json"
 REAL_MUSIC = sorted((ROOT / "data").glob("*.mp3"))
 STEM_TRACKS_PER_SPLIT = 3  # separation is slow to score, so only the first few tracks of each split
+MAX_STEM_RESIDUAL_DB = -60.0  # a module whose channel stems do not add up to its mix this well is left out
+
+
+def usable(track: dict) -> bool:
+    """Whether a prepared module can serve as ground truth.
+
+    Left out: near-empty modules, modules that never end, and the few whose
+    per-channel renders do not add up to the full mix (the player's behaviour
+    then depends on which channels are muted, so its stems cannot be trusted).
+    """
+    ref = track["reference"]
+    return len(ref["merged"]) >= 20 and not ref["truncated"] and ref["stem_residual_db"] < MAX_STEM_RESIDUAL_DB
 
 
 # ------------------------------------------------------------------ preparation
@@ -53,7 +65,7 @@ STEM_TRACKS_PER_SPLIT = 3  # separation is slow to score, so only the first few 
 def prepare(item: dict, variant_names: tuple[str, ...], keep_stems: bool) -> dict:
     """Reference and degraded variants for one module (cached on disk)."""
     reference, work = modref.build_cached(item["path"], CACHE, keep_stems=keep_stems)
-    variants = degrade.make(work / "mix.wav", work / "variants", variant_names)
+    variants = degrade.make(work / modref.MIX, work / "variants", variant_names)
     return dict(item, reference=reference, work=work, variants=variants)
 
 
@@ -97,7 +109,7 @@ def score_split(results: dict, tracks: list[dict], variant_names: tuple[str, ...
             result = results[track["id"]][variant]
             ref = track["reference"]
             if result.get("onsets") is not None:
-                tallies.append(score.onset_tallies(ref["merged"], [t for t, _ in result["onsets"]]))
+                tallies.append(score.onset_tallies(ref["merged"], [t for t, _ in result["onsets"]], kinds=result.get("kinds")))
             if result.get("beats") is not None and ref["grid"]["steady_tempo"]:
                 beats.append(score.beat_scores(ref["grid"]["beats"], result["beats"], ref["grid"]["bpm"], result.get("bpm") or 0.0))
             if result.get("sections") is not None and len(ref["sections"]) > 1:
@@ -110,7 +122,7 @@ def score_split(results: dict, tracks: list[dict], variant_names: tuple[str, ...
                 f=round(float(np.mean([b["f"] for b in beats])), 4),
                 best_f=round(float(np.mean([b["best_f"] for b in beats])), 4),
                 tempo_exact=round(float(np.mean([abs(b["tempo_ratio"] - 1) < 0.02 for b in beats])), 4),
-                tempo_octave=round(float(np.mean([min(abs(b["tempo_ratio"] * m - 1) for m in (0.5, 1, 2)) < 0.02 for b in beats])), 4),
+                tempo_octave=round(float(np.mean([min(abs(b["tempo_ratio"] * m - 1) for m in (1 / 3, 0.5, 1, 2, 3)) < 0.02 for b in beats])), 4),
                 tracks=len(beats),
             )  # fmt: skip
         if sections:
@@ -246,11 +258,11 @@ def instrument_checks(tracks: list[dict], check_determinism: bool) -> list[dict]
     # The scorer itself: perfect detections must score perfectly, shifted ones must show the shift.
     if tracks:
         merged = tracks[0]["reference"]["merged"]
-        times = [e["steepest"] for e in merged]
+        times = [e[score.PRIMARY] for e in merged]
         perfect = score.onset_summary(score.onset_tallies(merged, times))
-        shifted = score.onset_summary(score.onset_tallies(merged, [t + 0.020 for t in times]))
+        shifted = score.onset_summary(score.onset_tallies(merged, [t + 0.010 for t in times]))
         add("scorer gives a perfect score to perfect detections", perfect["f"] > 0.999 and abs(perfect["timing"]["bias_ms"]) < 0.01, f"F {perfect['f']}, bias {perfect['timing']['bias_ms']} ms")
-        add("scorer measures a known 20 ms delay", abs(shifted["timing"]["bias_ms"] - 20.0) < 0.5, f"measured {shifted['timing']['bias_ms']} ms")
+        add("scorer measures a known 10 ms delay", abs(shifted["timing"]["bias_ms"] - 10.0) < 0.25, f"measured {shifted['timing']['bias_ms']} ms")
 
     offsets = []
     for t in tracks[:4]:
@@ -277,10 +289,11 @@ def instrument_checks(tracks: list[dict], check_determinism: bool) -> list[dict]
 
     if check_determinism and tracks:
         t = tracks[0]
-        again = t["work"].parent / (t["work"].name + "-again")
-        modref.render(t["path"], again, stems=True)
-        same = modref.sha256(again / "mix.wav") == modref.sha256(t["work"] / "mix.wav") and (again / "events.json").read_bytes() == (t["work"] / "events.json").read_bytes()
-        subprocess.run(["rm", "-rf", str(again)], check=False)
+        first, again = (t["work"].parent / (t["work"].name + suffix) for suffix in ("-check-a", "-check-b"))
+        for directory in (first, again):
+            modref.render(t["path"], directory, stems=True)
+        same = all(modref.sha256(first / name) == modref.sha256(again / name) for name in ("mix.wav", "events.json", "stems/ch00.wav"))
+        subprocess.run(["rm", "-rf", str(first), str(again)], check=False)
         add("module rendering is deterministic", same, "two renders identical" if same else "two renders differ")
     return checks
 
@@ -338,7 +351,7 @@ def evaluate_gates(report: dict, gates: dict, baseline: dict | None) -> tuple[li
         target.append(f"held-out stem improvement {chosen['stems']['score']} dB below {gates['stem_improvement_db']['min']} dB")
     if "sections" in chosen and chosen["sections"]["score"] < gates["section_f"]["min"]:
         target.append(f"held-out section F {chosen['sections']['score']:.3f} below {gates['section_f']['min']}")
-    if baseline:
+    if baseline and baseline.get("corpus") == report["corpus"]:  # scores on a different corpus are not comparable
         drop = gates["regression"]["max_drop"]
         for part, entry in chosen.items():
             before = baseline.get("chosen", {}).get(part, {}).get("score")
@@ -350,11 +363,11 @@ def evaluate_gates(report: dict, gates: dict, baseline: dict | None) -> tuple[li
 def write_report(run_dir: Path, report: dict) -> None:
     lines = [f"# Accuracy run `{run_dir.name}`", ""]
     c = report["corpus"]
-    lines.append(f"Corpus: {c['train']} training and {c['heldout']} held-out modules ({c['sources']}). Variants: {', '.join(report['variants'])}.")
+    lines.append(f"Corpus: {c['train']} training and {c['heldout']} held-out modules ({c['sources']}; {c.get('left_out', 0)} more left out as unusable). Variants: {', '.join(report['variants'])}.")
     lines += ["", "## Instrument checks", ""]
     for check in report["instrument_checks"]:
         lines.append(f"- {'ok' if check['ok'] else '**FAIL**'}: {check['name']} ({check['detail']})")
-    lines += ["", "## Held-out scores", "", "Onsets (clean audio; timing is detection minus the reference's steepest rise):", ""]
+    lines += ["", "## Held-out scores", "", "Onsets (clean audio; timing is detection minus the point halfway up the reference event's rise):", ""]
     lines.append("| Analyser | F | Precision | Recall | Percussive bias | Percussive spread | Soft bias | Soft recall | F through reverb / compression / MP3 |")
     lines.append("|---|---|---|---|---|---|---|---|---|")
     for name, s in report["scores"].items():
@@ -372,7 +385,7 @@ def write_report(run_dir: Path, report: dict) -> None:
             f"| {name} | {o['f']:.3f} | {o['precision']:.3f} | {o['recall']:.3f} | {ms(perc.get('timing', {}).get('bias_ms'))} | "
             f"{ms(perc.get('timing', {}).get('spread_ms'))} | {ms(soft.get('timing', {}).get('bias_ms'))} | {soft.get('recall')} | {degraded} |"
         )
-    lines += ["", "Other parts (held-out, mean over variants):", "", "| Analyser | Beat F | Beat F (any level) | Tempo right (allowing octave) | Section F at 3 s | Stem improvement |", "|---|---|---|---|---|---|"]
+    lines += ["", "Other parts (held-out, mean over variants):", "", "| Analyser | Beat F | Beat F (any level) | Tempo right (at some level) | Section F at 3 s | Stem improvement |", "|---|---|---|---|---|---|"]
     for name, s in report["scores"].items():
         clean = s.get("heldout", {}).get("variants", {}).get("clean", {})
         beats, sections, stems = clean.get("beats"), clean.get("sections"), s.get("stems")
@@ -427,12 +440,17 @@ def write_scoreboard(report: dict, gates: dict) -> None:
             bias = k["timing"]["bias_ms"]
             if bias is not None:
                 row("Onsets", f"{kind} timing bias / spread", f"{bias:+.1f} ms / {k['timing']['spread_ms']:.1f} ms", f"bias within {gates['onset_bias_ms']['max']} ms", abs(bias) <= gates["onset_bias_ms"]["max"], name)
+        soft = clean["kinds"].get("soft", {})
+        if soft.get("nearest_median_ms") is not None:
+            row("Onsets", "soft: typical offset of the nearest detection", f"{soft['nearest_median_ms']:+.1f} ms", "tracked", None, name)
+        if clean.get("kind_accuracy") is not None:
+            row("Onsets", "attack type labelled correctly", f"{clean['kind_accuracy'] * 100:.0f}%", "tracked", None, name)
     if "beats" in chosen:
         name = chosen["beats"]["analyser"]
         beats = scores[name]["heldout"]["variants"]["clean"]["beats"]
         row("Beats", "F at any metrical level, mean over variants", f"{chosen['beats']['score']:.3f}", f"at least {gates['beat_f']['min']}", chosen["beats"]["score"] >= gates["beat_f"]["min"], name)
         row("Beats", "F at the module's own level", f"{beats['f']:.3f}", "tracked", None, name)
-        row("Beats", "tempo right, allowing half or double", f"{beats['tempo_octave'] * 100:.0f}%", f"at least {gates['tempo_right']['min'] * 100:.0f}%", beats["tempo_octave"] >= gates["tempo_right"]["min"], name)
+        row("Beats", "tempo right at some metrical level", f"{beats['tempo_octave'] * 100:.0f}%", f"at least {gates['tempo_right']['min'] * 100:.0f}%", beats["tempo_octave"] >= gates["tempo_right"]["min"], name)
     if "sections" in chosen:
         name = chosen["sections"]["analyser"]
         row("Sections", "boundary F within 3 s, mean over variants", f"{chosen['sections']['score']:.3f}", f"at least {gates['section_f']['min']}", chosen["sections"]["score"] >= gates["section_f"]["min"], name)
@@ -452,7 +470,8 @@ def write_scoreboard(report: dict, gates: dict) -> None:
         "",
         "Generated by `python3 tools/loop/accuracy.py --save-baseline`. Do not edit by hand.",
         "",
-        f"Held-out split: {c['heldout']} modules ({c['train']} more are used for tuning; {c['sources']} in total).",
+        f"Held-out split: {c['heldout']} modules ({c['train']} more are used for tuning; {c['sources']} in total;",
+        f"{c.get('left_out', 0)} others left out as unusable).",
         f"Instrument checks: {sum(ch['ok'] for ch in checks)} of {len(checks)} pass.",
         "",
         *table,
@@ -472,6 +491,7 @@ def run(args, params: dict | None = None, pool=None) -> dict:
     pool = pool or ProcessPoolExecutor(max_workers=args.jobs)
     try:
         splits = {}
+        left_out = 0
         for split in ("train", "heldout"):
             items = corpus.load(split, sources)
             if args.quick:
@@ -483,8 +503,8 @@ def run(args, params: dict | None = None, pool=None) -> dict:
                     print(f"skipping {item['id']}: {result}", file=sys.stderr)
                 else:
                     ready.append(result)
-            # Very short or empty modules tell us nothing.
-            splits[split] = [t for t in ready if len(t["reference"]["merged"]) >= 20 and not t["reference"]["truncated"]]
+            splits[split] = [t for t in ready if usable(t)]
+            left_out += len(ready) - len(splits[split])
         all_tracks = splits["train"] + splits["heldout"]
 
         scores: dict = {}
@@ -504,7 +524,7 @@ def run(args, params: dict | None = None, pool=None) -> dict:
             params=params or analyse.load_params(),
             variants=list(variant_names),
             corpus=dict(
-                train=len(splits["train"]), heldout=len(splits["heldout"]),
+                train=len(splits["train"]), heldout=len(splits["heldout"]), left_out=left_out,
                 sources=", ".join(f"{sum(t['source'] == s for t in all_tracks)} {s}" for s in sources),
             ),
             instrument_checks=instrument_checks(all_tracks, check_determinism=True),

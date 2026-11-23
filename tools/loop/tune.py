@@ -21,6 +21,7 @@ answer.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import time
@@ -44,6 +45,8 @@ GRID = {
     "n_fft": [512, 1024, 2048],
     "floor_window_s": [0.2, 0.5, 1.0],
     "threshold_window_s": [0.5, 1.0, 2.0],
+    "soft_attack_s": [0.02, 0.03, 0.04, 0.06, 0.09],
+    "attack_window_s": [0.2, 0.3, 0.5],
 }
 MIN_GAIN, MAX_BEAT_DROP, MAX_REAL_DROP = 0.005, 0.02, 0.03
 
@@ -53,12 +56,22 @@ def evaluate(params: dict, tracks: list[dict], variants: tuple[str, ...], pool) 
     return accuracy.score_split(results, tracks, variants)
 
 
+def soft_recall(scores: dict) -> float:
+    values = [v["onsets"]["kinds"].get("soft", {}).get("recall") for v in scores["variants"].values() if "onsets" in v]
+    values = [v for v in values if v is not None]
+    return sum(values) / len(values) if values else 0.0
+
+
 def objective(scores: dict) -> float:
-    return scores.get("onsets_mean", 0.0) + 0.25 * scores.get("beats_mean", 0.0)
+    return scores.get("onsets_mean", 0.0) + 0.25 * scores.get("beats_mean", 0.0) + 0.15 * soft_recall(scores)
 
 
-def clean_bias_ms(scores: dict) -> float:
-    return scores["variants"]["clean"]["onsets"]["timing"]["bias_ms"] or 0.0
+def clean_bias_ms(scores: dict, kind: str | None = None) -> float:
+    """Timing bias on clean audio: all hits, or for one kind the untruncated nearest-detection offset."""
+    onsets = scores["variants"]["clean"]["onsets"]
+    if kind is None:
+        return onsets["timing"]["bias_ms"] or 0.0
+    return onsets["kinds"].get(kind, {}).get("nearest_median_ms") or 0.0
 
 
 def search(start: dict, tracks: list[dict], pool, passes: int, log) -> dict:
@@ -78,9 +91,13 @@ def search(start: dict, tracks: list[dict], pool, passes: int, log) -> dict:
         if not improved:
             break
     # Timing bias is a constant offset, so it is cancelled exactly rather than searched for.
-    bias = clean_bias_ms(evaluate(best, tracks, ("clean",), pool))
+    # Percussive and soft events are timed by different means, so each has its own offset.
+    scores = evaluate(best, tracks, ("clean",), pool)
+    bias = scores["variants"]["clean"]["onsets"]["kinds"]["percussive"]["timing"]["bias_ms"] or 0.0
     best["onset_shift_s"] = round(best["onset_shift_s"] - bias / 1000.0, 4)
-    log(f"training bias {bias:+.1f} ms cancelled: onset_shift_s = {best['onset_shift_s']}")
+    soft = clean_bias_ms(scores, "soft")
+    best["soft_shift_s"] = round(best["soft_shift_s"] - soft / 1000.0, 4)
+    log(f"training bias cancelled: percussive {bias:+.1f} ms, soft {soft:+.1f} ms")
     return best
 
 
@@ -88,6 +105,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--apply", action="store_true", help="adopt the tuned parameters if they pass the rules")
     parser.add_argument("--passes", type=int, default=2)
+    parser.add_argument("--train-limit", type=int, default=40, help="search on at most this many training modules (a fixed, hash-chosen subset)")
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--name", default=time.strftime("tune-%Y%m%d-%H%M%S"))
     args = parser.parse_args()
@@ -103,7 +121,11 @@ def main() -> int:
         splits = {}
         for split in ("train", "heldout"):
             ready = pool.map(accuracy.prepare_safely, [(item, all_variants, False) for item in corpus.load(split)])
-            splits[split] = [t for t in ready if not isinstance(t, str) and len(t["reference"]["merged"]) >= 20 and not t["reference"]["truncated"]]
+            splits[split] = [t for t in ready if not isinstance(t, str) and accuracy.usable(t)]
+        # The search is the slow part, so it runs on a fixed subset of the training
+        # split, chosen by hash so it is the same every time and mixes all sources.
+        splits["train"].sort(key=lambda t: hashlib.sha256(t["id"].encode()).hexdigest())
+        splits["train"] = splits["train"][: args.train_limit]
         log(f"training on {len(splits['train'])} modules, judging on {len(splits['heldout'])} held-out modules")
 
         current = analyse.load_params()

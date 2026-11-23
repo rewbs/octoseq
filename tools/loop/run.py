@@ -124,7 +124,7 @@ def run_pair(track: Path, scene: Path, run_dir: Path, gates: dict, args) -> dict
     if track.suffix.lower() in MODULE_SUFFIXES:
         # A tracker module: render it and use its known-correct events instead of analysing.
         bundle = perfect_bundle.build(track)
-        package_path, audio = bundle / "package.json", bundle / "audio.wav"
+        package_path, audio = bundle / "package.json", bundle / perfect_bundle.AUDIO
         result["perfect_bundle"] = True
     else:
         package_path = analyse.analyse_cached(track, LOOP_DIR / "cache")

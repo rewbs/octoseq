@@ -146,23 +146,33 @@ def _get(url: str, limit: int) -> bytes:
     return data
 
 
-def fetch(limit: int, first_page: int) -> None:
-    """Download public-domain modules, verifying the licence on each module's own page."""
+def fetch(limit: int, first_page: int, last_page: int, per_page: int) -> None:
+    """Download public-domain modules, verifying the licence on each module's own page.
+
+    Takes at most `per_page` modules from each listing page, chosen by a hash of
+    their ids rather than their position, so the corpus is spread across the whole
+    listing instead of being whatever sorts first.
+    """
     manifest = json.loads(MANIFEST.read_text()) if MANIFEST.exists() else {"modules": []}
     known = {m["id"] for m in manifest["modules"]}
     target = CACHE / "modarchive"
     target.mkdir(parents=True, exist_ok=True)
     added, page = 0, first_page
-    while added < limit and page < first_page + 10:
+    while added < limit and page <= last_page:
         listing = _get(LISTING.format(page=page), 2_000_000).decode("utf-8", "replace")
         candidates = re.findall(r'downloads\.php\?moduleid=(\d+)#([A-Za-z0-9_.!+\-]+)["\']', listing)
         if not candidates:
             break
-        for module_id, filename in dict(candidates).items():
-            if added >= limit:
+        wanted = [
+            (module_id, filename)
+            for module_id, filename in dict(candidates).items()
+            if module_id not in known and Path(filename).suffix.lower() in MODULE_SUFFIXES - {".mptm"}
+        ]
+        wanted.sort(key=lambda c: sha256(c[0].encode()))
+        taken = 0
+        for module_id, filename in wanted:
+            if added >= limit or taken >= per_page:
                 break
-            if module_id in known or Path(filename).suffix.lower() not in MODULE_SUFFIXES - {".mptm"}:
-                continue
             time.sleep(1.0)  # be a polite client
             try:
                 page_html = _get(MODULE_PAGE.format(id=module_id), 2_000_000).decode("utf-8", "replace")
@@ -186,6 +196,7 @@ def fetch(limit: int, first_page: int) -> None:
             ))  # fmt: skip
             known.add(module_id)
             added += 1
+            taken += 1
             print(f"fetched {module_id} {filename} ({len(data)} bytes)")
         page += 1
     manifest["modules"].sort(key=lambda m: int(m["id"]))
@@ -233,13 +244,15 @@ def main() -> None:
     fetch_parser = sub.add_parser("fetch")
     fetch_parser.add_argument("--limit", type=int, default=24)
     fetch_parser.add_argument("--first-page", type=int, default=1)
+    fetch_parser.add_argument("--last-page", type=int, default=23)
+    fetch_parser.add_argument("--per-page", type=int, default=7)
     args = parser.parse_args()
     if args.command == "fixtures":
         write_fixtures()
     elif args.command == "restore":
         restore()
     elif args.command == "fetch":
-        fetch(args.limit, args.first_page)
+        fetch(args.limit, args.first_page, args.last_page, args.per_page)
     else:
         for split in ("train", "heldout"):
             items = load(split)

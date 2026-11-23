@@ -29,7 +29,14 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 MODRENDER = ROOT / ".loop" / "bin" / "modrender"
-REFERENCE_VERSION = "ref-6"
+REFERENCE_VERSION = "ref-8"
+# The single time an event is taken to be "heard" at: halfway up its rise. For a fast
+# attack this is within a millisecond or two of the onset, the steepest rise and the
+# peak. For a slow attack it is the only one of the four that is well defined: a
+# linear fade-in has no steepest point, and a fade-in that accelerates is steepest at
+# its very end.
+HEARD = "half"
+MIX = "mix.flac"  # the rendered mix kept beside each reference
 
 PRE_S = 0.005  # how far before a trigger the previous level is measured
 MAX_WINDOW_S = 2.0  # how long after a trigger its attack may take
@@ -39,7 +46,8 @@ ONSET_FRACTION = 0.05  # physical onset: 5% of the way from the previous level t
 PERCUSSIVE_ATTACK_S = 0.020  # 10%-90% rise faster than this is "percussive", otherwise "soft"
 MIN_RISE_FRACTION = 0.15  # a trigger that raises the level by less than this is "legato": no attack
 LEGATO_WEIGHT = 0.5  # a legato note that changes pitch counts half; one that does not counts nothing
-MERGE_S = 0.030  # triggers on different channels closer than this are heard as one event
+MERGE_S = 0.030  # notes heard closer together than this are one event
+MERGE_SAME_TRIGGER_S = 0.050  # notes triggered on the same tick are one event if heard within this
 MASK_WINDOW_S = 0.050
 MASK_FLOOR_DB, MASK_CEIL_DB = -20.0, 0.0  # fully masked below the floor, fully heard above the ceiling
 BANDS_HZ = [(0, 200), (200, 2000), (2000, 24000)]
@@ -49,10 +57,16 @@ SECTION_CHANGE = 0.2  # how different two order positions must be to count as a 
 
 
 def read_wav(path: Path) -> np.ndarray:
-    """Read a float32 WAV written by modrender. Returns (frames, channels)."""
-    raw = np.fromfile(path, dtype=np.uint8)
-    channels = int(np.frombuffer(raw[22:24].tobytes(), dtype="<u2")[0])
-    return np.frombuffer(raw[44:].tobytes(), dtype="<f4").reshape(-1, channels)
+    """Open a float32 WAV written by modrender. Returns (frames, channels).
+
+    Memory-mapped: a long module with dozens of channels is several gigabytes of
+    stems, and only short windows around each note are ever looked at.
+    """
+    with open(path, "rb") as f:
+        header = f.read(44)
+    channels = int.from_bytes(header[22:24], "little")
+    data = np.memmap(path, dtype="<f4", mode="r", offset=44)
+    return data[: len(data) - len(data) % channels].reshape(-1, channels)
 
 
 def sha256(path: Path) -> str:
@@ -110,13 +124,14 @@ def measure_trigger(stem: np.ndarray, t0: int, t_next: int, rate: int) -> dict:
     rise = peak_level - base
     if rise < MIN_RISE_FRACTION * peak_level:
         # Same level as before: heard, if at all, as a change of pitch.
-        return dict(audible=True, onset=t0 / rate, steepest=t0 / rate, peak=t0 / rate, attack_s=0.0, kind="legato", peak_level=peak_level)
+        return dict(audible=True, onset=t0 / rate, half=t0 / rate, steepest=t0 / rate, peak=t0 / rate, attack_s=0.0, kind="legato", peak_level=peak_level)
 
     def crossing(fraction: float) -> int:
         i = _first_at_or_above(after[low:], base + fraction * rise)
         return low + int(i if i is not None else 0)
 
     onset, t10, t90, peak = crossing(ONSET_FRACTION), crossing(0.10), crossing(0.90), crossing(0.95)
+    half = crossing(0.50)
     lo, hi = k + onset, k + max(peak, onset + 1) + 1
     slope = np.diff(coarse[max(0, lo - 1) : min(len(coarse), hi + 1)])
     steepest = (max(0, lo - 1) + int(np.argmax(slope)) - k) if len(slope) else onset
@@ -125,6 +140,7 @@ def measure_trigger(stem: np.ndarray, t0: int, t_next: int, rate: int) -> dict:
     return dict(
         audible=True,
         onset=(t0 + onset) / rate,
+        half=(t0 + half) / rate,
         steepest=(t0 + steepest) / rate,
         peak=(t0 + peak) / rate,
         attack_s=attack,
@@ -144,7 +160,7 @@ def masking_weight(stem: np.ndarray, everything: np.ndarray, rise_s: float, rate
 
     Compares the event's channel with the rest of the mix (`everything` minus the
     channel itself) in three frequency bands
-    over 50 ms around its steepest rise and takes the band where it stands out most,
+    over 50 ms around the middle of its rise and takes the band where it stands out most,
     since a hi-hat is heard over a loud bass. Returns (weight 0..1, ratio in dB).
     """
     a = max(0, int((rise_s - 0.2 * MASK_WINDOW_S) * rate))
@@ -190,8 +206,14 @@ def classify_sample(stem_of: dict[int, np.ndarray], events: list[dict], rate: in
 
 
 def merge_events(events: list[dict]) -> list[dict]:
-    """Combine near-simultaneous triggers on different channels into single events."""
-    audible = sorted((e for e in events if e["audible"]), key=lambda e: e["steepest"])
+    """Combine notes that are heard as one event.
+
+    Notes heard within MERGE_S of each other merge. So do notes triggered on the
+    same tick whose attacks differ a little (a kick with a slightly slower bass
+    note): they were written, and are heard, as one hit. A pad that swells in
+    well after a drum hit on the same row stays a separate, soft event.
+    """
+    audible = sorted((e for e in events if e["audible"]), key=lambda e: e[HEARD])
     merged: list[dict] = []
     group: list[dict] = []
 
@@ -200,15 +222,18 @@ def merge_events(events: list[dict]) -> list[dict]:
             return
         lead = max(group, key=lambda e: e["weight"])
         merged.append(dict(
-            onset=lead["onset"], steepest=lead["steepest"], peak=lead["peak"], kind=lead["kind"],
+            onset=lead["onset"], half=lead["half"], steepest=lead["steepest"], peak=lead["peak"], kind=lead["kind"],
             weight=lead["weight"], channels=sorted({e["channel"] for e in group}),
             stems=sorted({e["stem"] for e in group}), members=len(group),
         ))  # fmt: skip
 
     for e in audible:
-        if group and e["steepest"] - group[0]["steepest"] > MERGE_S:
-            flush()
-            group = []
+        if group:
+            gap = e[HEARD] - group[0][HEARD]
+            together = any(abs(e["trigger"] - g["trigger"]) < 0.005 for g in group)
+            if gap > (MERGE_SAME_TRIGGER_S if together else MERGE_S):
+                flush()
+                group = []
         group.append(e)
     flush()
     return merged
@@ -263,13 +288,17 @@ def sections(log: dict, events: list[dict]) -> list[dict]:
 
 
 def build(module: Path, work_dir: Path, keep_stems: bool = False) -> dict:
-    """Render a module and derive its full reference. Leaves mix.wav in work_dir."""
+    """Render a module and derive its full reference. Leaves the mix (MIX) in work_dir."""
     log = render(module, work_dir)
     rate = log["sample_rate"]
     mix = read_wav(work_dir / "mix.wav")
-    mix_mono = mix.mean(axis=1)
+    mix_mono = np.asarray(mix[:, 0], dtype=np.float32) * 0.5
+    mix_mono += np.asarray(mix[:, 1], dtype=np.float32) * 0.5
     stems = {ch: read_wav(work_dir / "stems" / f"ch{ch:02d}.wav")[:, 0] for ch in log["stem_channels"]}
-    stem_sum = np.sum(list(stems.values()), axis=0) if stems else np.zeros_like(mix_mono)
+    stem_sum = np.zeros(len(mix_mono), dtype=np.float32)
+    for stem in stems.values():
+        m = min(len(stem), len(stem_sum))
+        stem_sum[:m] += stem[:m]
     n = min(len(stem_sum), len(mix_mono))
     residual = float(np.sqrt(np.mean((stem_sum[:n] - mix_mono[:n]) ** 2)))
     level = float(np.sqrt(np.mean(mix_mono[:n] ** 2))) or 1e-12
@@ -307,7 +336,7 @@ def build(module: Path, work_dir: Path, keep_stems: bool = False) -> dict:
         if not e["audible"]:
             e["weight"] = 0.0
             continue
-        mask, ratio_db = masking_weight(stems[e["channel"]], stem_sum, e["steepest"], rate)
+        mask, ratio_db = masking_weight(stems[e["channel"]], stem_sum, e[HEARD], rate)
         loud = float(min(1.0, e["peak_level"] / loud_ref))
         e["loudness"], e["mask"], e["to_rest_db"] = round(loud, 4), round(mask, 4), round(ratio_db, 2)
         e["weight"] = loud * mask
@@ -344,6 +373,10 @@ def build(module: Path, work_dir: Path, keep_stems: bool = False) -> dict:
         triggers_logged=len(log["notes"]),
     )
     (work_dir / "reference.json").write_text(json.dumps(reference))
+    # Keep the mix losslessly compressed: the float WAV is several times larger and
+    # a corpus of a few hundred modules would not fit on disk.
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(work_dir / "mix.wav"), "-c:a", "flac", "-sample_fmt", "s16", str(work_dir / MIX)], check=True)
+    (work_dir / "mix.wav").unlink()
     if not keep_stems:
         shutil.rmtree(work_dir / "stems", ignore_errors=True)
     return reference
@@ -354,6 +387,6 @@ def build_cached(module: Path, cache_dir: Path, keep_stems: bool = False) -> tup
     work = cache_dir / f"{module.stem}-{sha256(module)[:12]}-{REFERENCE_VERSION}"
     ref_path = work / "reference.json"
     have_stems = (work / "stems").exists() and any((work / "stems").iterdir())
-    if ref_path.exists() and (work / "mix.wav").exists() and (have_stems or not keep_stems):
+    if ref_path.exists() and (work / MIX).exists() and (have_stems or not keep_stems):
         return json.loads(ref_path.read_text()), work
     return build(module, work, keep_stems), work

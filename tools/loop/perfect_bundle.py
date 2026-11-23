@@ -18,7 +18,7 @@ The bundle is an Interpretation Package v1 (the format the engine reads today):
 - musical time from the module's own row and tempo grid, including tempo changes
 - mix signals and frequency bands measured from the rendered audio, as usual
 
-Output: <dir>/package.json and <dir>/audio.wav (the render the bundle describes).
+Output: <dir>/package.json and <dir>/audio.flac (the render the bundle describes).
 """
 
 from __future__ import annotations
@@ -40,7 +40,8 @@ import modref  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 CACHE = ROOT / ".loop" / "cache" / "references"
 OUT = ROOT / ".loop" / "bundles"
-PRIMARY_TIME = "steepest"
+PRIMARY_TIME = modref.HEARD
+AUDIO = "audio.flac"
 
 
 def _stream(name: str, events: list[dict]) -> dict:
@@ -109,10 +110,10 @@ def build(module: Path, out_dir: Path | None = None) -> Path:
     if marker.exists() and json.loads(marker.read_text()) == stamp and (out_dir / "package.json").exists():
         return out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(work / "mix.wav", out_dir / "audio.wav")
+    shutil.copyfile(work / modref.MIX, out_dir / AUDIO)
 
     params = analyse.load_params()
-    package = analyse.analyse(out_dir / "audio.wav", params)  # mix signals and bands, measured from the audio
+    package = analyse.analyse(out_dir / AUDIO, params)  # mix signals and bands, measured from the audio
 
     merged = reference["merged"]
     heard = [e for e in reference["events"] if e["audible"] and e["weight"] > 0]
@@ -150,7 +151,7 @@ def main() -> None:
     package = json.loads((out / "package.json").read_text())
     print(f"{out / 'package.json'}")
     print(f"  {len(package['eventStreams'])} event streams, {len(package['availableStems'])} stems, {len(package['musicalTime']['segments'])} tempo segment(s), {len(package['authoredEventStreams'][0]['events'])} sections")
-    print(f"{out / 'audio.wav'}")
+    print(f"{out / AUDIO}")
 
 
 if __name__ == "__main__":
