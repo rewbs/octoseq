@@ -12,7 +12,7 @@ use crate::material::{MaterialRegistry, ParamValue};
 use crate::mesh_asset::{BoundingBox, MeshAsset, CUBE_BOUNDS, PLANE_BOUNDS, SPHERE_BOUNDS};
 use crate::particle_eval::{GpuMeshParticleInstance, GpuParticleInstance};
 use crate::post_processing::PostEffectRegistry;
-use crate::scene_graph::{EntityId, MeshType, RenderMode, Transform};
+use crate::scene_graph::{EntityId, MeshInstance, MeshType, RenderMode, Transform};
 use crate::visualiser::VisualiserState;
 use bytemuck::{Pod, Zeroable};
 use std::collections::{HashMap, HashSet};
@@ -72,6 +72,29 @@ struct ShadowUniforms {
     color: [f32; 4],
     /// Radius (x, z) and softness (z), w unused
     params: [f32; 4],
+}
+
+impl ShadowUniforms {
+    /// Uniforms for the shadow cast by `mesh`: an ellipse on the shadow plane,
+    /// centred under the mesh's position plus the configured offsets.
+    fn for_mesh(mesh: &MeshInstance) -> Self {
+        let shadow = &mesh.shadow;
+        Self {
+            center: [
+                mesh.transform.position.x + shadow.offset_x,
+                shadow.plane_y,
+                mesh.transform.position.z + shadow.offset_z,
+                0.0,
+            ],
+            color: [
+                shadow.color[0],
+                shadow.color[1],
+                shadow.color[2],
+                shadow.opacity,
+            ],
+            params: [shadow.radius_x, shadow.radius_z, shadow.softness, 0.0],
+        }
+    }
 }
 
 impl Uniforms {
@@ -380,7 +403,9 @@ pub struct Renderer {
 
     // Blob shadow rendering
     shadow_pipeline: wgpu::RenderPipeline,
+    /// One `ShadowUniforms` slot per shadow, `UNIFORM_ALIGNMENT` bytes apart.
     shadow_uniform_buffer: wgpu::Buffer,
+    /// Binds one slot of `shadow_uniform_buffer`, selected by dynamic offset.
     shadow_bind_group: wgpu::BindGroup,
     #[allow(dead_code)]
     shadow_bind_group_layout: wgpu::BindGroupLayout,
@@ -851,7 +876,10 @@ impl Renderer {
                 ],
             });
 
-        // Create shadow-specific bind group layout
+        // Create shadow-specific bind group layout. Each shadow has its own slot in
+        // one shared buffer, selected at draw time by a dynamic offset.
+        let shadow_uniform_size =
+            wgpu::BufferSize::new(std::mem::size_of::<ShadowUniforms>() as u64);
         let shadow_params_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Shadow Params Bind Group Layout"),
@@ -860,8 +888,8 @@ impl Renderer {
                     visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                        has_dynamic_offset: true,
+                        min_binding_size: shadow_uniform_size,
                     },
                     count: None,
                 }],
@@ -916,24 +944,27 @@ impl Renderer {
             cache: None,
         });
 
-        // Shadow uniform buffer (per-shadow)
-        let shadow_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Shadow Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[ShadowUniforms {
-                center: [0.0, 0.0, 0.0, 0.0],
-                color: [0.0, 0.0, 0.0, 0.5],
-                params: [1.0, 1.0, 0.3, 0.0],
-            }]),
+        // Shadow uniform buffer: one slot per shadow. Only meshes that are drawn cast
+        // a shadow, so there are never more shadows than MAX_MESHES_PER_FRAME.
+        let shadow_uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Shadow Uniform Buffer (Dynamic)"),
+            size: (UNIFORM_ALIGNMENT * MAX_MESHES_PER_FRAME) as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
         });
 
-        // Shadow bind group (uses material global uniform buffer for globals)
+        // Shadow params bind group: a one-slot window onto the buffer, moved to the
+        // shadow being drawn with a dynamic offset.
         let shadow_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Shadow Bind Group"),
             layout: &shadow_params_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: shadow_uniform_buffer.as_entire_binding(),
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &shadow_uniform_buffer,
+                    offset: 0,
+                    size: shadow_uniform_size,
+                }),
             }],
         });
 
@@ -1444,6 +1475,26 @@ impl Renderer {
             }
         }
 
+        // Pre-write every blob shadow's uniforms to its own slot BEFORE the render pass,
+        // for the same reason as the mesh uniforms above: a write issued while the pass
+        // is being recorded lands before any of its draws execute, so writing each
+        // shadow to one shared offset draws them all with the last shadow's values.
+        // Slots are handed out in mesh order; the shadow pass below draws them in the
+        // same order.
+        let mut shadow_count = 0usize;
+        for (_entity_id, mesh, _world_matrix) in meshes_to_render.iter().take(MAX_MESHES_PER_FRAME)
+        {
+            if !mesh.shadow.enabled {
+                continue;
+            }
+            self.queue.write_buffer(
+                &self.shadow_uniform_buffer,
+                (shadow_count * UNIFORM_ALIGNMENT) as u64,
+                bytemuck::bytes_of(&ShadowUniforms::for_mesh(mesh)),
+            );
+            shadow_count += 1;
+        }
+
         // Render scene to post-processor's scene texture
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -1477,41 +1528,10 @@ impl Renderer {
             // Bind globals (group 0) with offset 0 - shadow shader only uses view_proj which is same for all
             render_pass.set_bind_group(0, self.material_pipeline_manager.global_bind_group(), &[0]);
 
-            for (_entity_id, mesh, _world_matrix) in meshes_to_render.iter() {
-                if !mesh.shadow.enabled {
-                    continue;
-                }
-
-                // Calculate shadow position from mesh position + offsets
-                let shadow_x = mesh.transform.position.x + mesh.shadow.offset_x;
-                let shadow_z = mesh.transform.position.z + mesh.shadow.offset_z;
-
-                // Update shadow uniforms
-                let shadow_uniforms = ShadowUniforms {
-                    center: [shadow_x, mesh.shadow.plane_y, shadow_z, 0.0],
-                    color: [
-                        mesh.shadow.color[0],
-                        mesh.shadow.color[1],
-                        mesh.shadow.color[2],
-                        mesh.shadow.opacity,
-                    ],
-                    params: [
-                        mesh.shadow.radius_x,
-                        mesh.shadow.radius_z,
-                        mesh.shadow.softness,
-                        0.0,
-                    ],
-                };
-                self.queue.write_buffer(
-                    &self.shadow_uniform_buffer,
-                    0,
-                    bytemuck::cast_slice(&[shadow_uniforms]),
-                );
-
-                // Bind shadow params (group 1)
-                render_pass.set_bind_group(1, &self.shadow_bind_group, &[]);
-
-                // Draw shadow quad
+            // One draw per shadow, each reading its own pre-written slot (group 1).
+            for shadow_idx in 0..shadow_count {
+                let shadow_offset = (shadow_idx * UNIFORM_ALIGNMENT) as u32;
+                render_pass.set_bind_group(1, &self.shadow_bind_group, &[shadow_offset]);
                 render_pass.draw_indexed(0..self.plane_geometry.num_indices, 0, 0..1);
             }
 
