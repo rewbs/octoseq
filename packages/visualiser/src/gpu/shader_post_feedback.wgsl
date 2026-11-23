@@ -255,6 +255,41 @@ fn apply_warp_step(uv: vec2<f32>, step: GpuWarpStep) -> vec2<f32> {
                 uv.y + centered.x * effective_strength * step.scale
             );
         }
+        // Waves: Milkdrop's own warp. Four slow sine waves cross the frame, each
+        // bending it a little, their spacing drifting. `rotation` carries the
+        // phase (time, or anything that advances) and `frequency` how many
+        // waves cross the frame. No two parts of the picture move alike.
+        case 6u: {
+            let t = step.rotation;
+            let p = square * 2.0;
+            let f = vec4<f32>(
+                11.68 + 4.0 * cos(t * 1.413 + 10.0),
+                8.77 + 3.0 * cos(t * 1.113 + 7.0),
+                10.54 + 3.0 * cos(t * 1.233 + 3.0),
+                11.49 + 4.0 * cos(t * 0.933 + 5.0)
+            ) * step.frequency;
+            let d = vec2<f32>(
+                sin(t * 0.333 + (p.x * f.x - p.y * f.w)) + cos(t * 0.753 - (p.x * f.y - p.y * f.z)),
+                cos(t * 0.375 - (p.x * f.z + p.y * f.y)) + sin(t * 0.825 + (p.x * f.x + p.y * f.w))
+            );
+            return uv + d * effective_strength * 0.0035;
+        }
+        // Petals: a zoom that depends on direction, in and out `frequency` times
+        // round the centre. `rotation` turns the pattern.
+        case 7u: {
+            let dist = length(square);
+            let angle = atan2(square.y, square.x);
+            let new_dist = dist * (1.0 + effective_strength * sin(step.frequency * angle + step.rotation));
+            return center + vec2<f32>(cos(angle), sin(angle)) * new_dist / aspect;
+        }
+        // Ripple: a zoom that depends on distance, in and out in `frequency`
+        // rings from the centre to the frame's edge. `rotation` moves the rings.
+        case 8u: {
+            let dist = length(square);
+            let angle = atan2(square.y, square.x);
+            let new_dist = dist * (1.0 + effective_strength * sin(step.frequency * 12.566 * dist - step.rotation));
+            return center + vec2<f32>(cos(angle), sin(angle)) * new_dist / aspect;
+        }
         default: {
             return uv;
         }

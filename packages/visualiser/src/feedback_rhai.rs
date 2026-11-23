@@ -226,6 +226,27 @@ pub fn register_feedback_builder_api(engine: &mut Engine) {
         },
     );
 
+    // waves(amount, scale, phase), petals(amount, count, phase), ripple(amount, rings, phase):
+    // warps that differ from place to place and move as their phase advances
+    engine.register_fn(
+        "waves",
+        |wb: &mut WarpBuilder, amount: Dynamic, scale: Dynamic, phase: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(wb.clone().waves(to_signal_or_f32(amount)?, to_signal_or_f32(scale)?, to_signal_or_f32(phase)?))
+        },
+    );
+    engine.register_fn(
+        "petals",
+        |wb: &mut WarpBuilder, amount: Dynamic, count: Dynamic, phase: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(wb.clone().petals(to_signal_or_f32(amount)?, to_signal_or_f32(count)?, to_signal_or_f32(phase)?))
+        },
+    );
+    engine.register_fn(
+        "ripple",
+        |wb: &mut WarpBuilder, amount: Dynamic, rings: Dynamic, phase: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(wb.clone().ripple(to_signal_or_f32(amount)?, to_signal_or_f32(rings)?, to_signal_or_f32(phase)?))
+        },
+    );
+
     // shear(strength)
     engine.register_fn(
         "shear",

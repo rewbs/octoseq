@@ -99,6 +99,12 @@ pub enum WarpOperator {
     Noise,
     /// Shear transformation.
     Shear,
+    /// Four drifting sine waves bending the frame (Milkdrop's warp).
+    Waves,
+    /// A zoom that depends on direction from the centre.
+    Petals,
+    /// A zoom that depends on distance from the centre.
+    Ripple,
 }
 
 impl WarpOperator {
@@ -111,6 +117,9 @@ impl WarpOperator {
             WarpOperator::Spiral => 3,
             WarpOperator::Noise => 4,
             WarpOperator::Shear => 5,
+            WarpOperator::Waves => 6,
+            WarpOperator::Petals => 7,
+            WarpOperator::Ripple => 8,
         }
     }
 
@@ -122,6 +131,9 @@ impl WarpOperator {
             "spiral" => WarpOperator::Spiral,
             "noise" => WarpOperator::Noise,
             "shear" => WarpOperator::Shear,
+            "waves" => WarpOperator::Waves,
+            "petals" => WarpOperator::Petals,
+            "ripple" => WarpOperator::Ripple,
             _ => WarpOperator::None,
         }
     }
@@ -911,6 +923,72 @@ impl WarpBuilder {
             WarpParams {
                 strength: strength.into(),
                 frequency: frequency.into(),
+                ..Default::default()
+            },
+        ));
+        self.0
+    }
+
+    /// Add Milkdrop's warp: four slow sine waves crossing the frame, each bending
+    /// it a little, so that no two parts of the picture move alike.
+    ///
+    /// `amount` 1.0 moves the picture by up to 0.7% of the frame per frame,
+    /// Milkdrop's `warp = 1`. `scale` is how many waves cross the frame (1.0 is
+    /// Milkdrop's). `phase` moves the waves: give it time, or a signal that
+    /// advances faster when the music is loud.
+    pub fn waves(
+        mut self,
+        amount: impl Into<SignalOrF32>,
+        scale: impl Into<SignalOrF32>,
+        phase: impl Into<SignalOrF32>,
+    ) -> FeedbackBuilder {
+        self.0.push_warp(WarpStep::new(
+            WarpOperator::Waves,
+            WarpParams {
+                strength: amount.into(),
+                frequency: scale.into(),
+                rotation: phase.into(),
+                ..Default::default()
+            },
+        ));
+        self.0
+    }
+
+    /// Add a zoom that depends on direction: in and out `count` times round the
+    /// centre, by `amount` of the distance. `phase` turns the pattern.
+    pub fn petals(
+        mut self,
+        amount: impl Into<SignalOrF32>,
+        count: impl Into<SignalOrF32>,
+        phase: impl Into<SignalOrF32>,
+    ) -> FeedbackBuilder {
+        self.0.push_warp(WarpStep::new(
+            WarpOperator::Petals,
+            WarpParams {
+                strength: amount.into(),
+                frequency: count.into(),
+                rotation: phase.into(),
+                ..Default::default()
+            },
+        ));
+        self.0
+    }
+
+    /// Add a zoom that depends on distance: in and out in `rings` rings between
+    /// the centre and the edge of the frame, by `amount` of the distance.
+    /// `phase` moves the rings outwards.
+    pub fn ripple(
+        mut self,
+        amount: impl Into<SignalOrF32>,
+        rings: impl Into<SignalOrF32>,
+        phase: impl Into<SignalOrF32>,
+    ) -> FeedbackBuilder {
+        self.0.push_warp(WarpStep::new(
+            WarpOperator::Ripple,
+            WarpParams {
+                strength: amount.into(),
+                frequency: rings.into(),
+                rotation: phase.into(),
                 ..Default::default()
             },
         ));
