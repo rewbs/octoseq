@@ -25,6 +25,18 @@ splits the question in two:
 
 Neither needs a person to run or to judge.
 
+## One command
+
+```bash
+python3 tools/loop/video.py data/dontstop.mp3       # -> .loop/videos/dontstop.mp4
+python3 tools/loop/video.py song.xm --width 1280 --height 720
+```
+
+Track in, video out: it builds the bundle (once per track), picks a scene the bundle
+has the roles for, renders every frame and muxes the audio in. This is milestone 1's
+command in its first form. There is one scene and no director yet, so one scene plays
+for the whole track.
+
 ## Running the render loop
 
 ```bash
