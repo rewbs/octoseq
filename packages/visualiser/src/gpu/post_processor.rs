@@ -113,6 +113,11 @@ pub struct PostProcessor {
     feedback_applied_this_frame: bool,
     /// Whether the feedback texture needs to be cleared (first use or after resize).
     feedback_needs_clear: bool,
+    /// Where the outgoing scene of a transition is drawn.
+    transition_texture: wgpu::Texture,
+    transition_view: wgpu::TextureView,
+    /// Whether this frame's feedback pass mixes in the transition texture.
+    transition_active: bool,
 
     // === Optimized bloom processor ===
     /// Multi-pass bloom processor (separable blur + downsampling)
@@ -171,6 +176,8 @@ impl PostProcessor {
         let tex_b = create_texture("Post-Process Texture B");
         let scene_tex = create_texture("Scene Texture");
         let feedback_tex = create_feedback_texture("Feedback Texture");
+        let transition_tex = create_texture("Transition Scene Texture");
+        let transition_view = transition_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
         let view_a = tex_a.create_view(&wgpu::TextureViewDescriptor::default());
         let view_b = tex_b.create_view(&wgpu::TextureViewDescriptor::default());
@@ -266,6 +273,17 @@ impl PostProcessor {
                         binding: 2,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                    // Binding 3: what the outgoing scene of a transition drew
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
                         count: None,
                     },
                 ],
@@ -418,6 +436,9 @@ impl PostProcessor {
             feedback_uniform_bind_group,
             feedback_applied_this_frame: false,
             feedback_needs_clear: true,
+            transition_texture: transition_tex,
+            transition_view,
+            transition_active: false,
             // Bloom processor
             bloom_processor,
         };
@@ -528,6 +549,22 @@ impl PostProcessor {
         &self.scene_view
     }
 
+    /// Where a scene is drawn: the scene texture, or, for the outgoing scene of
+    /// a transition, the transition texture.
+    pub fn scene_target_view(&self, outgoing: bool) -> &wgpu::TextureView {
+        if outgoing {
+            &self.transition_view
+        } else {
+            &self.scene_view
+        }
+    }
+
+    /// Say whether this frame's feedback pass should mix in the transition
+    /// texture. Set it before `process_all` and clear it after.
+    pub fn set_transition_active(&mut self, active: bool) {
+        self.transition_active = active;
+    }
+
     /// Resize the post-processor.
     pub fn resize(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         if width == self.width && height == self.height {
@@ -577,6 +614,10 @@ impl PostProcessor {
         self.intermediate_textures[1] = create_texture("Post-Process Texture B");
         self.scene_texture = create_texture("Scene Texture");
         self.feedback_texture = create_feedback_texture();
+        self.transition_texture = create_texture("Transition Scene Texture");
+        self.transition_view = self
+            .transition_texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
         self.intermediate_views[0] =
             self.intermediate_textures[0].create_view(&wgpu::TextureViewDescriptor::default());
@@ -899,6 +940,14 @@ impl PostProcessor {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
                 },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(if self.transition_active {
+                        &self.transition_view
+                    } else {
+                        &self.scene_view
+                    }),
+                },
             ],
         });
 
@@ -1132,6 +1181,12 @@ impl PostProcessor {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+                // Sampling after effects has no separate picture of the outgoing
+                // scene to mix in: a transition there mixes the warp fields only.
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(post_fx_result_view),
                 },
             ],
         });

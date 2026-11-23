@@ -1086,7 +1086,8 @@ pub struct GpuColorStep {
 
 /// GPU-compatible uniform buffer for feedback shader with chained transforms.
 ///
-/// Layout: header (16 bytes) + limit (16 bytes) + 4 warp steps (128 bytes) + 4 color steps (128 bytes) = 288 bytes.
+/// Layout: header (16 bytes) + limit (16 bytes) + 4 warp steps (128 bytes) + 4 color steps (128 bytes) = 288 bytes,
+/// then the chains of the other scene of a transition (16 + 128 + 128) = 560 bytes.
 /// All blocks are 16-byte aligned for WGSL compatibility.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -1100,13 +1101,52 @@ pub struct FeedbackUniforms {
     // Limit on the feedback sample (16 bytes); a ceiling of 0 means no limit
     pub limit_knee: f32,
     pub limit_ceiling: f32,
-    pub _pad: [f32; 2],
+    /// During a transition, how much of the picture still belongs to the scene
+    /// on its way out (1 at the start, 0 at the end). 0 outside a transition.
+    pub other_share: f32,
+    pub _pad: f32,
 
     // Warp steps array (4 × 32 = 128 bytes)
     pub warp_steps: [GpuWarpStep; MAX_WARP_CHAIN],
 
     // Color steps array (4 × 32 = 128 bytes)
     pub color_steps: [GpuColorStep; MAX_COLOR_CHAIN],
+
+    // The outgoing scene's chains (16 + 128 + 128 bytes), used while other_share > 0
+    pub other_warp_count: u32,
+    pub other_color_count: u32,
+    pub _pad2: [u32; 2],
+    pub other_warp_steps: [GpuWarpStep; MAX_WARP_CHAIN],
+    pub other_color_steps: [GpuColorStep; MAX_COLOR_CHAIN],
+}
+
+impl FeedbackUniforms {
+    /// The uniforms for a frame in which this scene is taking over from another.
+    ///
+    /// `other_share` is how much of the picture still belongs to the outgoing
+    /// scene: 1 when the transition starts, 0 when it is over. The feedback
+    /// pass mixes the two scenes' warp fields and colour chains by it, so the
+    /// previous frame is pulled partly each scene's way, and mixes what the two
+    /// scenes drew. Opacity and the limit are mixed here. The blend mode cannot
+    /// be mixed and is the incoming scene's throughout.
+    pub fn taking_over_from(&self, outgoing: &FeedbackUniforms, other_share: f32) -> FeedbackUniforms {
+        let share = other_share.clamp(0.0, 1.0);
+        // Written so that the ends are exact: all the other's at 1, all its own at 0.
+        let mix = |own: f32, other: f32| own * (1.0 - share) + other * share;
+        let mut uniforms = *self;
+        uniforms.other_share = share;
+        uniforms.opacity = mix(self.opacity, outgoing.opacity);
+        // A ceiling of 0 means no limit; mixing with it would make one up.
+        if self.limit_ceiling > 0.0 && outgoing.limit_ceiling > 0.0 {
+            uniforms.limit_knee = mix(self.limit_knee, outgoing.limit_knee);
+            uniforms.limit_ceiling = mix(self.limit_ceiling, outgoing.limit_ceiling);
+        }
+        uniforms.other_warp_count = outgoing.warp_count;
+        uniforms.other_color_count = outgoing.color_count;
+        uniforms.other_warp_steps = outgoing.warp_steps;
+        uniforms.other_color_steps = outgoing.color_steps;
+        uniforms
+    }
 }
 
 impl Default for FeedbackUniforms {
@@ -1201,9 +1241,50 @@ mod tests {
     }
 
     #[test]
+    fn a_transition_carries_both_scenes_chains() {
+        let mut incoming = FeedbackUniforms::zeroed();
+        incoming.warp_count = 1;
+        incoming.warp_steps[0].strength = 0.2;
+        incoming.opacity = 1.0;
+        incoming.limit_knee = 0.6;
+        incoming.limit_ceiling = 0.8;
+        let mut outgoing = FeedbackUniforms::zeroed();
+        outgoing.warp_count = 2;
+        outgoing.warp_steps[1].strength = 0.9;
+        outgoing.color_count = 1;
+        outgoing.color_steps[0].decay_rate = 0.5;
+        outgoing.opacity = 0.5;
+        outgoing.limit_knee = 0.2;
+        outgoing.limit_ceiling = 0.4;
+
+        let start = incoming.taking_over_from(&outgoing, 1.0);
+        assert_eq!(start.other_share, 1.0);
+        assert_eq!((start.warp_count, start.other_warp_count), (1, 2));
+        assert_eq!(start.warp_steps[0].strength, 0.2);
+        assert_eq!(start.other_warp_steps[1].strength, 0.9);
+        assert_eq!(start.other_color_steps[0].decay_rate, 0.5);
+        assert_eq!((start.opacity, start.limit_knee, start.limit_ceiling), (0.5, 0.2, 0.4));
+
+        let half = incoming.taking_over_from(&outgoing, 0.5);
+        assert!((half.opacity - 0.75).abs() < 1e-6);
+        assert!((half.limit_ceiling - 0.6).abs() < 1e-6);
+
+        let end = incoming.taking_over_from(&outgoing, 0.0);
+        assert_eq!(end.other_share, 0.0);
+        assert_eq!((end.opacity, end.limit_knee, end.limit_ceiling), (1.0, 0.6, 0.8));
+
+        // An unbounded scene on either side keeps the incoming scene's limit as it is.
+        outgoing.limit_ceiling = 0.0;
+        assert_eq!(incoming.taking_over_from(&outgoing, 1.0).limit_ceiling, 0.8);
+        // Out of range shares are clamped.
+        assert_eq!(incoming.taking_over_from(&outgoing, 3.0).other_share, 1.0);
+    }
+
+    #[test]
     fn test_uniform_size() {
-        // Header (16) + limit (16) + 4 warp steps (128) + 4 color steps (128) = 288 bytes
-        assert_eq!(std::mem::size_of::<FeedbackUniforms>(), 288);
+        // Header (16) + limit (16) + 4 warp steps (128) + 4 color steps (128) = 288 bytes,
+        // then the other scene's counts (16) and chains (128 + 128) = 560 bytes
+        assert_eq!(std::mem::size_of::<FeedbackUniforms>(), 560);
         assert_eq!(std::mem::size_of::<GpuWarpStep>(), 32);
         assert_eq!(std::mem::size_of::<GpuColorStep>(), 32);
     }

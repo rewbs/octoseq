@@ -490,6 +490,8 @@ pub async fn execute_render_job_with_show(
 
     // Render frames
     let mut playing = 0usize;
+    // The scene on its way out, while the next one blends in over it.
+    let mut outgoing: Option<VisualiserState> = None;
     for i in 0..total_frames {
         // A show changes scene at set times: load the next script and carry on.
         if let Some(show) = show {
@@ -497,6 +499,22 @@ pub async fn execute_render_job_with_show(
             if due != playing {
                 playing = due;
                 let segment = &show.segments[due];
+                if segment.transition > 0.0 {
+                    // A blend: the old scene keeps running beside a fresh state
+                    // for the new one, set up as the first was and at the same
+                    // moment of the track.
+                    let mut incoming = VisualiserState::new();
+                    if job.seed != 0 {
+                        incoming.set_global_seed(job.seed);
+                    }
+                    if let Some(pkg) = package.as_ref() {
+                        apply_to_state(pkg, &mut incoming);
+                    }
+                    incoming.set_time(state.time);
+                    outgoing = Some(std::mem::replace(&mut state, incoming));
+                } else {
+                    outgoing = None;
+                }
                 if !state.load_script(&segment.source) {
                     return Err(anyhow::anyhow!(
                         "[{}] scene {:?} (from {:.2} s): {}",
@@ -509,6 +527,28 @@ pub async fn execute_render_job_with_show(
             }
         }
 
+        // How much of the picture the outgoing scene still has; once its
+        // transition is over it is dropped.
+        let outgoing_share = show.and_then(|show| show.outgoing_share(playing, i as f32 * dt));
+        if outgoing_share.is_none() {
+            outgoing = None;
+        }
+        let mut diagnostics = Vec::new();
+        // The outgoing scene first, so that anything a script leaves behind for
+        // the engine to pick up belongs to the scene that is staying.
+        if let Some(old) = outgoing.as_mut() {
+            old.update(
+                dt,
+                rotation_signal.as_ref(),
+                None,
+                named_signals,
+                band_signals,
+                custom_signals,
+                musical_time,
+            );
+            diagnostics.extend(old.take_script_diagnostics());
+        }
+
         state.update(
             dt,
             rotation_signal.as_ref(),
@@ -518,11 +558,12 @@ pub async fn execute_render_job_with_show(
             custom_signals,
             musical_time,
         );
+        diagnostics.extend(state.take_script_diagnostics());
 
         // A script error must stop the render. Without this, a scene whose init()
         // fails partway is rendered with whatever it had set up by then, which
         // looks like a dull scene rather than a broken one.
-        for diagnostic in state.take_script_diagnostics() {
+        for diagnostic in diagnostics {
             if diagnostic.kind == ScriptDiagnosticKind::Warning {
                 if !quiet {
                     eprintln!("  script warning: {}", diagnostic.message);
@@ -543,8 +584,11 @@ pub async fn execute_render_job_with_show(
             ));
         }
 
-        // Render to texture
-        renderer.render(&texture_view, &state);
+        // Render to texture: both scenes during a transition, otherwise the one.
+        match (outgoing.as_ref(), outgoing_share) {
+            (Some(old), Some(share)) => renderer.render_transition(&texture_view, old, &state, share),
+            _ => renderer.render(&texture_view, &state),
+        }
 
         // Copy texture to buffer
         let mut encoder = renderer

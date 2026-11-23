@@ -43,7 +43,8 @@ struct GpuColorStep {
 }
 
 // Main uniforms structure
-// Header (16 bytes) + limit (16 bytes) + 4 warp steps (128 bytes) + 4 color steps (128 bytes) = 288 bytes
+// Header (16 bytes) + limit (16 bytes) + 4 warp steps (128 bytes) + 4 color steps (128 bytes) = 288 bytes,
+// then the same chains again for the other scene of a transition (16 + 128 + 128) = 560 bytes
 struct FeedbackUniforms {
     // Header (16 bytes)
     warp_count: u32,
@@ -54,7 +55,9 @@ struct FeedbackUniforms {
     // Limit on the feedback sample (16 bytes); a ceiling of 0 means no limit
     limit_knee: f32,
     limit_ceiling: f32,
-    pad0: f32,
+    // During a transition: how much of the picture still belongs to the scene
+    // on its way out. 0 outside a transition.
+    other_share: f32,
     pad1: f32,
 
     // Warp steps array (4 × 32 = 128 bytes)
@@ -62,11 +65,22 @@ struct FeedbackUniforms {
 
     // Color steps array (4 × 32 = 128 bytes)
     color_steps: array<GpuColorStep, 4>,
+
+    // The outgoing scene's chains, used only while other_share > 0
+    other_warp_count: u32,
+    other_color_count: u32,
+    pad2: u32,
+    pad3: u32,
+    other_warp_steps: array<GpuWarpStep, 4>,
+    other_color_steps: array<GpuColorStep, 4>,
 }
 
 @group(0) @binding(0) var current_texture: texture_2d<f32>;
 @group(0) @binding(1) var feedback_texture: texture_2d<f32>;
 @group(0) @binding(2) var tex_sampler: sampler;
+// What the outgoing scene drew this frame, during a transition. Outside one this
+// is bound to the same texture as current_texture.
+@group(0) @binding(3) var other_texture: texture_2d<f32>;
 @group(1) @binding(0) var<uniform> params: FeedbackUniforms;
 
 // ============================================================================
@@ -259,6 +273,18 @@ fn apply_warp_chain(uv: vec2<f32>) -> vec2<f32> {
     return result;
 }
 
+// The outgoing scene's warp chain, during a transition
+fn apply_other_warp_chain(uv: vec2<f32>) -> vec2<f32> {
+    var result = uv;
+    let count = min(params.other_warp_count, 4u);
+
+    for (var i: u32 = 0u; i < count; i++) {
+        result = apply_warp_step(result, params.other_warp_steps[i]);
+    }
+
+    return result;
+}
+
 // ============================================================================
 // Colour transform operators (single step)
 // ============================================================================
@@ -303,6 +329,19 @@ fn apply_color_chain(color: vec4<f32>) -> vec4<f32> {
 
     for (var i: u32 = 0u; i < count; i++) {
         result = apply_color_step(result, params.color_steps[i]);
+    }
+
+    return result;
+}
+
+// The outgoing scene's colour chain, during a transition. A channel offset in
+// it is left out: it needs three extra samples, for a look that is on its way out.
+fn apply_other_color_chain(color: vec4<f32>) -> vec4<f32> {
+    var result = color;
+    let count = min(params.other_color_count, 4u);
+
+    for (var i: u32 = 0u; i < count; i++) {
+        result = apply_color_step(result, params.other_color_steps[i]);
     }
 
     return result;
@@ -436,11 +475,20 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Sample current frame
-    let current = textureSample(current_texture, tex_sampler, in.uv);
+    // Sample current frame. In a transition two scenes are drawing: mix what
+    // each drew by how far the transition has got.
+    let share = clamp(params.other_share, 0.0, 1.0);
+    let own = textureSample(current_texture, tex_sampler, in.uv);
+    let other = textureSample(other_texture, tex_sampler, in.uv);
+    let current = mix(own, other, share);
 
-    // Apply all spatial warps in sequence to get feedback UV
-    let warped_uv = apply_warp_chain(in.uv);
+    // Apply all spatial warps in sequence to get feedback UV. In a transition
+    // the two scenes' warp fields are mixed: every point of the previous frame
+    // is pulled partly the old scene's way and partly the new one's.
+    var warped_uv = apply_warp_chain(in.uv);
+    if (share > 0.0) {
+        warped_uv = mix(warped_uv, apply_other_warp_chain(in.uv), share);
+    }
 
     // Clamp to valid UV range to prevent edge artifacts
     let clamped_uv = clamp(warped_uv, vec2<f32>(0.001), vec2<f32>(0.999));
@@ -461,6 +509,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     } else {
         feedback = textureSample(feedback_texture, tex_sampler, clamped_uv);
         feedback = apply_color_chain(feedback);
+    }
+
+    if (share > 0.0) {
+        let raw = textureSample(feedback_texture, tex_sampler, clamped_uv);
+        feedback = mix(feedback, apply_other_color_chain(raw), share);
     }
 
     // Keep the loop bounded, then blend feedback with current frame

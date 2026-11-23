@@ -208,6 +208,9 @@ pub struct ScriptEngine {
     pub feedback_config: crate::feedback::FeedbackConfig,
     /// Evaluated feedback uniforms (signals resolved to f32 values for GPU upload).
     pub feedback_uniforms: crate::feedback::FeedbackUniforms,
+    /// What this engine's script last asked of `feedback.enable` / `disable`.
+    /// The slot scripts write to is one per thread; this is the engine's own copy.
+    requested_feedback: Option<crate::feedback::FeedbackConfig>,
     /// Camera configuration with signal support.
     pub camera_config: CameraConfig,
     /// Evaluated camera uniforms (signals resolved to f32 values for renderer).
@@ -857,6 +860,7 @@ impl ScriptEngine {
             frame_count: 0,
             feedback_config: crate::feedback::FeedbackConfig::default(),
             feedback_uniforms: crate::feedback::FeedbackUniforms::default(),
+            requested_feedback: None,
             camera_config: CameraConfig::default(),
             lighting_config: LightingConfig::default(),
             lighting_uniforms: LightingUniforms::default(),
@@ -985,6 +989,7 @@ impl ScriptEngine {
         self.evaluated_signals.clear();
 
         // Reset feedback config
+        self.requested_feedback = None;
         PENDING_FEEDBACK_CONFIG.with(|cell| {
             *cell.borrow_mut() = None;
         });
@@ -1904,6 +1909,22 @@ feedback.is_enabled = || {{
         );
     }
 
+    /// Put this engine's feedback setting in the slot scripts write to.
+    ///
+    /// That slot is one per thread, not one per engine. Without this, two
+    /// engines run in turn (the two scenes of a transition) read and overwrite
+    /// each other's setting. Call it before any script code runs.
+    fn take_up_feedback_slot(&self) {
+        PENDING_FEEDBACK_CONFIG.with(|cell| {
+            *cell.borrow_mut() = self.requested_feedback.clone();
+        });
+    }
+
+    /// Keep what the script has asked of feedback, for this engine's next turn.
+    fn keep_feedback_slot(&mut self) {
+        self.requested_feedback = PENDING_FEEDBACK_CONFIG.with(|cell| cell.borrow().clone());
+    }
+
     /// Call the init function if it exists.
     /// This should be called once after load_script to let the script create scene objects.
     pub fn call_init(&mut self) {
@@ -1911,6 +1932,7 @@ feedback.is_enabled = || {{
             return;
         }
         self.init_called = true;
+        self.take_up_feedback_slot();
 
         let ast = match &self.ast {
             Some(ast) => ast.clone(),
@@ -1937,6 +1959,7 @@ feedback.is_enabled = || {{
         } else {
             log::info!("Script init() called successfully");
         }
+        self.keep_feedback_slot();
     }
 
     /// Call the update function with the given per-frame inputs, then sync the scene graph.
@@ -1964,6 +1987,8 @@ feedback.is_enabled = || {{
 
         // Reset per-frame log counter
         reset_frame_log_count();
+
+        self.take_up_feedback_slot();
 
         // Ensure init has been called
         if !self.init_called {
@@ -3525,6 +3550,7 @@ feedback.is_enabled = || {{
         // (set by native __feedback_enable function)
         // With the new fluent builder API, the config is already a FeedbackConfig type.
         let config = PENDING_FEEDBACK_CONFIG.with(|cell| cell.borrow().clone());
+        self.requested_feedback = config.clone();
 
         self.feedback_config = config.unwrap_or_default();
 

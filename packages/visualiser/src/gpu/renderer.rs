@@ -413,6 +413,14 @@ pub struct Renderer {
     // Post-processing and feedback
     post_processor: PostProcessor,
     post_effect_registry: PostEffectRegistry,
+
+    // Transitions between scenes
+    /// Set while drawing the outgoing scene of a transition: its content goes
+    /// to the transition texture, and nothing is composited.
+    drawing_outgoing: bool,
+    /// The feedback uniforms for a frame inside a transition, in place of the
+    /// incoming scene's own.
+    transition_uniforms: Option<crate::feedback::FeedbackUniforms>,
 }
 
 impl Renderer {
@@ -1023,6 +1031,8 @@ impl Renderer {
             shadow_bind_group_layout,
             post_processor,
             post_effect_registry,
+            drawing_outgoing: false,
+            transition_uniforms: None,
         }
     }
 
@@ -1267,6 +1277,36 @@ impl Renderer {
         self.loaded_mesh_buffers.get(&asset.id).unwrap()
     }
 
+    /// Render a frame in which `incoming` is taking over from `outgoing`.
+    ///
+    /// Both scenes are drawn. `other_share` is how much of the picture still
+    /// belongs to the outgoing scene (1 at the start of the transition, 0 at
+    /// the end): what the two scenes drew is mixed by it, and so are their
+    /// feedback warp fields, inside the one feedback loop. Post effects, the
+    /// feedback blend mode and whether there is feedback at all are the
+    /// incoming scene's.
+    pub fn render_transition(
+        &mut self,
+        view: &wgpu::TextureView,
+        outgoing: &VisualiserState,
+        incoming: &VisualiserState,
+        other_share: f32,
+    ) {
+        self.drawing_outgoing = true;
+        self.render(view, outgoing);
+        self.drawing_outgoing = false;
+
+        self.transition_uniforms = Some(
+            incoming
+                .feedback_uniforms()
+                .taking_over_from(outgoing.feedback_uniforms(), other_share),
+        );
+        self.post_processor.set_transition_active(true);
+        self.render(view, incoming);
+        self.post_processor.set_transition_active(false);
+        self.transition_uniforms = None;
+    }
+
     pub fn render(&mut self, view: &wgpu::TextureView, state: &VisualiserState) {
         let scene_graph = state.scene_graph();
         let camera = state.camera_uniforms();
@@ -1502,7 +1542,7 @@ impl Renderer {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Scene Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: self.post_processor.scene_view(),
+                    view: self.post_processor.scene_target_view(self.drawing_outgoing),
                     resolve_target: None,
                     ops: wgpu::Operations {
                         // With feedback in `Over` mode the previous frame is the
@@ -2365,12 +2405,20 @@ impl Renderer {
         // Render particle systems
         self.render_particles_to_scene(&mut encoder, state);
 
+        // The outgoing scene of a transition is only drawn; the incoming scene's
+        // pass composites both.
+        if self.drawing_outgoing {
+            self.queue.submit(iter::once(encoder.finish()));
+            return;
+        }
+
         // Apply frame feedback and post-processing chain (V7+)
         // Uses process_all which handles ordering based on feedback sampling mode:
         // - PreFx (default): feedback → post-FX
         // - PostFx: post-FX → feedback
         let feedback_config = state.feedback_config();
-        let feedback_uniforms = state.feedback_uniforms();
+        let transition_uniforms = self.transition_uniforms;
+        let feedback_uniforms = transition_uniforms.as_ref().unwrap_or(state.feedback_uniforms());
         let post_chain = state.post_chain();
         let evaluated_params = post_chain.build_params_map(&self.post_effect_registry);
         self.post_processor.process_all(
@@ -2588,7 +2636,7 @@ impl Renderer {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Billboard Particle Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: self.post_processor.scene_view(),
+                        view: self.post_processor.scene_target_view(self.drawing_outgoing),
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
@@ -2661,7 +2709,7 @@ impl Renderer {
                 let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                     label: Some("Mesh Particle Render Pass"),
                     color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: self.post_processor.scene_view(),
+                        view: self.post_processor.scene_target_view(self.drawing_outgoing),
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Load,
