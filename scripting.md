@@ -2049,8 +2049,10 @@ fn init(ctx) {
 }
 ```
 
-Warp, decay and hue shift are applied once per frame, so the same settings give a
-faster, shorter-lived trail at 60 frames a second than at 30.
+Warp, decay and hue shift are read as "per thirtieth of a second": the same
+settings give the same trail whether the engine steps 30, 60 or 120 times a second.
+In `over` mode what a shape hides of the previous frame is read the same way. The
+other blend modes, and an `opacity` below 1, still act once a step.
 
 #### Feedback Sampling Mode
 

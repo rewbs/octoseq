@@ -33,6 +33,8 @@ python3 tools/loop/video.py data/dontstop.mp3            # again: a different sh
 python3 tools/loop/video.py data/dontstop.mp3 --seed 7   # the show seed 7 made before
 python3 tools/loop/video.py song.xm --width 1280 --height 720
 python3 tools/loop/video.py data/dontstop.mp3 --seed 7 --vivid   # the same show in stronger colours
+python3 tools/loop/video.py data/dontstop.mp3 --seed 7 --fps 120            # 120 frames a second
+python3 tools/loop/video.py data/dontstop.mp3 --seed 7 --step-rate 120      # 30 fps, the 120 fps picture
 ```
 
 Track in, video out. It builds the bundle (once per track), has the director make a
@@ -53,6 +55,29 @@ blend has got, and so are their feedback warps, inside the one feedback loop: th
 old picture's trails bend towards the new scene's motion while the new scene
 arrives. A show's segment asks for one with `"transition": <seconds>`; without it
 the segment cuts in.
+
+### Frame rate and step rate
+
+The engine steps once for each frame it saves unless told otherwise, and a scene
+built on the feedback loop is not quite the same picture at every step rate. The
+loop's settings are scaled to the step (a decay of 0.96 keeps 96% every thirtieth of
+a second however often the loop runs), so trails last as long and travel as far. But
+a moving shape leaves a stamp at every step, so more steps draw a smoother, denser
+trail.
+
+`--step-rate 120` has the engine step 120 times a second whatever the frame rate and
+save only the frames asked for. A 30 fps render is then the 120 fps render with three
+frames in four left out, byte for byte, and the render loop checks that on every run.
+It takes about 6% longer to make (115 s against 108 s for 90 s of video): saving frames is
+what takes the time, not drawing them.
+The default is one step a frame, which is the picture every scene here was made at
+(D98 in the queue).
+
+Anything new in the engine that acts once a step has to be scaled to the step's
+length (`FEEDBACK_REFERENCE_FPS` in `feedback.rs`), or it will run four times as
+fast at 120 steps a second. The loop itself is kept in 16-bit float between steps:
+in the output's 8 bits a small fade rounds back to where it started and never
+finishes (D99).
 
 ### Editing a show
 
@@ -406,7 +431,7 @@ Figures are held-out results from the scoreboard when this plan was written.
 | **1f. Drum hits by type** (done) | The reference and scorer extended to kick, snare and hat; at least one analyser scored on it. Two are: a detector on the full mix scores a mean F of 0.57 on held-out modules (kick 0.47, snare 0.46, hat 0.79), and the same detector on the drum stem Demucs separates scores 0.73 (kick 0.74, snare 0.59, hat 0.85) | None |
 | **1g. Bundle and worker**                                   | Bundle schema validates; the worker assembles the bundle from the best analyser per part as chosen by the accuracy loop; a stored bundle is reused, never recomputed; every scoreboard target met or its shortfall explained in the queue                                                                                                                                                                                                        | None                                                               |
 | **2. Role binding** (done) | Engine tests pass; a scene asking for an unavailable role fails with a clear error; every scene renders on every track. Scenes declare roles and read `roles.<name>`; bundles bind sixteen of them; the accuracy loop checks on every run that a role-reading scene renders and that one needing a missing role is refused by name | None |
-| **3. Feedback-first rendering** (part done) | No hard-gate failures on any scene. Active area and jerkiness targets met on a reference scene; deterministic; the WASM build still compiles. Done: feedback is bounded by default; a blend mode draws each frame over the last, so the previous frame is the base layer; warps no longer shear on a wide frame; and a reference scene, `scenes/vortex.rhai`, meets every gate and target on three of four default tracks, deterministically, with the WASM build compiling. Blended transitions between the scenes of a show are done (both scenes draw, and their pictures and warp fields are mixed in one feedback loop; the loop checks a blend shows both scenes and leaves the background alone, and that a cut does neither). Not done: HDR buffers with tone mapping (the tunnel example still whites out, from its own emissive mesh, D55), sub-frame accumulation, and feedback settings that do not depend on the frame rate (D61). The five older example scenes still fail as before | None |
+| **3. Feedback-first rendering** (part done) | No hard-gate failures on any scene. Active area and jerkiness targets met on a reference scene; deterministic; the WASM build still compiles. Done: feedback is bounded by default; a blend mode draws each frame over the last, so the previous frame is the base layer; warps no longer shear on a wide frame; and a reference scene, `scenes/vortex.rhai`, meets every gate and target on three of four default tracks, deterministically, with the WASM build compiling. Blended transitions between the scenes of a show are done (both scenes draw, and their pictures and warp fields are mixed in one feedback loop; the loop checks a blend shows both scenes and leaves the background alone, and that a cut does neither). Feedback settings mean the same at any frame rate (D97); the engine can take several steps a frame, so that a 30 fps render is the 120 fps picture (`--step-rate`, D98); and the loop is kept in 16-bit float between steps (D99). Not done: HDR with tone mapping (the loop is in float but still clipped at white each step, and the tunnel example still whites out, from its own emissive mesh, D55), and motion blur, which would average the steps of a frame instead of saving the last. The five older example scenes still fail as before | None |
 | **4. Scenes, director, one command** (first version out for review) | Every scene passes hard gates and targets over whole tracks, first on perfect bundles and then on analysed bundles of the same modules; audio sync on the analysed bundle within 10% of the perfect bundle; two runs of the director differ; each resulting show re-renders identically. Done: three scenes with a shared style line, a rule-based director, and `video.py`. Directed shows pass every hard gate on all four default tracks, differ from run to run and re-render identically. Over whole tracks (one run by hand, 23 November 2026, not yet part of the default loop): 24 clips, none fails a hard gate; the directed shows meet `punch`, `look_change` and `one_hue_share` on every track. Not met: `wash` is missed by every directed show (0.23 to 0.33). On analysed bundles of the two fixture modules, audio sync reaches the perfect bundle's on four of the six scene renders and is 70% and 83% of it on the other two; `punch` is 3.9 to 7.5 against about 8. That is with drum hits heard in the Demucs drum stem. Heard in the mix, as they were before, sync was within 10% on two of six and 40% to 74% on the rest, and `punch` 3.2 to 5.7. Scene changes inside a section are blended; the web preview cannot play a show yet, cut or blended | Review 2: rate the new videos |
 
 Chunks 1a to 1f are independent and can run in any order; 1a first is best, because

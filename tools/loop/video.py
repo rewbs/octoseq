@@ -56,6 +56,7 @@ def main() -> int:
     parser.add_argument("--scene", type=Path, help="play this one scene throughout instead of directing a show")
     parser.add_argument("--seconds", type=float, default=0.0, help="stop after this long; 0 = the whole track")
     parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument("--step-rate", type=int, default=0, help="steps the engine takes a second: at 120, a render is the same picture at 30, 60 or 120 fps, and slower to make. 0 = one step a frame")
     parser.add_argument("--width", type=int, default=960)
     parser.add_argument("--height", type=int, default=540)
     parser.add_argument("--no-build", action="store_true", help="skip cargo build")
@@ -103,10 +104,12 @@ def main() -> int:
         script = director.write(show, director.SHOWS / f"{track.stem}-{label}")
         print(f"{track.name}: {director.describe(show)}", flush=True)
 
+    if args.step_rate:
+        label += f"-step{args.step_rate}"
     out = args.out.expanduser().resolve() if args.out else OUT / f"{track.stem}-{label}.mp4"
     out.parent.mkdir(parents=True, exist_ok=True)
     frames = out.parent / f".{out.stem}-frames"
-    print(f"rendering {seconds:.0f} s at {args.width}x{args.height}, {args.fps} fps", flush=True)
+    print(f"rendering {seconds:.0f} s at {args.width}x{args.height}, {args.fps} fps{f', {args.step_rate} steps a second' if args.step_rate else ''}", flush=True)
     ok, log = run.render_frames(package_path, script, frames, seconds, args)
     if not ok:
         shutil.rmtree(frames, ignore_errors=True)

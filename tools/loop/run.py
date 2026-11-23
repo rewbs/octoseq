@@ -102,6 +102,8 @@ def render_frames(package: Path, scene: Path, out: Path, seconds: float, args) -
         "--out", engine_path(out), "--fps", str(args.fps), "--width", str(args.width),
         "--height", str(args.height), "--duration", f"{seconds:.3f}", "--quiet",
     ]  # fmt: skip
+    if getattr(args, "step_rate", 0):
+        cmd += ["--step-rate", str(args.step_rate)]
     result = sh(cmd)
     ok = result.returncode == 0 and any(out.glob("frame_*.png"))
     return ok, (result.stderr or result.stdout)[-2000:]
@@ -245,22 +247,28 @@ def engine_checks(track: Path, run_dir: Path, gates: dict, args) -> list[dict]:
     return checks + transition_checks(track, run_dir / "checks", small) + frame_rate_checks(track, run_dir / "checks", small)
 
 
-def frame_rate_checks(track: Path, out: Path, args) -> list[dict]:
-    """Trails must last as long at 120 frames a second as at 30.
+SAME_PICTURE = 1.0 / 255.0  # mean difference of one grey level: the same picture
 
-    The feedback loop runs once a frame, so its fade, growth, turn and bend have to be
-    scaled to the frame's length, or a faster render fades and flows faster. `liquid`
-    is rendered for eight seconds at both rates, and the share of the frame that is
+
+def frame_rate_checks(track: Path, out: Path, args) -> list[dict]:
+    """What a render's frame rate may and may not change, on eight seconds of `liquid`.
+
+    Trails must last as long at 120 frames a second as at 30. The feedback loop runs
+    once a step, so its fade, growth, turn and bend are scaled to the step's length,
+    or a faster render would fade and flow faster. The share of the frame that is
     lit, which is how far the trails reach before they fade, must agree. An engine
     that fades once a frame regardless lights a fifth less of the frame at 120.
 
-    The two renders are still not the same picture, and the check does not ask them
-    to be: at 120 a moving shape is stamped into the loop four times as often, so
-    its trail is a continuous smear rather than a row of stamps, and the picture is
-    brighter and smoother. Closing that needs the slower render to take several
-    steps per frame (sub-frame accumulation), which is not built.
+    That alone does not make the two the same picture: at 120 a moving shape is
+    stamped into the loop four times as often, so its trail is a continuous smear
+    rather than a row of stamps. A step rate closes that. A 30 fps render stepped
+    120 times a second must be the 120 fps
+    render with three frames in four left out: frame j of one against frame 4j + 3
+    of the other, to within a grey level. The plain 30 fps render is measured against
+    the same frames and must be further off than that, or the check proves nothing.
     """
-    name = "trails last as long at 120 frames a second as at 30"
+    trails = "trails last as long at 120 frames a second as at 30"
+    same = "a 30 fps render stepped 120 times a second is the 120 fps picture"
     if track.suffix.lower() in MODULE_SUFFIXES:
         bundle = perfect_bundle.build(track)
         package_path, audio = bundle / "package.json", bundle / perfect_bundle.AUDIO
@@ -268,22 +276,40 @@ def frame_rate_checks(track: Path, out: Path, args) -> list[dict]:
         package_path, audio = roles.standin_bundle_cached(track, LOOP_DIR / "cache"), track
     package = json.loads(package_path.read_text())
     seconds = min(8.0, float(package["durationSec"]))
-    lit, bright = {}, {}
-    for fps in (30, 120):
-        at = argparse.Namespace(**{**vars(args), "fps": fps})
-        frames_dir = out / f"fps-{fps}" / "frames"
+    renders = {"30": (30, 0), "120": (120, 0), "30-stepped": (30, 120)}
+    lit, bright, pictures, files = {}, {}, {}, {}
+    for key, (fps, step_rate) in renders.items():
+        at = argparse.Namespace(**{**vars(args), "fps": fps, "step_rate": step_rate})
+        frames_dir = out / f"fps-{key}" / "frames"
         ok, log = render_frames(package_path, ROOT / "scenes" / "liquid.rhai", frames_dir, seconds, at)
         if not ok:
-            return [dict(name=name, ok=False, detail=f"did not render at {fps} fps: {log.strip().splitlines()[-1] if log.strip() else '?'}")]
+            detail = f"did not render at {fps} fps{' stepped' if step_rate else ''}: {log.strip().splitlines()[-1] if log.strip() else '?'}"
+            return [dict(name=trails, ok=False, detail=detail), dict(name=same, ok=False, detail=detail)]
         clip = frames_dir.parent / "clip.mp4"
         encode_clip(frames_dir, audio, clip, seconds, fps)
+        # The frames as rendered, before the video encoder has touched them; the
+        # last step of each 30 fps frame is every fourth frame at 120, from the fourth.
+        every = fps // 30
+        pictures[key] = metrics.load_frames(frames_dir / "frame_%05d.png")[every - 1 :: every].astype(np.float32)
+        files[key] = [hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(frames_dir.glob("frame_*.png"))][every - 1 :: every]
         shutil.rmtree(frames_dir)
-        frames = metrics.load_frames(clip)[:: fps // 30]  # the same moments from both
-        lit[fps] = float((frames.max(axis=-1) > 40).mean())
-        bright[fps] = float(frames.mean()) / 255.0
-    ok = abs(lit[120] - lit[30]) <= 0.15 * max(lit[30], 1e-6)
-    detail = f"lit {lit[30]:.2f} and {lit[120]:.2f} of the frame; mean brightness {bright[30]:.2f} and {bright[120]:.2f}, which is the denser trail at 120"
-    return [dict(name=name, ok=ok, detail=detail)]
+        frames = metrics.load_frames(clip)[::every]  # the same moments from each
+        lit[key] = float((frames.max(axis=-1) > 40).mean())
+        bright[key] = float(frames.mean()) / 255.0
+    checks = [dict(
+        name=trails,
+        ok=abs(lit["120"] - lit["30"]) <= 0.15 * max(lit["30"], 1e-6),
+        detail=f"lit {lit['30']:.2f} and {lit['120']:.2f} of the frame; mean brightness {bright['30']:.2f} and {bright['120']:.2f}",
+    )]  # fmt: skip
+    count = min(len(pictures["120"]), len(pictures["30-stepped"]), len(pictures["30"]))
+    apart = {key: float(np.abs(pictures[key][:count] - pictures["120"][:count]).mean()) / 255.0 for key in ("30", "30-stepped")}
+    identical = sum(1 for x, y in zip(files["30-stepped"][:count], files["120"][:count]) if x == y)
+    checks.append(dict(
+        name=same,
+        ok=apart["30-stepped"] <= SAME_PICTURE < apart["30"],
+        detail=f"{identical} of {count} frames identical to the byte, mean difference {apart['30-stepped']:.4f}; one step a frame differs by {apart['30']:.4f}",
+    ))  # fmt: skip
+    return checks
 
 
 def transition_checks(track: Path, out: Path, args) -> list[dict]:
@@ -395,6 +421,7 @@ def main() -> int:
     parser.add_argument("--scenes", nargs="+", default=DEFAULT_SCENES)
     parser.add_argument("--seconds", type=float, default=30.0, help="clip length; 0 = whole track")
     parser.add_argument("--fps", type=int, default=30)
+    parser.add_argument("--step-rate", type=int, default=0, help="steps the engine takes a second (see video.py); 0 = one a frame")
     parser.add_argument("--width", type=int, default=480)
     parser.add_argument("--height", type=int, default=270)
     parser.add_argument("--name", default=time.strftime("%Y%m%d-%H%M%S"))
