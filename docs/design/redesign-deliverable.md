@@ -268,6 +268,8 @@ fine.
 1. **Proof of fun.** One command, track to mp4, no UI and no prompt.
    - Analysis worker writes the bundle; stems from user files or any of the three
      providers
+   - Analysis improved against tracker-module ground truth until every target on
+     the [accuracy scoreboard](../loop/scoreboard.md) is met
    - Engine: role binding, feedback-first compositing, blended transitions
    - 3–5 scenes with shared style controls; rule-based director
    - **Exit test:** ten tracks across genres, each watchable to the end unedited
@@ -305,10 +307,19 @@ exit test passes.
 
 ## How it gets built
 
-Work proceeds in autonomous chunks checked by an automated render-and-score loop,
-with human judgement batched at the end of each chunk. See
-[../loop/README.md](../loop/README.md) and the queue in
-[../loop/queue.md](../loop/queue.md).
+Work proceeds in autonomous chunks checked by two automated loops, with human
+judgement batched at the end of each chunk:
+
+- a **render loop** that scores the picture, and
+- an **accuracy loop** that scores analysis timing against tracker modules, where
+  every note is known.
+
+The loops also decide what is worked on. The
+[accuracy scoreboard](../loop/scoreboard.md) lists each part of the analysis against
+its target; the rows furthest from target come next, and a change counts as an
+improvement only if it moves a row on held-out music without moving another
+backwards. See [../loop/README.md](../loop/README.md) for the chunk plan and
+[../loop/queue.md](../loop/queue.md) for everything waiting on the project owner.
 
 ## Still to specify
 

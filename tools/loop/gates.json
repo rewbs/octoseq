@@ -59,12 +59,20 @@
       "why": "slow attacks (pads, swells) should not be ignored"
     },
     "beat_f": {
-      "min": 0.8,
+      "min": 0.95,
       "why": "beat grid on the beat at some metrical level"
     },
+    "tempo_right": {
+      "min": 0.95,
+      "why": "tempo correct, allowing half or double"
+    },
     "section_f": {
-      "min": 0.6,
+      "min": 0.75,
       "why": "section boundaries within 3 s"
+    },
+    "stem_improvement_db": {
+      "min": 3.0,
+      "why": "separation clearly better than handing back the mix"
     },
     "regression": {
       "max_drop": 0.02,

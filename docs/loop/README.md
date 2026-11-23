@@ -198,17 +198,52 @@ Things only the project owner can supply (test tracks, API keys, spending approv
 are listed in the queue up front with exactly what each one blocks, so work that does
 not depend on them continues.
 
+## Using the loops for real improvements
+
+The loops are not only a safety net. They set the order of work: the rows of
+[scoreboard.md](scoreboard.md) that are furthest from target are what gets worked on
+next, and a change is kept only if the loop says it helped.
+
+Rules for any change to analysis:
+
+1. **Name the row first.** Say which scoreboard row the change is meant to move
+   before making it.
+2. **Tune on training, judge on held-out.** Never look at held-out modules while
+   developing a change.
+3. **Keep it only if it helps.** The target row must move the right way on the
+   held-out split, no other row may fall by more than the regression allowance (a
+   hard gate), and the real-music check must hold.
+4. **Record it.** Run `accuracy.py --save-baseline`. That rewrites the scoreboard, so
+   the commit that makes an improvement also shows it, and the scoreboard's git
+   history is the history of real improvements.
+5. **Raise the bar when it is cleared.** When a target is met comfortably, tighten it
+   in `gates.json` and note that in the queue.
+
+The same applies to the engine and scenes with the render loop: `baseline.json` is
+the record, contact sheets are the evidence, and a scene is developed against a
+perfect bundle first so that analysis errors and scene problems are not confused.
+
 ## Chunks for milestone 1
 
 Each chunk can be built unattended. "Gates" are the automatic exit conditions.
+Figures are held-out results from the scoreboard when this plan was written.
 
-| Chunk                                | Gates                                                                                                                                                                                                                                                                                            | Human input at the end                            |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
-| **0. Analysis-accuracy loop** (done) | Instrument checks all pass; `accuracy.py` scores onsets, beats, sections and stems on both splits and all variants and exits zero; tuned parameters are adopted only under the rules in `tune.py`; the engine renders a scene from a perfect bundle; committed fixtures regenerate byte-for-byte | None                                              |
-| **1. Analysis bundle and worker**    | Bundle schema validates; every analyser is registered in `analysers.py` and scored by the accuracy loop, and the chosen analyser for each part meets the accuracy targets on the held-out split; stem and analysis adaptors pass contract tests; stored bundle is reused, never recomputed       | API keys to verify adaptors against live services |
-| **2. Role binding**                  | Engine tests pass; a scene asking for an unavailable role fails with a clear error; every scene renders on every track                                                                                                                                                                           | None                                              |
-| **3. Feedback-first rendering**      | No hard-gate failures; active area and jerkiness targets met on a reference scene; deterministic; the WASM build still compiles                                                                                                                                                                  | None                                              |
-| **4. Scenes, director, one command** | Every scene on every track passes hard gates and targets over the whole track; two runs of the director differ; each resulting show re-renders identically                                                                                                                                       | Review pack 1: rate the clips                     |
+| Chunk                                | Gates                                                                                                                                                                                                                                                                                            | Human input                             |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- |
+| **0. Analysis-accuracy loop** (done) | Instrument checks all pass; `accuracy.py` scores onsets, beats, sections and stems on both splits and all variants and exits zero; tuned parameters are adopted only under the rules in `tune.py`; the engine renders a scene from a perfect bundle; committed fixtures regenerate byte-for-byte | None                                    |
+| **1a. Wider corpus**                 | At least 150 downloaded modules drawn from across the whole public-domain listing and all four formats, not its first page; at least 60 modules in each split; instrument checks still pass; parameters re-tuned and the scoreboard regenerated                                                  | ScreamSeq exports welcome, not required |
+| **1b. Slow attacks**                 | Soft recall from 0.35 to at least 0.6, with percussive recall still at least 0.90, clean onset F no lower and real-music agreement no lower                                                                                                                                                      | None                                    |
+| **1c. Beat tracking**                | Tempo right on at least 95% of tracks (from 82%); beat F at any level at least 0.95 (from 0.90); modules with tempo changes scored, not skipped; at least one local model and one hosted service registered and compared                                                                         | API keys for hosted candidates          |
+| **1d. Sections**                     | Boundary F within 3 s at least 0.75 (from 0.61, a crude baseline); at least one real analyser registered                                                                                                                                                                                         | API keys for hosted candidates          |
+| **1e. Stems**                        | User-supplied stems, the three hosted providers and one local model all registered as analysers; the best improves on the unseparated mix by at least 3 dB against true stems (from −1.6 dB)                                                                                                     | API keys for the stem providers         |
+| **1f. Drum hits by type**            | The reference and scorer extended to kick, snare and hat (the reference already has one event stream per sample); at least one analyser scored on it                                                                                                                                             | None                                    |
+| **1g. Bundle and worker**            | Bundle schema validates; the worker assembles the bundle from the best analyser per part as chosen by the accuracy loop; a stored bundle is reused, never recomputed; every scoreboard target met or its shortfall explained in the queue                                                        | None                                    |
+| **2. Role binding**                  | Engine tests pass; a scene asking for an unavailable role fails with a clear error; every scene renders on every track                                                                                                                                                                           | None                                    |
+| **3. Feedback-first rendering**      | No hard-gate failures on any scene, including the crash and the white-out the render loop found in the existing example scenes (fixed or the scene retired); active area and jerkiness targets met on a reference scene; deterministic; the WASM build still compiles                            | None                                    |
+| **4. Scenes, director, one command** | Every scene passes hard gates and targets over whole tracks, first on perfect bundles and then on analysed bundles of the same modules; audio sync on the analysed bundle within 10% of the perfect bundle; two runs of the director differ; each resulting show re-renders identically          | Review pack 1: rate the clips           |
+
+Chunks 1a to 1f are independent and can run in any order; 1a first is best, because
+every later number is more trustworthy on a wider corpus.
 
 ## Limits of the loops today
 

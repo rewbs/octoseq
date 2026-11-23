@@ -330,6 +330,12 @@ def evaluate_gates(report: dict, gates: dict, baseline: dict | None) -> tuple[li
                 target.append(f"held-out onset F {clean['f']:.3f} below {gates['onset_f']['min']}")
     if "beats" in chosen and chosen["beats"]["score"] < gates["beat_f"]["min"]:
         target.append(f"held-out beat F {chosen['beats']['score']:.3f} below {gates['beat_f']['min']}")
+    if "beats" in chosen:
+        beats = report["scores"][chosen["beats"]["analyser"]]["heldout"]["variants"].get("clean", {}).get("beats")
+        if beats and beats["tempo_octave"] < gates["tempo_right"]["min"]:
+            target.append(f"held-out tempo right on {beats['tempo_octave'] * 100:.0f}% of tracks, below {gates['tempo_right']['min'] * 100:.0f}%")
+    if "stems" in chosen and chosen["stems"]["score"] < gates["stem_improvement_db"]["min"]:
+        target.append(f"held-out stem improvement {chosen['stems']['score']} dB below {gates['stem_improvement_db']['min']} dB")
     if "sections" in chosen and chosen["sections"]["score"] < gates["section_f"]["min"]:
         target.append(f"held-out section F {chosen['sections']['score']:.3f} below {gates['section_f']['min']}")
     if baseline:
@@ -389,6 +395,73 @@ def write_report(run_dir: Path, report: dict) -> None:
         lines.append("All gates passed.")
     (run_dir / "report.md").write_text("\n".join(lines) + "\n")
     (run_dir / "report.json").write_text(json.dumps(report, indent=1))
+
+
+def write_scoreboard(report: dict, gates: dict) -> None:
+    """The committed record of where analysis stands against its targets.
+
+    Rewritten whenever a run is accepted as the baseline, so the history of this
+    file in git is the history of real improvements.
+    """
+    chosen, scores = report["chosen"], report["scores"]
+    rows = []
+
+    def row(part: str, measure: str, value, target: str, met: bool | None, analyser: str) -> None:
+        status = "–" if met is None else ("met" if met else "**not met**")
+        rows.append([part, measure, str(value), target, status, f"`{analyser}`"])
+
+    if "onsets" in chosen:
+        name = chosen["onsets"]["analyser"]
+        variants = scores[name]["heldout"]["variants"]
+        clean = variants["clean"]["onsets"]
+        row("Onsets", "F on clean audio", f"{clean['f']:.3f}", f"at least {gates['onset_f']['min']}", clean["f"] >= gates["onset_f"]["min"], name)
+        degraded = [variants[v]["onsets"]["f"] for v in variants if v != "clean" and "onsets" in variants[v]]
+        if degraded:
+            row("Onsets", "worst F through reverb, compression, MP3", f"{min(degraded):.3f}", "tracked", None, name)
+        for kind in ("percussive", "soft"):
+            k = clean["kinds"].get(kind)
+            if not k or k["recall"] is None:
+                continue
+            limit = gates[f"{kind}_recall"]["min"]
+            row("Onsets", f"{kind} recall", f"{k['recall']:.3f}", f"at least {limit}", k["recall"] >= limit, name)
+            bias = k["timing"]["bias_ms"]
+            if bias is not None:
+                row("Onsets", f"{kind} timing bias / spread", f"{bias:+.1f} ms / {k['timing']['spread_ms']:.1f} ms", f"bias within {gates['onset_bias_ms']['max']} ms", abs(bias) <= gates["onset_bias_ms"]["max"], name)
+    if "beats" in chosen:
+        name = chosen["beats"]["analyser"]
+        beats = scores[name]["heldout"]["variants"]["clean"]["beats"]
+        row("Beats", "F at any metrical level, mean over variants", f"{chosen['beats']['score']:.3f}", f"at least {gates['beat_f']['min']}", chosen["beats"]["score"] >= gates["beat_f"]["min"], name)
+        row("Beats", "F at the module's own level", f"{beats['f']:.3f}", "tracked", None, name)
+        row("Beats", "tempo right, allowing half or double", f"{beats['tempo_octave'] * 100:.0f}%", f"at least {gates['tempo_right']['min'] * 100:.0f}%", beats["tempo_octave"] >= gates["tempo_right"]["min"], name)
+    if "sections" in chosen:
+        name = chosen["sections"]["analyser"]
+        row("Sections", "boundary F within 3 s, mean over variants", f"{chosen['sections']['score']:.3f}", f"at least {gates['section_f']['min']}", chosen["sections"]["score"] >= gates["section_f"]["min"], name)
+    if "stems" in chosen:
+        name = chosen["stems"]["analyser"]
+        row("Stems", "SI-SDR improvement over the unseparated mix", f"{chosen['stems']['score']:+.2f} dB", f"at least {gates['stem_improvement_db']['min']} dB", chosen["stems"]["score"] >= gates["stem_improvement_db"]["min"], name)
+
+    # Column-aligned, so the file is already in the form the repository's formatter produces.
+    header = ["Part", "Measure", "Now", "Target", "Status", "Best analyser"]
+    widths = [max(len(r[i]) for r in [header, *rows]) for i in range(len(header))]
+    table = ["| " + " | ".join(cell.ljust(w) for cell, w in zip(r, widths)) + " |" for r in [header, *rows]]
+    table.insert(1, "| " + " | ".join("-" * w for w in widths) + " |")
+    c = report["corpus"]
+    checks = report["instrument_checks"]
+    lines = [
+        "# Accuracy Scoreboard",
+        "",
+        "Generated by `python3 tools/loop/accuracy.py --save-baseline`. Do not edit by hand.",
+        "",
+        f"Held-out split: {c['heldout']} modules ({c['train']} more are used for tuning; {c['sources']} in total).",
+        f"Instrument checks: {sum(ch['ok'] for ch in checks)} of {len(checks)} pass.",
+        "",
+        *table,
+        "",
+        "Each row is the best analyser for that part on the held-out split. Targets live in",
+        "`tools/loop/gates.json`. A change to analysis counts as an improvement only if it",
+        "moves a row here without moving another row backwards.",
+    ]
+    (ROOT / "docs" / "loop" / "scoreboard.md").write_text("\n".join(lines) + "\n")
 
 
 def run(args, params: dict | None = None, pool=None) -> dict:
@@ -472,7 +545,8 @@ def main() -> int:
     print(f"\nreport: {(run_dir / 'report.md').relative_to(ROOT)}")
     if args.save_baseline:
         BASELINE.write_text(json.dumps(dict(chosen=report["chosen"], corpus=report["corpus"], params=report["params"]), indent=2) + "\n")
-        print(f"baseline saved to {BASELINE.relative_to(ROOT)}")
+        write_scoreboard(report, json.loads(GATES.read_text())["accuracy"])
+        print(f"baseline saved to {BASELINE.relative_to(ROOT)}; scoreboard written to docs/loop/scoreboard.md")
     return 1 if report["hard"] else 0
 
 

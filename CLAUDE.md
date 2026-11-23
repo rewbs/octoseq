@@ -162,6 +162,12 @@ python3 tools/loop/accuracy.py   # score analysis timing against tracker-module 
 - Run the accuracy loop after any change to analysis. It needs the instrumented
   module player (`tools/loop/modplayer/build.sh`) and, for the full corpus,
   `python3 tools/loop/corpus.py restore`. `--quick` uses only the committed fixtures.
+- Use the loops to choose and prove work, not only to catch breakage.
+  [docs/loop/scoreboard.md](docs/loop/scoreboard.md) shows each part of the analysis
+  against its target: work on the rows furthest from target, name the row a change
+  is meant to move, and keep the change only if that row improves on the held-out
+  split without another falling. Then run `accuracy.py --save-baseline`, which
+  rewrites the scoreboard, and commit it with the change.
 - New analysers (local models, hosted APIs) are registered in
   `tools/loop/analysers.py` so the accuracy loop scores them like any other. Tune
   only on the training split; never look at held-out modules while tuning.
