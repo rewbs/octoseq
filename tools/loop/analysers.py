@@ -22,6 +22,7 @@ any serious analyser should beat them.
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 from pathlib import Path
 
@@ -128,14 +129,33 @@ def bandsplit(audio: Path, params: dict | None = None) -> dict:
     return dict(stems={name: _istft(spec * m, n_fft, hop, len(x)) for name, m in masks.items()})
 
 
+def model_device() -> str:
+    """Where model analysers run: the GPU when PyTorch can use one, otherwise the CPU.
+
+    Set OCTOSEQ_DEVICE=cpu (or cuda, cuda:1, mps) to override. Call this only from
+    the process that will run the model: asking PyTorch about CUDA starts the CUDA
+    runtime, and a process that has done so cannot hand it on to forked workers.
+    """
+    import torch
+
+    forced = os.environ.get("OCTOSEQ_DEVICE")
+    if forced:
+        return forced
+    if torch.cuda.is_available():
+        return "cuda"
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 _beat_this_model = None
 
 
 def beat_this(audio: Path, params: dict | None = None) -> dict:
     """Beats and downbeats from the Beat This model (Foscarin, Schlueter and Widmer, 2024).
 
-    A trained transformer, run locally on the CPU. Needs the optional model
-    environment: see tools/loop/models/setup.sh.
+    A trained transformer, run locally on the GPU if there is one and the CPU if
+    not. Needs the optional model environment: see tools/loop/models/setup.sh.
     """
     global _beat_this_model
     if _beat_this_model is None:
@@ -143,7 +163,7 @@ def beat_this(audio: Path, params: dict | None = None) -> dict:
         from beat_this.inference import Audio2Beats
 
         torch.set_num_threads(1)  # the accuracy loop already runs one analysis per core
-        _beat_this_model = Audio2Beats(checkpoint_path="final0", device="cpu", dbn=False)
+        _beat_this_model = Audio2Beats(checkpoint_path="final0", device=model_device(), dbn=False)
     beats, downbeats = _beat_this_model(decode(audio), STEM_RATE)
     bpm = float(60.0 / np.median(np.diff(beats))) if len(beats) > 1 else 0.0
     return dict(beats=[float(b) for b in beats], downbeats=[float(b) for b in downbeats], bpm=bpm)

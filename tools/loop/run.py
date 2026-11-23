@@ -6,6 +6,7 @@
     python3 tools/loop/run.py --scenes 'scenes/*.rhai' --tracks data/super.mp3
     python3 tools/loop/run.py --save-baseline      # accept this run as the baseline
     python3 tools/loop/run.py --tracks tools/loop/fixtures/modules/synth-0001.mod
+    OCTOSEQ_ENGINE=/path/to/visualiser.exe python3 tools/loop/run.py   # another engine build
 
 A track may be a tracker module instead of an audio file. It is then rendered with
 the instrumented player and the scene is driven by a bundle of known-correct events
@@ -25,6 +26,7 @@ import argparse
 import glob
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -39,7 +41,12 @@ import perfect_bundle  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 LOOP_DIR = ROOT / ".loop"
 ENGINE_DIR = ROOT / "packages" / "visualiser"
-ENGINE = ENGINE_DIR / "target" / "release" / ("visualiser.exe" if sys.platform == "win32" else "visualiser")
+BUILT_ENGINE = ENGINE_DIR / "target" / "release" / ("visualiser.exe" if sys.platform == "win32" else "visualiser")
+# OCTOSEQ_ENGINE names another build of the engine to render with. Its main use is
+# under WSL, which has no GPU Vulkan driver: point it at an engine built natively
+# on Windows and the frames are rendered on the GPU (see docs/loop/setup.md).
+ENGINE = Path(os.environ["OCTOSEQ_ENGINE"]) if os.environ.get("OCTOSEQ_ENGINE") else BUILT_ENGINE
+WINDOWS_ENGINE_FROM_WSL = ENGINE.suffix.lower() == ".exe" and sys.platform != "win32"
 GATES = Path(__file__).parent / "gates.json"
 BASELINE = Path(__file__).parent / "baseline.json"
 
@@ -53,17 +60,29 @@ def sh(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
 
 
 def build_engine() -> None:
+    if ENGINE != BUILT_ENGINE:
+        if not ENGINE.exists():
+            sys.exit(f"OCTOSEQ_ENGINE is set to {ENGINE}, which does not exist")
+        return  # someone else's build: use it as it is
     result = sh(["cargo", "build", "--release", "--quiet"], cwd=ENGINE_DIR)
     if result.returncode != 0:
         sys.exit(f"engine build failed:\n{result.stderr[-3000:]}")
 
 
+def engine_path(path: Path) -> str:
+    """A path in the form the engine needs: a Windows engine run from WSL wants Windows paths."""
+    if not WINDOWS_ENGINE_FROM_WSL:
+        return str(path)
+    return subprocess.run(["wslpath", "-w", str(path)], check=True, capture_output=True, text=True).stdout.strip()
+
+
 def render_frames(package: Path, scene: Path, out: Path, seconds: float, args) -> tuple[bool, str]:
     if out.exists():
         shutil.rmtree(out)
+    out.mkdir(parents=True)
     cmd = [
-        str(ENGINE), "render", "--package", str(package), "--script", str(scene),
-        "--out", str(out), "--fps", str(args.fps), "--width", str(args.width),
+        str(ENGINE), "render", "--package", engine_path(package), "--script", engine_path(scene),
+        "--out", engine_path(out), "--fps", str(args.fps), "--width", str(args.width),
         "--height", str(args.height), "--duration", f"{seconds:.3f}", "--quiet",
     ]  # fmt: skip
     result = sh(cmd)
