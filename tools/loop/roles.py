@@ -246,7 +246,7 @@ def standin_bundle_cached(audio: Path, cache_dir: Path, drum_source: str | None 
     drum_source = "stem" if drum_stem else "mix"
     drum_params = analysers.drum_params(drum_source)
     drum_key = analyse.params_key(drum_params) + (("-stem-forced" if forced else f"-stem-or-mix{DRUMLESS_DB:g}") if drum_stem else "")
-    key = f"{analyse.file_sha256(audio)[:16]}-{analyse.ANALYSER_VERSION}-{analyse.params_key(params)}-{ROLES_VERSION}-{drum_key}-novelty"
+    key = f"{analyse.file_sha256(audio)[:16]}-{analyse.ANALYSER_VERSION}-{analyse.params_key(params)}-{ROLES_VERSION}-{drum_key}-novelty_grid"
     out = cache_dir / key / "package.json"
     if out.exists():
         return out
@@ -260,7 +260,7 @@ def standin_bundle_cached(audio: Path, cache_dir: Path, drum_source: str | None 
             heard, drum_source, drum_params = mix, "mix (no drums in the track)", analysers.drum_params("mix")
     hits = analysers.drum_hits(analysers.drum_envelopes(heard), drum_params)
     package["drumSource"] = drum_source
-    starts = analysers.novelty(audio)["sections"]
+    starts = analysers.novelty_grid(audio)["sections"]
     bind(
         package,
         beats=grid["beats"],

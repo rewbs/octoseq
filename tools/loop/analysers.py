@@ -134,6 +134,74 @@ def change(audio: Path, params: dict | None = None) -> dict:
     return dict(sections=sorted(sections))
 
 
+# Chosen on the training split, where the scores are flat around them.
+GRID_BEATS = 16  # four bars of 4/4: the length of a tracker pattern at the usual four rows to the beat
+GRID_REACH_S = 2.0  # a found boundary this close to a grid mark is moved onto it
+GRID_CELL_DB = 2.0  # a grid mark with this much change across it is a boundary even if nothing found it
+GRID_CLEAR_S = 3.0  # but not within this of a boundary already there
+GRID_HOP = 1024
+
+
+def _grid_marks(beats: np.ndarray, found: list[float]) -> np.ndarray | None:
+    """Every sixteenth beat, starting from whichever beat puts the marks nearest the found boundaries."""
+    if len(beats) < 2 * GRID_BEATS or not found:
+        return None
+    times = np.asarray(found, dtype=float)
+    best_fit, best_marks = -1.0, None
+    for phase in range(GRID_BEATS):
+        marks = beats[phase::GRID_BEATS]
+        if len(marks) < 2:
+            continue
+        miss = np.abs(times[:, None] - marks[None, :]).min(axis=1)
+        fit = float(np.exp(-(miss**2)).sum())  # a boundary a second off counts about a third
+        if fit > best_fit:
+            best_fit, best_marks = fit, marks
+    return best_marks
+
+
+def _change_across(level: np.ndarray, marks: np.ndarray, per_s: float) -> np.ndarray:
+    """At each mark, how far the average spectrum moves from the stretch before it to the stretch after, in dB."""
+    idx = [int(round(m * per_s)) for m in marks]
+    total = np.cumsum(np.concatenate([np.zeros((1, level.shape[1])), level]), axis=0)
+    out = np.zeros(len(marks))
+    for k in range(1, len(marks) - 1):
+        a, b, c = idx[k - 1], idx[k], idx[k + 1]
+        if b - a >= 2 and c - b >= 2 and c <= len(level):
+            out[k] = np.abs((total[c] - total[b]) / (c - b) - (total[b] - total[a]) / (b - a)).mean()
+    return out
+
+
+def novelty_grid(audio: Path, params: dict | None = None) -> dict:
+    """`novelty`'s boundaries, put on a grid of whole patterns.
+
+    Sections start on bar lines, and in most of this music on every fourth one. So
+    the boundaries `novelty` finds are moved to the nearest mark of a sixteen-beat
+    grid (the grid's starting beat is whichever fits them best), and a mark where the
+    average spectrum of the sixteen beats after it differs clearly from the sixteen
+    before becomes a boundary too. The first makes boundaries land on the beat; the
+    second finds changes too gradual for `novelty`'s sliding window.
+    """
+    found = novelty(audio)["sections"]
+    beats = np.asarray(analyse.detect(audio, analyse.load_params())["beats"], dtype=float)
+    marks = _grid_marks(beats, found)
+    if marks is None:
+        return dict(sections=found)
+    moved = set()
+    for t in found:
+        nearest = float(marks[np.abs(marks - t).argmin()])
+        moved.add(nearest if abs(nearest - t) <= GRID_REACH_S else t)
+    x = decode(audio)
+    mag = analyse.spectrogram(x, 2048, GRID_HOP)
+    edges = np.unique(np.geomspace(2, mag.shape[1] - 1, 25).astype(int))
+    level = 20 * np.log10(np.stack([mag[:, a:b].mean(axis=1) for a, b in zip(edges[:-1], edges[1:])], axis=1) + 0.01)
+    duration = len(x) / STEM_RATE
+    across = _change_across(level, marks, STEM_RATE / GRID_HOP)
+    for mark, change_db in zip(marks, across):
+        if change_db >= GRID_CELL_DB and 1.0 < mark < duration - 1.0 and all(abs(mark - t) > GRID_CLEAR_S for t in moved):
+            moved.add(float(mark))
+    return dict(sections=sorted(moved))
+
+
 DRUM_FFT, DRUM_HOP = 1024, 220  # 10 ms frames
 DRUM_BANDS_HZ = {"kick": (0.0, 150.0), "snare": (200.0, 3000.0), "hat": (5000.0, 11025.0)}
 # Found by tune_drums.py on the training split and kept in drum_params.json: one set
@@ -310,6 +378,7 @@ ANALYSERS = {
     "energy": energy,
     "novelty": novelty,
     "change": change,
+    "novelty_grid": novelty_grid,
     "drumbands": drumbands,
     "bandsplit": bandsplit,
 }

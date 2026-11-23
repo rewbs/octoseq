@@ -20,7 +20,8 @@ Instrument checks: 17 of 17 pass.
 | Beats     | F at the module's own level                                | 0.736               | tracked             | –           | `standin`        |
 | Beats     | F at any level on the 15 modules with irregular beat grids | 0.858               | tracked             | –           | `standin`        |
 | Beats     | tempo right at some metrical level                         | 91%                 | at least 95%        | **not met** | `standin`        |
-| Sections  | boundary F within 3 s, mean over variants                  | 0.520               | at least 0.75       | **not met** | `novelty`        |
+| Sections  | boundary F within 3 s, mean over variants                  | 0.540               | at least 0.75       | **not met** | `novelty_grid`   |
+| Sections  | boundary F within 3 s, for comparison                      | 0.520               | tracked             | –           | `novelty`        |
 | Sections  | boundary F within 3 s, for comparison                      | 0.496               | tracked             | –           | `change`         |
 | Drum hits | mean F over kick, snare and hat, clean audio (39 modules)  | 0.727               | tracked             | –           | `drumbands_stem` |
 | Drum hits | kick F                                                     | 0.738, bias -1.9 ms | tracked             | –           | `drumbands_stem` |

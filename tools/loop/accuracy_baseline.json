@@ -17,11 +17,12 @@
       }
     },
     "sections": {
-      "analyser": "novelty",
-      "score": 0.5201,
+      "analyser": "novelty_grid",
+      "score": 0.5405,
       "candidates": {
         "novelty": 0.5201,
-        "change": 0.4962
+        "change": 0.4962,
+        "novelty_grid": 0.5405
       }
     },
     "drums": {
