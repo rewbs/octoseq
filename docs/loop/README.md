@@ -70,8 +70,8 @@ save only the frames asked for. A 30 fps render is then the 120 fps render with 
 frames in four left out, byte for byte, and the render loop checks that on every run.
 It takes about 6% longer to make (115 s against 108 s for 90 s of video): saving frames is
 what takes the time, not drawing them.
-The default is one step a frame, which is the picture every scene here was made at
-(D98 in the queue).
+The default is one step a frame, which is the picture every scene here was made at;
+the owner chose to keep it (D98 in the queue).
 
 Anything new in the engine that acts once a step has to be scaled to the step's
 length (`FEEDBACK_REFERENCE_FPS` in `feedback.rs`), or it will run four times as
