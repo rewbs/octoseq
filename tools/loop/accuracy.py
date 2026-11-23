@@ -53,7 +53,8 @@ STEM_TRACKS = {"synthetic": 3, "downloaded": 5}
 STEM_MAX_SECONDS = 240.0
 STEM_MIN_PURITY = 0.98  # share of a module's sound that sits on a channel of its own stem class
 HOSTED_SCORES = HERE / "hosted_stem_scores.json"  # what the paid sources scored, so a machine without keys can still report it
-GPU_MODEL_WORKERS = 3  # each keeps its own copy of a model on the GPU
+DEFAULT_GPU_WORKERS = 3  # for a model analysers.GPU_WORKERS does not list
+RESULTS = ROOT / ".loop" / "cache" / "model-results"  # what model analysers returned, by audio checksum
 USER_STEMS_MIN_DB = 40.0  # true stems handed back through the stem interface must come out at least this intact
 MAX_STEM_RESIDUAL_DB = -60.0  # a module whose channel stems do not add up to its mix this well is left out
 
@@ -104,20 +105,33 @@ def worker_device() -> str:
 
 def run_analyser(job: tuple[str, str, dict | None]) -> dict:
     name, path, params = job
+    stored = None
+    if name in analysers.MODELS:
+        # A model's answer for a given file never changes and is slow to get: keep it.
+        key = modref.sha256(Path(path))[:24]
+        stored = RESULTS / name / analysers.result_version(name) / f"{key}.json"
+        if stored.exists():
+            return json.loads(stored.read_text())
     result = analysers.ANALYSERS[name](Path(path), params)
     result.pop("stems", None)  # arrays are scored in-process, not shipped between processes
+    if stored is not None:
+        stored.parent.mkdir(parents=True, exist_ok=True)
+        stored.write_text(json.dumps(result))
     return result
 
 
 def analyse_all(names: list[str], tracks: list[dict], variant_names: tuple[str, ...], params: dict | None, pool) -> dict:
     """results[analyser][track id][variant] for every analyser that is not stems-only."""
     jobs, keys = [], []
+    results: dict = {}
     for name in names:
-        for track in tracks:
+        for index, track in enumerate(tracks):
             for variant in variant_names:
+                if name in analysers.SAMPLED and (variant != "clean" or index % analysers.SAMPLE_EVERY):
+                    results.setdefault(name, {}).setdefault(track["id"], {})[variant] = {}
+                    continue
                 jobs.append((name, str(track["variants"][variant]), params if name in analysers.TUNABLE else None))
                 keys.append((name, track["id"], variant))
-    results: dict = {}
     for (name, track_id, variant), result in zip(keys, pool.map(run_analyser, jobs, chunksize=4)):
         results.setdefault(name, {}).setdefault(track_id, {})[variant] = result
     return results
@@ -130,10 +144,12 @@ def score_split(results: dict, tracks: list[dict], variant_names: tuple[str, ...
     """Scores for one analyser on one split: per variant, plus the mean over variants."""
     out: dict = {"variants": {}}
     for variant in variant_names:
-        tallies, beats, sections, downbeats = [], [], [], []
+        tallies, beats, sections, downbeats, drums = [], [], [], [], []
         for track in tracks:
             result = results[track["id"]][variant]
             ref = track["reference"]
+            if result.get("drums") is not None:
+                drums.append(score.drum_tallies(ref["drums"], result["drums"]))
             if result.get("onsets") is not None:
                 tallies.append(score.onset_tallies(ref["merged"], [t for t, _ in result["onsets"]], kinds=result.get("kinds")))
             if result.get("beats") is not None and len(ref["grid"]["beats"]) > 8:
@@ -164,11 +180,16 @@ def score_split(results: dict, tracks: list[dict], variant_names: tuple[str, ...
             )  # fmt: skip
         if sections:
             entry["sections"] = {k: round(float(np.mean([s[k] for s in sections])), 4) for k in ("f_0.5s", "f_3s")} | {"tracks": len(sections)}
+        if drums and (summary := score.drum_summary(drums)):
+            entry["drums"] = summary | {"tracks": len(drums)}
         out["variants"][variant] = entry
-    for part, key in (("onsets", "f"), ("beats", "best_f"), ("sections", "f_3s")):
+    for part, key in (("onsets", "f"), ("beats", "best_f"), ("sections", "f_3s"), ("drums", "mean_f")):
         values = [v[part][key] for v in out["variants"].values() if part in v]
         if values:
             out[f"{part}_mean"] = round(float(np.mean(values)), 4)
+    if "drums" in out["variants"].get("clean", {}):
+        # Drum analysers are compared on clean audio, the one variant all of them are run on.
+        out["drums_clean"] = out["variants"]["clean"]["drums"]["mean_f"]
     return out
 
 
@@ -373,7 +394,7 @@ def instrument_checks(tracks: list[dict], check_determinism: bool) -> list[dict]
     add("channel stems add up to the mix", worst < -60.0, f"worst residual {worst:.0f} dB")
 
     synthetic = [t for t in tracks if t["truth"]]
-    trigger_ok, class_ok, heard_ok, kind_ok, section_f = [], [], [], [], []
+    trigger_ok, class_ok, heard_ok, kind_ok, section_f, drum_ok = [], [], [], [], [], []
     expect_stem = dict(kick="drums", snare="drums", hat="drums", clap="drums", late="drums", bass="bass", lead="other", pad="other", swell="other")
     for t in synthetic:
         truth = json.loads(t["truth"].read_text())
@@ -387,6 +408,7 @@ def instrument_checks(tracks: list[dict], check_determinism: bool) -> list[dict]
         for e in ref["events"]:
             seen.setdefault(role[e["sample"]]["role"], e["stem"])
         class_ok.append(all(expect_stem[r] == c for r, c in seen.items()))
+        drum_ok += [ref["drum_samples"].get(str(number)) == s["role"] for number, s in role.items() if s["role"] in score.DRUM_TYPES and str(number) in ref["drum_samples"]]
         for e in ref["events"]:
             sample = role[e["sample"]]
             if not e["audible"] or e["kind"] == "legato":
@@ -409,6 +431,18 @@ def instrument_checks(tracks: list[dict], check_determinism: bool) -> list[dict]
         add("percussive and soft attacks labelled correctly", float(np.mean(kind_ok)) > 0.97, f"{np.mean(kind_ok) * 100:.1f}% correct")
         add("drums, bass and other assigned correctly", all(class_ok), f"{sum(class_ok)}/{len(class_ok)} modules")
         add("order-list sections agree with composed sections", float(np.mean(section_f)) >= 0.8, f"mean F {np.mean(section_f):.2f}")
+        add("synthetic kicks, snares and hats typed correctly", bool(drum_ok) and all(drum_ok), f"{sum(drum_ok)}/{len(drum_ok)} samples")
+
+    # Drum types again, against something independent of the audio: what the module's author called the sample.
+    named = [
+        (kind, by_name)
+        for t in tracks
+        for number, kind in t["reference"]["drum_samples"].items()
+        if (by_name := modref.drum_by_name(t["reference"]["sample_names"], int(number))) is not None
+    ]
+    if len(named) >= 20:
+        agree = float(np.mean([kind == by_name for kind, by_name in named]))
+        add("drum types agree with what the samples are called", agree >= 0.85, f"{agree * 100:.0f}% of {len(named)} named kicks, snares and hats")
 
     # The scorer itself: perfect detections must score perfectly, shifted ones must show the shift.
     if tracks:
@@ -435,12 +469,23 @@ def instrument_checks(tracks: list[dict], check_determinism: bool) -> list[dict]
 
         bundle = perfect_bundle.build(synthetic[0]["path"])
         frames = bundle / "check-frames"
-        cmd = [str(engine), "render", "--package", str(bundle / "package.json"), "--script", str(scene), "--out", str(frames),
-               "--fps", "10", "--width", "160", "--height", "90", "--duration", "1", "--quiet"]  # fmt: skip
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        rendered = len(list(frames.glob("frame_*.png"))) if frames.exists() else 0
-        shutil.rmtree(frames, ignore_errors=True)
+
+        def render(script: Path) -> tuple[subprocess.CompletedProcess, int]:
+            cmd = [str(engine), "render", "--package", str(bundle / "package.json"), "--script", str(script), "--out", str(frames),
+                   "--fps", "10", "--width", "160", "--height", "90", "--duration", "1", "--quiet"]  # fmt: skip
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            rendered = len(list(frames.glob("frame_*.png"))) if frames.exists() else 0
+            shutil.rmtree(frames, ignore_errors=True)
+            return result, rendered
+
+        result, rendered = render(scene)
         add("engine renders a scene from a perfect bundle", result.returncode == 0 and rendered > 0, f"{rendered} frames" if result.returncode == 0 else result.stderr.strip()[-200:])
+        # Roles: a scene that reads only roles renders, and one that needs a role no bundle has is refused by name.
+        result, rendered = render(HERE / "fixtures" / "scenes" / "role-check.rhai")
+        add("engine binds a bundle's roles to a scene", result.returncode == 0 and rendered > 0, f"{rendered} frames" if result.returncode == 0 else result.stderr.strip()[-200:])
+        result, rendered = render(HERE / "fixtures" / "scenes" / "needs-missing-role.rhai")
+        refused = result.returncode != 0 and rendered == 0 and "needs the role `vocal_presence`" in result.stderr
+        add("engine refuses a scene whose role the bundle lacks", refused, "refused, naming the role" if refused else f"exit {result.returncode}, {rendered} frames: {result.stderr.strip()[-160:]}")
 
     if check_determinism and tracks:
         t = tracks[0]
@@ -466,7 +511,7 @@ def modgen_base_rate() -> float:
 def choose(scores: dict) -> dict:
     """The best analyser for each part, judged on the held-out split."""
     chosen = {}
-    for part, key in (("onsets", "onsets_mean"), ("beats", "beats_mean"), ("sections", "sections_mean")):
+    for part, key in (("onsets", "onsets_mean"), ("beats", "beats_mean"), ("sections", "sections_mean"), ("drums", "drums_clean")):
         candidates = {name: s["heldout"][key] for name, s in scores.items() if key in s.get("heldout", {})}
         if candidates:
             best = max(candidates, key=candidates.get)
@@ -555,6 +600,15 @@ def write_report(run_dir: Path, report: dict) -> None:
             f"| {name} | {beats['f'] if beats else '–'} | {beats['best_f'] if beats else '–'} | {beats['tempo_octave'] if beats else '–'} | "
             f"{sections['f_3s'] if sections else '–'} |"
         )
+    with_drums = {name: s["heldout"]["variants"]["clean"]["drums"] for name, s in report["scores"].items() if "drums" in s.get("heldout", {}).get("variants", {}).get("clean", {})}
+    if with_drums:
+        lines += ["", "Drum hits by type (held-out, clean audio; F, precision and recall within 50 ms, and mean timing error):", "", "| Analyser | Mean F | Kick | Snare | Hat | Modules scored |", "|---|---|---|---|---|---|"]
+        for name, drums in with_drums.items():
+            cells = []
+            for kind in score.DRUM_TYPES:
+                d = drums.get(kind)
+                cells.append(f"{d['f']:.3f} (P {d['precision']:.2f}, R {d['recall']:.2f}, {d['bias_ms']:+.1f} ms)" if d and d["bias_ms"] is not None else (f"{d['f']:.3f}" if d else "–"))
+            lines.append(f"| {name} | {drums['mean_f']:.3f} | " + " | ".join(cells) + f" | {drums['tracks']} |")
     with_stems = {name: s["stems"] for name, s in report["scores"].items() if s.get("stems")}
     if with_stems:
         lines += [
@@ -651,6 +705,21 @@ def write_scoreboard(report: dict, gates: dict) -> None:
     if "sections" in chosen:
         name = chosen["sections"]["analyser"]
         row("Sections", "boundary F within 3 s, mean over variants", f"{chosen['sections']['score']:.3f}", f"at least {gates['section_f']['min']}", chosen["sections"]["score"] >= gates["section_f"]["min"], name)
+    if "sections" in chosen:
+        for other, entry in scores.items():
+            if other != chosen["sections"]["analyser"] and "sections_mean" in entry.get("heldout", {}):
+                row("Sections", "boundary F within 3 s, for comparison", f"{entry['heldout']['sections_mean']:.3f}", "tracked", None, other)
+    if "drums" in chosen:
+        name = chosen["drums"]["analyser"]
+        drums = scores[name]["heldout"]["variants"]["clean"]["drums"]
+        row("Drum hits", f"mean F over kick, snare and hat, clean audio ({drums['tracks']} modules)", f"{drums['mean_f']:.3f}", "tracked", None, name)
+        for kind in score.DRUM_TYPES:
+            if kind in drums:
+                bias = "" if drums[kind]["bias_ms"] is None else f", bias {drums[kind]['bias_ms']:+.1f} ms"
+                row("Drum hits", f"{kind} F", f"{drums[kind]['f']:.3f}{bias}", "tracked", None, name)
+        for other, entry in scores.items():
+            if other != name and "drums_clean" in entry.get("heldout", {}):
+                row("Drum hits", f"mean F, for comparison ({entry['heldout']['variants']['clean']['drums']['tracks']} modules)", f"{entry['heldout']['drums_clean']:.3f}", "tracked", None, other)
     if "stems" in chosen:
         name = chosen["stems"]["analyser"]
         row("Stems", "SI-SDR improvement over the unseparated mix", f"{chosen['stems']['score']:+.2f} dB", f"at least {gates['stem_improvement_db']['min']} dB", chosen["stems"]["score"] >= gates["stem_improvement_db"]["min"], name)
@@ -719,22 +788,22 @@ def run(args, params: dict | None = None, pool=None) -> dict:
         # Models that run on a GPU get a few workers of their own instead of one per
         # core: every process that touches the GPU keeps its own copy of the model there.
         models = [n for n in timed if n in analysers.MODELS]
-        gpu_pool = fresh_workers(GPU_MODEL_WORKERS) if models else None
-        try:
-            on_gpu = bool(gpu_pool) and gpu_pool.submit(worker_device).result() != "cpu"
-            for split, tracks in splits.items():
-                # Models are slow and are never tuned here, so they are only run where
-                # they are judged: on the held-out split.
-                run_here = [n for n in timed if split == "heldout" or n not in analysers.MODELS]
-                on_cpu = [n for n in run_here if not (on_gpu and n in analysers.MODELS)]
-                results = analyse_all(on_cpu, tracks, variant_names, params, pool)
-                if len(on_cpu) < len(run_here):
-                    results.update(analyse_all([n for n in run_here if n not in on_cpu], tracks, variant_names, params, gpu_pool))
-                for name in run_here:
-                    scores.setdefault(name, {})[split] = score_split(results[name], tracks, variant_names)
-        finally:
-            if gpu_pool:
-                gpu_pool.shutdown()
+        on_gpu = False
+        if models:
+            with fresh_workers(1) as probe:
+                on_gpu = probe.submit(worker_device).result() != "cpu"
+        for split, tracks in splits.items():
+            # Models are slow and are never tuned here, so they are only run where
+            # they are judged: on the held-out split.
+            run_here = [n for n in timed if split == "heldout" or n not in analysers.MODELS]
+            on_cpu = [n for n in run_here if not (on_gpu and n in analysers.MODELS)]
+            results = analyse_all(on_cpu, tracks, variant_names, params, pool)
+            for name in run_here:
+                if name not in on_cpu:  # one model at a time on the GPU, each with as many workers as fit
+                    with fresh_workers(analysers.GPU_WORKERS.get(name, DEFAULT_GPU_WORKERS)) as gpu_pool:
+                        results.update(analyse_all([name], tracks, variant_names, params, gpu_pool))
+            for name in run_here:
+                scores.setdefault(name, {})[split] = score_split(results[name], tracks, variant_names)
         stem_names = [n for n in names if n in analysers.STEMS_ONLY]
         if stem_names and not args.quick:
             on = stem_tracks(splits["heldout"], variant_names)

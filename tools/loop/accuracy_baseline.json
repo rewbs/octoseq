@@ -20,7 +20,16 @@
       "analyser": "novelty",
       "score": 0.5201,
       "candidates": {
-        "novelty": 0.5201
+        "novelty": 0.5201,
+        "change": 0.4962
+      }
+    },
+    "drums": {
+      "analyser": "drumbands_stem",
+      "score": 0.727,
+      "candidates": {
+        "drumbands": 0.5741,
+        "drumbands_stem": 0.727
       }
     },
     "stems": {

@@ -34,9 +34,9 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-import analyse  # noqa: E402
 import metrics  # noqa: E402
 import perfect_bundle  # noqa: E402
+import roles  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 LOOP_DIR = ROOT / ".loop"
@@ -49,6 +49,7 @@ ENGINE = Path(os.environ["OCTOSEQ_ENGINE"]) if os.environ.get("OCTOSEQ_ENGINE") 
 WINDOWS_ENGINE_FROM_WSL = ENGINE.suffix.lower() == ".exe" and sys.platform != "win32"
 GATES = Path(__file__).parent / "gates.json"
 BASELINE = Path(__file__).parent / "baseline.json"
+CHECK_SCENES = Path(__file__).parent / "fixtures" / "scenes"
 
 MODULE_SUFFIXES = {".mod", ".xm", ".s3m", ".it", ".mptm"}
 DETERMINISM_SECONDS = 3.0
@@ -146,7 +147,7 @@ def run_pair(track: Path, scene: Path, run_dir: Path, gates: dict, args) -> dict
         package_path, audio = bundle / "package.json", bundle / perfect_bundle.AUDIO
         result["perfect_bundle"] = True
     else:
-        package_path = analyse.analyse_cached(track, LOOP_DIR / "cache")
+        package_path = roles.standin_bundle_cached(track, LOOP_DIR / "cache")
     package = json.loads(package_path.read_text())
     seconds = package["durationSec"]
     if args.seconds > 0:
@@ -193,11 +194,37 @@ def run_pair(track: Path, scene: Path, run_dir: Path, gates: dict, args) -> dict
     return result
 
 
+def engine_checks(track: Path, run_dir: Path, gates: dict, args) -> list[dict]:
+    """Checks on the engine itself, using scenes whose right answer is known.
+
+    Bounded feedback: a loop built to run away must stay below white, and the same
+    loop with the bound switched off must blow out. The second half is what shows
+    the first can fail.
+    """
+    small = argparse.Namespace(**{**vars(args), "seconds": 10.0, "width": 240, "height": 136, "fps": 30})
+    limit = gates["hard"]["blown_fraction"]["max"]
+    cases = [
+        ("feedback-runaway.rhai", False, "a feedback loop built to run away stays below white"),
+        ("feedback-runaway-unbounded.rhai", True, "the same loop with the bound switched off blows out"),
+    ]
+    checks = []
+    for scene, should_blow, name in cases:
+        result = run_pair(track, CHECK_SCENES / scene, run_dir / "checks", gates, small)
+        blown = result.get("metrics", {}).get("blown_fraction")
+        if blown is None:
+            checks.append(dict(name=name, ok=False, detail=result["hard"][0] if result.get("hard") else "did not render"))
+        else:
+            checks.append(dict(name=name, ok=(blown > limit) == should_blow, detail=f"{blown * 100:.0f}% of frames blown out"))
+    return checks
+
+
 SUMMARY_COLUMNS = ["active_area", "jerkiness", "audio_sync", "variety", "colourfulness", "motion"]
 
 
-def write_report(run_dir: Path, results: list[dict], baseline: dict | None) -> None:
+def write_report(run_dir: Path, results: list[dict], baseline: dict | None, checks: list[dict] | None = None) -> None:
     lines = [f"# Loop run `{run_dir.name}`", ""]
+    if checks:
+        lines += ["Engine checks:", ""] + [f"- {'ok' if c['ok'] else '**FAIL**'}: {c['name']} ({c['detail']})" for c in checks] + [""]
     counts = {s: sum(r["status"] == s for r in results) for s in ("pass", "warn", "fail")}
     lines.append(
         f"{len(results)} clips: {counts['fail']} failed a hard gate, "
@@ -241,6 +268,7 @@ def main() -> int:
     parser.add_argument("--height", type=int, default=270)
     parser.add_argument("--name", default=time.strftime("%Y%m%d-%H%M%S"))
     parser.add_argument("--no-build", action="store_true", help="skip cargo build")
+    parser.add_argument("--no-checks", action="store_true", help="skip the engine checks")
     parser.add_argument("--save-baseline", action="store_true")
     args = parser.parse_args()
 
@@ -258,6 +286,9 @@ def main() -> int:
 
     run_dir = LOOP_DIR / "runs" / args.name
     run_dir.mkdir(parents=True, exist_ok=True)
+    checks = [] if args.no_checks else engine_checks(tracks[0], run_dir, gates, args)
+    for check in checks:
+        print(f"{'ok  ' if check['ok'] else 'FAIL'} {check['name']} ({check['detail']})", flush=True)
     results = []
     for track in tracks:
         for scene in scenes:
@@ -267,12 +298,12 @@ def main() -> int:
             for problem in r["hard"]:
                 print(f"      FAIL {problem}")
 
-    write_report(run_dir, results, baseline)
+    write_report(run_dir, results, baseline, checks)
     print(f"\nreport: {(run_dir / 'report.md').relative_to(ROOT)}")
     if args.save_baseline:
         BASELINE.write_text(json.dumps({r["id"]: r.get("metrics", {}) for r in results}, indent=2) + "\n")
         print(f"baseline saved to {BASELINE.relative_to(ROOT)}")
-    return 1 if any(r["status"] == "fail" for r in results) else 0
+    return 1 if any(r["status"] == "fail" for r in results) or not all(c["ok"] for c in checks) else 0
 
 
 if __name__ == "__main__":

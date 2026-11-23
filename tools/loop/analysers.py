@@ -8,6 +8,7 @@ An analyser is a function `(audio_path, params) -> dict` that returns any of:
     downbeats list of time_s (optional)
     bpm       float
     sections  list of boundary time_s
+    drums     dict of "kick", "snare" and "hat" -> list of time_s
     stems     dict of name -> mono float array at STEM_RATE ("vocals", "drums", "bass",
               "other", plus any extras a source provides)
 
@@ -23,6 +24,7 @@ any serious analyser should beat them.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -87,6 +89,123 @@ def novelty(audio: Path, params: dict | None = None) -> dict:
             if not sections or i - sections[-1] >= width // 2:
                 sections.append(i)
     return dict(sections=[float(i * block / per_s) for i in sections])
+
+
+# Set on the training split (a sweep of each; the scores are flat around these values).
+CHANGE_WIDTH_S = 6.0  # compare this much sound before a moment with this much after
+CHANGE_THRESHOLD_DB = 3.5  # a boundary needs the spectrum to move this much, averaged over bands
+CHANGE_MIN_GAP_S = 3.0
+
+
+def change(audio: Path, params: dict | None = None) -> dict:
+    """Section boundaries from where the spectrum moves by more than a fixed number of decibels.
+
+    `novelty` judges change against each track's own variation, so it finds a dozen
+    boundaries in a track that never changes and too few in one that never settles.
+    Here the amount of change is absolute: the mean difference, in decibels over 24
+    bands, between the six seconds before a moment and the six after.
+    """
+    x = decode(audio)
+    hop = 2048
+    mag = analyse.spectrogram(x, 2048, hop)
+    edges = np.unique(np.geomspace(2, mag.shape[1] - 1, 25).astype(int))
+    bands = np.stack([mag[:, a:b].mean(axis=1) for a, b in zip(edges[:-1], edges[1:])], axis=1)
+    level = 20 * np.log10(bands + 0.01)
+    per_s = STEM_RATE / hop
+    w = max(2, int(round(CHANGE_WIDTH_S * per_s)))
+    n = len(level)
+    if n < 2 * w + 2:
+        return dict(sections=[])
+    total = np.cumsum(np.concatenate([np.zeros((1, level.shape[1])), level]), axis=0)
+    at = np.arange(w, n - w)
+    moved = np.zeros(n)
+    moved[at] = np.abs((total[at + w] - total[at]) / w - (total[at] - total[at - w]) / w).mean(axis=1)
+    gap = max(1, int(round(CHANGE_MIN_GAP_S * per_s)))
+    taken = np.zeros(n, dtype=bool)
+    sections = []
+    for i in np.argsort(-moved, kind="stable"):  # strongest first; anything close to one already taken is the same change
+        if moved[i] < CHANGE_THRESHOLD_DB:
+            break
+        lo, hi = max(0, i - gap), min(n, i + gap + 1)
+        if taken[lo:hi].any() or moved[i] < moved[lo:hi].max():
+            continue
+        taken[i] = True
+        sections.append(float(i / per_s))
+    return dict(sections=sorted(sections))
+
+
+DRUM_FFT, DRUM_HOP = 1024, 220  # 10 ms frames
+DRUM_BANDS_HZ = {"kick": (0.0, 150.0), "snare": (200.0, 3000.0), "hat": (5000.0, 11025.0)}
+# Found by tune_drums.py on the training split and kept in drum_params.json: one set
+# for listening to the full mix, one for listening to a separated drum stem.
+DRUM_PARAMS_FILE = Path(__file__).parent / "drum_params.json"
+DRUM_PARAMS_START = dict(ratio=[2.0, 2.0, 2.0], delta=[0.05, 0.05, 0.05], gap_s=0.06, hat_over_snare=1.5, snare_over_kick=3.0, offset_s=0.0)
+
+
+def drum_params(source: str) -> dict:
+    """The tuned detector settings for "mix" or "stem", or the untuned starting point."""
+    if DRUM_PARAMS_FILE.exists():
+        return json.loads(DRUM_PARAMS_FILE.read_text()).get(source, DRUM_PARAMS_START)
+    return DRUM_PARAMS_START
+
+
+def drum_envelopes(x: np.ndarray) -> np.ndarray:
+    """How fast the sound is rising in the kick, snare and hat bands, one row per 10 ms."""
+    mag = analyse.spectrogram(x, DRUM_FFT, DRUM_HOP)
+    freqs = np.fft.rfftfreq(DRUM_FFT, 1.0 / STEM_RATE)
+    level = np.log1p(100.0 * mag)
+    rise = np.maximum(np.diff(level, axis=0, prepend=level[:1]), 0.0)
+    return np.stack([rise[:, (freqs >= lo) & (freqs < hi)].mean(axis=1) for lo, hi in DRUM_BANDS_HZ.values()], axis=1)
+
+
+def drum_hits(env: np.ndarray, p: dict) -> dict[str, list[float]]:
+    """Kick, snare and hat times from the three band envelopes.
+
+    A hit is a peak in its band that stands clear of the band's recent level. A
+    snare is broadband and lights up the hat band too, and a kick's click reaches
+    the snare band, so a hat is dropped where the snare band rose much more, and a
+    snare where the kick band did.
+    """
+    fps = STEM_RATE / DRUM_HOP
+    floor = np.stack([analyse.moving_median(env[:, i], 101) for i in range(3)], axis=1)
+    clear = env - floor
+    gap = int(round(p["gap_s"] * fps))
+    out: dict[str, list[float]] = {}
+    for i, kind in enumerate(DRUM_BANDS_HZ):
+        e = env[:, i]
+        threshold = floor[:, i] * p["ratio"][i] + p["delta"][i]
+        hits, last = [], -100
+        if len(e) < 5:
+            out[kind] = hits
+            continue
+        m = e[2:-2]
+        peaks = np.flatnonzero((m > threshold[2:-2]) & (m >= e[1:-3]) & (m > e[3:-1]) & (m >= e[:-4]) & (m >= e[4:])) + 2
+        for n in peaks:
+            if n - last < gap:
+                continue
+            if kind == "hat" and clear[max(0, n - 2) : n + 3, 1].max() > p["hat_over_snare"] * clear[n, 2]:
+                continue
+            if kind == "snare" and clear[max(0, n - 2) : n + 3, 0].max() > p["snare_over_kick"] * clear[n, 1]:
+                continue
+            hits.append(float(n / fps + p["offset_s"]))
+            last = n
+        out[kind] = hits
+    return out
+
+
+def drumbands(audio: Path, params: dict | None = None) -> dict:
+    """Kick, snare and hat hits from three frequency bands of the full mix. No model, no stems."""
+    return dict(drums=drum_hits(drum_envelopes(decode(audio)), drum_params("mix")))
+
+
+def drumbands_stem(audio: Path, params: dict | None = None) -> dict:
+    """The same detector, listening to the drum stem that local Demucs separates.
+
+    The mix has bass notes in the kick band and tunes in the snare band; the drum
+    stem mostly does not. Needs the optional model environment.
+    """
+    stems = stem_sources.separate("demucs", audio)
+    return dict(drums=drum_hits(drum_envelopes(decode(stems.files["drums"])), drum_params("stem")))
 
 
 def _istft(spec: np.ndarray, n_fft: int, hop: int, length: int) -> np.ndarray:
@@ -190,6 +309,8 @@ ANALYSERS = {
     "standin": standin,
     "energy": energy,
     "novelty": novelty,
+    "change": change,
+    "drumbands": drumbands,
     "bandsplit": bandsplit,
 }
 
@@ -219,6 +340,34 @@ MODELS = set()
 if importlib.util.find_spec("beat_this") and importlib.util.find_spec("torch"):
     ANALYSERS["beat_this"] = beat_this
     MODELS.add("beat_this")
+if stem_sources.demucs_installed():
+    ANALYSERS["drumbands_stem"] = drumbands_stem
+    MODELS.add("drumbands_stem")
+# How many worker processes each model gets when it runs on a GPU. Every worker keeps
+# its own copy of the model there, so the number is what fits, not what is fastest:
+# Beat This is small and spends most of its time on the CPU preparing audio, so it
+# takes many; Demucs fills a couple of gigabytes each.
+GPU_WORKERS = {"beat_this": 8, "drumbands_stem": 2}
+
+
+def result_version(name: str) -> str:
+    """What a model analyser's stored results depend on, besides the audio.
+
+    A model gives the same answer for the same audio every time it is asked, and
+    asking is slow, so the accuracy loop keeps the answers. Anything that would
+    change them belongs in this string.
+    """
+    if name == "beat_this":
+        return "beat_this-1.1.0-final0-nodbn"
+    if name == "drumbands_stem":
+        return "htdemucs-shifts1-" + analyse.params_key(drum_params("stem")) + f"-{DRUM_FFT}-{DRUM_HOP}"
+    return "1"
+
+
+# Too slow to run on everything (Demucs separates a module at about seven times real
+# time on a laptop GPU): scored on the clean audio of every third held-out module.
+SAMPLED = {"drumbands_stem"}
+SAMPLE_EVERY = 3
 
 # Which analysers accept the tunable parameter set of analyse.py.
 TUNABLE = {"standin"}

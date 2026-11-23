@@ -178,6 +178,20 @@ python3 tools/loop/accuracy.py   # score analysis timing against tracker-module 
   pass; gates change only in response to human ratings.
 - Headless rendering needs a Vulkan driver. Without a GPU:
   `apt-get install -y mesa-vulkan-drivers`.
+- On Windows the loops run in WSL2, from a checkout inside the Linux filesystem
+  ([docs/loop/setup.md](docs/loop/setup.md)). Rendering goes through a second build
+  of the engine made for Windows: run `tools/loop/win-engine.sh` again after
+  changing anything in `packages/visualiser`, or the loop renders with a stale engine.
+- Run the accuracy loop with `.loop/venv/bin/python` to include the model analysers.
+  Their results are cached; the first run after a model or its settings change is
+  slow. Do not run other GPU work while it is going.
+- New scenes ask for musical roles (`//! roles: kick, energy`, then `roles.kick`),
+  never for named signals. The roles and what binds them are in
+  `tools/loop/roles.py` and `scripting.md`.
+- Stem sources live behind `tools/loop/stems.py`. The hosted ones cost money per new
+  file: results are cached and their scores recorded, so never clear
+  `.loop/cache/stems` casually. Keys come from the environment or `.env`; never
+  print, log or commit one.
 
 ## Coding Conventions
 

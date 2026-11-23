@@ -68,6 +68,10 @@ known-correct events rather than analysis (see "Perfect bundles" below).
 | Variety          | target | A look that never changes over the clip                      |
 | Colourfulness    | target | Grey, washed-out output                                      |
 
+Before the clips, each run also checks the engine with scenes whose right answer is
+known (`tools/loop/fixtures/scenes/`): a feedback loop built to run away must stay
+below white, and the same loop with the bound switched off must blow out.
+
 Hard gates mean the output is broken. Targets describe where the redesign is heading;
 they only warn, and most are expected to fail until the feedback-first rendering work
 lands. Thresholds live in `tools/loop/gates.json` and are provisional until
@@ -126,6 +130,12 @@ quantity.
 3. **Beats, sections, stems.** Beats and downbeats come from the row grid, section
    boundaries from changes in instrumentation between order-list positions, and the
    drums/bass/other stems from summing channels by what they play.
+4. **Drum hits by type.** Each drum sample is typed kick, snare or hat from where the
+   energy of its hits lies, heard alone on its own channel: mostly below 250 Hz is a
+   kick, mostly above 4 kHz a hat, in between a snare. Claps count as snares, cymbals
+   and shakers as hats, and toms as none of the three. The rule was set on training
+   modules whose sample names say what they are, and the loop checks it against
+   sample names on every run.
 
 ### What is scored
 
@@ -138,14 +148,22 @@ of onsets, beats, sections and stems; parts it does not produce are skipped.
 | Onsets   | Precision, loudness-weighted recall and F within 50 ms; mean signed timing error (bias) and spread, overall and per event type |
 | Beats    | F within 70 ms at the reference's level, and at half, double and off-beat levels; tempo accuracy                               |
 | Sections | Boundary F within 0.5 s and 3 s                                                                                                |
+| Drum hits | Precision, recall and F within 50 ms for kicks, snares and hats separately, and their timing bias; clean audio                 |
 | Stems    | Scale-invariant SDR per stem, and its improvement over the unseparated mix                                                     |
 
 The timing target is a bias under one 60 fps frame, about 17 ms.
 
+The drum detector listens either to the full mix (`drumbands`) or to the drum stem
+local Demucs separates (`drumbands_stem`). Its settings are tuned on the training
+split by `tools/loop/tune_drums.py` and kept in `tools/loop/drum_params.json`.
+
 Model-based analysers are optional. `tools/loop/models/setup.sh` installs them into
 their own environment under `.loop/`; run the loop with that environment's Python to
 include them, or with the system Python to leave them out. They run only on the
-held-out split, since they are slow and are not tuned here.
+held-out split, since they are slow and are not tuned here. What each returns for a
+file is kept in `.loop/cache/model-results`, so only the first run pays for it. An
+analyser that needs a separation for every module is scored on every third held-out
+module, and its rows say so.
 
 The report names the best analyser for each part, judged on the held-out split. That
 is how local models and hosted APIs will be chosen between as they are added.
@@ -210,6 +228,17 @@ signals measured on the true stems. `run.py` accepts a module as a track and use
 this bundle, so a scene can be developed against events known to be right, then
 rendered from an analysed bundle to see what analysis errors cost.
 
+### Roles
+
+Scenes ask for musical roles, not for named signals: a scene declares
+`//! roles: kick, energy` and reads `roles.kick`. Every bundle the loop builds carries
+a `roles` table saying what each role is bound to (`tools/loop/roles.py`; the list of
+roles is in [scripting.md](../../scripting.md#musical-roles)). A perfect bundle binds
+them to the truth: the module's own beats and bars, its sections, its kicks, snares
+and hats. The bundle for an audio file binds what analysis can supply, which today
+leaves out `downbeat`, `bar_phase` and `drums`. The engine refuses to load a scene
+that needs a role the bundle lacks, and names the role.
+
 ### Corpus and licensing
 
 | Source                                         | Where it lives                                                                               | Committed?                                                                                        |
@@ -273,12 +302,12 @@ Figures are held-out results from the scoreboard when this plan was written.
 | **1a. Wider corpus** (done)                                 | 194 downloaded modules sampled evenly across the whole public-domain listing (140 IT, 39 XM, 15 MOD; the listing has almost no S3M), 97 usable for training and 117 held out; instrument checks pass; re-tuning attempted and correctly rejected; scoreboard regenerated                                                                                                                                                                         | ScreamSeq exports welcome, not required                            |
 | **1b. Slow attacks** (done, mostly by fixing the yardstick) | Soft recall at least 0.6 with percussive recall at least 0.90. Met, but not by a better detector: the misses were mostly the reference timing slow attacks at their steepest point (which for a fade-in is its very end) and splitting notes written together into separate events. Both are corrected (D8, D11 in the queue). Moving soft events in the analyser was tried and switched off (D20)                                               | None                                                               |
 | **1c. Beat tracking** (in progress)                         | Tempo right at some metrical level on at least 95% of tracks; beat F at any level at least 0.95. Done so far: modules with irregular beat grids are scored instead of skipped, and a tracker that follows the music was tried and rejected on held-out modules. The signal-processing stand-in is near its ceiling, so what remains is registering and comparing at least one local model and one hosted service                                 | Go-ahead to install model packages; API keys for hosted candidates |
-| **1d. Sections**                                            | Boundary F within 3 s at least 0.75 (from 0.61, a crude baseline); at least one real analyser registered                                                                                                                                                                                                                                                                                                                                         | API keys for hosted candidates                                     |
+| **1d. Sections** (not done) | Boundary F within 3 s at least 0.75; at least one real analyser registered. It stands at 0.52, where it started on the wider corpus. A second signal-processing analyser led on training and lost on held-out modules; a learned detector did worse; the All-In-One model would not install on this machine. The reference may also be too fine-grained to be the right target (D49) | A Music.ai key; a decision on D49 |
 | **1e. Stems** (done, one provider unverified)               | User-supplied stems, the three hosted providers and one local model all registered as analysers; the best improves on the unseparated mix by at least 3 dB against true stems. Met: LALAL.AI improves on the mix by 17.9 dB, local Demucs by 6.3 dB and Demucs on fal.ai by 6.1 dB, against 2.5 dB for the band-split baseline. LALAL.AI and fal.ai are verified against the live services; Music.ai is written from its documentation and has not been run | A Music.ai key and workflow, to verify that adaptor                |
-| **1f. Drum hits by type**                                   | The reference and scorer extended to kick, snare and hat (the reference already has one event stream per sample); at least one analyser scored on it                                                                                                                                                                                                                                                                                             | None                                                               |
+| **1f. Drum hits by type** (done) | The reference and scorer extended to kick, snare and hat; at least one analyser scored on it. Two are: a detector on the full mix scores a mean F of 0.57 on held-out modules (kick 0.47, snare 0.46, hat 0.79), and the same detector on the drum stem Demucs separates scores 0.73 (kick 0.74, snare 0.59, hat 0.85) | None |
 | **1g. Bundle and worker**                                   | Bundle schema validates; the worker assembles the bundle from the best analyser per part as chosen by the accuracy loop; a stored bundle is reused, never recomputed; every scoreboard target met or its shortfall explained in the queue                                                                                                                                                                                                        | None                                                               |
-| **2. Role binding**                                         | Engine tests pass; a scene asking for an unavailable role fails with a clear error; every scene renders on every track                                                                                                                                                                                                                                                                                                                           | None                                                               |
-| **3. Feedback-first rendering**                             | No hard-gate failures on any scene. Two of the three problems the render loop found in the example scenes are fixed (a crash when drawing blob shadows, and a colour-grade brightness value that turned two scenes white); the third, feedback accumulating to white in the tunnel scene, is what this chunk's bounded feedback is for. Active area and jerkiness targets met on a reference scene; deterministic; the WASM build still compiles | None                                                               |
+| **2. Role binding** (done) | Engine tests pass; a scene asking for an unavailable role fails with a clear error; every scene renders on every track. Scenes declare roles and read `roles.<name>`; bundles bind sixteen of them; the accuracy loop checks on every run that a role-reading scene renders and that one needing a missing role is refused by name | None |
+| **3. Feedback-first rendering** (started) | No hard-gate failures on any scene. Done so far: feedback is bounded by default, proven on a loop built to run away and checked on every render run. Not done: the tunnel scene still whites out, and not because of feedback as first thought: its emissive tunnel fills the frame at full brightness with feedback off (D55), which needs HDR buffers with tone mapping. The warp-field base layer, blended transitions and sub-frame accumulation are not started. Active area and jerkiness targets met on a reference scene; deterministic; the WASM build still compiles | None |
 | **4. Scenes, director, one command**                        | Every scene passes hard gates and targets over whole tracks, first on perfect bundles and then on analysed bundles of the same modules; audio sync on the analysed bundle within 10% of the perfect bundle; two runs of the director differ; each resulting show re-renders identically                                                                                                                                                          | Review pack 1: rate the clips                                      |
 
 Chunks 1a to 1f are independent and can run in any order; 1a first is best, because

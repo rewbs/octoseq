@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -31,7 +32,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 EXE = ".exe" if sys.platform == "win32" else ""  # so the same paths work on Windows
 MODRENDER = ROOT / ".loop" / "bin" / ("modrender" + EXE)
-REFERENCE_VERSION = "ref-8"
+REFERENCE_VERSION = "ref-9"
 # The single time an event is taken to be "heard" at: halfway up its rise. For a fast
 # attack this is within a millisecond or two of the onset, the steepest rise and the
 # peak. For a slow attack it is the only one of the four that is well defined: a
@@ -56,6 +57,16 @@ BANDS_HZ = [(0, 200), (200, 2000), (2000, 24000)]
 DRUM_MAX_ATTACK_S = 0.050  # a one-pitch sample that peaks faster than this is a drum
 BASS_MAX_HZ = 220.0  # a melodic sample whose strongest frequency is usually below this is bass
 SECTION_CHANGE = 0.2  # how different two order positions must be to count as a section boundary
+# What kind of drum a drum sample is, from where the energy of its hits lies. Set by
+# looking at drum samples in the training modules whose names say what they are: the
+# rule agrees with the name for 90% of them.
+DRUM_LOW_HZ, DRUM_HIGH_HZ = 250.0, 4000.0
+DRUM_KICK_LOW = 0.8  # kick: at least this share of the energy is below DRUM_LOW_HZ
+DRUM_HAT_HIGH = 0.5  # hat (and cymbals, shakers): at least this share is above DRUM_HIGH_HZ
+DRUM_SNARE_MAX_LOW = 0.7  # snare (and claps, rims): neither of those, not mostly low...
+DRUM_SNARE_MIN_CENTRE_HZ = 500.0  # ...and centred above this. What is left (toms, mostly) has no type
+DRUM_HIT_S = 0.25  # how much of each hit is listened to
+DRUM_TYPES = ("kick", "snare", "hat")
 
 
 def read_wav(path: Path) -> np.ndarray:
@@ -207,6 +218,70 @@ def classify_sample(stem_of: dict[int, np.ndarray], events: list[dict], rate: in
     return "other"
 
 
+def drum_type(stem_of: dict[int, np.ndarray], events: list[dict], rate: int) -> str | None:
+    """Whether one drum sample is a kick, a snare or a hat, from the spectrum of its hits.
+
+    Each hit is heard alone on its own channel, so this is the sample itself and not
+    the mix. Returns None for a drum that is none of the three.
+    """
+    lows, highs, centres = [], [], []
+    for e in [e for e in events if e["audible"] and e["kind"] != "legato" and e["gap_s"] >= 0.04][:40]:
+        stem = stem_of[e["channel"]]
+        a = int(e["onset"] * rate)
+        chunk = np.asarray(stem[a : a + int(min(e["gap_s"], DRUM_HIT_S) * rate)], dtype=np.float64)
+        if len(chunk) < 512 or np.abs(chunk).max() < 1e-4:
+            continue
+        power = np.abs(np.fft.rfft(chunk * np.hanning(len(chunk)))) ** 2
+        freqs = np.fft.rfftfreq(len(chunk), 1.0 / rate)
+        total = float(power.sum())
+        if total <= 0:
+            continue
+        lows.append(float(power[freqs < DRUM_LOW_HZ].sum()) / total)
+        highs.append(float(power[freqs >= DRUM_HIGH_HZ].sum()) / total)
+        centres.append(float((power * freqs).sum()) / total)
+    if not lows:
+        return None
+    low, high, centre = float(np.median(lows)), float(np.median(highs)), float(np.median(centres))
+    if low >= DRUM_KICK_LOW:
+        return "kick"
+    if high >= DRUM_HAT_HIGH:
+        return "hat"
+    if low < DRUM_SNARE_MAX_LOW and centre >= DRUM_SNARE_MIN_CENTRE_HZ:
+        return "snare"
+    return None
+
+
+# What a sample's name says it is, where the name says anything. Never used to make
+# the reference: it is the independent check on drum_type (see accuracy.py).
+DRUM_NAME_PATTERNS = {
+    "kick": r"kick|\bbd\b|bass ?drum|b\.?drum|\bkik|\bbdrum|basedrum|\bbd[0-9_ ]",
+    "snare": r"snare|\bsn\b|\bsd\b|\bsnr|\bsd[0-9_ ]|\bsnar",
+    "hat": r"hat|\bhh\b|hi-?h|\bchh|\bohh|\bhh[0-9_ ]|hihat|h\.h",
+}
+
+
+def drum_by_name(sample_names: list[str], sample: int) -> str | None:
+    if not 0 < sample <= len(sample_names):
+        return None
+    name = sample_names[sample - 1].lower()
+    return next((kind for kind, pattern in DRUM_NAME_PATTERNS.items() if re.search(pattern, name)), None)
+
+
+def drum_hits(events: list[dict]) -> dict[str, list[list[float]]]:
+    """Kick, snare and hat hits as [time heard, weight], with hits of one type heard together merged."""
+    out: dict[str, list[list[float]]] = {}
+    for kind in DRUM_TYPES:
+        hits: list[list[float]] = []
+        for e in sorted((e for e in events if e["audible"] and e.get("drum") == kind and e["kind"] != "legato"), key=lambda e: e[HEARD]):
+            if hits and e[HEARD] - hits[-1][0] <= MERGE_S:
+                if e["weight"] > hits[-1][1]:
+                    hits[-1] = [e[HEARD], e["weight"]]
+            else:
+                hits.append([e[HEARD], e["weight"]])
+        out[kind] = [[round(t, 5), w] for t, w in hits]
+    return out
+
+
 def merge_events(events: list[dict]) -> list[dict]:
     """Combine notes that are heard as one event.
 
@@ -331,9 +406,11 @@ def build(module: Path, work_dir: Path, keep_stems: bool = False) -> dict:
     for e in events:
         by_sample.setdefault(e["sample"], []).append(e)
     sample_class = {smp: classify_sample(stems, evs, rate) for smp, evs in by_sample.items()}
+    sample_drum = {smp: drum_type(stems, evs, rate) for smp, evs in by_sample.items() if sample_class[smp] == "drums"}
     last_note: dict[int, int] = {}
     for e in sorted(events, key=lambda e: e["trigger"]):
         e["stem"] = sample_class[e["sample"]]
+        e["drum"] = sample_drum.get(e["sample"])
         previous, last_note[e["channel"]] = last_note.get(e["channel"]), e["note"]
         if not e["audible"]:
             e["weight"] = 0.0
@@ -372,6 +449,9 @@ def build(module: Path, work_dir: Path, keep_stems: bool = False) -> dict:
         orders=log["orders"],
         events=events,
         merged=merge_events(events),
+        drums=drum_hits(events),
+        drum_samples={str(smp): kind for smp, kind in sorted(sample_drum.items())},
+        sample_names=log.get("samples") or [],
         triggers_logged=len(log["notes"]),
     )
     (work_dir / "reference.json").write_text(json.dumps(reference))

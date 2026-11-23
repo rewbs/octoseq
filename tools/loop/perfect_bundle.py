@@ -14,6 +14,8 @@ The bundle is an Interpretation Package v1 (the format the engine reads today):
 
 - event streams from the reference: every merged event, one stream per stem
   (drums, bass, other), one per attack type, one per sample, plus section starts
+- musical roles (see roles.py) bound to the truth: beats and downbeats from the
+  module's grid, kicks, snares and hats as the reference types them, sections
 - stem signals computed from the true channel stems, not from separation
 - musical time from the module's own row and tempo grid, including tempo changes
 - mix signals and frequency bands measured from the rendered audio, as usual
@@ -36,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import analyse  # noqa: E402
 import analysers  # noqa: E402
 import modref  # noqa: E402
+import roles  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 CACHE = ROOT / ".loop" / "cache" / "references"
@@ -106,7 +109,7 @@ def build(module: Path, out_dir: Path | None = None) -> Path:
     out_dir = out_dir or OUT / module.stem
     reference, work = modref.build_cached(module, CACHE, keep_stems=True)
     marker = out_dir / "source.json"
-    stamp = dict(module_sha256=reference["module_sha256"], reference=reference["version"], analyser=analyse.ANALYSER_VERSION)
+    stamp = dict(module_sha256=reference["module_sha256"], reference=reference["version"], analyser=analyse.ANALYSER_VERSION, roles=roles.ROLES_VERSION)
     if marker.exists() and json.loads(marker.read_text()) == stamp and (out_dir / "package.json").exists():
         return out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -137,6 +140,15 @@ def build(module: Path, out_dir: Path | None = None) -> Path:
         perfect=True, module=module.name, module_sha256=reference["module_sha256"], reference=reference["version"],
         sections=reference["sections"], bpm=reference["grid"]["bpm"], channel_stem=reference["channel_stem"],
     )  # fmt: skip
+    # Roles, bound to the truth: the module's own beats and bars, its sections, and
+    # its kicks, snares and hats as the reference types them.
+    roles.bind(
+        package,
+        beats=reference["grid"]["beats"],
+        downbeats=reference["grid"]["downbeats"],
+        sections=[(s["time"], s["strength"]) for s in reference["sections"]],
+        drums={kind: [(t, w) for t, w in reference["drums"][kind]] for kind in modref.DRUM_TYPES},
+    )
     (out_dir / "package.json").write_text(json.dumps(package))
     marker.write_text(json.dumps(stamp))
     return out_dir

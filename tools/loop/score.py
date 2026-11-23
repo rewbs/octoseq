@@ -222,3 +222,51 @@ def stem_scores(reference: dict[str, np.ndarray], estimate: dict[str, np.ndarray
         sdr = si_sdr(ref, estimate[name])
         out[name] = dict(si_sdr_db=round(sdr, 2), improvement_db=round(sdr - si_sdr(ref, mix), 2))
     return out
+
+
+DRUM_TYPES = ("kick", "snare", "hat")
+
+
+def drum_tallies(ref_drums: dict[str, list[list[float]]], det_drums: dict[str, list[float]]) -> dict:
+    """Counts and timing errors for kick, snare and hat hits on one track.
+
+    Each type is matched on its own, with the onset tolerance. As with onsets, a
+    reference hit lighter than SIGNIFICANT_WEIGHT (too quiet, or buried in the
+    mix) is optional: finding it is not a false alarm and missing it costs nothing.
+    A type the track does not have is left out, not scored as zero.
+    """
+    out = {}
+    for kind in DRUM_TYPES:
+        ref = sorted(ref_drums.get(kind) or [])
+        required = [i for i, (_, weight) in enumerate(ref) if weight >= SIGNIFICANT_WEIGHT]
+        if not required:
+            continue
+        ref_t = np.array([t for t, _ in ref], dtype=float)
+        det = np.sort(np.asarray(det_drums.get(kind) or [], dtype=float))
+        pairs = match(ref_t, det, ONSET_TOLERANCE_S) if len(det) else []
+        hit = {i for i, _ in pairs}
+        out[kind] = dict(
+            required=len(required), required_hit=sum(i in hit for i in required),
+            detections=int(len(det)), hits=len(pairs),
+            errors=[float(det[j] - ref_t[i]) for i, j in pairs],
+        )  # fmt: skip
+    return out
+
+
+def drum_summary(tallies: list[dict]) -> dict:
+    """Precision, recall, F and timing per drum type, pooled over tracks, plus the mean F."""
+    out: dict = {}
+    for kind in DRUM_TYPES:
+        rows = [t[kind] for t in tallies if kind in t]
+        if not rows:
+            continue
+        detections, hits = sum(r["detections"] for r in rows), sum(r["hits"] for r in rows)
+        required, required_hit = sum(r["required"] for r in rows), sum(r["required_hit"] for r in rows)
+        precision = hits / detections if detections else 0.0
+        recall = required_hit / required if required else 0.0
+        f = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        timing = _timing(sum((r["errors"] for r in rows), []))
+        out[kind] = dict(precision=round(precision, 4), recall=round(recall, 4), f=round(f, 4), bias_ms=timing["bias_ms"], spread_ms=timing["spread_ms"], tracks=len(rows))
+    if out:
+        out["mean_f"] = round(float(np.mean([out[kind]["f"] for kind in DRUM_TYPES if kind in out])), 4)
+    return out

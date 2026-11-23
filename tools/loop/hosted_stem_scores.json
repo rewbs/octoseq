@@ -1,6 +1,6 @@
 {
  "fal_demucs": {
-  "167848-960e9e11146e-ref-8": {
+  "167848-960e9e11146e-ref-9": {
    "bass": {
     "improvement_db": 10.81,
     "si_sdr_db": 9.48
@@ -14,7 +14,7 @@
     "si_sdr_db": 9.65
    }
   },
-  "167931-fcf2f9ff4113-ref-8": {
+  "167931-fcf2f9ff4113-ref-9": {
    "bass": {
     "improvement_db": 7.75,
     "si_sdr_db": 8.89
@@ -28,7 +28,7 @@
     "si_sdr_db": -0.37
    }
   },
-  "168705-9dd323611de8-ref-8": {
+  "168705-9dd323611de8-ref-9": {
    "bass": {
     "improvement_db": -1.83,
     "si_sdr_db": -1.92
@@ -42,7 +42,7 @@
     "si_sdr_db": 10.71
    }
   },
-  "169045-225b4d911ce4-ref-8": {
+  "169045-225b4d911ce4-ref-9": {
    "bass": {
     "improvement_db": 9.33,
     "si_sdr_db": 14.24
@@ -56,7 +56,7 @@
     "si_sdr_db": -15.58
    }
   },
-  "53273-660cc46958cd-ref-8": {
+  "53273-660cc46958cd-ref-9": {
    "bass": {
     "improvement_db": 3.28,
     "si_sdr_db": -1.62
@@ -70,7 +70,7 @@
     "si_sdr_db": 7.99
    }
   },
-  "synth-0101-32005e974d57-ref-8": {
+  "synth-0101-32005e974d57-ref-9": {
    "bass": {
     "improvement_db": -16.37,
     "si_sdr_db": -30.38
@@ -84,7 +84,7 @@
     "si_sdr_db": 10.92
    }
   },
-  "synth-0102-ccea7627b943-ref-8": {
+  "synth-0102-ccea7627b943-ref-9": {
    "bass": {
     "improvement_db": -19.56,
     "si_sdr_db": -33.06
@@ -98,7 +98,7 @@
     "si_sdr_db": 11.09
    }
   },
-  "synth-0103-1387f5906c6e-ref-8": {
+  "synth-0103-1387f5906c6e-ref-9": {
    "bass": {
     "improvement_db": 0.29,
     "si_sdr_db": -13.16
@@ -114,7 +114,7 @@
   }
  },
  "lalal": {
-  "167848-960e9e11146e-ref-8": {
+  "167848-960e9e11146e-ref-9": {
    "bass": {
     "improvement_db": 13.79,
     "si_sdr_db": 12.46
@@ -128,7 +128,7 @@
     "si_sdr_db": 12.31
    }
   },
-  "167931-fcf2f9ff4113-ref-8": {
+  "167931-fcf2f9ff4113-ref-9": {
    "bass": {
     "improvement_db": 8.9,
     "si_sdr_db": 10.04
@@ -142,7 +142,7 @@
     "si_sdr_db": 4.24
    }
   },
-  "168705-9dd323611de8-ref-8": {
+  "168705-9dd323611de8-ref-9": {
    "bass": {
     "improvement_db": -1.49,
     "si_sdr_db": -1.58
@@ -156,7 +156,7 @@
     "si_sdr_db": 1.88
    }
   },
-  "169045-225b4d911ce4-ref-8": {
+  "169045-225b4d911ce4-ref-9": {
    "bass": {
     "improvement_db": 11.92,
     "si_sdr_db": 16.83
@@ -170,7 +170,7 @@
     "si_sdr_db": -11.5
    }
   },
-  "53273-660cc46958cd-ref-8": {
+  "53273-660cc46958cd-ref-9": {
    "bass": {
     "improvement_db": 23.11,
     "si_sdr_db": 18.21
@@ -184,7 +184,7 @@
     "si_sdr_db": 22.1
    }
   },
-  "synth-0101-32005e974d57-ref-8": {
+  "synth-0101-32005e974d57-ref-9": {
    "bass": {
     "improvement_db": 33.39,
     "si_sdr_db": 19.39
@@ -198,7 +198,7 @@
     "si_sdr_db": 30.38
    }
   },
-  "synth-0102-ccea7627b943-ref-8": {
+  "synth-0102-ccea7627b943-ref-9": {
    "bass": {
     "improvement_db": 13.29,
     "si_sdr_db": -0.21
@@ -212,7 +212,7 @@
     "si_sdr_db": 15.63
    }
   },
-  "synth-0103-1387f5906c6e-ref-8": {
+  "synth-0103-1387f5906c6e-ref-9": {
    "bass": {
     "improvement_db": 32.67,
     "si_sdr_db": 19.23
