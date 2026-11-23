@@ -168,6 +168,9 @@ python3 tools/loop/accuracy.py   # score analysis timing against tracker-module 
   is meant to move, and keep the change only if that row improves on the held-out
   split without another falling. Then run `accuracy.py --save-baseline`, which
   rewrites the scoreboard, and commit it with the change.
+- Model-based analysers need `tools/loop/models/setup.sh`, then run the loop as
+  `.loop/venv/bin/python tools/loop/accuracy.py`. Save the baseline from that
+  environment, or the scoreboard will lose the models' rows.
 - New analysers (local models, hosted APIs) are registered in
   `tools/loop/analysers.py` so the accuracy loop scores them like any other. Tune
   only on the training split; never look at held-out modules while tuning.

@@ -36,7 +36,7 @@ python3 tools/loop/run.py --save-baseline
 python3 tools/loop/selftest.py           # checks the render loop's own instruments
 ```
 
-Requirements: Rust, Python 3 with numpy, ffmpeg, and a Vulkan driver. On a machine
+Setup for a new machine is in [setup.md](setup.md). Requirements: Rust, Python 3 with numpy, ffmpeg, and a Vulkan driver. On a machine
 with no GPU, Mesa's software driver works (`apt-get install mesa-vulkan-drivers`) and
 renders 480x270 at roughly real time.
 
@@ -86,6 +86,9 @@ python3 tools/loop/accuracy.py --quick     # committed fixtures only; about 20 s
 python3 tools/loop/tune.py --apply         # search parameters on the training split
 python3 tools/loop/accuracy.py --save-baseline
 python3 tools/loop/perfect_bundle.py song.xm
+
+tools/loop/models/setup.sh                    # optional: install model-based analysers
+.loop/venv/bin/python tools/loop/accuracy.py  # the same loop, with the models included
 ```
 
 ### Why tracker modules
@@ -135,6 +138,11 @@ of onsets, beats, sections and stems; parts it does not produce are skipped.
 | Stems    | Scale-invariant SDR per stem, and its improvement over the unseparated mix                                                     |
 
 The timing target is a bias under one 60 fps frame, about 17 ms.
+
+Model-based analysers are optional. `tools/loop/models/setup.sh` installs them into
+their own environment under `.loop/`; run the loop with that environment's Python to
+include them, or with the system Python to leave them out. They run only on the
+held-out split, since they are slow and are not tuned here.
 
 The report names the best analyser for each part, judged on the held-out split. That
 is how local models and hosted APIs will be chosen between as they are added.
