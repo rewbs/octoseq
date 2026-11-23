@@ -100,7 +100,7 @@ def _signal(package: dict, role: str) -> tuple[list[float], float]:
     return [], 1.0
 
 
-def cut_points(package: dict) -> list[tuple[float, bool]]:
+def cut_points(package: dict, max_hold: float = MAX_HOLD_S) -> list[tuple[float, bool]]:
     """When the look changes: (time, whether a new section starts there)."""
     duration = float(package["durationSec"])
     sections = [0.0]
@@ -114,20 +114,20 @@ def cut_points(package: dict) -> list[tuple[float, bool]]:
         inside = [b for b in beats if start < b < end]
         strong = inside[CUT_BEATS - 1 :: CUT_BEATS]  # multiples of CUT_BEATS from the section's start
         previous = start
-        while end - previous > MAX_HOLD_S:
+        while end - previous > max_hold:
             # Aim for equal parts, but never past the limit: on a strong beat if one
             # is in reach, else on any beat, else wherever the limit falls.
             remaining = end - previous
-            wanted = previous + remaining / int(-(-remaining // MAX_HOLD_S))
-            reach = lambda b: previous + MIN_HOLD_S <= b <= previous + MAX_HOLD_S and end - b >= MIN_HOLD_S  # noqa: E731
+            wanted = previous + remaining / int(-(-remaining // max_hold))
+            reach = lambda b: previous + MIN_HOLD_S <= b <= previous + max_hold and end - b >= MIN_HOLD_S  # noqa: E731
             choices = [b for b in strong if reach(b)] or [b for b in inside if reach(b)]
-            cut = min(choices, key=lambda b: abs(b - wanted)) if choices else min(wanted, previous + MAX_HOLD_S)
+            cut = min(choices, key=lambda b: abs(b - wanted)) if choices else min(wanted, previous + max_hold)
             cuts.append((float(cut), False))
             previous = cut
     return cuts
 
 
-def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vivid: bool = False) -> dict:
+def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vivid: bool = False, max_hold: float = MAX_HOLD_S) -> dict:
     """Make a show for a bundle. Returns the show as plain data (see `write`)."""
     scenes = usable_scenes(package, scenes_dir)
     if not scenes:
@@ -135,7 +135,7 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
     seed = secrets.randbelow(2**31) if seed is None else int(seed)
     rng = random.Random(seed)
     intensity, rate = _signal(package, "section_intensity")
-    cuts = cut_points(package)
+    cuts = cut_points(package, max_hold)
     beats = [e["time"] for e in _stream(package, "beat")]
     beat_s = sorted(b - a for a, b in zip(beats, beats[1:]))[len(beats) // 2 - 1] if len(beats) > 2 else 0.5
     segments = []

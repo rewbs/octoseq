@@ -67,8 +67,8 @@ fn init(ctx) {
     // growth so everything travels to the edge, a little of the water from
     // `liquid` so the petals' edges are not ruled lines, and creeping colour.
     let fb = feedback.builder()
-        .warp.petals(hit.scale(0.05).add(level.scale(0.015)).add(0.02), 6.0, clock.scale(0.6))
-        .warp.affine(hit.scale(0.05).add(t.scale(0.19).sin().scale(0.01)).add(1.02), t.scale(0.31).sin().scale(0.016))
+        .warp.petals(hit.scale(0.08).add(level.scale(0.02)).add(0.026), 6.0, clock.scale(0.6))
+        .warp.affine(hit.scale(0.08).add(t.scale(0.19).sin().scale(0.01)).add(1.028), t.scale(0.31).sin().scale(0.016))
         .warp.waves(level.scale(0.8).add(0.5), 1.4, clock)
         .color.hsv(0.005, 0.0, 0.0)
         .color.decay(0.962)

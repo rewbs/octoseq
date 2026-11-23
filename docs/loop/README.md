@@ -54,6 +54,41 @@ old picture's trails bend towards the new scene's motion while the new scene
 arrives. A show's segment asks for one with `"transition": <seconds>`; without it
 the segment cuts in.
 
+### Editing a show
+
+The director proposes; `tools/loop/show.py` is how a person changes what it proposed
+and keeps those changes when the director is asked again.
+
+```bash
+python3 tools/loop/show.py list   .loop/shows/dontstop-1
+python3 tools/loop/show.py set    .loop/shows/dontstop-1 3 --scene quartet.rhai --palette ice
+python3 tools/loop/show.py split  .loop/shows/dontstop-1 41.5      # a new look from 41.5 s
+python3 tools/loop/show.py pin    .loop/shows/dontstop-1 0 1       # these are mine
+python3 tools/loop/show.py reroll .loop/shows/dontstop-1 --bundle <package.json> --seed 5
+python3 tools/loop/video.py data/dontstop.mp3 --show .loop/shows/dontstop-1
+```
+
+Anything `set` or `split` touches is pinned. `reroll` asks the director for a new
+show and puts every pinned segment back at its own time, with its own scene copy
+byte for byte. An edit that would leave a show the engine cannot play is refused
+and nothing is written. The show records what was done to it.
+
+### What the scenes can ask for that Milkdrop cannot give
+
+Milkdrop hears three frequency bands of the last 11 milliseconds. A bundle knows
+the whole track, taken apart:
+
+- **The band, separately.** With the model environment, a bundle carries the level
+  of each separated stem, as the roles `drums`, `bass`, `melody` (everything else)
+  and `vocals`. `quartet` gives each its own place in the frame.
+- **What is coming.** An envelope can start rising before its event. In `orbit` the
+  cube draws itself in during the beat before each hit and bursts on it.
+- **Where in the music we are.** `beat_phase`, `bar_phase`, `section_progress`:
+  in `orbit` the light beats with the beat itself and the trails calm at the start
+  of every section and rise to a boil by its end.
+- **Solid geometry.** `orbit` is 3D shapes seen from a moving camera, drawn into the
+  same feedback loop as everything else.
+
 ## Running the render loop
 
 ```bash

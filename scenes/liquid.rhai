@@ -62,10 +62,10 @@ fn init(ctx) {
     let turn = t.scale(0.37).sin().scale(0.01).add(t.scale(0.58).sin().scale(0.007));
     // The tide: the picture streams outwards for a while, then slackens and draws
     // back in, on a period of half a minute, so the same scene has several looks.
-    let tide = t.scale(0.21).sin().scale(0.02).add(1.012);
+    let tide = t.scale(0.21).sin().scale(0.022).add(1.018);
     let fb = feedback.builder()
-        .warp.waves(hit.scale(6.0).add(level.scale(2.0)).add(2.0), 1.0, clock)
-        .warp.affine(hit.scale(0.04).add(tide), turn)
+        .warp.waves(hit.scale(9.0).add(level.scale(2.5)).add(2.6), 1.0, clock)
+        .warp.affine(hit.scale(0.07).add(tide), turn)
         .color.hsv(0.004, 0.0, 0.0)
         .color.decay(0.965)
         .blend.over()

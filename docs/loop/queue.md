@@ -192,6 +192,22 @@ Say so to reverse any of these.
 | D86 | The first three scenes (`pulse`, `columns`, `swirl`) each got a gentle `waves` warp and slowly creeping colour | Without them those scenes sat below Milkdrop's range for flow. It changes scenes you rated "better"; say if you preferred them plain |
 | D87 | The director's holds are unchanged (3 to 9 seconds) though Milkdrop holds a preset for 30 | The 9-second limit came from your review of a scene with nothing going on inside it. The new scenes have more, and may carry longer; that is a judgement for a review, not for me |
 
+### Taken while moving on from Milkdrop
+
+Your message, relayed from a side session on 23 November: after the Milkdrop work,
+turn to what sets this apart from projectM. "Multiple audio inputs, signals that
+aren't just energy/amplitude bands, 3d integration, show editing."
+
+| #   | Decision | Why this default |
+| --- | -------- | ---------------- |
+| D88 | A short tuning pass towards Milkdrop's flow speed: the three new scenes stream faster and throw harder on a hit | Flow speed rose a little (bloom 0.13 to 0.16 frame widths a second, liquid 0.13 to 0.14) with punch held at 2.0 or above. It is still under Milkdrop's median of 0.24. I stopped there as you asked, rather than chase it |
+| D89 | Bundles for audio files carry each separated stem's level, and two new roles, `melody` (the stem that is neither drums, bass nor voice) and `vocals`. `bass` is now the bass stem where there are stems | It is the first thing on your list. Each stem is scaled to its own loudest moments, except one more than 30 dB below the loudest stem, which is treated as silence. Costs nothing new: the stems are the ones already separated for the drum hits |
+| D90 | Scene `quartet`: drums, bass and melody each have their own shapes, which move only when that part plays | The plainest demonstration of separate inputs. Sizes follow the stems; brightness follows only `hit`, because a drum stem's level flickers faster than the strobe limit allows over a whole frame (the first version failed that gate at 3.5 flashes a second) |
+| D91 | Scene `orbit`: wire cubes and a sphere seen from a camera that flies round them, in the feedback loop. The cube gathers before each hit, the sphere beats on `beat_phase`, the trails rise with `section_progress` | Three things at once from your list: 3D, signals that are not loudness, and using what is known about the track ahead of time. Its colour is thin (wire lines cover little of the frame); it is the least finished of the scenes |
+| D92 | `tools/loop/show.py` edits a show by hand and `video.py --show` renders it as it stands. Edited and pinned segments survive a re-roll of the director | The design's "the director proposes, a person edits". It is a command-line tool, not the editor; it settles what an edit is and what a re-roll must keep, which the editor will need either way. One known wrinkle: after a re-roll round a pinned segment, a neighbouring look can be held slightly over nine seconds (9.4 s in one case); it is reported, not fixed |
+| D93 | The director's holds are unchanged. One show was rendered with holds of up to 24 seconds for you to compare | You said not to change the 3 to 9 seconds without you. `video.py --max-hold 24` makes the comparison show |
+| D94 | Not done from your list: more than one audio file as input (stems you supply go through the same interface as separated ones, but a scene cannot yet be handed, say, a live take and a click track); the web editor | Both are larger than a night. The first needs the bundle to name its inputs; the second is milestone 2 |
+
 ## Answered
 
 | #   | Question                                       | Answer                                                                                                                                                                                                  |

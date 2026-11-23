@@ -7,6 +7,7 @@
     python3 tools/loop/video.py song.xm --width 1280 --height 720
     python3 tools/loop/video.py data/super.mp3 --seed 7 --vivid   # the same show in stronger colours
     python3 tools/loop/video.py data/super.mp3 --scene scenes/pulse.rhai   # one scene, no director
+    python3 tools/loop/video.py data/super.mp3 --show .loop/shows/super-7  # that show as it now stands, edits and all
 
 This is milestone 1's command. What it does:
 
@@ -37,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import director  # noqa: E402
 import perfect_bundle  # noqa: E402
 import roles  # noqa: E402
+import show as shows  # noqa: E402
 import run  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,6 +51,8 @@ def main() -> int:
     parser.add_argument("-o", "--out", type=Path)
     parser.add_argument("--seed", type=int, help="repeat the show an earlier run made with this seed")
     parser.add_argument("--vivid", action="store_true", help="colours as written, not the paler ones the engine makes of them")
+    parser.add_argument("--show", type=Path, help="render this show directory as it stands (see show.py) instead of directing a new one")
+    parser.add_argument("--max-hold", type=float, default=director.MAX_HOLD_S, help="the longest the director holds one look, in seconds")
     parser.add_argument("--scene", type=Path, help="play this one scene throughout instead of directing a show")
     parser.add_argument("--seconds", type=float, default=0.0, help="stop after this long; 0 = the whole track")
     parser.add_argument("--fps", type=int, default=30)
@@ -72,7 +76,16 @@ def main() -> int:
     package = json.loads(package_path.read_text())
     seconds = package["durationSec"] if args.seconds <= 0 else min(package["durationSec"], args.seconds)
 
-    if args.scene:
+    if args.show:
+        shown, directory = shows.load(args.show.expanduser().resolve())
+        problems = shows.validate(shown, directory)
+        if problems:
+            sys.exit("this show cannot be played:\n  " + "\n  ".join(problems))
+        if shown.get("bundle_sha256") not in (None, hashlib.sha256(package_path.read_bytes()).hexdigest()):
+            print("note: the track's analysis has changed since this show was made; its cuts may no longer sit on the music", flush=True)
+        script, label = directory / "show.json", directory.name.removeprefix(f"{track.stem}-")
+        print(f"{track.name}: {shows.listing(shown)}", flush=True)
+    elif args.scene:
         script = args.scene.expanduser().resolve()
         missing = director.scene_roles(script) - set(package.get("roles", {}))
         if missing:
@@ -81,12 +94,12 @@ def main() -> int:
         print(f"{track.name}: {seconds:.0f} s of {script.name}", flush=True)
     else:
         try:
-            show = director.direct(package, args.seed, vivid=args.vivid)
+            show = director.direct(package, args.seed, vivid=args.vivid, max_hold=args.max_hold)
         except ValueError as error:
             sys.exit(str(error))
         show["bundle_sha256"] = hashlib.sha256(package_path.read_bytes()).hexdigest()
         show["track"] = track.name
-        label = f"{show['seed']}{'-vivid' if args.vivid else ''}"
+        label = f"{show['seed']}{'-vivid' if args.vivid else ''}{f'-hold{args.max_hold:g}' if args.max_hold != director.MAX_HOLD_S else ''}"
         script = director.write(show, director.SHOWS / f"{track.stem}-{label}")
         print(f"{track.name}: {director.describe(show)}", flush=True)
 

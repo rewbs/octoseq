@@ -30,6 +30,9 @@ events and `energy` being a signal on every bundle.
               onset_strength    the envelope the onsets were picked from
               bass              how loud the bass is (the bass stem if there are stems, else the bass band)
               drums             how loud the drums are (needs stems)
+              melody            how loud everything else is: neither drums nor bass (nor, where the
+                                separation gives them, vocals). Needs stems
+              vocals            how loud the voice is (needs stems that have one)
               beat_phase        0 to 1 across each beat
               bar_phase         0 to 1 across each bar (needs downbeats)
               section_progress  0 to 1 across each section
@@ -54,7 +57,7 @@ import analyse
 import analysers
 import stems as stem_sources
 
-ROLES_VERSION = "roles-3"
+ROLES_VERSION = "roles-4"
 DERIVED_RATE = 50.0  # samples per second of the derived signals: smooth at any frame rate
 EVENT_ROLES = ("beat", "downbeat", "onset", "kick", "snare", "hat", "hit", "section")
 HIT_MIN_GAP_S = 0.5  # whole-frame blows this far apart stay under the three-flashes-a-second limit
@@ -64,7 +67,7 @@ MODEL_PYTHON = Path(__file__).resolve().parents[2] / ".loop" / "venv" / "bin" / 
 # A drum stem this far below the mix is what separation leaves behind on a track
 # with no drums (-47 dB on the drumless test track, -2 dB on the one with drums).
 DRUMLESS_DB = -30.0
-SIGNAL_ROLES = ("energy", "brightness", "flux", "onset_strength", "bass", "drums", "beat_phase", "bar_phase", "section_progress", "section_intensity")
+SIGNAL_ROLES = ("energy", "brightness", "flux", "onset_strength", "bass", "drums", "melody", "vocals", "beat_phase", "bar_phase", "section_progress", "section_intensity")
 
 
 def _stream(package: dict, name: str, events: list[tuple[float, float]]) -> None:
@@ -165,8 +168,9 @@ def bind(
         roles["bass"] = {"stem": "Bass", "feature": "energy"}
     elif ("Bass", "energy") in band_features:
         roles["bass"] = {"band": "Bass", "feature": "energy"}
-    if ("Drums", "energy") in stem_features and "Drums" in stems:
-        roles["drums"] = {"stem": "Drums", "feature": "energy"}
+    for role, label in (("drums", "Drums"), ("melody", "Other"), ("vocals", "Vocals")):
+        if (label, "energy") in stem_features and label in stems:
+            roles[role] = {"stem": label, "feature": "energy"}
 
     if beats and len(beats) >= 2:
         _stream(package, "beat", [(t, 1.0) for t in beats])
@@ -202,15 +206,41 @@ def bind(
     return package
 
 
-def local_drum_stem(audio: Path) -> Path | None:
-    """The drum stem local Demucs separates from a track, or None where it cannot run.
+def stem_levels(files: dict[str, Path], params: dict) -> tuple[list[dict], list[list[str]]]:
+    """Each separated stem's loudness over time, for a bundle's `stemSignals`.
+
+    Each stem is scaled so that its own loudest moments are 1: a quiet voice still
+    uses the whole range. The exception is a stem with nothing in it (more than
+    30 dB below the loudest stem), which is scaled like the loudest one and so
+    stays near zero, instead of having the separation's leftovers stretched to
+    full height.
+    """
+    frame_rate = analyse.SAMPLE_RATE / params["hop"]
+    levels = {}
+    for label, path in sorted(files.items()):
+        mag = analyse.spectrogram(analysers.decode(path, analyse.SAMPLE_RATE), params["n_fft"], params["hop"])
+        levels[label] = np.sqrt((mag**2).mean(axis=1))
+    top = max((float(np.percentile(v, 99.5)) for v in levels.values() if len(v)), default=0.0) or 1.0
+    signals, available = [], []
+    for label, rms in levels.items():
+        stem_id = f"stem-{label}"
+        available.append([stem_id, label.capitalize()])
+        own = float(np.percentile(rms, 99.5)) if len(rms) else 0.0
+        amplitude = np.clip(rms / (own if own >= top * 10 ** (DRUMLESS_DB / 20) else top), 0.0, 1.0)
+        for feature, values in (("amplitude", amplitude), ("energy", amplitude**2)):
+            signals.append({"stemId": stem_id, "label": label.capitalize(), "feature": feature, "rate": frame_rate, "values": np.round(values, 5).tolist()})
+    return signals, available
+
+
+def local_stems(audio: Path) -> dict[str, Path] | None:
+    """The stems local Demucs separates from a track, or None where it cannot run.
 
     Separation is kept in the stem cache, so a track pays for it once. When this
     Python has no Demucs but the model environment exists, the separation is run
     there. With neither, the caller falls back to listening to the mix.
     """
     try:
-        return stem_sources.separate("demucs", audio).files["drums"]
+        return dict(stem_sources.separate("demucs", audio).files)
     except stem_sources.Unavailable:
         if not MODEL_PYTHON.exists():
             return None
@@ -219,9 +249,14 @@ def local_drum_stem(audio: Path) -> Path | None:
         print(f"drum stem: local Demucs failed on {audio.name}, using the mix ({done.stderr.strip().splitlines()[-1] if done.stderr.strip() else 'no message'})", file=sys.stderr)
         return None
     try:
-        return stem_sources.separate("demucs", audio).files["drums"]
+        return dict(stem_sources.separate("demucs", audio).files)
     except stem_sources.StemError:
         return None
+
+
+def local_drum_stem(audio: Path) -> Path | None:
+    """The drum stem alone (see `local_stems`)."""
+    return (local_stems(audio) or {}).get("drums")
 
 
 def standin_bundle_cached(audio: Path, cache_dir: Path, drum_source: str | None = None) -> Path:
@@ -240,12 +275,13 @@ def standin_bundle_cached(audio: Path, cache_dir: Path, drum_source: str | None 
     """
     params = analyse.load_params()
     forced = drum_source is not None
-    drum_stem = None if drum_source == "mix" else local_drum_stem(audio)
+    stems = None if drum_source == "mix" else local_stems(audio)
+    drum_stem = (stems or {}).get("drums")
     if drum_source == "stem" and drum_stem is None:
         raise stem_sources.Unavailable("no drum stem: local Demucs cannot run here (tools/loop/models/setup.sh)")
     drum_source = "stem" if drum_stem else "mix"
     drum_params = analysers.drum_params(drum_source)
-    drum_key = analyse.params_key(drum_params) + (("-stem-forced" if forced else f"-stem-or-mix{DRUMLESS_DB:g}") if drum_stem else "")
+    drum_key = analyse.params_key(drum_params) + (("-stem-forced" if forced else f"-stem-or-mix{DRUMLESS_DB:g}") if drum_stem else "") + ("-stemlevels2" if stems else "")
     key = f"{analyse.file_sha256(audio)[:16]}-{analyse.ANALYSER_VERSION}-{analyse.params_key(params)}-{ROLES_VERSION}-{drum_key}-novelty_grid"
     out = cache_dir / key / "package.json"
     if out.exists():
@@ -260,6 +296,10 @@ def standin_bundle_cached(audio: Path, cache_dir: Path, drum_source: str | None 
             heard, drum_source, drum_params = mix, "mix (no drums in the track)", analysers.drum_params("mix")
     hits = analysers.drum_hits(analysers.drum_envelopes(heard), drum_params)
     package["drumSource"] = drum_source
+    if stems:
+        # The band taken apart: each stem's level goes in, so a scene can follow the
+        # drums, the bass, the voice and the rest separately.
+        package["stemSignals"], package["availableStems"] = stem_levels(stems, params)
     starts = analysers.novelty_grid(audio)["sections"]
     bind(
         package,

@@ -552,6 +552,7 @@ Signal API.
 | `flux`                    | signal | How fast the spectrum is changing                           |
 | `onset_strength`          | signal | The envelope the onsets were picked from                    |
 | `bass`, `drums`           | signal | How loud the bass and the drums are                         |
+| `melody`, `vocals`        | signal | How loud the rest of the band is, and the voice (need stems) |
 | `beat_phase`, `bar_phase` | signal | 0 to 1 across each beat and each bar                        |
 | `section_progress`        | signal | 0 to 1 across each section                                  |
 | `section_intensity`       | signal | Each section's loudness against the loudest, held for it    |

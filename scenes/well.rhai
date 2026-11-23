@@ -56,8 +56,8 @@ fn init(ctx) {
     // was at the rim is nearer the middle), rings of squeeze and stretch that fall
     // with the clock, a slow turn, and creeping colour. A hit doubles the pull.
     let fb = feedback.builder()
-        .warp.ripple(hit.scale(0.05).add(0.03), t.scale(0.17).sin().scale(1.2).add(2.2), clock.scale(2.0))
-        .warp.affine(hit.scale(-0.05).add(0.972), t.scale(0.23).sin().scale(0.022))
+        .warp.ripple(hit.scale(0.08).add(0.04), t.scale(0.17).sin().scale(1.2).add(2.2), clock.scale(2.0))
+        .warp.affine(hit.scale(-0.08).add(0.962), t.scale(0.23).sin().scale(0.022))
         .warp.waves(level.scale(0.6).add(0.3), 0.8, clock)
         .color.hsv(0.006, 0.0, 0.0)
         .color.decay(0.97)
