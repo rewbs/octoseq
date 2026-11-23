@@ -1614,6 +1614,7 @@ impl Renderer {
                                                     &self.queue,
                                                     mat_id,
                                                     &params,
+                                                    mesh_idx,
                                                 );
 
                                             // Draw with material using dynamic offset for per-entity uniforms
@@ -1630,7 +1631,7 @@ impl Renderer {
                                             render_pass.set_bind_group(
                                                 1,
                                                 &resources.bind_group,
-                                                &[],
+                                                &[material_dynamic_offset],
                                             );
                                             if use_deformed {
                                                 render_pass.set_vertex_buffer(
@@ -1821,6 +1822,7 @@ impl Renderer {
                                             &self.queue,
                                             mat_id,
                                             &params,
+                                            mesh_idx,
                                         );
 
                                         // Draw with material using dynamic offset for per-entity uniforms
@@ -1834,7 +1836,11 @@ impl Renderer {
                                             self.material_pipeline_manager.global_bind_group(),
                                             &[material_dynamic_offset],
                                         );
-                                        render_pass.set_bind_group(1, &resources.bind_group, &[]);
+                                        render_pass.set_bind_group(
+                                            1,
+                                            &resources.bind_group,
+                                            &[material_dynamic_offset],
+                                        );
                                         render_pass
                                             .set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
 
@@ -1980,6 +1986,7 @@ impl Renderer {
                                             &self.queue,
                                             mat_id,
                                             &params,
+                                            mesh_idx,
                                         );
 
                                         // Draw with material using dynamic offset for per-entity uniforms
@@ -1993,7 +2000,11 @@ impl Renderer {
                                             self.material_pipeline_manager.global_bind_group(),
                                             &[material_dynamic_offset],
                                         );
-                                        render_pass.set_bind_group(1, &resources.bind_group, &[]);
+                                        render_pass.set_bind_group(
+                                            1,
+                                            &resources.bind_group,
+                                            &[material_dynamic_offset],
+                                        );
                                         render_pass
                                             .set_vertex_buffer(0, geometry.vertex_buffer.slice(..));
 

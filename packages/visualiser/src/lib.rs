@@ -36,6 +36,10 @@ pub mod interpretation_package;
 // Musical roles: what scenes ask for and bundles bind
 pub mod roles;
 
+// Shows: which scene plays when (read from disk, so native only)
+#[cfg(not(target_arch = "wasm32"))]
+pub mod show;
+
 // Mesh asset modules
 pub mod deformation;
 pub mod mesh_asset;

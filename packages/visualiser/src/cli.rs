@@ -17,6 +17,8 @@ use crate::gpu::renderer::Renderer;
 use crate::input::{BandSignalMap, InputSignal, SharedSignal, SignalMap};
 use crate::interpretation_package::{apply_to_state, load_package, LoadedPackage};
 use crate::render_job::{BatchJobSpec, RenderJobSpec, RenderMetadata, RenderPhase};
+use crate::script_diagnostics::ScriptDiagnosticKind;
+use crate::show::Show;
 use crate::video_encode::{check_ffmpeg, encode_video_with_ffmpeg, FfmpegStatus};
 use crate::visualiser::VisualiserState;
 
@@ -48,6 +50,11 @@ enum Commands {
         /// (optional with --package: overrides the package's embedded script)
         #[arg(long, required_unless_present = "package")]
         script: Option<PathBuf>,
+
+        /// Show file: a list of scene scripts and the second each takes over.
+        /// The show's first scene replaces --script.
+        #[arg(long)]
+        show: Option<PathBuf>,
 
         /// Frames per second
         #[arg(long, default_value_t = 60.0)]
@@ -129,6 +136,7 @@ pub fn run() -> Result<()> {
             package,
             out,
             script,
+            show,
             fps,
             duration,
             width,
@@ -157,7 +165,17 @@ pub fn run() -> Result<()> {
                 video_path,
             };
 
-            pollster::block_on(execute_render_job(&job, !no_metadata, quiet))?;
+            let show = show
+                .as_deref()
+                .map(Show::load)
+                .transpose()
+                .map_err(|e| anyhow::anyhow!("[{}] {:#}", RenderPhase::ScriptLoading, e))?;
+            pollster::block_on(execute_render_job_with_show(
+                &job,
+                show.as_ref(),
+                !no_metadata,
+                quiet,
+            ))?;
         }
         Commands::Batch {
             config,
@@ -180,6 +198,19 @@ pub fn run() -> Result<()> {
 /// exact same render path as the CLI.
 pub async fn execute_render_job(
     job: &RenderJobSpec,
+    save_metadata: bool,
+    quiet: bool,
+) -> Result<()> {
+    execute_render_job_with_show(job, None, save_metadata, quiet).await
+}
+
+/// Execute a render job, optionally playing a show: scene scripts that take
+/// over at given times. The show's first scene is the script the job starts
+/// with; each later one replaces the script running when its time comes, and
+/// the clock, the inputs and the feedback buffer carry on.
+pub async fn execute_render_job_with_show(
+    job: &RenderJobSpec,
+    show: Option<&Show>,
     save_metadata: bool,
     quiet: bool,
 ) -> Result<()> {
@@ -217,8 +248,11 @@ pub async fn execute_render_job(
         None => None,
     };
 
-    // Load script: an explicit --script wins; otherwise the package supplies it.
-    let script_content = if let Some(script_path) = &job.script_path {
+    // Load script: a show's first scene wins, then an explicit --script;
+    // otherwise the package supplies it.
+    let script_content = if let Some(show) = show {
+        show.segments[0].source.clone()
+    } else if let Some(script_path) = &job.script_path {
         let mut script_file = File::open(script_path).map_err(|e| {
             anyhow::anyhow!(
                 "[{}] Failed to open script {:?}: {}",
@@ -455,7 +489,26 @@ pub async fn execute_render_job(
     };
 
     // Render frames
+    let mut playing = 0usize;
     for i in 0..total_frames {
+        // A show changes scene at set times: load the next script and carry on.
+        if let Some(show) = show {
+            let due = show.segment_at(i as f32 * dt);
+            if due != playing {
+                playing = due;
+                let segment = &show.segments[due];
+                if !state.load_script(&segment.source) {
+                    return Err(anyhow::anyhow!(
+                        "[{}] scene {:?} (from {:.2} s): {}",
+                        RenderPhase::ScriptLoading,
+                        segment.path,
+                        segment.start,
+                        state.get_script_error().unwrap_or("Unknown script error")
+                    ));
+                }
+            }
+        }
+
         state.update(
             dt,
             rotation_signal.as_ref(),
@@ -465,6 +518,30 @@ pub async fn execute_render_job(
             custom_signals,
             musical_time,
         );
+
+        // A script error must stop the render. Without this, a scene whose init()
+        // fails partway is rendered with whatever it had set up by then, which
+        // looks like a dull scene rather than a broken one.
+        for diagnostic in state.take_script_diagnostics() {
+            if diagnostic.kind == ScriptDiagnosticKind::Warning {
+                if !quiet {
+                    eprintln!("  script warning: {}", diagnostic.message);
+                }
+                continue;
+            }
+            let place = diagnostic
+                .location
+                .as_ref()
+                .map(|l| format!(" (line {}, column {})", l.line, l.column))
+                .unwrap_or_default();
+            return Err(anyhow::anyhow!(
+                "[{}] script error at {:.2} s{}: {}",
+                RenderPhase::FrameRender,
+                i as f32 * dt,
+                place,
+                diagnostic.message
+            ));
+        }
 
         // Render to texture
         renderer.render(&texture_view, &state);

@@ -188,8 +188,10 @@ impl MaterialPipelineManager {
                     visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                        // One slot per object drawn, chosen by a dynamic offset: see
+                        // `update_material_uniforms`.
+                        has_dynamic_offset: true,
+                        min_binding_size: std::num::NonZeroU64::new(MAX_MATERIAL_UNIFORM_SIZE),
                     },
                     count: None,
                 }],
@@ -198,7 +200,7 @@ impl MaterialPipelineManager {
         // Create uniform buffer for material parameters
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some(&format!("Material Uniform Buffer: {}", material.id)),
-            size: MAX_MATERIAL_UNIFORM_SIZE,
+            size: MAX_MATERIAL_UNIFORM_SIZE * MAX_MESHES_PER_FRAME as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -209,7 +211,11 @@ impl MaterialPipelineManager {
             layout: &material_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &uniform_buffer,
+                    offset: 0,
+                    size: std::num::NonZeroU64::new(MAX_MATERIAL_UNIFORM_SIZE),
+                }),
             }],
         });
 
@@ -373,13 +379,23 @@ impl MaterialPipelineManager {
         (slot * GLOBAL_UNIFORM_ALIGNMENT) as u32
     }
 
-    /// Update material-specific uniforms.
+    /// Write one object's parameters for a material into that object's slot.
+    ///
+    /// Buffer writes made while a render pass is being recorded all land before
+    /// the pass runs. With a single slot per material, every object drawn with
+    /// that material would therefore get the parameters of the last one written.
+    /// Each object writes to its own slot and binds it with the matching dynamic
+    /// offset (`dynamic_offset_for_slot`), as the global uniforms already do.
     pub fn update_material_uniforms(
         &self,
         queue: &wgpu::Queue,
         material_id: &str,
         params: &[ParamValue],
+        slot: usize,
     ) {
+        if slot >= MAX_MESHES_PER_FRAME {
+            return;
+        }
         if let Some(resources) = self.resources.get(material_id) {
             let mut data = Vec::new();
             for param in params {
@@ -393,7 +409,11 @@ impl MaterialPipelineManager {
 
             // Ensure we don't exceed buffer size
             if data.len() as u64 <= MAX_MATERIAL_UNIFORM_SIZE {
-                queue.write_buffer(&resources.uniform_buffer, 0, &data);
+                queue.write_buffer(
+                    &resources.uniform_buffer,
+                    slot as u64 * MAX_MATERIAL_UNIFORM_SIZE,
+                    &data,
+                );
             } else {
                 log::error!(
                     "Material uniform data for '{}' exceeds buffer size ({} > {})",

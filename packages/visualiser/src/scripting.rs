@@ -240,7 +240,9 @@ impl ScriptEngine {
         engine.set_max_operations(100_000); // Prevent infinite loops
         engine.set_max_string_size(10_000);
         engine.set_max_array_size(100_000); // Allow larger arrays for mesh assets
-        engine.set_max_map_size(500);
+        // Counted through nested maps, and every entity is a map of maps inside
+        // `__entities`: at 500 a scene could hold about a dozen entities.
+        engine.set_max_map_size(50_000);
 
         // Register standalone logging functions (these can be called from anywhere)
         engine
@@ -1588,6 +1590,11 @@ let scene = #{{}};
 scene.__type = "scene_namespace";
 scene.add = |entity| {{
     let id = entity.__id;
+    // Keep the entity as it is now. Maps are copied by value in Rhai, so an entity
+    // built in a loop or held in an array is otherwise only known by its defaults:
+    // nothing set on it would ever reach the scene. Entities held in top-level
+    // variables are still re-read every frame, so later changes to those apply.
+    __entities["" + id] = entity;
     if !__scene_ids.contains(id) {{
         __scene_ids.push(id);
     }}

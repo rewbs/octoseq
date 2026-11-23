@@ -132,3 +132,44 @@ fn a_bundle_without_roles_provides_none() {
     let error = state.get_script_error().unwrap_or_default().to_string();
     assert!(error.contains("provides no roles at all"), "{error}");
 }
+
+#[test]
+fn entities_built_in_a_loop_keep_what_was_set_on_them() {
+    // Thirty rings made in a loop, never held in a top-level variable: each must
+    // reach the scene where the script put it, and thirty must not trip a limit.
+    let scene = r#"
+fn init(ctx) {
+    for i in 0..30 {
+        let ring = radial.ring(#{ radius: 0.1, thickness: 0.05 });
+        ring.position.x = i * 0.5;
+        ring.position.y = inputs.mix.energy.add(2.0);
+        scene.add(ring);
+    }
+}
+"#;
+    let (mut state, package) = state_with_bundle();
+    assert!(state.load_script(scene), "{:?}", state.get_script_error());
+    state.update(
+        1.0 / 30.0,
+        None,
+        None,
+        &package.named_signals,
+        &package.band_signals,
+        &package.custom_signals,
+        package.musical_time.as_ref(),
+    );
+    assert_eq!(state.get_script_error(), None);
+    let mut xs: Vec<f32> = state
+        .scene_graph()
+        .scene_entities()
+        .map(|(_, entity)| {
+            assert!(entity.transform().position.y >= 2.0, "a signal set in the loop must be followed");
+            entity.transform().position.x
+        })
+        .collect();
+    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(xs.len(), 30);
+    for (i, x) in xs.iter().enumerate() {
+        assert!((x - i as f32 * 0.5).abs() < 1e-4, "ring {i} is at x = {x}");
+    }
+}
