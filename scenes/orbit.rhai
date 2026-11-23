@@ -78,7 +78,10 @@ fn init(ctx) {
         moon.rotation.z = clock.scale(1.1);
         let drum = if i % 2 == 0 { kick } else { snare };
         moon.scale = drum.scale(0.5).add(0.45);
-        scene.add(wire(moon, style.c, drum.scale(1.5).add(1.0)));
+        // Its size follows its drum; its brightness follows only `hit`. A drum's level
+        // can flicker faster than the strobe limit allows, and now that light brighter
+        // than white is shown as brighter, not cut off, that flicker would show.
+        scene.add(wire(moon, style.c, hit.scale(0.6).add(1.2)));
     }
 
     // The loop. Calm water at the start of a section, rising to a boil by its end.

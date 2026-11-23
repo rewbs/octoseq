@@ -2198,6 +2198,11 @@ fn update(dt, frame) {
 | `soft_additive` | Soft additive blending   | `base_color`, `softness`                     |
 | `gradient`      | Two-tone gradient        | `color_top`, `color_bottom`, `blend_height`  |
 
+A light can be brighter than white: an `emission_intensity` of 4 is four times as
+bright as 1, not the same thing cut off. The engine draws in float and tone-maps the
+finished picture at the end, so a very bright colour keeps its hue and pales, and
+bloom sees how bright it really was.
+
 #### Material Introspection
 
 ```rhai

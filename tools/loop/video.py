@@ -57,6 +57,7 @@ def main() -> int:
     parser.add_argument("--seconds", type=float, default=0.0, help="stop after this long; 0 = the whole track")
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--step-rate", type=int, default=0, help="steps the engine takes a second: at 120, a render is the same picture at 30, 60 or 120 fps, and slower to make. 0 = one step a frame")
+    parser.add_argument("--shutter", type=float, default=0.0, help="motion blur: the share of each frame its shutter is open, 0 (off) to 1; a frame is the average of the steps taken meanwhile, so it needs --step-rate at several times --fps. 0.5 is a film camera's usual setting")
     parser.add_argument("--width", type=int, default=960)
     parser.add_argument("--height", type=int, default=540)
     parser.add_argument("--no-build", action="store_true", help="skip cargo build")
@@ -106,6 +107,8 @@ def main() -> int:
 
     if args.step_rate:
         label += f"-step{args.step_rate}"
+    if args.shutter:
+        label += f"-shutter{args.shutter:g}"
     out = args.out.expanduser().resolve() if args.out else OUT / f"{track.stem}-{label}.mp4"
     out.parent.mkdir(parents=True, exist_ok=True)
     frames = out.parent / f".{out.stem}-frames"

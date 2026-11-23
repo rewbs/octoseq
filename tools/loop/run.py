@@ -104,6 +104,8 @@ def render_frames(package: Path, scene: Path, out: Path, seconds: float, args) -
     ]  # fmt: skip
     if getattr(args, "step_rate", 0):
         cmd += ["--step-rate", str(args.step_rate)]
+    if getattr(args, "shutter", 0):
+        cmd += ["--shutter", str(args.shutter)]
     result = sh(cmd)
     ok = result.returncode == 0 and any(out.glob("frame_*.png"))
     return ok, (result.stderr or result.stdout)[-2000:]
@@ -244,7 +246,82 @@ def engine_checks(track: Path, run_dir: Path, gates: dict, args) -> list[dict]:
             checks.append(dict(name=name, ok=False, detail=result["hard"][0] if result.get("hard") else "did not render"))
         else:
             checks.append(dict(name=name, ok=(blown > limit) == should_blow, detail=f"{blown * 100:.0f}% of frames blown out"))
-    return checks + transition_checks(track, run_dir / "checks", small) + frame_rate_checks(track, run_dir / "checks", small)
+    return checks + light_checks(track, run_dir / "checks", small) + transition_checks(track, run_dir / "checks", small) + frame_rate_checks(track, run_dir / "checks", small)
+
+
+def load_frames_full(frames: Path, width: int, height: int) -> np.ndarray:
+    """Numbered frames as rendered, at their own size: uint8, (frames, H, W, 3)."""
+    cmd = ["ffmpeg", "-v", "error", "-i", str(frames), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
+    raw = subprocess.run(cmd, check=True, capture_output=True).stdout
+    return np.frombuffer(raw, dtype=np.uint8).reshape(-1, height, width, 3)
+
+
+def to_light(frames: np.ndarray) -> np.ndarray:
+    """Screen values back to amounts of light (the sRGB curve undone), 0 to 1."""
+    x = frames.astype(np.float32) / 255.0
+    return np.where(x <= 0.04045, x / 12.92, ((x + 0.055) / 1.055) ** 2.4)
+
+
+def hue_of(colour) -> float:
+    """Where a colour sits on the colour wheel, 0 to 1."""
+    r, g, b = (float(c) for c in colour)
+    top, bottom = max(r, g, b), min(r, g, b)
+    if top - bottom < 1e-6:
+        return 0.0
+    if top == r:
+        return (((g - b) / (top - bottom)) % 6.0) / 6.0
+    if top == g:
+        return ((b - r) / (top - bottom) + 2.0) / 6.0
+    return ((r - g) / (top - bottom) + 4.0) / 6.0
+
+
+BRIGHT_COLOUR, BRIGHT_TIMES = (1.0, 0.2, 0.05), 4.0  # as in fixtures/scenes/brighter-than-white.rhai
+SAME_COLOUR = 0.05  # of the colour wheel: 18 degrees
+
+
+def light_checks(track: Path, out: Path, args) -> list[dict]:
+    """A light brighter than white must keep its colour.
+
+    The fixture draws two rings of one red, the right one four times as bright as
+    the left, which is at full brightness. Everything is drawn in float and
+    tone-mapped at the end, so the right ring should be the same red, paler and
+    brighter. An engine that cuts each channel off at white shows it orange: the
+    check works out from the scene's numbers how far round the colour wheel that
+    would put it, and it must be further than the allowance, or the check could
+    not tell the two engines apart.
+    """
+    name = "a light four times brighter than white keeps its colour"
+    if track.suffix.lower() in MODULE_SUFFIXES:
+        bundle = perfect_bundle.build(track)
+        package_path = bundle / "package.json"
+    else:
+        package_path = roles.standin_bundle_cached(track, LOOP_DIR / "cache")
+    frames_dir = out / "brighter-than-white" / "frames"
+    plain = argparse.Namespace(**{**vars(args), "step_rate": 0, "shutter": 0.0})
+    ok, log = render_frames(package_path, CHECK_SCENES / "brighter-than-white.rhai", frames_dir, 1.0, plain)
+    if not ok:
+        return [dict(name=name, ok=False, detail=f"did not render: {log.strip().splitlines()[-1] if log.strip() else '?'}")]
+    frame = load_frames_full(frames_dir / "frame_%05d.png", plain.width, plain.height)[-1].astype(np.float32) / 255.0
+    shutil.rmtree(frames_dir)
+    half = frame.shape[1] // 2
+    seen = []
+    for side in (frame[:, :half], frame[:, half:]):
+        lit = side[side.max(axis=-1) - side.min(axis=-1) > 0.08]  # the ring, not the grey behind it
+        if len(lit) < 20:
+            return [dict(name=name, ok=False, detail="the fixture's rings did not show")]
+        seen.append(lit.mean(axis=0))
+    screen = lambda c: [min(v, 1.0) ** (1 / 2.2) for v in c]  # noqa: E731
+    wheel = lambda a, b: min(abs(a - b), 1.0 - abs(a - b))  # noqa: E731
+    moved = wheel(hue_of(seen[0]), hue_of(seen[1]))
+    cut_off = wheel(hue_of(screen(BRIGHT_COLOUR)), hue_of(screen([c * BRIGHT_TIMES for c in BRIGHT_COLOUR])))
+    brighter = float(seen[1].mean()) > float(seen[0].mean()) + 0.05
+    return [dict(
+        name=name,
+        ok=moved <= SAME_COLOUR < cut_off and brighter,
+        detail=f"its colour moves {moved * 360:.0f} degrees round the wheel; cut off at white it would move {cut_off * 360:.0f}"
+        + f" (shown as {', '.join(f'{v:.2f}' for v in seen[0])} and {', '.join(f'{v:.2f}' for v in seen[1])})"
+        + ("" if brighter else "; but it is no brighter than the ring at full brightness"),
+    )]  # fmt: skip
 
 
 SAME_PICTURE = 1.0 / 255.0  # mean difference of one grey level: the same picture
@@ -269,6 +346,7 @@ def frame_rate_checks(track: Path, out: Path, args) -> list[dict]:
     """
     trails = "trails last as long at 120 frames a second as at 30"
     same = "a 30 fps render stepped 120 times a second is the 120 fps picture"
+    blur = "with the shutter open, a frame is the average of its steps"
     if track.suffix.lower() in MODULE_SUFFIXES:
         bundle = perfect_bundle.build(track)
         package_path, audio = bundle / "package.json", bundle / perfect_bundle.AUDIO
@@ -276,15 +354,15 @@ def frame_rate_checks(track: Path, out: Path, args) -> list[dict]:
         package_path, audio = roles.standin_bundle_cached(track, LOOP_DIR / "cache"), track
     package = json.loads(package_path.read_text())
     seconds = min(8.0, float(package["durationSec"]))
-    renders = {"30": (30, 0), "120": (120, 0), "30-stepped": (30, 120)}
-    lit, bright, pictures, files = {}, {}, {}, {}
-    for key, (fps, step_rate) in renders.items():
-        at = argparse.Namespace(**{**vars(args), "fps": fps, "step_rate": step_rate})
+    renders = {"30": (30, 0, 0.0), "120": (120, 0, 0.0), "30-stepped": (30, 120, 0.0), "30-blurred": (30, 120, 1.0)}
+    lit, bright, pictures, files, full = {}, {}, {}, {}, {}
+    for key, (fps, step_rate, shutter) in renders.items():
+        at = argparse.Namespace(**{**vars(args), "fps": fps, "step_rate": step_rate, "shutter": shutter})
         frames_dir = out / f"fps-{key}" / "frames"
         ok, log = render_frames(package_path, ROOT / "scenes" / "liquid.rhai", frames_dir, seconds, at)
         if not ok:
             detail = f"did not render at {fps} fps{' stepped' if step_rate else ''}: {log.strip().splitlines()[-1] if log.strip() else '?'}"
-            return [dict(name=trails, ok=False, detail=detail), dict(name=same, ok=False, detail=detail)]
+            return [dict(name=trails, ok=False, detail=detail), dict(name=same, ok=False, detail=detail), dict(name=blur, ok=False, detail=detail)]
         clip = frames_dir.parent / "clip.mp4"
         encode_clip(frames_dir, audio, clip, seconds, fps)
         # The frames as rendered, before the video encoder has touched them; the
@@ -292,6 +370,8 @@ def frame_rate_checks(track: Path, out: Path, args) -> list[dict]:
         every = fps // 30
         pictures[key] = metrics.load_frames(frames_dir / "frame_%05d.png")[every - 1 :: every].astype(np.float32)
         files[key] = [hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted(frames_dir.glob("frame_*.png"))][every - 1 :: every]
+        if key in ("120", "30-blurred"):  # the first two seconds at full size, for the shutter check
+            full[key] = load_frames_full(frames_dir / "frame_%05d.png", at.width, at.height)[: 2 * fps]
         shutil.rmtree(frames_dir)
         frames = metrics.load_frames(clip)[::every]  # the same moments from each
         lit[key] = float((frames.max(axis=-1) > 40).mean())
@@ -308,6 +388,21 @@ def frame_rate_checks(track: Path, out: Path, args) -> list[dict]:
         name=same,
         ok=apart["30-stepped"] <= SAME_PICTURE < apart["30"],
         detail=f"{identical} of {count} frames identical to the byte, mean difference {apart['30-stepped']:.4f}; one step a frame differs by {apart['30']:.4f}",
+    ))  # fmt: skip
+    # The shutter. Open for the whole frame, a 30 fps frame stepped 120 times a second
+    # is the average of four steps, and those steps are the frames of the 120 fps
+    # render. Averaged as light, not as screen values, the two must agree to a grey
+    # level; and a single step must be clearly further from the average than that,
+    # or the check could not tell a blurred frame from a sharp one.
+    count = min(len(full["30-blurred"]), len(full["120"]) // 4)
+    steps = to_light(full["120"][: count * 4]).reshape(count, 4, *full["120"].shape[1:])
+    average = steps.mean(axis=1)
+    off = float(np.abs(to_light(full["30-blurred"][:count]) - average).mean())
+    sharp = float(np.abs(steps[:, 3] - average).mean())
+    checks.append(dict(
+        name=blur,
+        ok=off <= SAME_PICTURE and sharp >= 3 * off,
+        detail=f"mean difference from the average of the four steps {off:.4f}; a single step differs from it by {sharp:.4f}",
     ))  # fmt: skip
     return checks
 
@@ -422,6 +517,7 @@ def main() -> int:
     parser.add_argument("--seconds", type=float, default=30.0, help="clip length; 0 = whole track")
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--step-rate", type=int, default=0, help="steps the engine takes a second (see video.py); 0 = one a frame")
+    parser.add_argument("--shutter", type=float, default=0.0, help="motion blur: the share of each frame its shutter is open (see video.py); needs --step-rate")
     parser.add_argument("--width", type=int, default=480)
     parser.add_argument("--height", type=int, default=270)
     parser.add_argument("--name", default=time.strftime("%Y%m%d-%H%M%S"))
