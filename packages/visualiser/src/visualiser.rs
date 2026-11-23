@@ -171,6 +171,13 @@ impl VisualiserState {
         self.script_engine.set_available_bands(bands);
     }
 
+    /// Configure the musical roles the global `roles` namespace provides, and what each is bound to.
+    /// This must be called before `load_script()`: a scene that declares a role not given here
+    /// fails to load.
+    pub fn set_available_roles(&mut self, roles: crate::roles::RoleBindings) {
+        self.script_engine.set_available_roles(roles);
+    }
+
     /// Configure which stems should be available in the global `inputs.stems` namespace.
     /// This must be called before `load_script()` for the `inputs.stems["..."]` accessors to exist.
     pub fn set_available_stems(&mut self, stems: Vec<(String, String)>) {

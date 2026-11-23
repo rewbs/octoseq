@@ -33,6 +33,9 @@ pub mod event_stream;
 // Interpretation package loading (Phase 3: the wasm push contract, serialized)
 pub mod interpretation_package;
 
+// Musical roles: what scenes ask for and bundles bind
+pub mod roles;
+
 // Mesh asset modules
 pub mod deformation;
 pub mod mesh_asset;

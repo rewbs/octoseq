@@ -48,6 +48,8 @@ use crate::event_stream::{Event, EventStream, PickEventsOptions};
 use crate::frequency_band::FrequencyBandStructure;
 use crate::input::{BandSignalMap, InputSignal, SharedSignal, SignalMap};
 use crate::musical_time::MusicalTimeStructure;
+use crate::roles::{is_valid_role_name, RoleBinding, RoleBindings};
+use crate::signal_rhai::mix_signal_display_name;
 use crate::visualiser::VisualiserState;
 
 /// The package format version this loader understands.
@@ -89,6 +91,10 @@ struct InterpretationPackageV1 {
     frequency_bands: Option<FrequencyBandStructure>,
     #[serde(default)]
     available_stems: Vec<(String, String)>,
+    /// Musical roles and what each is bound to (see `roles.rs`). Absent in
+    /// packages exported by the web lab, which predate roles.
+    #[serde(default)]
+    roles: RoleBindings,
 }
 
 #[derive(Debug, Deserialize)]
@@ -194,6 +200,10 @@ pub struct LoadedPackage {
     pub stem_signals: Vec<LoadedStemSignal>,
     /// (id, label) pairs for `VisualiserState::set_available_stems`.
     pub available_stems: Vec<(String, String)>,
+    /// Musical roles the package provides, each checked to be bound to
+    /// something the package carries. Applied via
+    /// `VisualiserState::set_available_roles`.
+    pub roles: RoleBindings,
     /// Named event streams (mirrors `push_event_stream`).
     pub event_streams: Vec<(String, EventStream)>,
     /// Authored event streams (mirrors `push_authored_event_stream`).
@@ -430,7 +440,7 @@ pub fn load_package(json: &str) -> Result<LoadedPackage> {
         })
         .collect();
 
-    Ok(LoadedPackage {
+    let loaded = LoadedPackage {
         script: pkg.script,
         duration_sec: pkg.duration_sec,
         project_name: pkg.project_name,
@@ -448,7 +458,52 @@ pub fn load_package(json: &str) -> Result<LoadedPackage> {
         band_event_streams,
         musical_time: pkg.musical_time,
         frequency_bands: pkg.frequency_bands,
-    })
+        roles: pkg.roles,
+    };
+    validate_roles(&loaded)?;
+    Ok(loaded)
+}
+
+/// Every role must have a usable name and be bound to something the package
+/// actually carries: a role that points at nothing would leave a scene unwired.
+fn validate_roles(pkg: &LoadedPackage) -> Result<()> {
+    let mix_signals: Vec<String> = pkg
+        .available_signal_names()
+        .iter()
+        .map(|name| mix_signal_display_name(name).to_string())
+        .collect();
+    for (name, binding) in &pkg.roles {
+        if !is_valid_role_name(name) {
+            return Err(anyhow!(
+                "role name `{name}` is not usable: role names are lower-case words joined by underscores"
+            ));
+        }
+        let found = match binding {
+            RoleBinding::Events { events } => pkg.event_streams.iter().any(|(n, _)| n == events),
+            RoleBinding::AuthoredEvents { authored_events } => pkg
+                .authored_event_streams
+                .iter()
+                .any(|(n, _)| n == authored_events),
+            RoleBinding::Stem { stem, feature } => pkg
+                .stem_signals
+                .iter()
+                .any(|s| (&s.label == stem || &s.stem_id == stem) && &s.feature == feature),
+            RoleBinding::Band { band, feature } => pkg
+                .band_signals
+                .get(band)
+                .is_some_and(|features| features.contains_key(feature)),
+            RoleBinding::Signal { signal } => mix_signals.iter().any(|n| n == signal),
+            RoleBinding::Custom { custom } => pkg.custom_signals.contains_key(custom),
+            RoleBinding::Composed { composed } => pkg.composed_signals.contains_key(composed),
+        };
+        if !found {
+            return Err(anyhow!(
+                "role `{name}` is bound to {}, which this package does not contain",
+                binding.describe()
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Apply the state-resident parts of a loaded package to a [`VisualiserState`],
@@ -506,6 +561,7 @@ pub fn apply_to_state(pkg: &LoadedPackage, state: &mut VisualiserState) {
     state.set_available_bands(pkg.available_bands());
     state.set_available_custom_signals(pkg.available_custom_signals());
     state.set_available_composed_signals(pkg.available_composed_signals());
+    state.set_available_roles(pkg.roles.clone());
 }
 
 #[cfg(test)]

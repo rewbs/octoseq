@@ -903,6 +903,20 @@ time.dt = timing.dt;
 /// Note: Top-level signals have been moved to `inputs.mix` for consistency.
 /// Use consistent naming: centroid (not spectralCentroid), flux (not spectralFlux),
 /// onset (not onsetEnvelope), energy (as-is).
+/// The name a mix signal has in scripts (`inputs.mix.<name>`), given the name it
+/// is stored under. Older names are mapped to the consistent short ones.
+pub fn mix_signal_display_name(name: &str) -> &str {
+    match name {
+        "spectralCentroid" => "centroid",
+        "spectralFlux" => "flux",
+        "onsetEnvelope" => "onset",
+        "amplitudeEnvelope" => "energy",
+        // Pitch detection (P1)
+        "pitchF0" => "pitch",
+        other => other,
+    }
+}
+
 pub fn generate_inputs_namespace(signal_names: &[&str]) -> String {
     let mut code = String::from("let inputs = #{};\ninputs.__type = \"inputs_namespace\";\n");
 
@@ -912,16 +926,7 @@ pub fn generate_inputs_namespace(signal_names: &[&str]) -> String {
 
     for name in signal_names {
         // Map old names to new consistent names
-        let (display_name, internal_name) = match *name {
-            "spectralCentroid" => ("centroid", "spectralCentroid"),
-            "spectralFlux" => ("flux", "spectralFlux"),
-            "onsetEnvelope" => ("onset", "onsetEnvelope"),
-            "amplitudeEnvelope" => ("energy", "amplitudeEnvelope"),
-            // Pitch detection (P1)
-            "pitchF0" => ("pitch", "pitchF0"),
-            "pitchConfidence" => ("pitchConfidence", "pitchConfidence"),
-            other => (other, other),
-        };
+        let (display_name, internal_name) = (mix_signal_display_name(name), *name);
 
         code.push_str(&format!(
             "inputs.mix.{} = __signal_input(\"{}\");\n",

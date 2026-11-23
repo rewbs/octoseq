@@ -75,8 +75,10 @@ use crate::scene_graph::{
     RenderMode, Ribbon, RibbonMode, SceneEntity, SceneGraph, MAX_LINE_POINTS,
     MAX_POINT_CLOUD_POINTS, MAX_RADIAL_WAVE_RESOLUTION,
 };
+use crate::roles::{check_scene, generate_roles_namespace, RoleBindings};
 use crate::script_diagnostics::{
-    from_eval_error, from_parse_error, lint_script, ScriptDiagnostic, ScriptPhase,
+    from_eval_error, from_parse_error, lint_script, ScriptDiagnostic, ScriptDiagnosticKind,
+    ScriptPhase,
 };
 use crate::script_introspection::register_introspection_api;
 use crate::script_log::{reset_frame_log_count, ScriptLogger};
@@ -185,6 +187,8 @@ pub struct ScriptEngine {
     available_bands: Vec<(String, String)>,
     /// Available stems: (id, label) pairs
     available_stems: Vec<(String, String)>,
+    /// Musical roles the bundle provides, and what each is bound to
+    available_roles: RoleBindings,
     /// Available custom signals: (id, name) pairs
     available_custom_signals: Vec<(String, String)>,
     /// Available composed signals: (id, label) pairs
@@ -841,6 +845,7 @@ impl ScriptEngine {
             available_signal_names: Vec::new(),
             available_bands: Vec::new(),
             available_stems: Vec::new(),
+            available_roles: RoleBindings::new(),
             available_custom_signals: Vec::new(),
             available_composed_signals: Vec::new(),
             signal_state: SignalState::new(),
@@ -906,6 +911,13 @@ impl ScriptEngine {
     /// Each stem is represented as a tuple of (id, label).
     pub fn set_available_stems(&mut self, stems: Vec<(String, String)>) {
         self.available_stems = stems;
+    }
+
+    /// Set the musical roles for the `roles` namespace, and what each is bound to.
+    /// Call this before load_script. A script that declares a role missing from
+    /// this set fails to load, with a message naming the role.
+    pub fn set_available_roles(&mut self, roles: RoleBindings) {
+        self.available_roles = roles;
     }
 
     /// Set the available custom signals for the inputs.customSignals namespace.
@@ -974,6 +986,19 @@ impl ScriptEngine {
         PENDING_FEEDBACK_CONFIG.with(|cell| {
             *cell.borrow_mut() = None;
         });
+
+        // A scene that needs a role this bundle cannot provide must not run unwired.
+        if let Err(message) = check_scene(script, &self.available_roles) {
+            self.push_diagnostic(ScriptDiagnostic {
+                kind: ScriptDiagnosticKind::HostApiMisuse,
+                phase: ScriptPhase::Compile,
+                message,
+                location: None,
+                raw: None,
+            });
+            return false;
+        }
+        let roles_namespace = generate_roles_namespace(&self.available_roles);
 
         // Generate inputs namespace based on available signals
         let signal_names: Vec<&str> = self
@@ -1797,6 +1822,9 @@ feedback.is_enabled = || {{
 
 // === Composed Signals Namespace (User-authored named 1D curves) ===
 {composed_signals_namespace}
+
+// === Roles Namespace (Musical roles, bound by the analysis bundle) ===
+{roles_namespace}
 
 // === Particles Namespace ===
 {particles_namespace}
@@ -3848,6 +3876,7 @@ feedback.is_enabled = || {{
                 || name == "gen"
                 || name == "time"
                 || name == "inputs"
+                || name == "roles"
                 || name == "fx"
                 || name == "post"
                 || name == "feedback"

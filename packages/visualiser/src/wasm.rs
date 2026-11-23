@@ -395,6 +395,29 @@ impl WasmVisualiser {
         }
     }
 
+    /// Set the musical roles for the script `roles` namespace.
+    ///
+    /// The JSON is the `roles` object of an analysis bundle: role name to what it
+    /// is bound to, for example `{"kick": {"events": "kick"}, "energy": {"signal": "energy"}}`.
+    /// Call before `load_script`. A scene that declares a role missing from this
+    /// set fails to load.
+    ///
+    /// Returns true if successful, false if parsing failed.
+    pub fn set_available_roles(&self, json: &str) -> bool {
+        match serde_json::from_str::<crate::roles::RoleBindings>(json) {
+            Ok(roles) => {
+                log::info!("Setting {} roles for script namespace", roles.len());
+                let mut inner = self.inner.borrow_mut();
+                inner.state.set_available_roles(roles);
+                true
+            }
+            Err(e) => {
+                log::error!("Failed to parse roles: {}", e);
+                false
+            }
+        }
+    }
+
     // === Custom Signal Methods ===
     // These methods handle user-defined 1D signals extracted from 2D data.
 
