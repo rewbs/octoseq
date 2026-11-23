@@ -65,6 +65,8 @@ fn init(ctx) {
     // The loop: the last frame comes back larger and dimmer, and lurches on a hit.
     let fb = feedback.builder()
         .warp.affine(hit.scale(0.1).add(1.006), 0.002 * style.speed)
+        .warp.waves(level.scale(1.2).add(0.8), 1.0, timing.time.scale(0.5 * style.speed))
+        .color.hsv(0.003, 0.0, 0.0)
         .color.decay(0.9)
         .blend.over()
         .opacity(1.0)

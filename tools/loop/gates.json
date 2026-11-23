@@ -54,6 +54,14 @@
     "wash": {
       "max": 0.2,
       "why": "not a fog of saturated mid-tone colour (review 1: 0.21 to 0.33 was rated ugly)"
+    },
+    "flow_speed": {
+      "min": 0.1,
+      "why": "the picture should travel, not sit (frame widths a second where it moves; nine in ten Milkdrop reference clips are above this)"
+    },
+    "flow_swirl": {
+      "min": 0.62,
+      "why": "the motion should not be one rigid slide, zoom or turn of the whole frame (nine in ten Milkdrop reference clips are above this)"
     }
   },
   "accuracy": {

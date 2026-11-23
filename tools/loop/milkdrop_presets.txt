@@ -1,0 +1,28 @@
+# The Milkdrop presets the loop renders as its reference (tools/loop/milkdrop.py).
+# Paths inside the "Cream of the Crop" preset collection, which is not part of this
+# repository. Two or three from each of its categories, each typical of its category
+# by what it uses (shaders, shapes, waves), none needing a texture file.
+Reaction/Liquid Ripples/suksma - Phat_TanSpiral - thumbing through the ganges.milk
+Reaction/Rorschach/stahlregen + flexi + goody + martin + others - frosted mosaik.milk
+Reaction/Liquid Windy/pabstolutiasma rst.milk
+Fractal/Nested Circle/Shifter & EoS+Phat - Fractical dancer (shattered mind)_MIKLDROP2_Dream_Sphere_v3.milk
+Fractal/Lattice/Stahlregen & Aderrasi + EoS + Geiss + Rovastar + Unchained + Zylot - Slowflowers (MashUp 8 - Oozing Resistance RMX).milk
+Fractal/Core/Tripgnosis - Golden Feedback --- Isosceles edit.milk
+Dancer/Glowsticks Mirror/229.milk
+Dancer/Lasers/New Creation Sensation -  AdamFx,Flexi,Amandio c n Martin - Star to Another World ft Hexocollie,ShadowH,Geiss n Fishbrain G.milk
+Dancer/Comet Mirror/ShadowHarlequin - Dancing Petals (glitch mix) - [EoS + Phat - chasers 11 sentinel C].milk
+Waveform/Wire Tangle/Rovastar + Geiss - Hyperkaleidoscope Glow 2 motion blur (Jelly).milk
+Waveform/Spectrum/suksma - negative infinity for not flinching - dyst j4.milk
+Waveform/Wire Circular/Geiss - Reaction Diffusion (Puddle Mix)s a aa aa.milk
+Drawing/Explosions/Zylot - Paint Spill (Music Reactive Paint Mix) nz+ awful universe of all things being circumlocutes tear shred face.milk
+Drawing/Trails/amandio c - the green machine 4 - radial nature sludge cpe.milk
+Geometric/Sphere Wild/suksma - gee zeus ov gaellilee - j4+ - irrational non-integer dimension non-regular non-convex polytope .milk
+Geometric/Wire Circles/ORB - Planetary Alignment.milk
+Sparkle/Explosions/suksma - dotes hostile undertake - one too many days under the iron - flacc nz+.milk
+Sparkle/Jewel/martin - pendulum in brass ps2.milk
+Particles/Points Trails/drugsincombat - liquidfire iii.milk
+Particles/Blobby/Martin - QBikal - Surface Turbulence IIe3 (by hakanh mash-up).milk
+Supernova/Burst/suksma - practice hump take 43.milk
+Supernova/Radiate/carved in skin.milk
+Hypnotic/Polar Warp/flexi - grind my glitch up [018].milk
+Hypnotic/Polar Static/Flexi - alien complex 04.milk

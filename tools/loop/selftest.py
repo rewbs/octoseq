@@ -20,6 +20,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 import analyse  # noqa: E402
 import director  # noqa: E402
+import motion  # noqa: E402
 import metrics  # noqa: E402
 
 FPS = 30
@@ -224,5 +225,7 @@ if __name__ == "__main__":
     test_analyser()
     test_metrics()
     test_director()
+    for name, ok, detail in motion.selftest():
+        check(name, ok, detail)
     print(f"\n{len(failures)} failed" if failures else "\nall instrument checks passed")
     sys.exit(1 if failures else 0)

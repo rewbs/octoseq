@@ -54,6 +54,8 @@ fn init(ctx) {
     // from the centre; a hit throws them out hard.
     let fb = feedback.builder()
         .warp.affine(hit.scale(0.07).add(1.012), level.scale(0.012).add(0.012).scale(style.speed))
+        .warp.waves(level.scale(1.2).add(0.8), 1.0, timing.time.scale(0.5 * style.speed))
+        .color.hsv(0.003, 0.0, 0.0)
         .color.decay(0.93)
         .blend.over()
         .opacity(1.0)

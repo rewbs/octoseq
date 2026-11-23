@@ -40,6 +40,7 @@ import numpy as np  # noqa: E402
 
 import director  # noqa: E402
 import metrics  # noqa: E402
+import motion  # noqa: E402
 import perfect_bundle  # noqa: E402
 import roles  # noqa: E402
 
@@ -200,6 +201,7 @@ def run_pair(track: Path, scene: Path, run_dir: Path, gates: dict, args) -> dict
 
     frames = metrics.load_frames(clip)
     values = metrics.compute(frames, args.fps, package)
+    values.update(motion.compute(motion.load_frames(clip), args.fps))
     contact_sheet(clip, out / "sheet.png", len(frames))
 
     hard, target = apply_gates(values, gates)
@@ -298,7 +300,7 @@ def transition_checks(track: Path, out: Path, args) -> list[dict]:
     ]
 
 
-SUMMARY_COLUMNS = ["punch", "look_change", "one_hue_share", "wash", "active_area", "jerkiness", "audio_sync", "variety", "colourfulness"]
+SUMMARY_COLUMNS = ["punch", "look_change", "flow_speed", "flow_swirl", "one_hue_share", "wash", "active_area", "jerkiness", "audio_sync", "variety", "colourfulness"]
 
 
 def write_report(run_dir: Path, results: list[dict], baseline: dict | None, checks: list[dict] | None = None) -> None:
@@ -334,6 +336,14 @@ def write_report(run_dir: Path, results: list[dict], baseline: dict | None, chec
             lines += [f"- **FAIL** {p}" for p in r["hard"]]
             lines += [f"- target missed: {p}" for p in r["target"]]
             lines.append("")
+    if motion.REFERENCE.exists():
+        reference = json.loads(motion.REFERENCE.read_text())
+        for title, wanted in (("The directed shows", lambda r: r["scene"] == "director"), ("Single scenes", lambda r: r["scene"] != "director")):
+            ours = [r["metrics"] for r in results if "metrics" in r and wanted(r)]
+            if ours:
+                lines += ["", f"## Beside Milkdrop: {title.lower()}", "", f"{len(ours)} of our clips against {reference['clips']} clips of projectM presets on the same tracks (see docs/loop/README.md).", ""]
+                lines += motion.reference_table(ours, reference)
+
     (run_dir / "report.md").write_text("\n".join(lines))
     (run_dir / "report.json").write_text(json.dumps(results, indent=2))
 

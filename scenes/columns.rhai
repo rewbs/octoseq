@@ -52,6 +52,8 @@ fn init(ctx) {
     // throws it on a hit. Nothing turns: the trails are straight columns.
     let fb = feedback.builder()
         .warp.affine(1.0, 0.0, 0.0, hit.scale(0.055).add(level.scale(0.004)).add(0.003))
+        .warp.waves(level.scale(1.2).add(0.8), 1.0, timing.time.scale(0.5 * style.speed))
+        .color.hsv(0.003, 0.0, 0.0)
         .color.decay(0.93)
         .blend.over()
         .opacity(1.0)

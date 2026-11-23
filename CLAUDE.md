@@ -187,6 +187,9 @@ python3 tools/loop/accuracy.py   # score analysis timing against tracker-module 
   slow. Do not run other GPU work while it is going.
 - The render loop's bundles take drum hits from the Demucs drum stem when the model
   environment exists. Save the render baseline only on a machine that has it.
+- Milkdrop, rendered through projectM, is the reference for how the picture should
+  move. Every render report ends with our clips beside it; read that table, and
+  [docs/design/milkdrop-study.md](docs/design/milkdrop-study.md) before writing a scene.
 - New scenes ask for musical roles (`//! roles: kick, energy`, then `roles.kick`),
   never for named signals. The roles and what binds them are in
   `tools/loop/roles.py` and `scripting.md`.

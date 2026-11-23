@@ -101,6 +101,8 @@ known-correct events rather than analysis (see "Perfect bundles" below).
 | Look change      | target | The same picture as eight seconds ago                        |
 | One-hue share    | target | One colour everywhere                                        |
 | Wash             | target | A fog of saturated mid-tone colour                           |
+| Flow speed       | target | A picture that sits still where Milkdrop's travels            |
+| Flow swirl       | target | Motion that is one rigid slide, zoom or turn of the whole frame |
 
 Before the clips, each run also checks the engine with scenes whose right answer is
 known (`tools/loop/fixtures/scenes/`): a feedback loop built to run away must stay
@@ -116,6 +118,31 @@ calibrated against human ratings.
 
 **These metrics cannot certify that a clip is fun.** They rule out the ways a clip is
 obviously not.
+
+## The Milkdrop reference
+
+Milkdrop is what the redesign is aiming at for dynamism, variety and pace, so the
+loop can render it and measure it the same way it measures ours.
+
+```bash
+tools/loop/projectm/build.sh              # once: builds projectM and our offline renderer for it
+python3 tools/loop/milkdrop.py render     # 24 presets on the test tracks, about 20 minutes
+python3 tools/loop/milkdrop.py compare    # the newest loop run beside the reference
+```
+
+`pm_render` drives an unmodified projectM through its C API with no window and a
+clock set from the frame number. `milkdrop.py render` renders each preset in
+`tools/loop/milkdrop_presets.txt` on each track and writes the spread of every
+figure to `tools/loop/milkdrop_reference.json`, which is committed: every loop
+report ends with our clips beside it, on a machine with no projectM too.
+[docs/design/milkdrop-study.md](../design/milkdrop-study.md) has what the study
+found.
+
+`tools/loop/motion.py` adds the figures that show the difference: how fast the
+picture flows where it moves (`flow_speed`), how much of that motion is not one
+rigid movement of the whole frame (`flow_swirl`), how much of the picture is flat
+colour (`flat_area`), and how much it changes over a quarter of a second and over
+two. Two of them are targets, set at the level nine in ten reference clips reach.
 
 ## The accuracy loop
 
@@ -339,7 +366,7 @@ Figures are held-out results from the scoreboard when this plan was written.
 | **1a. Wider corpus** (done)                                 | 194 downloaded modules sampled evenly across the whole public-domain listing (140 IT, 39 XM, 15 MOD; the listing has almost no S3M), 97 usable for training and 117 held out; instrument checks pass; re-tuning attempted and correctly rejected; scoreboard regenerated                                                                                                                                                                         | ScreamSeq exports welcome, not required                            |
 | **1b. Slow attacks** (done, mostly by fixing the yardstick) | Soft recall at least 0.6 with percussive recall at least 0.90. Met, but not by a better detector: the misses were mostly the reference timing slow attacks at their steepest point (which for a fade-in is its very end) and splitting notes written together into separate events. Both are corrected (D8, D11 in the queue). Moving soft events in the analyser was tried and switched off (D20)                                               | None                                                               |
 | **1c. Beat tracking** (in progress)                         | Tempo right at some metrical level on at least 95% of tracks; beat F at any level at least 0.95. Done so far: modules with irregular beat grids are scored instead of skipped, and a tracker that follows the music was tried and rejected on held-out modules. The signal-processing stand-in is near its ceiling, so what remains is registering and comparing at least one local model and one hosted service                                 | Go-ahead to install model packages; API keys for hosted candidates |
-| **1d. Sections** (not done) | Boundary F within 3 s at least 0.75; at least one real analyser registered. It stands at 0.52, where it started on the wider corpus. A second signal-processing analyser led on training and lost on held-out modules; a learned detector did worse; the All-In-One model would not install on this machine. The reference may also be too fine-grained to be the right target (D49) | A Music.ai key; a decision on D49 |
+| **1d. Sections** (not done) | Boundary F within 3 s at least 0.75; at least one real analyser registered. It stands at 0.54 (`novelty_grid`: the first detector's boundaries moved onto a sixteen-beat grid, which the bundle now uses), up from 0.52. A second signal-processing analyser led on training and lost on held-out modules; a learned detector did worse; the All-In-One model would not install on this machine. The reference may also be too fine-grained to be the right target (D49) | A Music.ai key; a decision on D49 |
 | **1e. Stems** (done, one provider unverified)               | User-supplied stems, the three hosted providers and one local model all registered as analysers; the best improves on the unseparated mix by at least 3 dB against true stems. Met: LALAL.AI improves on the mix by 17.9 dB, local Demucs by 6.3 dB and Demucs on fal.ai by 6.1 dB, against 2.5 dB for the band-split baseline. LALAL.AI and fal.ai are verified against the live services; Music.ai is written from its documentation and has not been run | A Music.ai key and workflow, to verify that adaptor                |
 | **1f. Drum hits by type** (done) | The reference and scorer extended to kick, snare and hat; at least one analyser scored on it. Two are: a detector on the full mix scores a mean F of 0.57 on held-out modules (kick 0.47, snare 0.46, hat 0.79), and the same detector on the drum stem Demucs separates scores 0.73 (kick 0.74, snare 0.59, hat 0.85) | None |
 | **1g. Bundle and worker**                                   | Bundle schema validates; the worker assembles the bundle from the best analyser per part as chosen by the accuracy loop; a stored bundle is reused, never recomputed; every scoreboard target met or its shortfall explained in the queue                                                                                                                                                                                                        | None                                                               |

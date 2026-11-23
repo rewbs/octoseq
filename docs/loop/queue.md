@@ -180,6 +180,18 @@ Say so to reverse any of these.
 | D79 | A blend starts at the moment the new scene is due and finishes afterwards. During it the blend mode, the post effects and whether there is feedback at all are the incoming scene's; only the warps, the colour steps, the opacity and the limit are mixed | Starting at the due time keeps a show's times meaning one thing (when a scene begins to be seen). The things that are not mixed cannot be: a blend mode is one of eight, not a number |
 | D80 | Transitions exist in the renderer and the command-line engine only. The web preview has no way to play a show yet | The shader and renderer are the same code under WebGPU and the WASM build compiles, but nothing in the web app drives two scenes at once. That belongs with the preview work (milestone 2) |
 
+### Taken while studying Milkdrop
+
+| #   | Decision | Why this default |
+| --- | -------- | ---------------- |
+| D81 | Bundles take section starts from `novelty_grid` | On held-out modules, over all audio variants, 0.540 against 0.520 for `novelty`, and no other row moved. Within half a second it is 0.33 against 0.29 on clean audio. It is a small gain: at the level of single modules it wins about as often as it loses. The 0.75 target is as far off as before, and I think it needs a trained structure model or a hosted service |
+| D82 | projectM is rendered by a small program of ours (`tools/loop/projectm/pm_render.cpp`) through its public API. Nothing of projectM or of the preset collection is in this repository: only the names of 24 presets and the figures measured from them | projectM is LGPL and the presets are other people's work. Your fork's idea of a clock driven by the caller is in upstream projectM now, which is what this uses |
+| D83 | Two new targets, `flow_speed` (at least 0.10) and `flow_swirl` (at least 0.62), set where nine in ten Milkdrop reference clips are | You named Milkdrop as the reference; these are the two figures where our first scenes were outside its range. They are targets, not hard gates |
+| D84 | `punch` stays a target at 2.0 although Milkdrop itself measures 1.2 | You asked for punch after review 1. Milkdrop's picture barely moves more on a hit than between hits, so here we are deliberately unlike it |
+| D85 | The `wash` target (at most 0.2) is left in place although a quarter of Milkdrop's clips exceed it | It was set after review 1, and I said then I did not know that it tracked what you called ugly. This is evidence that it does not. It is yours to drop |
+| D86 | The first three scenes (`pulse`, `columns`, `swirl`) each got a gentle `waves` warp and slowly creeping colour | Without them those scenes sat below Milkdrop's range for flow. It changes scenes you rated "better"; say if you preferred them plain |
+| D87 | The director's holds are unchanged (3 to 9 seconds) though Milkdrop holds a preset for 30 | The 9-second limit came from your review of a scene with nothing going on inside it. The new scenes have more, and may carry longer; that is a judgement for a review, not for me |
+
 ## Answered
 
 | #   | Question                                       | Answer                                                                                                                                                                                                  |

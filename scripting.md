@@ -1984,6 +1984,16 @@ fn update(dt, frame) {
 | `.warp.affine` | `(scale, rotation)` or `(scale, rotation, tx, ty)`      | Scale, rotate, translate    |
 | `.warp.noise`  | `(strength, frequency)`                                 | Perlin-based displacement   |
 | `.warp.shear`  | `(strength)`                                            | Skew transformation         |
+| `.warp.waves`  | `(amount, scale, phase)`                                | Four drifting sine waves bend the frame (Milkdrop's warp) |
+| `.warp.petals` | `(amount, count, phase)`                                | Zoom that depends on direction: `count` petals |
+| `.warp.ripple` | `(amount, rings, phase)`                                | Zoom that depends on distance: `rings` rings |
+
+The last three differ from place to place, so the picture flows instead of moving as
+one piece. `phase` moves the pattern: give it `timing.time.scale(0.5)`, or a clock
+that also runs on loudness, `timing.time.scale(0.5).add(roles.energy.integrate(0.0))`,
+so the flow quickens when the music is loud. `waves` at an `amount` of 1 is
+Milkdrop's `warp = 1`; 1 to 3 is gentle, a hit can push it to 8. `petals` and
+`ripple` take a share of the distance from the centre: 0.02 is gentle, 0.08 a jolt.
 
 #### Color Methods Reference
 

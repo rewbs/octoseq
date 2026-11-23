@@ -150,6 +150,22 @@ Not finished, and not needed. What is known:
   them) and has not been tried.
 - On ARM64, PyTorch would run on the CPU only.
 
+## projectM (optional)
+
+Only for re-making the Milkdrop reference (`tools/loop/milkdrop.py render`); the
+reference figures themselves are committed. It needs a checkout of
+[projectM](https://github.com/projectM-visualizer/projectm) with its submodule, a
+Milkdrop preset collection, and:
+
+```bash
+sudo apt-get install -y cmake libegl-dev libgl-dev libgles-dev
+tools/loop/projectm/build.sh ~/code/projectm
+export MILKDROP_PRESETS=/path/to/presets-cream-of-the-crop
+```
+
+It renders on the CPU through Mesa, a little faster than real time at the loop's
+frame size. Under WSL, clone projectM inside the Linux filesystem.
+
 ## API keys
 
 Read from the environment, then from a `.env` file at the root of the repository
