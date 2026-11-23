@@ -40,6 +40,14 @@ analysis of the two test tracks, nine of the ten renders fail a hard gate (froze
 blown out to white, or crashing) rather than being merely dull, so rating them would
 not be a good use of your time. The figures are in `tools/loop/baseline.json`.
 
+### Review 2 (23 November 2026): directed shows, three new scenes
+
+Sent: `super` shows 1 and 2, show 1 again with `--vivid`, and 60 seconds of the
+`dontstop` show.
+
+- **Colours: the default ones, not vivid.** Answered.
+- Ratings against the five review questions: not given yet.
+
 ## Decisions taken by default
 
 Say so to reverse any of these.
@@ -160,10 +168,10 @@ Say so to reverse any of these.
 | D72 | A render now fails if its script fails. Before, a scene whose `init()` stopped halfway was rendered with whatever it had set up, and the error was dropped | This is how I found that **all five original example scenes fail on their first frame and always have**: they set `entity.params.…` where the engine has `materialParams`, or trip a sandbox limit. That is why they were "frozen". They are out of the default loop; fixing or retiring them is your call |
 | D73 | Three engine bugs fixed on the way, each with a test or a visible check: an entity built in a loop lost everything set on it; a scene could hold only about a dozen entities (a 500-entry map limit, counted through nested maps, now 50,000); and every object sharing a material got the last object's material settings | The scenes could not be written without them. All three change what existing scripts do, in the direction of doing what the script says |
 | D74 | Shortening trails to cut the `wash` figure was tried and reverted | It took wash under target on two shows and pushed two others over hard gates (strobe rate; too dark). Wash stands at 0.19 to 0.30 against a target of 0.2, and I do not know yet whether that figure tracks what you called ugly |
-| D75 | Palette colours reach the screen paler than written: the engine works in linear light, so a channel set to 0.1 shows at about 0.35. `--vivid` converts them first. It is not the default | With it, one of the four default shows fails the mostly-black hard gate (0.27 against 0.25), and `wash` rises (0.30 to 0.40 on one show) although the picture looks less washed to me, which says the `wash` figure does not measure what I meant it to. Review 2 has the same show both ways; your answer decides the default and what replaces `wash` |
 
 ## Answered
 
 | #   | Question                                       | Answer                                                                                                                                                                                                  |
 | --- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | N4  | Go-ahead to install third-party model packages | Given. Beat This 1.1.0 is installed from PyPI into `.loop/venv` by `tools/loop/models/setup.sh`. The GitHub archive route is refused by the session's network proxy, so packages need to come from PyPI |
+| D75 | Palette colours reach the screen paler than written (the engine works in linear light). Keep that, or convert them (`--vivid`)? | Keep the default colours (review 2). `--vivid` stays as an option and is not used by the loop. The `wash` target stays as it is until the ratings say whether it tracks anything |

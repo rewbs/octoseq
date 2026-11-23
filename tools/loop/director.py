@@ -58,9 +58,9 @@ PALETTES = {
 }
 # The engine works in linear light, so a palette colour comes out paler on screen
 # than its numbers read: a channel set to 0.1 shows at about 0.35. A vivid show
-# converts the colours first, so they show as written. That is darker overall, and
-# on one test track dark enough to fail the mostly-black gate, so it is not the
-# default until a review says which look is wanted.
+# converts the colours first, so they show as written. Review 2 was shown the same
+# show both ways and chose the paler default; vivid is also darker overall, and on
+# one test track dark enough to fail the mostly-black gate.
 SCREEN_GAMMA = 2.2
 STYLE_LINE = re.compile(r"^let style = .*// @style\s*$", re.MULTILINE)
 
