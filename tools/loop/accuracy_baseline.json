@@ -12,7 +12,8 @@
       "analyser": "standin",
       "score": 0.9332,
       "candidates": {
-        "standin": 0.9332
+        "standin": 0.9332,
+        "beat_this": 0.9301
       }
     },
     "sections": {
