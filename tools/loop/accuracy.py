@@ -110,20 +110,28 @@ def score_split(results: dict, tracks: list[dict], variant_names: tuple[str, ...
             ref = track["reference"]
             if result.get("onsets") is not None:
                 tallies.append(score.onset_tallies(ref["merged"], [t for t, _ in result["onsets"]], kinds=result.get("kinds")))
-            if result.get("beats") is not None and ref["grid"]["steady_tempo"]:
-                beats.append(score.beat_scores(ref["grid"]["beats"], result["beats"], ref["grid"]["bpm"], result.get("bpm") or 0.0))
+            if result.get("beats") is not None and len(ref["grid"]["beats"]) > 8:
+                b = score.beat_scores(ref["grid"]["beats"], result["beats"], ref["grid"]["bpm"], result.get("bpm") or 0.0)
+                b["steady"] = ref["grid"]["steady_tempo"]
+                beats.append(b)
             if result.get("sections") is not None and len(ref["sections"]) > 1:
                 sections.append(score.section_scores(ref["sections"], result["sections"]))
         entry: dict = {}
         if tallies:
             entry["onsets"] = score.onset_summary(score.pool(tallies))
         if beats:
+            # Tempo is only well defined where the reference grid is regular. Beat F is
+            # scored on every module, including those with short bars or tempo slides.
+            steady = [b for b in beats if b["steady"]] or beats
+            irregular = [b for b in beats if not b["steady"]]
             entry["beats"] = dict(
                 f=round(float(np.mean([b["f"] for b in beats])), 4),
                 best_f=round(float(np.mean([b["best_f"] for b in beats])), 4),
-                tempo_exact=round(float(np.mean([abs(b["tempo_ratio"] - 1) < 0.02 for b in beats])), 4),
-                tempo_octave=round(float(np.mean([min(abs(b["tempo_ratio"] * m - 1) for m in (1 / 3, 0.5, 1, 2, 3)) < 0.02 for b in beats])), 4),
-                tracks=len(beats),
+                best_f_steady=round(float(np.mean([b["best_f"] for b in steady])), 4),
+                best_f_irregular=round(float(np.mean([b["best_f"] for b in irregular])), 4) if irregular else None,
+                tempo_exact=round(float(np.mean([abs(b["tempo_ratio"] - 1) < 0.02 for b in steady])), 4),
+                tempo_octave=round(float(np.mean([min(abs(b["tempo_ratio"] * m - 1) for m in (1 / 3, 0.5, 1, 2, 3)) < 0.02 for b in steady])), 4),
+                tracks=len(beats), irregular_tracks=len(irregular),
             )  # fmt: skip
         if sections:
             entry["sections"] = {k: round(float(np.mean([s[k] for s in sections])), 4) for k in ("f_0.5s", "f_3s")} | {"tracks": len(sections)}
@@ -450,6 +458,8 @@ def write_scoreboard(report: dict, gates: dict) -> None:
         beats = scores[name]["heldout"]["variants"]["clean"]["beats"]
         row("Beats", "F at any metrical level, mean over variants", f"{chosen['beats']['score']:.3f}", f"at least {gates['beat_f']['min']}", chosen["beats"]["score"] >= gates["beat_f"]["min"], name)
         row("Beats", "F at the module's own level", f"{beats['f']:.3f}", "tracked", None, name)
+        if beats.get("best_f_irregular") is not None:
+            row("Beats", f"F at any level on the {beats['irregular_tracks']} modules with irregular beat grids", f"{beats['best_f_irregular']:.3f}", "tracked", None, name)
         row("Beats", "tempo right at some metrical level", f"{beats['tempo_octave'] * 100:.0f}%", f"at least {gates['tempo_right']['min'] * 100:.0f}%", beats["tempo_octave"] >= gates["tempo_right"]["min"], name)
     if "sections" in chosen:
         name = chosen["sections"]["analyser"]
