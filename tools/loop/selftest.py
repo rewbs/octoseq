@@ -207,6 +207,8 @@ def test_director() -> None:
     blend_inside = all(b > 0.0 for s, b in zip(show["segments"], blends) if not s["new_section"])
     check("director: cuts at section starts and blends inside sections", cut_at_sections and blend_inside and any(blends))
     check("director: a blend is over well before the next change", all(b <= h / 3 + 1e-6 for b, h in zip(blends, holds)), f"-> longest {max(blends):.1f} s")
+    places = [tuple(s["at"]) for s in show["segments"]]
+    check("director: each look sits somewhere else in the frame than the last", all(a != b for a, b in zip(places, places[1:])) and len(set(places)) > 2)
     check("director: louder sections run faster", show["segments"][-1]["speed"] > show["segments"][0]["speed"])
     check("director: the same seed gives the same show", director.direct(package, seed=11) == show)
     vivid = director.direct(package, seed=11, vivid=True)

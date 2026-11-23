@@ -1989,6 +1989,11 @@ fn update(dt, frame) {
 | `.warp.petals` | `(amount, count, phase)`                                | Zoom that depends on direction: `count` petals |
 | `.warp.ripple` | `(amount, rings, phase)`                                | Zoom that depends on distance: `rings` rings |
 
+`.centre(x, y)` on the builder moves the point all the warps are centred on away from
+the middle of the frame: `x` to the right and `y` down, in frame widths and heights
+(`.centre(-0.2, 0.0)` is a fifth of the frame to the left). A scene that uses it
+should move its camera to match, as the scenes in `scenes/` do with `style.at`.
+
 The last three differ from place to place, so the picture flows instead of moving as
 one piece. `phase` moves the pattern: give it `timing.time.scale(0.5)`, or a clock
 that also runs on loudness, `timing.time.scale(0.5).add(roles.energy.integrate(0.0))`,

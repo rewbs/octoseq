@@ -717,7 +717,7 @@ def _selftest_session(root: Path, row: Callable[..., None]) -> dict[str, bytes]:
     fresh_copy = after.get(new["script"], b"")
     row(
         "set gives the segment it changes a new scene copy",
-        code == 0 and new["script"] != old["script"] and old["script"] not in after and b"speed: 1.3 }" in fresh_copy and moved_on in fresh_copy,
+        code == 0 and new["script"] != old["script"] and old["script"] not in after and b"speed: 1.3, at:" in fresh_copy and moved_on in fresh_copy,
         f"-> {old['script']} became {new['script']}",
     )
     same_names = [s["script"] for i, s in enumerate(show["segments"]) if i != 2] == [s["script"] for i, s in enumerate(edited["segments"]) if i != 2]

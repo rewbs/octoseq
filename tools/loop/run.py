@@ -242,7 +242,48 @@ def engine_checks(track: Path, run_dir: Path, gates: dict, args) -> list[dict]:
             checks.append(dict(name=name, ok=False, detail=result["hard"][0] if result.get("hard") else "did not render"))
         else:
             checks.append(dict(name=name, ok=(blown > limit) == should_blow, detail=f"{blown * 100:.0f}% of frames blown out"))
-    return checks + transition_checks(track, run_dir / "checks", small)
+    return checks + transition_checks(track, run_dir / "checks", small) + frame_rate_checks(track, run_dir / "checks", small)
+
+
+def frame_rate_checks(track: Path, out: Path, args) -> list[dict]:
+    """Trails must last as long at 120 frames a second as at 30.
+
+    The feedback loop runs once a frame, so its fade, growth, turn and bend have to be
+    scaled to the frame's length, or a faster render fades and flows faster. `liquid`
+    is rendered for eight seconds at both rates, and the share of the frame that is
+    lit, which is how far the trails reach before they fade, must agree. An engine
+    that fades once a frame regardless lights a fifth less of the frame at 120.
+
+    The two renders are still not the same picture, and the check does not ask them
+    to be: at 120 a moving shape is stamped into the loop four times as often, so
+    its trail is a continuous smear rather than a row of stamps, and the picture is
+    brighter and smoother. Closing that needs the slower render to take several
+    steps per frame (sub-frame accumulation), which is not built.
+    """
+    name = "trails last as long at 120 frames a second as at 30"
+    if track.suffix.lower() in MODULE_SUFFIXES:
+        bundle = perfect_bundle.build(track)
+        package_path, audio = bundle / "package.json", bundle / perfect_bundle.AUDIO
+    else:
+        package_path, audio = roles.standin_bundle_cached(track, LOOP_DIR / "cache"), track
+    package = json.loads(package_path.read_text())
+    seconds = min(8.0, float(package["durationSec"]))
+    lit, bright = {}, {}
+    for fps in (30, 120):
+        at = argparse.Namespace(**{**vars(args), "fps": fps})
+        frames_dir = out / f"fps-{fps}" / "frames"
+        ok, log = render_frames(package_path, ROOT / "scenes" / "liquid.rhai", frames_dir, seconds, at)
+        if not ok:
+            return [dict(name=name, ok=False, detail=f"did not render at {fps} fps: {log.strip().splitlines()[-1] if log.strip() else '?'}")]
+        clip = frames_dir.parent / "clip.mp4"
+        encode_clip(frames_dir, audio, clip, seconds, fps)
+        shutil.rmtree(frames_dir)
+        frames = metrics.load_frames(clip)[:: fps // 30]  # the same moments from both
+        lit[fps] = float((frames.max(axis=-1) > 40).mean())
+        bright[fps] = float(frames.mean()) / 255.0
+    ok = abs(lit[120] - lit[30]) <= 0.15 * max(lit[30], 1e-6)
+    detail = f"lit {lit[30]:.2f} and {lit[120]:.2f} of the frame; mean brightness {bright[30]:.2f} and {bright[120]:.2f}, which is the denser trail at 120"
+    return [dict(name=name, ok=ok, detail=detail)]
 
 
 def transition_checks(track: Path, out: Path, args) -> list[dict]:

@@ -15,7 +15,11 @@ A show says which scene plays when and how it is dressed. The rules:
 - Never the same scene twice running.
 - A new palette at each section start. Cuts inside a section keep the palette and
   swap which colour plays which part, so a section holds together but does not
-  repeat itself.
+  repeat itself. (A new palette at every look was tried and did not make the
+  picture measure as changing more.)
+- A new place in the frame at every change of look, never the one before: every
+  scene is built round one point, and a show of them all round the middle kept
+  one layout however the scenes differed.
 - Louder sections run faster.
 
 Everything else is chance. Each run draws a fresh seed, so running the director
@@ -43,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 ROOT = Path(__file__).resolve().parents[2]
 SCENES = ROOT / "scenes"
 SHOWS = ROOT / ".loop" / "shows"
-DIRECTOR_VERSION = "director-2"
+DIRECTOR_VERSION = "director-3"
 
 MAX_HOLD_S = 9.0  # the longest any one look is held (review 1: boring in under ten seconds)
 MIN_HOLD_S = 3.0  # section starts closer together than this are treated as one
@@ -67,6 +71,11 @@ PALETTES = {
 # show both ways and chose the paler default; vivid is also darker overall, and on
 # one test track dark enough to fail the mostly-black gate.
 SCREEN_GAMMA = 2.2
+# Where in the frame a look sits: its centre, as an offset from the middle (x to the
+# right, y down, in frame widths and heights). Every scene was built round the
+# middle, so a show of them kept one layout however the scenes differed. Each look
+# now gets a place, never the one before it.
+PLACES = [(0.0, 0.0), (-0.2, 0.0), (0.2, 0.0), (0.0, -0.14), (0.0, 0.14), (-0.17, -0.1), (0.17, 0.1), (-0.17, 0.1), (0.17, -0.1)]
 STYLE_LINE = re.compile(r"^let style = .*// @style\s*$", re.MULTILINE)
 
 
@@ -139,7 +148,7 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
     beats = [e["time"] for e in _stream(package, "beat")]
     beat_s = sorted(b - a for a, b in zip(beats, beats[1:]))[len(beats) // 2 - 1] if len(beats) > 2 else 0.5
     segments = []
-    scene, palette, order = None, None, [0, 1, 2]
+    scene, palette, order, place = None, None, [0, 1, 2], None
     for index, (start, new_section) in enumerate(cuts):
         scene = rng.choice([s for s in scenes if s != scene] or scenes)
         if new_section or palette is None:
@@ -147,6 +156,7 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
             order = rng.sample([0, 1, 2], 3)
         else:
             order = order[1:] + order[:1]
+        place = rng.choice([p for p in PLACES if p != place])
         end = cuts[index + 1][0] if index + 1 < len(cuts) else float(package["durationSec"])
         middle = intensity[min(int((start + end) / 2 * rate), len(intensity) - 1)] if intensity else 0.5
         colours = [tuple(c**SCREEN_GAMMA if vivid else c for c in PALETTES[palette][i]) for i in order]
@@ -154,6 +164,7 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
             start=round(start, 3), scene=scene.name, new_section=new_section, palette=palette,
             colours=[[round(c, 4) for c in colour] for colour in colours],
             speed=round(0.75 + 0.6 * float(middle), 2),
+            at=list(place),
             transition=0.0 if new_section else round(min(TRANSITION_BEATS * beat_s, (end - start) * TRANSITION_MAX_SHARE), 3),
         ))  # fmt: skip
     return dict(director=DIRECTOR_VERSION, seed=seed, vivid=vivid, duration=float(package["durationSec"]), segments=segments)
@@ -162,7 +173,8 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
 def dressed(source: str, segment: dict) -> str:
     """A scene's source with its style line replaced by this segment's style."""
     a, b, c = segment["colours"]
-    line = f"let style = #{{ a: {list(a)}, b: {list(b)}, c: {list(c)}, speed: {segment['speed']} }}; // @style"
+    at = [float(v) for v in segment.get("at", (0.0, 0.0))]
+    line = f"let style = #{{ a: {list(a)}, b: {list(b)}, c: {list(c)}, speed: {segment['speed']}, at: {at} }}; // @style"
     return STYLE_LINE.sub(lambda _: line, source, count=1)
 
 

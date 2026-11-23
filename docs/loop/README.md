@@ -41,9 +41,9 @@ show, renders every frame and muxes the audio in.
 The **director** (`tools/loop/director.py`) decides which scene plays when and in
 what colours. Its rules: change the look at section starts; hold no look longer than
 nine seconds, changing it again on the beat in longer sections; cut at a section
-start and blend over four beats inside a section; never the same scene twice
-running; a new palette at each section and the same one within it; louder sections
-run faster. The rest is chance, from a seed drawn fresh each run and written into the
+start and blend over four beats inside a section; never the same scene or place in
+the frame twice running; a new palette at each section and the same one within it;
+louder sections run faster. The rest is chance, from a seed drawn fresh each run and written into the
 show. A show is a directory under `.loop/shows/` holding `show.json` and a copy of
 each scene as it was, with its colours and speed filled in, so the show keeps
 rendering the same frames after the scenes it came from have changed.

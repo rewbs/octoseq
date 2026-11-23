@@ -17,7 +17,7 @@
 //   section_progress  how stirred the trails are: calm at a section's start
 //   energy            how fast everything turns
 
-let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0 }; // @style
+let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0] }; // @style
 
 // Light a shape in one colour at a brightness that can be a signal.
 fn glow(entity, c, level) {
@@ -53,7 +53,8 @@ fn init(ctx) {
     // The eye circles the scene, rising and falling as it goes.
     let round = clock.scale(0.35);
     camera.position = #{ x: round.sin().scale(7.0), y: t.scale(0.23).sin().scale(2.2), z: round.add(1.5708).sin().scale(7.0) };
-    camera.target = #{ x: 0.0, y: 0.0, z: 0.0 };
+    // `style.at` places the scene in the frame; the eye looks past the cube by that much.
+    camera.target = #{ x: 0.0, y: style.at[1] * 3.7, z: 0.0 };
 
     let body = mesh.cube();
     body.rotation.x = clock.scale(0.7);
@@ -87,6 +88,7 @@ fn init(ctx) {
         .warp.affine(hit.scale(0.05).add(1.012), t.scale(0.29).sin().scale(0.01))
         .color.hsv(0.005, 0.0, 0.0)
         .color.decay(0.95)
+        .centre(0.0, style.at[1])
         .blend.over()
         .opacity(1.0)
         .build();

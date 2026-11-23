@@ -20,7 +20,7 @@
 //   hit      the picture lurches forward
 //   energy   how fast the water in the loop moves
 
-let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0 }; // @style
+let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0] }; // @style
 
 // Light a shape in one colour at a brightness that can be a signal.
 fn glow(entity, c, level) {
@@ -37,8 +37,12 @@ fn tint(c, level) {
 }
 
 fn init(ctx) {
-    camera.position = #{ x: 0.0, y: 0.0, z: 6.5 };
-    camera.target = #{ x: 0.0, y: 0.0, z: 0.0 };
+    // `style.at` is where in the frame the scene sits (0, 0 is the middle; x to the
+    // right and y down, in frame widths and heights). The eye moves the other way.
+    let ex = style.at[0] * -6.6;
+    let ey = style.at[1] * 3.7;
+    camera.position = #{ x: ex, y: ey, z: 6.5 };
+    camera.target = #{ x: ex, y: ey, z: 0.0 };
 
     let hit = roles.hit.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.4 });
     // Fast up, slower down: each part's level as the eye should follow it.
@@ -88,6 +92,7 @@ fn init(ctx) {
         .warp.affine(hit.scale(0.045).add(bass.scale(0.012)).add(1.008), t.scale(0.33).sin().scale(0.009))
         .color.hsv(0.004, 0.0, 0.0)
         .color.decay(0.955)
+        .centre(style.at[0], style.at[1])
         .blend.over()
         .opacity(1.0)
         .build();
