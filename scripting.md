@@ -1994,6 +1994,13 @@ the middle of the frame: `x` to the right and `y` down, in frame widths and heig
 (`.centre(-0.2, 0.0)` is a fifth of the frame to the left). A scene that uses it
 should move its camera to match, as the scenes in `scenes/` do with `style.at`.
 
+The scenes in `scenes/` also read `style.mist`, from 0 (crisp) to 1 (misty), through
+one small function, `misted(own, mist, crisp, misty)`: it returns the scene's own
+setting at 0.5 and moves towards the crisp or the misty value either side. They use
+it for the feedback decay (short trails when crisp, long when misty) and for the
+bloom (tight when crisp). A new scene should do the same, so that the control
+means one thing everywhere.
+
 The last three differ from place to place, so the picture flows instead of moving as
 one piece. `phase` moves the pattern: give it `timing.time.scale(0.5)`, or a clock
 that also runs on loudness, `timing.time.scale(0.5).add(roles.energy.integrate(0.0))`,

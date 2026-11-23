@@ -12,7 +12,15 @@
 //   bass     the row sinks and rises
 //   energy   how fast the columns climb
 
-let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0] }; // @style
+let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0], mist: 0.5 }; // @style
+
+// `style.mist` says how misty the look is, from 0 (crisp: short trails and a tight
+// glow, so bright shapes sit on black) to 1 (misty: trails that linger until colour
+// fills the frame). At 0.5 a setting is the scene's own. Every scene reads it
+// through this, so it means the same in all of them.
+fn misted(own, mist, crisp, misty) {
+    if mist < 0.5 { crisp + (own - crisp) * mist * 2.0 } else { own + (misty - own) * (mist * 2.0 - 1.0) }
+}
 
 // Light a shape in one colour at a brightness that can be a signal.
 fn glow(entity, c, level) {
@@ -24,6 +32,8 @@ fn glow(entity, c, level) {
 }
 
 fn init(ctx) {
+    // This scene is the crispest there is at its own settings: it goes mistier, never crisper.
+    let mist = if style.mist < 0.5 { 0.5 } else { style.mist };
     // `style.at` is where in the frame the scene sits (0, 0 is the middle; x to the
     // right and y down, in frame widths and heights). The eye moves the other way.
     let ex = style.at[0] * -6.6;
@@ -58,12 +68,12 @@ fn init(ctx) {
         .warp.affine(1.0, 0.0, 0.0, hit.scale(0.055).add(level.scale(0.004)).add(0.003))
         .warp.waves(level.scale(1.2).add(0.8), 1.0, timing.time.scale(0.5 * style.speed))
         .color.hsv(0.003, 0.0, 0.0)
-        .color.decay(0.93)
+        .color.decay(misted(0.93, mist, 0.85, 0.988))
         .centre(style.at[0], style.at[1])
         .blend.over()
         .opacity(1.0)
         .build();
     feedback.enable(fb);
 
-    post.add(fx.bloom(#{ threshold: 0.55, intensity: 0.7, radius: 10.0 }));
+    post.add(fx.bloom(#{ threshold: misted(0.55, mist, 0.7, 0.55), intensity: misted(0.7, mist, 0.35, 0.7), radius: misted(10.0, mist, 5.0, 10.0) }));
 }

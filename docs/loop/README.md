@@ -46,7 +46,8 @@ what colours. Its rules: change the look at section starts; hold no look longer 
 nine seconds, changing it again on the beat in longer sections; cut at a section
 start and blend over four beats inside a section; never the same scene or place in
 the frame twice running; a new palette at each section and the same one within it;
-louder sections run faster. The rest is chance, from a seed drawn fresh each run and written into the
+a crisp look after a misty one and a misty one after a crisp; louder sections run
+faster. The rest is chance, from a seed drawn fresh each run and written into the
 show. A show is a directory under `.loop/shows/` holding `show.json` and a copy of
 each scene as it was, with its colours and speed filled in, so the show keeps
 rendering the same frames after the scenes it came from have changed.
@@ -132,6 +133,14 @@ reaching it, the colour is kept, and what is far too bright pales, as it does in
 camera. Before, each channel was cut off at white on its own, which turns a bright
 red orange and then yellow, and left grey trails behind anything that glowed (D102).
 
+### Crisp and misty
+
+Every scene reads one more style control, `mist`, the same way: at 0 its trails are
+short and its glow tight, so bright shapes sit on black (crisp); at 1 its trails
+linger until colour fills the frame (misty); at 0.5 it is as its author wrote it.
+The director gives each look one end or the other, never the same end twice running.
+The loop reports how far a show ranges between them as `wash_spread`.
+
 ### Editing a show
 
 The director proposes; `tools/loop/show.py` is how a person changes what it proposed
@@ -140,6 +149,7 @@ and keeps those changes when the director is asked again.
 ```bash
 python3 tools/loop/show.py list   .loop/shows/dontstop-1
 python3 tools/loop/show.py set    .loop/shows/dontstop-1 3 --scene quartet.rhai --palette ice
+python3 tools/loop/show.py set    .loop/shows/dontstop-1 4 --mist 1      # 0 is crisp, 1 is misty
 python3 tools/loop/show.py split  .loop/shows/dontstop-1 41.5      # a new look from 41.5 s
 python3 tools/loop/show.py pin    .loop/shows/dontstop-1 0 1       # these are mine
 python3 tools/loop/show.py reroll .loop/shows/dontstop-1 --bundle <package.json> --seed 5

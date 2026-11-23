@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 ROOT = Path(__file__).resolve().parents[2]
 SCENES = ROOT / "scenes"
 SHOWS = ROOT / ".loop" / "shows"
-DIRECTOR_VERSION = "director-3"
+DIRECTOR_VERSION = "director-4"
 
 MAX_HOLD_S = 9.0  # the longest any one look is held (review 1: boring in under ten seconds)
 MIN_HOLD_S = 3.0  # section starts closer together than this are treated as one
@@ -76,6 +76,14 @@ SCREEN_GAMMA = 2.2
 # middle, so a show of them kept one layout however the scenes differed. Each look
 # now gets a place, never the one before it.
 PLACES = [(0.0, 0.0), (-0.2, 0.0), (0.2, 0.0), (0.0, -0.14), (0.0, 0.14), (-0.17, -0.1), (0.17, 0.1), (-0.17, 0.1), (0.17, -0.1)]
+# How misty each look is, from 0 (crisp) to 1 (misty): see `style.mist` in the
+# scenes. The owner asked for a variety of it, "some scenes should be misty, others
+# should be crisp". Only the two ends are used, and a look is never within MIST_STEP
+# of the one before, so crisp and misty looks alternate. Values nearer the middle
+# were tried first and left shows much of a muchness: a scene's own settings are
+# already most of the way to misty.
+MISTS = [0.0, 0.1, 0.9, 1.0]
+MIST_STEP = 0.4
 STYLE_LINE = re.compile(r"^let style = .*// @style\s*$", re.MULTILINE)
 
 
@@ -143,12 +151,15 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
         raise ValueError("no scene can run on this bundle: none has all its roles")
     seed = secrets.randbelow(2**31) if seed is None else int(seed)
     rng = random.Random(seed)
+    # Mist is drawn from a stream of its own, so that adding it left every show's
+    # scenes, colours and places as they were.
+    weather = random.Random(f"{seed}:mist")
     intensity, rate = _signal(package, "section_intensity")
     cuts = cut_points(package, max_hold)
     beats = [e["time"] for e in _stream(package, "beat")]
     beat_s = sorted(b - a for a, b in zip(beats, beats[1:]))[len(beats) // 2 - 1] if len(beats) > 2 else 0.5
     segments = []
-    scene, palette, order, place = None, None, [0, 1, 2], None
+    scene, palette, order, place, mist = None, None, [0, 1, 2], None, None
     for index, (start, new_section) in enumerate(cuts):
         scene = rng.choice([s for s in scenes if s != scene] or scenes)
         if new_section or palette is None:
@@ -157,6 +168,7 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
         else:
             order = order[1:] + order[:1]
         place = rng.choice([p for p in PLACES if p != place])
+        mist = weather.choice([m for m in MISTS if mist is None or abs(m - mist) >= MIST_STEP - 1e-9])
         end = cuts[index + 1][0] if index + 1 < len(cuts) else float(package["durationSec"])
         middle = intensity[min(int((start + end) / 2 * rate), len(intensity) - 1)] if intensity else 0.5
         colours = [tuple(c**SCREEN_GAMMA if vivid else c for c in PALETTES[palette][i]) for i in order]
@@ -165,6 +177,7 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
             colours=[[round(c, 4) for c in colour] for colour in colours],
             speed=round(0.75 + 0.6 * float(middle), 2),
             at=list(place),
+            mist=mist,
             transition=0.0 if new_section else round(min(TRANSITION_BEATS * beat_s, (end - start) * TRANSITION_MAX_SHARE), 3),
         ))  # fmt: skip
     return dict(director=DIRECTOR_VERSION, seed=seed, vivid=vivid, duration=float(package["durationSec"]), segments=segments)
@@ -174,7 +187,8 @@ def dressed(source: str, segment: dict) -> str:
     """A scene's source with its style line replaced by this segment's style."""
     a, b, c = segment["colours"]
     at = [float(v) for v in segment.get("at", (0.0, 0.0))]
-    line = f"let style = #{{ a: {list(a)}, b: {list(b)}, c: {list(c)}, speed: {segment['speed']}, at: {at} }}; // @style"
+    mist = float(segment.get("mist", 0.5))
+    line = f"let style = #{{ a: {list(a)}, b: {list(b)}, c: {list(c)}, speed: {segment['speed']}, at: {at}, mist: {mist} }}; // @style"
     return STYLE_LINE.sub(lambda _: line, source, count=1)
 
 

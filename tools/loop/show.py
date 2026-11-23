@@ -321,17 +321,18 @@ def listing(show: dict) -> str:
     length = f" over {show['duration']:.0f} s" if _number(show.get("duration")) else ""
     lines = [
         f"seed {show.get('seed', '?')}: {len(segments)} segments{length}",
-        f"{'#':>3}  {'start':>8}  {'end':>8}  {'hold':>6}  {'scene':12}  {'palette':8}  {'speed':>5}  {'comes in':14}  yours",
+        f"{'#':>3}  {'start':>8}  {'end':>8}  {'hold':>6}  {'scene':12}  {'palette':8}  {'speed':>5}  {'mist':>4}  {'comes in':14}  yours",
     ]
     for index, segment in enumerate(segments):
         end = _end(show, index)
         blend = segment.get("transition", 0.0)
         speed = f"{segment['speed']:5.2f}" if _number(segment.get("speed")) else f"{'-':>5}"
+        mist = f"{segment['mist']:4.2f}" if _number(segment.get("mist")) else f"{'-':>4}"
         mark = ", ".join(word for word, on in (("pinned", segment.get("pinned")), ("edited", segment.get("edited"))) if on)
         lines.append(
             f"{index:3d}  {segment['start']:8.3f}  "
             + (f"{end:8.3f}  {end - segment['start']:6.2f}" if end is not None else f"{'-':>8}  {'-':>6}")
-            + f"  {Path(str(segment.get('scene', '-'))).stem:12}  {str(segment.get('palette', '-')):8}  {speed}"
+            + f"  {Path(str(segment.get('scene', '-'))).stem:12}  {str(segment.get('palette', '-')):8}  {speed}  {mist}"
             + f"  {(f'blend {blend:g} s' if blend else 'cut'):14}  {mark}"
         )
     return "\n".join(line.rstrip() for line in lines)
@@ -344,13 +345,14 @@ def set_segment(
     scene: str | None = None,
     palette: str | None = None,
     speed: float | None = None,
+    mist: float | None = None,
     transition: float | None = None,
     start: float | None = None,
     scenes_dir: Path = director.SCENES,
     directory: Path | None = None,
     package: dict | None = None,
 ) -> dict:
-    """Change one segment. It becomes pinned and edited; a change of scene, palette or speed gives it a new scene copy.
+    """Change one segment. It becomes pinned and edited; a change of scene, palette, speed or mist gives it a new scene copy.
 
     `directory` is the show's own, so that the new copy's name is not one already
     there. `package` is the track's bundle: given, a new scene is checked against it.
@@ -369,13 +371,17 @@ def set_segment(
         if not math.isfinite(speed) or speed <= 0:
             raise ShowError(f"a speed must be more than 0, not {speed}")
         segment["speed"] = changed["speed"] = float(speed)
+    if mist is not None:
+        if not math.isfinite(mist) or not 0.0 <= mist <= 1.0:
+            raise ShowError(f"mist runs from 0 (crisp) to 1 (misty), not {mist}")
+        segment["mist"] = changed["mist"] = float(mist)
     if transition is not None:
         segment["transition"] = changed["transition"] = round(float(transition), 3)
     if start is not None:
         segment["start"] = changed["start"] = round(float(start), 3)
     if not changed:
-        raise ShowError("nothing to change: give at least one of --scene, --palette, --speed, --transition, --start")
-    if scene is not None or palette is not None or speed is not None:
+        raise ShowError("nothing to change: give at least one of --scene, --palette, --speed, --mist, --transition, --start")
+    if scene is not None or palette is not None or speed is not None or mist is not None:
         if not isinstance(segment.get("scene"), str):
             raise ShowError(f"segment {index} does not say which scene it plays: give --scene")
         # From the scenes folder, as the director dresses them. Only this segment's
@@ -446,7 +452,7 @@ def split(
         name = _scene_name(scene)
     blend = SPLIT_BLEND_S if end is None else min(SPLIT_BLEND_S, (end - time) * director.TRANSITION_MAX_SHARE)
     second: dict = {"start": time, "scene": name, "new_section": False}
-    for key in ("palette", "colours", "speed"):
+    for key in ("palette", "colours", "speed", "mist"):
         if key in first:
             second[key] = copy.deepcopy(first[key])
     second["transition"] = round(blend, 3)
@@ -570,6 +576,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_argument("--scene", help="a scene's name, such as pulse")
     sub.add_argument("--palette", help=f"one of {', '.join(sorted(director.PALETTES))}")
     sub.add_argument("--speed", type=float)
+    sub.add_argument("--mist", type=float, help="how misty the look is, from 0 (crisp: bright shapes on black) to 1 (misty: colour fills the frame)")
     sub.add_argument("--transition", type=float, metavar="SECONDS", help="how long it takes to blend in; 0 is a cut")
     sub.add_argument("--start", type=float, metavar="SECONDS")
     sub.add_argument("--bundle", type=Path, metavar="PACKAGE_JSON", help="the track's bundle, to check a new scene can play on it")
@@ -613,7 +620,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         package, sha = _read_bundle(getattr(args, "bundle", None))
         if args.command == "set":
-            choices = dict(scene=args.scene, palette=args.palette, speed=args.speed, transition=args.transition, start=args.start)
+            choices = dict(scene=args.scene, palette=args.palette, speed=args.speed, mist=args.mist, transition=args.transition, start=args.start)
             edited = set_segment(show, args.index, **choices, scenes_dir=args.scenes_dir, directory=directory, package=package)
         elif args.command == "pin":
             edited = pin(show, args.index)
@@ -711,13 +718,13 @@ def _selftest_session(root: Path, row: Callable[..., None]) -> dict[str, bytes]:
     # set: a palette and a speed
     before, old = files(), show["segments"][2]
     palette = next(p for p in sorted(director.PALETTES) if p != old["palette"])
-    code, said = run("set", where, 2, "--palette", palette, "--speed", 1.3, "--scenes-dir", scenes)
+    code, said = run("set", where, 2, "--palette", palette, "--speed", 1.3, "--mist", 0.25, "--scenes-dir", scenes)
     after, (edited, _) = files(), load(where)
     new = edited["segments"][2]
     fresh_copy = after.get(new["script"], b"")
     row(
         "set gives the segment it changes a new scene copy",
-        code == 0 and new["script"] != old["script"] and old["script"] not in after and b"speed: 1.3, at:" in fresh_copy and moved_on in fresh_copy,
+        code == 0 and new["script"] != old["script"] and old["script"] not in after and b"speed: 1.3, at:" in fresh_copy and b"mist: 0.25 }" in fresh_copy and moved_on in fresh_copy,
         f"-> {old['script']} became {new['script']}",
     )
     same_names = [s["script"] for i, s in enumerate(show["segments"]) if i != 2] == [s["script"] for i, s in enumerate(edited["segments"]) if i != 2]

@@ -217,6 +217,8 @@ def test_director() -> None:
     check("director: a blend is over well before the next change", all(b <= h / 3 + 1e-6 for b, h in zip(blends, holds)), f"-> longest {max(blends):.1f} s")
     places = [tuple(s["at"]) for s in show["segments"]]
     check("director: each look sits somewhere else in the frame than the last", all(a != b for a, b in zip(places, places[1:])) and len(set(places)) > 2)
+    mists = [s["mist"] for s in show["segments"]]
+    check("director: a crisp look follows a misty one, and a misty one a crisp", all((a < 0.5) != (b < 0.5) for a, b in zip(mists, mists[1:])), f"-> {mists[:6]}")
     check("director: louder sections run faster", show["segments"][-1]["speed"] > show["segments"][0]["speed"])
     check("director: the same seed gives the same show", director.direct(package, seed=11) == show)
     vivid = director.direct(package, seed=11, vivid=True)
