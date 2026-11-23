@@ -83,6 +83,16 @@ pub fn register_feedback_builder_api(engine: &mut Engine) {
         },
     );
 
+    // centre(x, y) - where the warps are centred, as an offset from the middle of the frame
+    engine.register_fn(
+        "centre",
+        |fb: &mut FeedbackBuilder, x: Dynamic, y: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            let mut fb = fb.clone();
+            fb.set_centre(to_signal_or_f32(x)?, to_signal_or_f32(y)?);
+            Ok(fb)
+        },
+    );
+
     // sample_before_effects() - feedback samples from scene before post-FX (default)
     engine.register_fn("sample_before_effects", |fb: &mut FeedbackBuilder| {
         let mut fb = fb.clone();

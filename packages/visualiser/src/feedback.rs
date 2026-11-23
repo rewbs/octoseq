@@ -473,6 +473,8 @@ pub struct FeedbackConfig {
 
     /// How bright the previous frame may come back. Bounded unless turned off.
     pub limit: FeedbackLimit,
+    /// Where the warps are centred, as an offset from the middle of the frame.
+    pub centre: [SignalOrF32; 2],
 }
 
 impl FeedbackConfig {
@@ -560,6 +562,13 @@ impl FeedbackConfig {
     pub fn to_uniforms(&self, ctx: &mut EvalContext) -> FeedbackUniforms {
         let mut uniforms = FeedbackUniforms::zeroed();
 
+        // The loop runs once a frame, so anything it does a little of each time
+        // (fade, grow, turn, slide, bend) would happen four times as fast at 120
+        // frames a second as at 30. Settings are therefore read as "per thirtieth
+        // of a second" and scaled to the frame's real length: `k` is how many
+        // thirtieths this frame lasts. At 30 fps it is exactly 1 and nothing changes.
+        let k = if ctx.dt > 0.0 { ctx.dt * FEEDBACK_REFERENCE_FPS } else { 1.0 };
+
         // Header
         uniforms.warp_count = self.warp_chain.len().min(MAX_WARP_CHAIN) as u32;
         uniforms.color_count = self.color_chain.len().min(MAX_COLOR_CHAIN) as u32;
@@ -567,10 +576,23 @@ impl FeedbackConfig {
         uniforms.opacity = self.opacity.evaluate(ctx);
         uniforms.limit_knee = self.limit.knee;
         uniforms.limit_ceiling = self.limit.ceiling;
+        uniforms.centre = [self.centre[0].evaluate(ctx), self.centre[1].evaluate(ctx)];
 
         // Fill warp steps - evaluate each parameter
         for (i, step) in self.warp_chain.iter().take(MAX_WARP_CHAIN).enumerate() {
-            let params = step.params.evaluate(ctx);
+            let mut params = step.params.evaluate(ctx);
+            match step.operator {
+                // Affine applies its scale, turn and slide in full each frame.
+                WarpOperator::Affine => {
+                    params.scale = params.scale.max(1e-6).powf(k);
+                    params.rotation *= k;
+                    params.translate = [params.translate[0] * k, params.translate[1] * k];
+                }
+                // The rest move the picture in proportion to their strength.
+                // (For the three field warps `rotation` is a phase, not a rate.)
+                WarpOperator::None => {}
+                _ => params.strength *= k,
+            }
             uniforms.warp_steps[i] = GpuWarpStep {
                 warp_type: step.operator.to_u32(),
                 strength: params.strength,
@@ -588,11 +610,11 @@ impl FeedbackConfig {
             let params = step.params.evaluate(ctx);
             uniforms.color_steps[i] = GpuColorStep {
                 color_type: step.operator.to_u32(),
-                decay_rate: params.decay_rate,
+                decay_rate: params.decay_rate.max(0.0).powf(k),
                 posterize_levels: params.posterize_levels,
-                hsv_h: params.hsv_shift[0],
-                hsv_s: params.hsv_shift[1],
-                hsv_v: params.hsv_shift[2],
+                hsv_h: params.hsv_shift[0] * k,
+                hsv_s: params.hsv_shift[1] * k,
+                hsv_v: params.hsv_shift[2] * k,
                 offset_x: params.channel_offset[0],
                 offset_y: params.channel_offset[1],
             };
@@ -662,6 +684,8 @@ impl FeedbackConfig {
 
         // Opacity
         extract(&self.opacity, &mut signals);
+        extract(&self.centre[0], &mut signals);
+        extract(&self.centre[1], &mut signals);
 
         // Warp chain
         for step in &self.warp_chain {
@@ -714,6 +738,7 @@ pub struct FeedbackBuilder {
     opacity: SignalOrF32,
     sampling_mode: FeedbackSamplingMode,
     limit: FeedbackLimit,
+    centre: [SignalOrF32; 2],
 }
 
 impl FeedbackBuilder {
@@ -754,6 +779,12 @@ impl FeedbackBuilder {
         self.opacity = opacity;
     }
 
+    /// Move the point the warps are centred on away from the middle of the
+    /// frame: `x` to the right and `y` down, in frame widths and heights.
+    pub fn set_centre(&mut self, x: SignalOrF32, y: SignalOrF32) {
+        self.centre = [x, y];
+    }
+
     /// Set the sampling mode.
     pub fn set_sampling_mode(&mut self, mode: FeedbackSamplingMode) {
         self.sampling_mode = mode;
@@ -790,6 +821,7 @@ impl FeedbackBuilder {
             opacity: self.opacity.clone(),
             sampling_mode: self.sampling_mode,
             limit: self.limit,
+            centre: self.centre.clone(),
         }
     }
 }
@@ -1193,10 +1225,16 @@ pub struct FeedbackUniforms {
     // The outgoing scene's chains (16 + 128 + 128 bytes), used while other_share > 0
     pub other_warp_count: u32,
     pub other_color_count: u32,
-    pub _pad2: [u32; 2],
+    /// Where the warps are centred: an offset from the middle of the frame, in
+    /// frame widths and heights (x to the right, y down).
+    pub centre: [f32; 2],
     pub other_warp_steps: [GpuWarpStep; MAX_WARP_CHAIN],
     pub other_color_steps: [GpuColorStep; MAX_COLOR_CHAIN],
 }
+
+/// The frame rate the feedback loop's settings are written for: a decay of 0.96
+/// means "keep 96% every thirtieth of a second", whatever the real frame rate.
+pub const FEEDBACK_REFERENCE_FPS: f32 = 30.0;
 
 impl FeedbackUniforms {
     /// The uniforms for a frame in which this scene is taking over from another.
@@ -1214,6 +1252,8 @@ impl FeedbackUniforms {
         let mut uniforms = *self;
         uniforms.other_share = share;
         uniforms.opacity = mix(self.opacity, outgoing.opacity);
+        // One centre serves both scenes' warps during the blend: it travels from the old to the new.
+        uniforms.centre = [mix(self.centre[0], outgoing.centre[0]), mix(self.centre[1], outgoing.centre[1])];
         // A ceiling of 0 means no limit; mixing with it would make one up.
         if self.limit_ceiling > 0.0 && outgoing.limit_ceiling > 0.0 {
             uniforms.limit_knee = mix(self.limit_knee, outgoing.limit_knee);
@@ -1359,6 +1399,40 @@ mod tests {
     }
 
     #[test]
+    fn settings_mean_the_same_per_second_at_any_frame_rate() {
+        let (mut state, stats) = test_eval_ctx();
+        let inputs = HashMap::new();
+        let bands = HashMap::new();
+        let stems = HashMap::new();
+        let custom = HashMap::new();
+        let composed = HashMap::new();
+        let builder = WarpBuilder(FeedbackBuilder::new()).affine_with_translate(1.02, 0.01, 0.004, 0.0);
+        let builder = WarpBuilder(builder).waves(2.0, 1.0, 0.5);
+        let builder = ColorBuilder(builder).decay(0.96);
+        let config = ColorBuilder(builder).hsv(0.004, 0.0, 0.0).build();
+        let mut at = |dt: f32| {
+            let mut ctx = EvalContext::new(0.0, dt, 0, None, &inputs, &bands, &stems, &custom, &composed, &stats, &mut state, None);
+            config.to_uniforms(&mut ctx)
+        };
+        let thirty = at(1.0 / 30.0);
+        // At 30 fps the settings are used exactly as written.
+        assert_eq!(thirty.warp_steps[0].scale, 1.02);
+        assert_eq!(thirty.warp_steps[0].rotation, 0.01);
+        assert_eq!(thirty.warp_steps[1].strength, 2.0);
+        assert_eq!(thirty.color_steps[0].decay_rate, 0.96);
+        // At 120 fps four frames do what one did.
+        let fast = at(1.0 / 120.0);
+        assert!((fast.warp_steps[0].scale.powi(4) - 1.02).abs() < 1e-5);
+        assert!((fast.warp_steps[0].rotation * 4.0 - 0.01).abs() < 1e-7);
+        assert!((fast.warp_steps[0].translate_x * 4.0 - 0.004).abs() < 1e-7);
+        assert!((fast.warp_steps[1].strength * 4.0 - 2.0).abs() < 1e-5);
+        assert!((fast.color_steps[0].decay_rate.powi(4) - 0.96).abs() < 1e-5);
+        assert!((fast.color_steps[1].hsv_h * 4.0 - 0.004).abs() < 1e-7);
+        // The waves' phase is a position, not a rate, and is left alone.
+        assert_eq!(fast.warp_steps[1].rotation, 0.5);
+    }
+
+    #[test]
     fn test_uniform_size() {
         // Header (16) + limit (16) + 4 warp steps (128) + 4 color steps (128) = 288 bytes,
         // then the other scene's counts (16) and chains (128 + 128) = 560 bytes
@@ -1377,7 +1451,7 @@ mod tests {
         let composed_signals = HashMap::new();
         let mut ctx = EvalContext::new(
             0.0,
-            0.016,
+            1.0 / 30.0,
             0,
             None,
             &inputs,
@@ -1428,7 +1502,7 @@ mod tests {
         let composed_signals = HashMap::new();
         let mut ctx = EvalContext::new(
             0.0,
-            0.016,
+            1.0 / 30.0,
             0,
             None,
             &inputs,

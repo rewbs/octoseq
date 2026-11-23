@@ -69,8 +69,9 @@ struct FeedbackUniforms {
     // The outgoing scene's chains, used only while other_share > 0
     other_warp_count: u32,
     other_color_count: u32,
-    pad2: u32,
-    pad3: u32,
+    // Where the warps are centred, as an offset from the middle of the frame
+    centre_x: f32,
+    centre_y: f32,
     other_warp_steps: array<GpuWarpStep, 4>,
     other_color_steps: array<GpuColorStep, 4>,
 }
@@ -180,7 +181,7 @@ fn hsv_to_rgb(hsv: vec3<f32>) -> vec3<f32> {
 // ============================================================================
 
 fn apply_warp_step(uv: vec2<f32>, step: GpuWarpStep) -> vec2<f32> {
-    let center = vec2<f32>(0.5, 0.5);
+    let center = vec2<f32>(0.5 + params.centre_x, 0.5 + params.centre_y);
     let centered = uv - center;
     let strength = step.strength;
 
