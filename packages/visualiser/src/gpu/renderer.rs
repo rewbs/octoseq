@@ -431,6 +431,11 @@ impl Renderer {
         width: u32,
         height: u32,
     ) -> Self {
+        // `format` is what the caller will be handed: a screen's, or a file's.
+        // Everything here is drawn in float instead, so that a light can be brighter
+        // than white, and the post-processor's last pass tone-maps it into `format`.
+        let output_format = format;
+        let format = crate::gpu::post_processor::HDR_FORMAT;
         let size = wgpu::Extent3d {
             width,
             height,
@@ -981,7 +986,7 @@ impl Renderer {
         // === Post-processing and Feedback ===
         let post_effect_registry = PostEffectRegistry::new();
         let post_processor =
-            PostProcessor::new(&device, format, width, height, &post_effect_registry);
+            PostProcessor::new(&device, format, output_format, width, height, &post_effect_registry);
 
         Self {
             device,
@@ -1305,6 +1310,12 @@ impl Renderer {
         self.render(view, incoming);
         self.post_processor.set_transition_active(false);
         self.transition_uniforms = None;
+    }
+
+    /// Say how the next step counts towards the frame being saved: with several
+    /// steps to a frame, a frame can be the average of some of them (motion blur).
+    pub fn set_shutter(&mut self, shutter: crate::gpu::post_processor::Shutter) {
+        self.post_processor.set_shutter(shutter);
     }
 
     pub fn render(&mut self, view: &wgpu::TextureView, state: &VisualiserState) {

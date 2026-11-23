@@ -13,6 +13,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 
+use crate::gpu::post_processor::Shutter;
 use crate::gpu::renderer::Renderer;
 use crate::input::{BandSignalMap, InputSignal, SharedSignal, SignalMap};
 use crate::interpretation_package::{apply_to_state, load_package, LoadedPackage};
@@ -66,6 +67,12 @@ enum Commands {
         /// 0 = one step a frame
         #[arg(long, default_value_t = 0.0)]
         step_rate: f32,
+
+        /// Motion blur: the share of each frame's time the shutter is open, 0 (off)
+        /// to 1. Each frame is the average of the steps taken while it was open,
+        /// so it needs --step-rate at several times the frame rate
+        #[arg(long, default_value_t = 0.0)]
+        shutter: f32,
 
         /// Duration in seconds (defaults to the package's durationSec, or the input signal duration)
         #[arg(long)]
@@ -146,6 +153,7 @@ pub fn run() -> Result<()> {
             show,
             fps,
             step_rate,
+            shutter,
             duration,
             width,
             height,
@@ -164,6 +172,7 @@ pub fn run() -> Result<()> {
                 output_dir: out,
                 fps,
                 step_rate,
+                shutter,
                 duration,
                 width,
                 height,
@@ -349,6 +358,8 @@ pub async fn execute_render_job_with_show(
     // and only the last step of each frame is read back and saved.
     let steps_per_frame = job.steps_per_frame();
     let step_dt = dt / steps_per_frame as f32;
+    // With a shutter, a frame is the average of its last `open_steps` steps.
+    let open_steps = job.open_steps();
 
     // Create output directory
     std::fs::create_dir_all(&job.output_dir).map_err(|e| {
@@ -605,6 +616,20 @@ pub async fn execute_render_job_with_show(
                 place,
                 diagnostic.message
             ));
+        }
+
+        if open_steps > 0 {
+            let in_frame = step % steps_per_frame;
+            let first_open = steps_per_frame - open_steps;
+            renderer.set_shutter(if in_frame < first_open {
+                Shutter::Closed
+            } else {
+                Shutter::Open {
+                    weight: 1.0 / open_steps as f32,
+                    first: in_frame == first_open,
+                    last: in_frame + 1 == steps_per_frame,
+                }
+            });
         }
 
         // Render to texture: both scenes during a transition, otherwise the one.

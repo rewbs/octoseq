@@ -66,6 +66,7 @@ fn renders_frames_from_golden_package() {
         seed: 0,
         input_sample_rate: 100.0,
         step_rate: 0.0,
+        shutter: 0.0,
         preset_name: None,
         output_video: false,
         video_path: None,

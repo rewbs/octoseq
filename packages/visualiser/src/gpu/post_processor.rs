@@ -73,6 +73,25 @@ const QUAD_VERTICES: &[QuadVertex] = &[
 /// float has the room for any step rate.
 const LOOP_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
+/// What the scene, the effects and everything between them are drawn in: float, so
+/// a light can be brighter than white and still keep its colour. Only the last
+/// pass, which tone-maps the finished picture, is in the output's format.
+pub const HDR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
+/// How one step counts towards the frame being saved, when the engine takes
+/// several steps a frame and a frame is the average of some of them (motion blur).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Shutter {
+    /// No averaging: every step is shown as it is.
+    Off,
+    /// A step between exposures: drawn, so that the feedback loop and everything
+    /// else moves on, but not shown.
+    Closed,
+    /// A step of an exposure, added to the others with this weight. The first
+    /// starts the exposure afresh; the last shows the result.
+    Open { weight: f32, first: bool, last: bool },
+}
+
 /// GPU resources for a single effect.
 struct EffectResources {
     pipeline: wgpu::RenderPipeline,
@@ -137,6 +156,19 @@ pub struct PostProcessor {
     // === Optimized bloom processor ===
     /// Multi-pass bloom processor (separable blur + downsampling)
     bloom_processor: BloomProcessor,
+
+    // === The last pass ===
+    /// The finished picture in float, before it is tone-mapped.
+    final_texture: wgpu::Texture,
+    final_view: wgpu::TextureView,
+    /// The steps of an exposure, added up (see `Shutter`).
+    accum_texture: wgpu::Texture,
+    accum_view: wgpu::TextureView,
+    /// Tone-maps float into the output's format.
+    present_pipeline: wgpu::RenderPipeline,
+    /// Adds a step to the exposure, weighted by the pass's blend constant.
+    accumulate_pipeline: wgpu::RenderPipeline,
+    shutter: Shutter,
 }
 
 impl PostProcessor {
@@ -144,6 +176,7 @@ impl PostProcessor {
     pub fn new(
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
+        output_format: wgpu::TextureFormat,
         width: u32,
         height: u32,
         registry: &PostEffectRegistry,
@@ -196,6 +229,10 @@ impl PostProcessor {
         let loop_target_view = loop_target_tex.create_view(&wgpu::TextureViewDescriptor::default());
         let transition_tex = create_texture("Transition Scene Texture");
         let transition_view = transition_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let final_tex = create_texture("Finished Picture");
+        let final_view = final_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let accum_tex = create_texture("Shutter Accumulation");
+        let accum_view = accum_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
         let view_a = tex_a.create_view(&wgpu::TextureViewDescriptor::default());
         let view_b = tex_b.create_view(&wgpu::TextureViewDescriptor::default());
@@ -348,6 +385,62 @@ impl PostProcessor {
             cache: None,
         });
 
+        // The last pass, and the pass that adds a step to an exposure.
+        let present_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Present Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shader_post_present.wgsl").into()),
+        });
+        let fullscreen = |label: &str, entry: &'static str, target: wgpu::ColorTargetState| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&blit_pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &present_shader,
+                    entry_point: Some("vs_main"),
+                    buffers: &[QuadVertex::desc()],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &present_shader,
+                    entry_point: Some(entry),
+                    targets: &[Some(target)],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            })
+        };
+        let present_pipeline = fullscreen(
+            "Present Pipeline",
+            "fs_present",
+            wgpu::ColorTargetState {
+                format: output_format,
+                blend: Some(wgpu::BlendState::REPLACE),
+                write_mask: wgpu::ColorWrites::ALL,
+            },
+        );
+        // What is there already, plus this step times the blend constant.
+        let weighted = wgpu::BlendComponent {
+            src_factor: wgpu::BlendFactor::Constant,
+            dst_factor: wgpu::BlendFactor::One,
+            operation: wgpu::BlendOperation::Add,
+        };
+        let accumulate_pipeline = fullscreen(
+            "Shutter Pipeline",
+            "fs_copy",
+            wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState { color: weighted, alpha: weighted }),
+                write_mask: wgpu::ColorWrites::ALL,
+            },
+        );
+
         // Create bind group for blit (using scene texture as input)
         let blit_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("Blit Bind Group"),
@@ -469,6 +562,13 @@ impl PostProcessor {
             transition_active: false,
             // Bloom processor
             bloom_processor,
+            final_texture: final_tex,
+            final_view,
+            accum_texture: accum_tex,
+            accum_view,
+            present_pipeline,
+            accumulate_pipeline,
+            shutter: Shutter::Off,
         };
 
         // Create pipelines for registered effects
@@ -648,6 +748,10 @@ impl PostProcessor {
             .loop_target_texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         self.transition_texture = create_texture("Transition Scene Texture");
+        self.final_texture = create_texture("Finished Picture");
+        self.final_view = self.final_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.accum_texture = create_texture("Shutter Accumulation");
+        self.accum_view = self.accum_texture.create_view(&wgpu::TextureViewDescriptor::default());
         self.transition_view = self
             .transition_texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -1112,6 +1216,7 @@ impl PostProcessor {
         post_chain: &PostProcessingChain,
         evaluated_params: &HashMap<String, Vec<EffectParamValue>>,
     ) {
+        // Either way the finished picture is left in `final_view`, in float.
         match feedback_config.sampling_mode {
             FeedbackSamplingMode::PreFx => {
                 // Default: feedback samples scene, then post-FX is applied
@@ -1120,7 +1225,7 @@ impl PostProcessor {
                     device,
                     encoder,
                     queue,
-                    output_view,
+                    &self.final_view,
                     post_chain,
                     evaluated_params,
                 );
@@ -1131,12 +1236,87 @@ impl PostProcessor {
                     device,
                     encoder,
                     queue,
-                    output_view,
                     feedback_config,
                     feedback_uniforms,
                     post_chain,
                     evaluated_params,
                 );
+            }
+        }
+        self.present(device, encoder, output_view);
+    }
+
+    /// Say how the next step counts towards the frame being saved (see `Shutter`).
+    pub fn set_shutter(&mut self, shutter: Shutter) {
+        self.shutter = shutter;
+    }
+
+    fn fullscreen_bind_group(&self, device: &wgpu::Device, view: &wgpu::TextureView) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("Fullscreen Bind Group"),
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
+            ],
+        })
+    }
+
+    fn fullscreen_pass(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        label: &str,
+        pipeline: &wgpu::RenderPipeline,
+        source: &wgpu::BindGroup,
+        target: &wgpu::TextureView,
+        load: wgpu::LoadOp<wgpu::Color>,
+        weight: f64,
+    ) {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some(label),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                resolve_target: None,
+                ops: wgpu::Operations { load, store: wgpu::StoreOp::Store },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        pass.set_pipeline(pipeline);
+        pass.set_blend_constant(wgpu::Color { r: weight, g: weight, b: weight, a: weight });
+        pass.set_bind_group(0, source, &[]);
+        pass.set_vertex_buffer(0, self.quad_vertex_buffer.slice(..));
+        pass.draw(0..6, 0..1);
+    }
+
+    /// The last pass: the finished picture, tone-mapped into the output.
+    ///
+    /// With the shutter open the picture is first added to the exposure, and the
+    /// output is written only by the exposure's last step, from the sum. The
+    /// steps are averaged in float, before the tone map, as light adds up.
+    fn present(&self, device: &wgpu::Device, encoder: &mut wgpu::CommandEncoder, output_view: &wgpu::TextureView) {
+        let clear = wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT);
+        match self.shutter {
+            Shutter::Off => {
+                let source = self.fullscreen_bind_group(device, &self.final_view);
+                self.fullscreen_pass(encoder, "Present Pass", &self.present_pipeline, &source, output_view, clear, 1.0);
+            }
+            Shutter::Closed => {}
+            Shutter::Open { weight, first, last } => {
+                let source = self.fullscreen_bind_group(device, &self.final_view);
+                let load = if first { clear } else { wgpu::LoadOp::Load };
+                self.fullscreen_pass(encoder, "Shutter Pass", &self.accumulate_pipeline, &source, &self.accum_view, load, weight as f64);
+                if last {
+                    let exposure = self.fullscreen_bind_group(device, &self.accum_view);
+                    self.fullscreen_pass(encoder, "Present Pass", &self.present_pipeline, &exposure, output_view, clear, 1.0);
+                }
             }
         }
     }
@@ -1152,7 +1332,6 @@ impl PostProcessor {
         device: &wgpu::Device,
         encoder: &mut wgpu::CommandEncoder,
         queue: &wgpu::Queue,
-        output_view: &wgpu::TextureView,
         feedback_config: &FeedbackConfig,
         feedback_uniforms: &FeedbackUniforms,
         post_chain: &PostProcessingChain,
@@ -1168,7 +1347,7 @@ impl PostProcessor {
             self.blit(
                 encoder,
                 &self.scene_view,
-                output_view,
+                &self.final_view,
                 &self.blit_bind_group,
             );
             return;
@@ -1181,7 +1360,7 @@ impl PostProcessor {
                 device,
                 encoder,
                 queue,
-                output_view,
+                &self.final_view,
                 post_chain,
                 evaluated_params,
             );
@@ -1315,7 +1494,7 @@ impl PostProcessor {
         self.blit(
             encoder,
             &self.intermediate_views[0],
-            output_view,
+            &self.final_view,
             &blit_bind_group,
         );
 

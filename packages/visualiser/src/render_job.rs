@@ -68,6 +68,13 @@ pub struct RenderJobSpec {
     #[serde(default)]
     pub step_rate: f32,
 
+    /// Motion blur: the share of each frame's time its shutter is open, from 0
+    /// (off) to 1. A frame is then the average of the steps taken while it was
+    /// open, the last ones before the frame is due, so it needs a step rate
+    /// several times the frame rate. 0.5 is a film camera's usual setting.
+    #[serde(default)]
+    pub shutter: f32,
+
     /// Duration in seconds. None means use input signal duration.
     #[serde(default)]
     pub duration: Option<f32>,
@@ -116,6 +123,7 @@ impl RenderJobSpec {
             seed: 0,
             input_sample_rate: default_sample_rate(),
             step_rate: 0.0,
+            shutter: 0.0,
             preset_name: None,
             output_video: false,
             video_path: None,
@@ -169,6 +177,16 @@ impl RenderJobSpec {
         if !(self.step_rate >= 0.0) || !self.step_rate.is_finite() {
             return Err("Step rate must be zero (one step a frame) or positive".to_string());
         }
+        if !(0.0..=1.0).contains(&self.shutter) {
+            return Err("Shutter must be between 0 (off) and 1".to_string());
+        }
+        if self.shutter > 0.0 && self.steps_per_frame() < 2 {
+            return Err(
+                "A shutter averages the steps of a frame, so it needs a step rate (--step-rate) \
+                 at least twice the frame rate"
+                    .to_string(),
+            );
+        }
         if self.width == 0 || self.height == 0 {
             return Err("Width and height must be positive".to_string());
         }
@@ -187,6 +205,17 @@ impl RenderJobSpec {
             return 1;
         }
         ((self.step_rate / self.fps).round() as usize).max(1)
+    }
+
+    /// How many of a frame's steps are averaged into it: the last ones, as many
+    /// as the shutter's share of the frame covers and never fewer than one. 0 when
+    /// the shutter is off.
+    pub fn open_steps(&self) -> usize {
+        if self.shutter <= 0.0 {
+            return 0;
+        }
+        let steps = self.steps_per_frame();
+        ((steps as f32 * self.shutter).round() as usize).clamp(1, steps)
     }
 
     /// Get the effective video output path.
@@ -475,6 +504,7 @@ mod tests {
             seed: 42,
             input_sample_rate: 100.0,
             step_rate: 0.0,
+            shutter: 0.0,
             preset_name: Some("test".to_string()),
             output_video: false,
             video_path: None,
@@ -525,6 +555,16 @@ mod tests {
             spec.fps = fps;
             assert_eq!(spec.steps_per_frame(), steps, "{fps} fps");
         }
+        // A shutter open for half of a frame of four steps averages the last two.
+        spec.fps = 30.0;
+        assert_eq!(spec.open_steps(), 0);
+        spec.shutter = 0.5;
+        assert_eq!(spec.open_steps(), 2);
+        spec.shutter = 1.0;
+        assert_eq!(spec.open_steps(), 4);
+        spec.shutter = 0.1;
+        assert_eq!(spec.open_steps(), 1);
+        assert!(spec.validate().is_err() || spec.steps_per_frame() >= 2);
         // A step at 30 fps with four steps a frame is exactly a frame at 120 fps,
         // which is what makes the two renders the same picture.
         assert_eq!((1.0f32 / 30.0) / 4.0, 1.0f32 / 120.0);

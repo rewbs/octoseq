@@ -530,6 +530,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 // Fragment shader
 // ============================================================================
 
+const LOOP_MAX: f32 = 64.0;
+
 struct FeedbackOutput {
     // What is shown this step
     @location(0) shown: vec4<f32>,
@@ -581,16 +583,18 @@ fn fs_main(in: VertexOutput) -> FeedbackOutput {
     }
 
     // Keep the loop bounded, then blend feedback with current frame. The loop is
-    // kept in float, which would carry values past white from step to step; the
-    // 8-bit store it replaces could not, and scenes are written for that.
+    // kept in float and may carry light brighter than white from step to step: the
+    // limit above holds what comes back from the last frame under its ceiling, and
+    // the last pass of all tone-maps the result. LOOP_MAX only keeps a loop with
+    // its limit switched off from running to infinity.
     let previous = limit_feedback(feedback);
     var out: FeedbackOutput;
-    out.shown = clamp(apply_blend(current, previous), vec4<f32>(0.0), vec4<f32>(1.0));
+    out.shown = clamp(apply_blend(current, previous), vec4<f32>(0.0), vec4<f32>(LOOP_MAX));
     out.kept = out.shown;
     // At 30 steps a second the two are the same picture, and nothing is scaled.
     let k = params.step_share;
     if (params.blend_mode == 7u && k > 0.0 && abs(k - 1.0) > 0.0005) {
-        out.kept = clamp(apply_blend(stamp_for_step(current), previous), vec4<f32>(0.0), vec4<f32>(1.0));
+        out.kept = clamp(apply_blend(stamp_for_step(current), previous), vec4<f32>(0.0), vec4<f32>(LOOP_MAX));
     }
     return out;
 }
