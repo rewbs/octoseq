@@ -176,6 +176,13 @@ def test_metrics() -> None:
     check("three colours are not", several["one_hue_share"] < 0.6, f"-> {several['one_hue_share']:.2f}")
     check("a frame of saturated mid-tone is a wash", fog["wash"] > 0.8, f"-> {fog['wash']:.2f}")
     check("bright colour on black is less of one", lines["wash"] < fog["wash"] - 0.2, f"-> {lines['wash']:.2f}")
+    # Wash is not to be kept down but to vary: a clip that is misty for half its
+    # length and crisp for the rest has a wide spread, and one look held has none.
+    misty, crisp = coloured([0.85, 0.86, 0.84], 0.75), dark
+    both = metrics.compute(np.concatenate([misty] * 4 + [crisp] * 4), FPS, pkg)
+    held = metrics.compute(np.concatenate([misty] * 8), FPS, pkg)
+    check("a clip that is misty and then crisp has a wide wash spread", both.get("wash_spread", 0) > 0.2, f"-> {both.get('wash_spread', 0):.2f}")
+    check("one look held throughout has none", held.get("wash_spread", 1) < 0.02, f"-> {held.get('wash_spread', 1):.2f}")
 
 
 def test_director() -> None:

@@ -212,6 +212,23 @@ def _look_change(frames: np.ndarray, fps: float, window_s: float = 4.0, apart_s:
     return float(np.mean(scores)) if scores else None
 
 
+def _wash_spread(frames: np.ndarray, fps: float, window_s: float = 4.0) -> float | None:
+    """How much the wash differs between one stretch of a clip and another.
+
+    Wash was a thing to keep down until the owner said otherwise: "we should aim for
+    a variety of wash: some scenes should be misty, others should be crisp". So what
+    counts is not its level but its range. The clip is cut into four-second
+    stretches and each one's wash measured; the figure is the gap between the
+    mistiest and the crispest, leaving out the extreme tenth at each end. One look
+    held throughout scores near 0. None for clips too short to have three stretches.
+    """
+    step = max(1, int(window_s * fps))
+    values = [_palette(frames[start : start + step])[2] for start in range(0, len(frames) - step + 1, step)]
+    if len(values) < 3:
+        return None
+    return float(np.percentile(values, 90) - np.percentile(values, 10))
+
+
 def _palette(frames: np.ndarray) -> tuple[float, float, float]:
     """Three things about colour and tone that the eye judges at a glance.
 
@@ -331,6 +348,9 @@ def compute(frames: np.ndarray, fps: float, package: dict) -> dict:
     }
     # Left out, not zero, when there is nothing to judge them by.
     punch, look_change = _punch(motion, fps, package), _look_change(frames, fps)
+    wash_spread = _wash_spread(frames, fps)
+    if wash_spread is not None:
+        out["wash_spread"] = wash_spread
     if punch is not None:
         out["punch"] = punch
     if look_change is not None:

@@ -367,7 +367,7 @@ def transition_checks(track: Path, out: Path, args) -> list[dict]:
     ]
 
 
-SUMMARY_COLUMNS = ["punch", "look_change", "flow_speed", "flow_swirl", "one_hue_share", "wash", "active_area", "jerkiness", "audio_sync", "variety", "colourfulness"]
+SUMMARY_COLUMNS = ["punch", "look_change", "flow_speed", "flow_swirl", "one_hue_share", "wash", "wash_spread", "active_area", "jerkiness", "audio_sync", "variety", "colourfulness"]
 
 
 def write_report(run_dir: Path, results: list[dict], baseline: dict | None, checks: list[dict] | None = None) -> None:
