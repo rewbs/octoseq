@@ -2764,18 +2764,40 @@ fn init(ctx) {
 
 ### Shadow Properties
 
-| Property   | Type              | Default     | Description                                      |
-| ---------- | ----------------- | ----------- | ------------------------------------------------ |
-| `enabled`  | `bool`            | `false`     | Enable/disable the shadow                        |
-| `plane_y`  | `Signal \| f32`   | `0.0`       | Y position of shadow plane                       |
-| `opacity`  | `Signal \| f32`   | `0.5`       | Shadow opacity (0.0-1.0)                         |
-| `radius`   | `Signal \| f32`   | `1.0`       | Uniform radius (sets both radius_x and radius_z) |
-| `radius_x` | `Signal \| f32`   | `1.0`       | Shadow radius in X direction                     |
-| `radius_z` | `Signal \| f32`   | `1.0`       | Shadow radius in Z direction                     |
-| `softness` | `Signal \| f32`   | `0.3`       | Edge softness (0 = hard, 1 = very soft)          |
-| `offset_x` | `Signal \| f32`   | `0.0`       | X offset from entity position                    |
-| `offset_z` | `Signal \| f32`   | `0.0`       | Z offset from entity position                    |
-| `color`    | `Map { r, g, b }` | `(0, 0, 0)` | Shadow color (RGB, 0-1 range)                    |
+| Property   | Type              | Default     | Description                                           |
+| ---------- | ----------------- | ----------- | ----------------------------------------------------- |
+| `enabled`  | `bool`            | `false`     | Enable/disable the shadow                             |
+| `plane_y`  | `Signal \| f32`   | `0.0`       | Y position of shadow plane                            |
+| `opacity`  | `Signal \| f32`   | `0.5`       | Shadow opacity (0.0-1.0)                              |
+| `radius`   | `Signal \| f32`   | `1.0`       | Radius in both directions                             |
+| `radius_x` | `Signal \| f32`   | unset       | Radius in X direction; overrides `radius` once set    |
+| `radius_z` | `Signal \| f32`   | unset       | Radius in Z direction; overrides `radius` once set    |
+| `softness` | `Signal \| f32`   | `0.3`       | Edge softness (0 = hard, 1 = very soft)               |
+| `offset_x` | `Signal \| f32`   | `0.0`       | X offset from entity position                         |
+| `offset_z` | `Signal \| f32`   | `0.0`       | Z offset from entity position                         |
+| `color`    | `Map { r, g, b }` | `(0, 0, 0)` | Shadow color (RGB, 0-1 range), blended by its opacity |
+
+`radius_x` and `radius_z` win over `radius` for their own direction, whichever was
+assigned first. An axis that has not been set follows `radius`.
+
+The shadow's `color` is laid over what is behind it by `opacity` (fading out across the
+soft edge). The default black darkens; a brighter colour tints, or at high opacity
+replaces, the background:
+
+```rhai
+fn init(ctx) {
+    let cube = mesh.cube();
+    cube.position.y = 2.0;
+
+    // A glowing blue pool instead of a dark shadow
+    cube.shadow.enabled = true;
+    cube.shadow.color = #{ r: 0.1, g: 0.4, b: 1.0 };
+    cube.shadow.opacity = 0.8;
+    cube.shadow.softness = 0.9;
+
+    scene.add(cube);
+}
+```
 
 ### Audio-Reactive Shadows
 

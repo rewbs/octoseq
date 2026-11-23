@@ -139,19 +139,22 @@ scene.add(copy);`,
         name: "radius",
         path: "BlobShadowConfig.radius",
         type: "Signal | f32",
-        description: "Uniform shadow radius. Sets both radius_x and radius_z. Default: 1.0.",
+        description:
+          "Shadow radius in both directions, unless radius_x or radius_z is set. Default: 1.0.",
       },
       {
         name: "radius_x",
         path: "BlobShadowConfig.radius_x",
         type: "Signal | f32",
-        description: "Shadow radius in X direction. Default: 1.0.",
+        description:
+          "Shadow radius in X direction. Overrides radius once set. Default: unset (follows radius).",
       },
       {
         name: "radius_z",
         path: "BlobShadowConfig.radius_z",
         type: "Signal | f32",
-        description: "Shadow radius in Z direction. Default: 1.0.",
+        description:
+          "Shadow radius in Z direction. Overrides radius once set. Default: unset (follows radius).",
       },
       {
         name: "softness",
@@ -175,7 +178,8 @@ scene.add(copy);`,
         name: "color",
         path: "BlobShadowConfig.color",
         type: "Map { r, g, b }",
-        description: "Shadow color (RGB, 0-1 range). Default: black (0, 0, 0).",
+        description:
+          "Shadow color (RGB, 0-1 range), blended over the background by opacity. Default: black (0, 0, 0).",
       },
     ],
     methods: [],
