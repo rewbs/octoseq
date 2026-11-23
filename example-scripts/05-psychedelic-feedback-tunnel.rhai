@@ -124,7 +124,7 @@ fn init(ctx) {
     let grade = fx.colorGrade(#{
         contrast: 1.15,
         saturation: 1.4,
-        brightness: 1.05,
+        brightness: 0.05,  // added to every channel: 0 leaves the image unchanged
         gamma: 1.1
     });
     post.add(grade);

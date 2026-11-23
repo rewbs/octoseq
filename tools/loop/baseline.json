@@ -31,7 +31,22 @@
     "audio_sync": 0.0782,
     "audio_sync_lag_s": 0.0
   },
-  "dontstop__03-audio-ribbon-dance": {},
+  "dontstop__03-audio-ribbon-dance": {
+    "frames": 900,
+    "mean_luma": 0.3832,
+    "black_fraction": 0.0,
+    "blown_fraction": 0.0,
+    "active_area": 0.291,
+    "detail": 0.0243,
+    "colourfulness": 0.0313,
+    "motion": 0.004,
+    "static_fraction": 0.1544,
+    "jerkiness": 1.016,
+    "max_flashes_per_sec": 0.0,
+    "variety": 0.0419,
+    "audio_sync": 0.1504,
+    "audio_sync_lag_s": 0.2333
+  },
   "dontstop__04-frequency-reactor": {
     "frames": 900,
     "mean_luma": 0.3372,
@@ -50,19 +65,19 @@
   },
   "dontstop__05-psychedelic-feedback-tunnel": {
     "frames": 900,
-    "mean_luma": 0.9922,
+    "mean_luma": 0.763,
     "black_fraction": 0.0,
     "blown_fraction": 1.0,
-    "active_area": 0.0,
-    "detail": 0.0,
-    "colourfulness": 0.0006,
-    "motion": 0.0,
-    "static_fraction": 1.0,
-    "jerkiness": 0.0,
+    "active_area": 0.6058,
+    "detail": 0.0449,
+    "colourfulness": 0.1616,
+    "motion": 0.0006,
+    "static_fraction": 0.7922,
+    "jerkiness": 1.0212,
     "max_flashes_per_sec": 0.0,
-    "variety": 0.0,
-    "audio_sync": 0.0412,
-    "audio_sync_lag_s": 0.0
+    "variety": 0.0156,
+    "audio_sync": 0.0353,
+    "audio_sync_lag_s": -0.0333
   },
   "super__01-spectral-flower": {
     "frames": 540,
@@ -96,7 +111,22 @@
     "audio_sync": 0.0859,
     "audio_sync_lag_s": -0.0333
   },
-  "super__03-audio-ribbon-dance": {},
+  "super__03-audio-ribbon-dance": {
+    "frames": 540,
+    "mean_luma": 0.3857,
+    "black_fraction": 0.0,
+    "blown_fraction": 0.0,
+    "active_area": 0.3384,
+    "detail": 0.0276,
+    "colourfulness": 0.0327,
+    "motion": 0.008,
+    "static_fraction": 0.0463,
+    "jerkiness": 1.0242,
+    "max_flashes_per_sec": 0.0,
+    "variety": 0.0645,
+    "audio_sync": 0.4164,
+    "audio_sync_lag_s": -0.0333
+  },
   "super__04-frequency-reactor": {
     "frames": 540,
     "mean_luma": 0.3372,
@@ -115,18 +145,18 @@
   },
   "super__05-psychedelic-feedback-tunnel": {
     "frames": 540,
-    "mean_luma": 0.9922,
+    "mean_luma": 0.765,
     "black_fraction": 0.0,
     "blown_fraction": 1.0,
-    "active_area": 0.0,
-    "detail": 0.0,
-    "colourfulness": 0.0006,
-    "motion": 0.0,
-    "static_fraction": 1.0,
-    "jerkiness": 0.0,
+    "active_area": 0.6053,
+    "detail": 0.0444,
+    "colourfulness": 0.167,
+    "motion": 0.0009,
+    "static_fraction": 0.6519,
+    "jerkiness": 1.0118,
     "max_flashes_per_sec": 0.0,
-    "variety": 0.0,
-    "audio_sync": 0.0876,
-    "audio_sync_lag_s": -0.1667
+    "variety": 0.0286,
+    "audio_sync": 0.1194,
+    "audio_sync_lag_s": 0.0333
   }
 }

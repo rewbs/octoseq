@@ -832,14 +832,19 @@ impl Renderer {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("Shadow Bind Group Layout"),
                 entries: &[
-                    // Global uniforms (view_proj, etc.) - reuse material global layout pattern
+                    // Global uniforms (view_proj, etc.). The shadow pass binds the material
+                    // pipeline's global bind group here, so this entry must match that
+                    // group's layout exactly (dynamic offset, fixed size) or wgpu rejects
+                    // the draw.
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Buffer {
                             ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
+                            has_dynamic_offset: true,
+                            min_binding_size: wgpu::BufferSize::new(
+                                std::mem::size_of::<GlobalUniforms>() as u64,
+                            ),
                         },
                         count: None,
                     },
