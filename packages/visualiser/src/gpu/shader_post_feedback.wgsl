@@ -43,13 +43,19 @@ struct GpuColorStep {
 }
 
 // Main uniforms structure
-// Header (16 bytes) + 4 warp steps (128 bytes) + 4 color steps (128 bytes) = 272 bytes
+// Header (16 bytes) + limit (16 bytes) + 4 warp steps (128 bytes) + 4 color steps (128 bytes) = 288 bytes
 struct FeedbackUniforms {
     // Header (16 bytes)
     warp_count: u32,
     color_count: u32,
     blend_mode: u32,
     opacity: f32,
+
+    // Limit on the feedback sample (16 bytes); a ceiling of 0 means no limit
+    limit_knee: f32,
+    limit_ceiling: f32,
+    pad0: f32,
+    pad1: f32,
 
     // Warp steps array (4 × 32 = 128 bytes)
     warp_steps: array<GpuWarpStep, 4>,
@@ -327,6 +333,31 @@ fn apply_channel_offset(warped_uv: vec2<f32>) -> vec4<f32> {
 }
 
 // ============================================================================
+// Bounding the loop
+// ============================================================================
+
+// Limit how bright the previous frame comes back. Below the knee the sample is
+// untouched; above it, brightness is compressed towards the ceiling and never
+// reaches it. All three channels are scaled together, so hue is kept. This is
+// what stops a brightening loop (screen or additive blends, bloom sampled after
+// effects) from climbing to white and staying there.
+fn limit_feedback(feedback: vec4<f32>) -> vec4<f32> {
+    let knee = params.limit_knee;
+    let ceiling = params.limit_ceiling;
+    if (ceiling <= 0.0 || ceiling <= knee) {
+        return feedback;
+    }
+    let peak = max(feedback.r, max(feedback.g, feedback.b));
+    if (peak <= knee) {
+        return feedback;
+    }
+    let room = ceiling - knee;
+    let over = peak - knee;
+    let limited = knee + room * over / (over + room);
+    return vec4<f32>(feedback.rgb * (limited / peak), feedback.a);
+}
+
+// ============================================================================
 // Blend modes
 // ============================================================================
 
@@ -418,6 +449,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         feedback = apply_color_chain(feedback);
     }
 
-    // Blend feedback with current frame
-    return apply_blend(current, feedback);
+    // Keep the loop bounded, then blend feedback with current frame
+    return apply_blend(current, limit_feedback(feedback));
 }

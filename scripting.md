@@ -512,6 +512,76 @@ fn update(dt, frame) {
 Composed signals are name-keyed and fully isolated from `inputs.customSignals` —
 a composed signal and a derived signal may share a name without shadowing each other.
 
+### Musical Roles
+
+A scene meant to run on any track does not name signals or event streams. It asks
+for **musical roles** and reads them from the global `roles` namespace; the analysis
+bundle says what each role is bound to. The same scene then runs on a bundle made
+from stems, from a tracker module or from plain signal processing.
+
+Declare the roles a scene needs in `//!` comments at the top of the script, then
+read them as `roles.<name>`:
+
+```
+//! roles: kick, energy, section_progress
+
+let cube = mesh.cube();
+
+fn init(ctx) {
+    let pulse = roles.kick.to_signal(#{ envelope: "attack_decay", decay_beats: 0.5 });
+    cube.scale = roles.energy.smooth.exponential(0.05, 0.3).add(pulse).add(0.5);
+    cube.rotation.y = roles.section_progress.scale(6.28);
+    scene.add(cube);
+}
+```
+
+A role is either an event stream or a signal, always the same one, so `roles.kick`
+has every [EventStream method](#eventstream-methods) and `roles.energy` the whole
+Signal API.
+
+| Role                      | Type   | What it is                                                  |
+| ------------------------- | ------ | ----------------------------------------------------------- |
+| `beat`                    | events | Every beat                                                  |
+| `downbeat`                | events | The first beat of every bar                                 |
+| `onset`                   | events | Every audible event                                         |
+| `kick`, `snare`, `hat`    | events | Drum hits by type                                           |
+| `section`                 | events | The start of each section; weight is the size of the change |
+| `energy`                  | signal | Overall loudness, 0 to 1                                    |
+| `brightness`              | signal | Where the spectrum's weight sits, dark to bright            |
+| `flux`                    | signal | How fast the spectrum is changing                           |
+| `onset_strength`          | signal | The envelope the onsets were picked from                    |
+| `bass`, `drums`           | signal | How loud the bass and the drums are                         |
+| `beat_phase`, `bar_phase` | signal | 0 to 1 across each beat and each bar                        |
+| `section_progress`        | signal | 0 to 1 across each section                                  |
+| `section_intensity`       | signal | Each section's loudness against the loudest, held for it    |
+
+A bundle only binds a role it has something real for: one made without stems has no
+`drums`, one without bar lines no `downbeat`, and a track with no hi-hats no `hat`.
+The scene is checked against the bundle before it runs, and it does not load if:
+
+- it declares a role the bundle does not provide (the message names the role and
+  lists the ones the bundle does provide);
+- it reads `roles.<name>` for a role it did not declare.
+
+Scripts that use `inputs` directly and declare no roles work as before.
+
+In a bundle, the `roles` object binds each role to something the bundle carries:
+
+```json
+"roles": {
+  "kick": { "events": "kick" },
+  "section": { "authoredEvents": "sections" },
+  "energy": { "signal": "energy" },
+  "bass": { "stem": "Bass", "feature": "energy" },
+  "low": { "band": "Bass", "feature": "energy" },
+  "bar_phase": { "custom": "bar_phase" },
+  "arc": { "composed": "arc" }
+}
+```
+
+A bundle whose role points at something it does not contain is rejected when it is
+loaded.
+
 ### Time Signals
 
 The `timing` namespace provides canonical time signals for declarative time-based animation:
@@ -1961,6 +2031,28 @@ fn init(ctx) {
 | -------------------------- | ------------------------------------ | -------------------------------- |
 | `.sample_before_effects()` | scene → feedback → post-FX (default) | Fresh post-FX each frame         |
 | `.sample_after_effects()`  | scene → post-FX → feedback           | Accumulating bloom/grain effects |
+
+**Feedback is bounded.** A loop that brightens every frame (an additive or screen
+blend, or bloom sampled after effects) would otherwise climb to white and stay
+there. So the previous frame is limited before it is blended in: up to a knee it
+comes back untouched, and above that its brightness is compressed so that it
+approaches a ceiling and never reaches it. Hue is kept, and the scene drawn this
+frame is never limited. The default is a knee of 0.6 and a ceiling of 0.85.
+
+| Method                  | Effect                                                              |
+| ----------------------- | ------------------------------------------------------------------- |
+| `.limit(knee, ceiling)` | Set the limit. Lower values leave more headroom for the new frame   |
+| `.unbounded()`          | Turn the limit off. The scene must keep its own loop from running away |
+
+```rhai
+let fb = feedback.builder()
+    .warp.spiral(0.4, 0.02)
+    .color.decay(0.97)
+    .blend.add()
+    .opacity(0.9)
+    .limit(0.4, 0.7)
+    .build();
+```
 
 **Example: Accumulating Bloom Trails**
 

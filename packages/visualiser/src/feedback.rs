@@ -400,6 +400,36 @@ impl ColorStep {
     }
 }
 
+/// How bright the previous frame is allowed to come back.
+///
+/// A feedback loop adds this frame to a copy of the last one, and anything in
+/// the loop that brightens (a screen or additive blend, bloom or a colour grade
+/// sampled after effects) is applied again every frame. Without a bound the
+/// picture climbs to white and stays there. The limit is applied to the
+/// feedback sample only, never to the scene drawn this frame: below `knee` the
+/// sample is untouched, above it brightness is compressed so that it approaches
+/// `ceiling` and never reaches it. Hue is kept: all three channels are scaled
+/// together.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FeedbackLimit {
+    /// Brightness (of the brightest channel) up to which the sample is left alone.
+    pub knee: f32,
+    /// Brightness the sample can approach but not reach. 0 turns the limit off.
+    pub ceiling: f32,
+}
+
+impl FeedbackLimit {
+    /// No limit: the loop is free to run away. For scenes that manage their own decay.
+    pub const OFF: Self = Self { knee: 0.0, ceiling: 0.0 };
+}
+
+impl Default for FeedbackLimit {
+    /// Bounded by default.
+    fn default() -> Self {
+        Self { knee: 0.6, ceiling: 0.85 }
+    }
+}
+
 /// Complete feedback configuration with support for chained transforms.
 #[derive(Clone, Debug, Default)]
 pub struct FeedbackConfig {
@@ -419,6 +449,9 @@ pub struct FeedbackConfig {
 
     /// Where in the pipeline feedback samples from.
     pub sampling_mode: FeedbackSamplingMode,
+
+    /// How bright the previous frame may come back. Bounded unless turned off.
+    pub limit: FeedbackLimit,
 }
 
 impl FeedbackConfig {
@@ -511,6 +544,8 @@ impl FeedbackConfig {
         uniforms.color_count = self.color_chain.len().min(MAX_COLOR_CHAIN) as u32;
         uniforms.blend_mode = self.blend.to_u32();
         uniforms.opacity = self.opacity.evaluate(ctx);
+        uniforms.limit_knee = self.limit.knee;
+        uniforms.limit_ceiling = self.limit.ceiling;
 
         // Fill warp steps - evaluate each parameter
         for (i, step) in self.warp_chain.iter().take(MAX_WARP_CHAIN).enumerate() {
@@ -649,6 +684,7 @@ pub struct FeedbackBuilder {
     blend: FeedbackBlend,
     opacity: SignalOrF32,
     sampling_mode: FeedbackSamplingMode,
+    limit: FeedbackLimit,
 }
 
 impl FeedbackBuilder {
@@ -694,6 +730,11 @@ impl FeedbackBuilder {
         self.sampling_mode = mode;
     }
 
+    /// Set how bright the previous frame may come back.
+    pub fn set_limit(&mut self, limit: FeedbackLimit) {
+        self.limit = limit;
+    }
+
     /// Set feedback to sample before post-processing effects (default).
     ///
     /// Trails remain crisp; post-FX are applied fresh each frame.
@@ -719,6 +760,7 @@ impl FeedbackBuilder {
             blend: self.blend,
             opacity: self.opacity.clone(),
             sampling_mode: self.sampling_mode,
+            limit: self.limit,
         }
     }
 }
@@ -1021,7 +1063,7 @@ pub struct GpuColorStep {
 
 /// GPU-compatible uniform buffer for feedback shader with chained transforms.
 ///
-/// Layout: header (16 bytes) + 4 warp steps (128 bytes) + 4 color steps (128 bytes) = 272 bytes.
+/// Layout: header (16 bytes) + limit (16 bytes) + 4 warp steps (128 bytes) + 4 color steps (128 bytes) = 288 bytes.
 /// All blocks are 16-byte aligned for WGSL compatibility.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -1031,6 +1073,11 @@ pub struct FeedbackUniforms {
     pub color_count: u32,
     pub blend_mode: u32,
     pub opacity: f32,
+
+    // Limit on the feedback sample (16 bytes); a ceiling of 0 means no limit
+    pub limit_knee: f32,
+    pub limit_ceiling: f32,
+    pub _pad: [f32; 2],
 
     // Warp steps array (4 × 32 = 128 bytes)
     pub warp_steps: [GpuWarpStep; MAX_WARP_CHAIN],
@@ -1101,9 +1148,37 @@ mod tests {
     }
 
     #[test]
+    fn feedback_is_bounded_by_default() {
+        let (mut state, stats) = test_eval_ctx();
+        let inputs = HashMap::new();
+        let bands = HashMap::new();
+        let stems = HashMap::new();
+        let custom = HashMap::new();
+        let composed = HashMap::new();
+        let mut ctx = EvalContext::new(0.0, 0.016, 0, None, &inputs, &bands, &stems, &custom, &composed, &stats, &mut state, None);
+
+        // A config made any of the usual ways carries the default limit to the GPU.
+        let default_limit = FeedbackLimit::default();
+        assert!(default_limit.knee > 0.0 && default_limit.knee < default_limit.ceiling && default_limit.ceiling < 1.0);
+        for config in [FeedbackConfig::new(), FeedbackBuilder::new().build()] {
+            let uniforms = config.to_uniforms(&mut ctx);
+            assert_eq!(uniforms.limit_knee, default_limit.knee);
+            assert_eq!(uniforms.limit_ceiling, default_limit.ceiling);
+        }
+
+        // A scene can set its own limit, or switch it off (a ceiling of 0 means no limit in the shader).
+        let mut builder = FeedbackBuilder::new();
+        builder.set_limit(FeedbackLimit { knee: 0.3, ceiling: 0.7 });
+        let uniforms = builder.build().to_uniforms(&mut ctx);
+        assert_eq!((uniforms.limit_knee, uniforms.limit_ceiling), (0.3, 0.7));
+        builder.set_limit(FeedbackLimit::OFF);
+        assert_eq!(builder.build().to_uniforms(&mut ctx).limit_ceiling, 0.0);
+    }
+
+    #[test]
     fn test_uniform_size() {
-        // Header (16) + 4 warp steps (128) + 4 color steps (128) = 272 bytes
-        assert_eq!(std::mem::size_of::<FeedbackUniforms>(), 272);
+        // Header (16) + limit (16) + 4 warp steps (128) + 4 color steps (128) = 288 bytes
+        assert_eq!(std::mem::size_of::<FeedbackUniforms>(), 288);
         assert_eq!(std::mem::size_of::<GpuWarpStep>(), 32);
         assert_eq!(std::mem::size_of::<GpuColorStep>(), 32);
     }

@@ -97,6 +97,34 @@ pub fn register_feedback_builder_api(engine: &mut Engine) {
         fb
     });
 
+    // limit(knee, ceiling) - how bright the previous frame may come back
+    engine.register_fn(
+        "limit",
+        |fb: &mut FeedbackBuilder, knee: Dynamic, ceiling: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            let number = |value: Dynamic, name: &str| -> Result<f32, Box<EvalAltResult>> {
+                value
+                    .as_float()
+                    .map(|v| v as f32)
+                    .or_else(|_| value.as_int().map(|v| v as f32))
+                    .map_err(|_| format!("feedback limit: {name} must be a number").into())
+            };
+            let (knee, ceiling) = (number(knee, "knee")?, number(ceiling, "ceiling")?);
+            if !(0.0..ceiling).contains(&knee) {
+                return Err("feedback limit: knee must be at least 0 and below ceiling".into());
+            }
+            let mut fb = fb.clone();
+            fb.set_limit(crate::feedback::FeedbackLimit { knee, ceiling });
+            Ok(fb)
+        },
+    );
+
+    // unbounded() - turn the limit off; the scene must keep its own loop from running away
+    engine.register_fn("unbounded", |fb: &mut FeedbackBuilder| {
+        let mut fb = fb.clone();
+        fb.set_limit(crate::feedback::FeedbackLimit::OFF);
+        fb
+    });
+
     engine.register_fn("build", |fb: &mut FeedbackBuilder| fb.build());
 
     // ========================================================================
