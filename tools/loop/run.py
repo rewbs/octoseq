@@ -36,6 +36,8 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+import numpy as np  # noqa: E402
+
 import director  # noqa: E402
 import metrics  # noqa: E402
 import perfect_bundle  # noqa: E402
@@ -53,6 +55,7 @@ WINDOWS_ENGINE_FROM_WSL = ENGINE.suffix.lower() == ".exe" and sys.platform != "w
 GATES = Path(__file__).parent / "gates.json"
 BASELINE = Path(__file__).parent / "baseline.json"
 CHECK_SCENES = Path(__file__).parent / "fixtures" / "scenes"
+CHECK_SHOWS = Path(__file__).parent / "fixtures" / "shows"
 
 # What a plain run covers: the real test tracks plus one training and one held-out
 # fixture module (rendered from perfect bundles). Each gets a directed show, which is
@@ -220,6 +223,8 @@ def engine_checks(track: Path, run_dir: Path, gates: dict, args) -> list[dict]:
     Bounded feedback: a loop built to run away must stay below white, and the same
     loop with the bound switched off must blow out. The second half is what shows
     the first can fail.
+
+    Transitions: see `transition_checks`.
     """
     small = argparse.Namespace(**{**vars(args), "seconds": 10.0, "width": 240, "height": 136, "fps": 30})
     limit = gates["hard"]["blown_fraction"]["max"]
@@ -235,7 +240,62 @@ def engine_checks(track: Path, run_dir: Path, gates: dict, args) -> list[dict]:
             checks.append(dict(name=name, ok=False, detail=result["hard"][0] if result.get("hard") else "did not render"))
         else:
             checks.append(dict(name=name, ok=(blown > limit) == should_blow, detail=f"{blown * 100:.0f}% of frames blown out"))
-    return checks
+    return checks + transition_checks(track, run_dir / "checks", small)
+
+
+def transition_checks(track: Path, out: Path, args) -> list[dict]:
+    """A blended transition shows both scenes at once; a cut does not.
+
+    Two fixture shows play a red ring on the left for two seconds and then a blue
+    ring on the right. In one the blue scene blends in over two seconds, in the
+    other it cuts. Neither scene leaves a trail that lasts. So one second after the
+    change the blend must still show red beside the blue, each well below full
+    strength, and the cut must show no red at all. The cut is what shows the blend's
+    check can fail. The top of the frame, where neither scene draws, must stay black
+    all the way through: a blend that lost the old scene's settings showed there as
+    a grey flash.
+    """
+    if track.suffix.lower() in MODULE_SUFFIXES:
+        bundle = perfect_bundle.build(track)
+        package_path, audio = bundle / "package.json", bundle / perfect_bundle.AUDIO
+    else:
+        package_path, audio = roles.standin_bundle_cached(track, LOOP_DIR / "cache"), track
+    seconds, at = 6.0, dict(before=1.5, during=3.0, after=5.5)
+    seen: dict[str, dict[str, tuple[float, float]]] = {}
+    background = 0.0
+    for name in ("blend", "cut"):
+        frames_dir = out / f"transition-{name}" / "frames"
+        ok, log = render_frames(package_path, CHECK_SHOWS / name / "show.json", frames_dir, seconds, args)
+        if not ok:
+            return [dict(name="a blended transition shows both scenes at once", ok=False, detail=f"{name} show did not render: {log.strip().splitlines()[-1] if log.strip() else '?'}")]
+        clip = frames_dir.parent / "clip.mp4"
+        encode_clip(frames_dir, audio, clip, seconds, args.fps)
+        shutil.rmtree(frames_dir)
+        frames = metrics.load_frames(clip).astype(float) / 255.0
+        half = frames.shape[2] // 2
+        seen[name] = {}
+        if name == "blend":
+            background = float(frames[:, : frames.shape[1] // 8].max(axis=-1).mean(axis=(1, 2)).max())
+        for label, t in at.items():
+            frame = frames[min(int(t * args.fps), len(frames) - 1)]
+            red = float(np.clip(frame[:, :half, 0] - frame[:, :half, 1:].max(axis=-1), 0, None).mean())
+            blue = float(np.clip(frame[:, half:, 2] - frame[:, half:, :2].max(axis=-1), 0, None).mean())
+            seen[name][label] = (red, blue)
+    full_red, full_blue = seen["blend"]["before"][0], seen["blend"]["after"][1]
+    if full_red < 0.005 or full_blue < 0.005:
+        return [dict(name="a blended transition shows both scenes at once", ok=False, detail="the fixture scenes drew nothing to measure")]
+    red, blue = seen["blend"]["during"][0] / full_red, seen["blend"]["during"][1] / full_blue
+    clean = seen["blend"]["before"][1] / full_blue < 0.05 and seen["blend"]["after"][0] / full_red < 0.05
+    cut_red = seen["cut"]["during"][0] / full_red
+    return [
+        dict(
+            name="a blended transition shows both scenes at once",
+            ok=clean and 0.15 < red < 0.9 and 0.15 < blue < 0.9,
+            detail=f"halfway: old scene at {red * 100:.0f}% of full, new at {blue * 100:.0f}%" + ("" if clean else "; but one scene shows outside the transition"),
+        ),
+        dict(name="and leaves the background alone", ok=background < 0.03, detail=f"empty part of the frame never brighter than {background * 100:.0f}%"),
+        dict(name="a cut does not", ok=cut_red < 0.05, detail=f"one second after a cut: old scene at {cut_red * 100:.0f}% of full"),
+    ]
 
 
 SUMMARY_COLUMNS = ["punch", "look_change", "one_hue_share", "wash", "active_area", "jerkiness", "audio_sync", "variety", "colourfulness"]

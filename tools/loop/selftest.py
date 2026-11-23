@@ -200,6 +200,11 @@ def test_director() -> None:
     palettes = {s["start"]: s["palette"] for s in show["segments"]}
     kept = all(s["palette"] == p["palette"] for p, s in zip(show["segments"], show["segments"][1:]) if not s["new_section"])
     check("director: a new palette at each section, the same one within it", kept and palettes[20.0] != palettes[starts[starts.index(20.0) - 1]])
+    blends = [s["transition"] for s in show["segments"]]
+    cut_at_sections = all(b == 0.0 for s, b in zip(show["segments"], blends) if s["new_section"])
+    blend_inside = all(b > 0.0 for s, b in zip(show["segments"], blends) if not s["new_section"])
+    check("director: cuts at section starts and blends inside sections", cut_at_sections and blend_inside and any(blends))
+    check("director: a blend is over well before the next change", all(b <= h / 3 + 1e-6 for b, h in zip(blends, holds)), f"-> longest {max(blends):.1f} s")
     check("director: louder sections run faster", show["segments"][-1]["speed"] > show["segments"][0]["speed"])
     check("director: the same seed gives the same show", director.direct(package, seed=11) == show)
     vivid = director.direct(package, seed=11, vivid=True)

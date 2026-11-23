@@ -6,9 +6,12 @@
 
 A show says which scene plays when and how it is dressed. The rules:
 
-- Cut at section starts. Review 1 found one look boring in under ten seconds, so no
-  look is held longer than MAX_HOLD_S: a longer section is cut again on the beat,
-  in equal parts.
+- Change the look at section starts. Review 1 found one look boring in under ten
+  seconds, so no look is held longer than MAX_HOLD_S: a longer section is changed
+  again on the beat, in equal parts.
+- A new section is a cut: the music changed at once, and so does the picture. A
+  change inside a section is a blend over TRANSITION_BEATS beats: the music did
+  not change, so the picture moves on without a jolt.
 - Never the same scene twice running.
 - A new palette at each section start. Cuts inside a section keep the palette and
   swap which colour plays which part, so a section holds together but does not
@@ -40,11 +43,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 ROOT = Path(__file__).resolve().parents[2]
 SCENES = ROOT / "scenes"
 SHOWS = ROOT / ".loop" / "shows"
-DIRECTOR_VERSION = "director-1"
+DIRECTOR_VERSION = "director-2"
 
 MAX_HOLD_S = 9.0  # the longest any one look is held (review 1: boring in under ten seconds)
 MIN_HOLD_S = 3.0  # section starts closer together than this are treated as one
 CUT_BEATS = 4  # cuts inside a section land on a multiple of this many beats from its start
+TRANSITION_BEATS = 4  # how long a change of look inside a section takes to blend in
+TRANSITION_MAX_SHARE = 1 / 3  # of the time the new look is held, at most
 
 # Three colours each, for the three parts every scene has (see the style line in
 # scenes/*.rhai). Each palette spreads its colours round the colour wheel, so that no
@@ -131,6 +136,8 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
     rng = random.Random(seed)
     intensity, rate = _signal(package, "section_intensity")
     cuts = cut_points(package)
+    beats = [e["time"] for e in _stream(package, "beat")]
+    beat_s = sorted(b - a for a, b in zip(beats, beats[1:]))[len(beats) // 2 - 1] if len(beats) > 2 else 0.5
     segments = []
     scene, palette, order = None, None, [0, 1, 2]
     for index, (start, new_section) in enumerate(cuts):
@@ -147,6 +154,7 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
             start=round(start, 3), scene=scene.name, new_section=new_section, palette=palette,
             colours=[[round(c, 4) for c in colour] for colour in colours],
             speed=round(0.75 + 0.6 * float(middle), 2),
+            transition=0.0 if new_section else round(min(TRANSITION_BEATS * beat_s, (end - start) * TRANSITION_MAX_SHARE), 3),
         ))  # fmt: skip
     return dict(director=DIRECTOR_VERSION, seed=seed, vivid=vivid, duration=float(package["durationSec"]), segments=segments)
 
@@ -176,7 +184,7 @@ def write(show: dict, out_dir: Path, scenes_dir: Path = SCENES) -> Path:
 def describe(show: dict) -> str:
     lines = [f"seed {show['seed']}: {len(show['segments'])} looks over {show['duration']:.0f} s"]
     for s in show["segments"]:
-        lines.append(f"  {s['start']:7.2f}  {Path(s['scene']).stem:10} {s['palette']:6} speed {s['speed']:.2f}{'  (new section)' if s['new_section'] else ''}")
+        lines.append(f"  {s['start']:7.2f}  {Path(s['scene']).stem:10} {s['palette']:6} speed {s['speed']:.2f}{'  (new section, cut)' if s['new_section'] else f'  (blend over {s["transition"]:.1f} s)'}")
     return "\n".join(lines)
 
 

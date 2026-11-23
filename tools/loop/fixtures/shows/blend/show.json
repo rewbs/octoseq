@@ -1,0 +1,13 @@
+{
+ "segments": [
+  {
+   "start": 0.0,
+   "script": "../red-left.rhai"
+  },
+  {
+   "start": 2.0,
+   "script": "../blue-right.rhai",
+   "transition": 2.0
+  }
+ ]
+}
