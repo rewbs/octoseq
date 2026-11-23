@@ -60,6 +60,13 @@ enum Commands {
         #[arg(long, default_value_t = 60.0)]
         fps: f32,
 
+        /// Steps the engine takes a second. A render at a lower frame rate then
+        /// takes several steps for each frame it saves, so a picture built on
+        /// the feedback loop is the same at 30 frames a second as at 120.
+        /// 0 = one step a frame
+        #[arg(long, default_value_t = 0.0)]
+        step_rate: f32,
+
         /// Duration in seconds (defaults to the package's durationSec, or the input signal duration)
         #[arg(long)]
         duration: Option<f32>,
@@ -138,6 +145,7 @@ pub fn run() -> Result<()> {
             script,
             show,
             fps,
+            step_rate,
             duration,
             width,
             height,
@@ -155,6 +163,7 @@ pub fn run() -> Result<()> {
                 script_path: script,
                 output_dir: out,
                 fps,
+                step_rate,
                 duration,
                 width,
                 height,
@@ -335,6 +344,11 @@ pub async fn execute_render_job_with_show(
         })?;
     let total_frames = (render_duration * job.fps).ceil() as usize;
     let dt = 1.0 / job.fps;
+    // The engine can step more often than it saves a frame. Everything that moves
+    // with time, the feedback loop above all, is then stepped at the step rate,
+    // and only the last step of each frame is read back and saved.
+    let steps_per_frame = job.steps_per_frame();
+    let step_dt = dt / steps_per_frame as f32;
 
     // Create output directory
     std::fs::create_dir_all(&job.output_dir).map_err(|e| {
@@ -435,6 +449,13 @@ pub async fn execute_render_job_with_show(
             "Rendering {} frames at {}x{} @ {} fps...",
             total_frames, job.width, job.height, job.fps
         );
+        if steps_per_frame > 1 {
+            println!(
+                "  Steps: {} a frame ({} a second)",
+                steps_per_frame,
+                job.fps * steps_per_frame as f32
+            );
+        }
         if job.seed != 0 {
             println!("  Seed: {}", job.seed);
         }
@@ -492,10 +513,12 @@ pub async fn execute_render_job_with_show(
     let mut playing = 0usize;
     // The scene on its way out, while the next one blends in over it.
     let mut outgoing: Option<VisualiserState> = None;
-    for i in 0..total_frames {
+    for step in 0..total_frames * steps_per_frame {
+        let i = step / steps_per_frame;
+        let now = step as f32 * step_dt;
         // A show changes scene at set times: load the next script and carry on.
         if let Some(show) = show {
-            let due = show.segment_at(i as f32 * dt);
+            let due = show.segment_at(now);
             if due != playing {
                 playing = due;
                 let segment = &show.segments[due];
@@ -529,7 +552,7 @@ pub async fn execute_render_job_with_show(
 
         // How much of the picture the outgoing scene still has; once its
         // transition is over it is dropped.
-        let outgoing_share = show.and_then(|show| show.outgoing_share(playing, i as f32 * dt));
+        let outgoing_share = show.and_then(|show| show.outgoing_share(playing, now));
         if outgoing_share.is_none() {
             outgoing = None;
         }
@@ -538,7 +561,7 @@ pub async fn execute_render_job_with_show(
         // the engine to pick up belongs to the scene that is staying.
         if let Some(old) = outgoing.as_mut() {
             old.update(
-                dt,
+                step_dt,
                 rotation_signal.as_ref(),
                 None,
                 named_signals,
@@ -550,7 +573,7 @@ pub async fn execute_render_job_with_show(
         }
 
         state.update(
-            dt,
+            step_dt,
             rotation_signal.as_ref(),
             None,
             named_signals,
@@ -578,7 +601,7 @@ pub async fn execute_render_job_with_show(
             return Err(anyhow::anyhow!(
                 "[{}] script error at {:.2} s{}: {}",
                 RenderPhase::FrameRender,
-                i as f32 * dt,
+                now,
                 place,
                 diagnostic.message
             ));
@@ -588,6 +611,13 @@ pub async fn execute_render_job_with_show(
         match (outgoing.as_ref(), outgoing_share) {
             (Some(old), Some(share)) => renderer.render_transition(&texture_view, old, &state, share),
             _ => renderer.render(&texture_view, &state),
+        }
+
+        // A step between frames has done its work once it is drawn: it has fed
+        // the feedback loop. Only the last step of a frame is read back.
+        if (step + 1) % steps_per_frame != 0 {
+            renderer.device().poll(wgpu::Maintain::Poll);
+            continue;
         }
 
         // Copy texture to buffer

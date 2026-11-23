@@ -63,6 +63,16 @@ const QUAD_VERTICES: &[QuadVertex] = &[
     },
 ];
 
+/// What the feedback loop is kept in between steps.
+///
+/// Not the output's 8 bits. The loop fades a little every step, and a fade smaller
+/// than one 8-bit level rounds back to where it started: at 30 steps a second a
+/// fade of 0.965 stalls on anything dimmer than about an eighth of full brightness,
+/// leaving a grey floor that never clears, and at 120 steps a second, where each
+/// step fades a quarter as much, it stalls on anything dimmer than half. Sixteen-bit
+/// float has the room for any step rate.
+const LOOP_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+
 /// GPU resources for a single effect.
 struct EffectResources {
     pipeline: wgpu::RenderPipeline,
@@ -101,6 +111,11 @@ pub struct PostProcessor {
     /// Feedback texture (stores previous frame, persists across frames).
     feedback_texture: wgpu::Texture,
     feedback_view: wgpu::TextureView,
+    /// Where the feedback pass draws what the loop keeps, in the loop's own
+    /// format; copied to the feedback texture for the next step. What is shown
+    /// is drawn in the same pass to `intermediate_textures[0]`.
+    loop_target_texture: wgpu::Texture,
+    loop_target_view: wgpu::TextureView,
     /// Feedback render pipeline.
     feedback_pipeline: wgpu::RenderPipeline,
     /// Feedback uniform buffer.
@@ -164,10 +179,11 @@ impl PostProcessor {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format,
+                format: LOOP_FORMAT,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::COPY_DST,
+                    | wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             })
         };
@@ -176,6 +192,8 @@ impl PostProcessor {
         let tex_b = create_texture("Post-Process Texture B");
         let scene_tex = create_texture("Scene Texture");
         let feedback_tex = create_feedback_texture("Feedback Texture");
+        let loop_target_tex = create_feedback_texture("Feedback Loop Target");
+        let loop_target_view = loop_target_tex.create_view(&wgpu::TextureViewDescriptor::default());
         let transition_tex = create_texture("Transition Scene Texture");
         let transition_view = transition_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -374,11 +392,19 @@ impl PostProcessor {
             fragment: Some(wgpu::FragmentState {
                 module: &feedback_shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
+                targets: &[
+                    // What is shown, then what the loop keeps.
+                    Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    Some(wgpu::ColorTargetState {
+                        format: LOOP_FORMAT,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                ],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
@@ -430,6 +456,8 @@ impl PostProcessor {
             // Feedback resources
             feedback_texture: feedback_tex,
             feedback_view,
+            loop_target_texture: loop_target_tex,
+            loop_target_view,
             feedback_pipeline,
             feedback_uniform_buffer,
             feedback_texture_bind_group_layout,
@@ -602,10 +630,11 @@ impl PostProcessor {
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: self.format,
+                format: LOOP_FORMAT,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT
                     | wgpu::TextureUsages::TEXTURE_BINDING
-                    | wgpu::TextureUsages::COPY_DST,
+                    | wgpu::TextureUsages::COPY_DST
+                    | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
             })
         };
@@ -614,6 +643,10 @@ impl PostProcessor {
         self.intermediate_textures[1] = create_texture("Post-Process Texture B");
         self.scene_texture = create_texture("Scene Texture");
         self.feedback_texture = create_feedback_texture();
+        self.loop_target_texture = create_feedback_texture();
+        self.loop_target_view = self
+            .loop_target_texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
         self.transition_texture = create_texture("Transition Scene Texture");
         self.transition_view = self
             .transition_texture
@@ -886,8 +919,9 @@ impl PostProcessor {
     /// This should be called before `process()` each frame.
     /// It blends the previous frame (with spatial warp and colour transform) with the current scene.
     ///
-    /// The result is written to `intermediate_textures[0]` and copied to `feedback_texture`
-    /// for the next frame.
+    /// The pass draws twice: what is shown, to `intermediate_textures[0]` in the
+    /// output's format for the effects that follow, and what the loop keeps, in the
+    /// loop's own format (`LOOP_FORMAT`), copied to `feedback_texture` for the next step.
     ///
     /// # Arguments
     /// * `device` - wgpu device
@@ -951,18 +985,30 @@ impl PostProcessor {
             ],
         });
 
-        // Render feedback pass: scene + previous frame -> intermediate[0]
+        // Render feedback pass: scene + previous frame -> intermediate[0] and the loop target
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Feedback Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.intermediate_views[0],
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
+                color_attachments: &[
+                    // What is shown this step, in the output's format.
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &self.intermediate_views[0],
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    // What the loop keeps for the next step, in its own.
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &self.loop_target_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                ],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
@@ -984,7 +1030,7 @@ impl PostProcessor {
 
         encoder.copy_texture_to_texture(
             wgpu::ImageCopyTexture {
-                texture: &self.intermediate_textures[0],
+                texture: &self.loop_target_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
@@ -1191,48 +1237,31 @@ impl PostProcessor {
             ],
         });
 
-        // Render feedback pass directly to output
+        // Render feedback to intermediate[0] and the loop target. The output cannot
+        // be read back, so what is shown is copied on to it from intermediate[0].
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Feedback Pass (PostFx mode)"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: output_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-
-            render_pass.set_pipeline(&self.feedback_pipeline);
-            render_pass.set_bind_group(0, &feedback_texture_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.feedback_uniform_bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.quad_vertex_buffer.slice(..));
-            render_pass.draw(0..6, 0..1);
-        }
-
-        // Copy output to feedback texture for next frame
-        // We need to copy from output, but we can't read from swapchain.
-        // Instead, we'll render feedback to intermediate[0] AND output simultaneously.
-        // Actually, we need to render to intermediate[0] first, then blit to output.
-        // Let me refactor this...
-
-        // Render feedback to intermediate[0]
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Feedback Pass to Intermediate (PostFx mode)"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.intermediate_views[0],
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
+                color_attachments: &[
+                    // What is shown this step, in the output's format.
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &self.intermediate_views[0],
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    // What the loop keeps for the next step, in its own.
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &self.loop_target_view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                ],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
@@ -1254,7 +1283,7 @@ impl PostProcessor {
 
         encoder.copy_texture_to_texture(
             wgpu::ImageCopyTexture {
-                texture: &self.intermediate_textures[0],
+                texture: &self.loop_target_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,

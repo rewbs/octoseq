@@ -58,7 +58,8 @@ struct FeedbackUniforms {
     // During a transition: how much of the picture still belongs to the scene
     // on its way out. 0 outside a transition.
     other_share: f32,
-    pad1: f32,
+    // How many thirtieths of a second this step lasts; 0 is read as 1
+    step_share: f32,
 
     // Warp steps array (4 × 32 = 128 bytes)
     warp_steps: array<GpuWarpStep, 4>,
@@ -443,6 +444,26 @@ fn limit_feedback(feedback: vec4<f32>) -> vec4<f32> {
 // Blend modes
 // ============================================================================
 
+// What the scene leaves in the loop, scaled to the step's length (`Over` mode).
+//
+// A shape that covers half of what is behind it hides half of the previous frame
+// every step. Stepped four times as often it would hide fifteen sixteenths in the
+// same time: translucent shapes, soft edges and the two scenes of a blend would
+// all sit heavier in the loop the faster it ran. Cover is therefore read as "per
+// thirtieth of a second": over k thirtieths a shape hides 1 - (1 - cover)^k, and
+// its colour is scaled to match. A shape that hides everything still does at any
+// step rate. Only what the loop keeps is scaled; the frame shown has the shape as drawn.
+fn stamp_for_step(current: vec4<f32>) -> vec4<f32> {
+    let k = params.step_share;
+    let cover = clamp(current.a, 0.0, 1.0);
+    if (cover <= 0.0005) {
+        // Light with no cover adds up in proportion to how often it is added.
+        return vec4<f32>(current.rgb * k, current.a * k);
+    }
+    let cover_k = 1.0 - pow(1.0 - cover, k);
+    return vec4<f32>(current.rgb * (cover_k / cover), cover_k);
+}
+
 fn apply_blend(current: vec4<f32>, feedback: vec4<f32>) -> vec4<f32> {
     let opacity = params.opacity;
     let fb = feedback * opacity;
@@ -509,8 +530,15 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 // Fragment shader
 // ============================================================================
 
+struct FeedbackOutput {
+    // What is shown this step
+    @location(0) shown: vec4<f32>,
+    // What the loop keeps for the next step
+    @location(1) kept: vec4<f32>,
+}
+
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+fn fs_main(in: VertexOutput) -> FeedbackOutput {
     // Sample current frame. In a transition two scenes are drawing: mix what
     // each drew by how far the transition has got.
     let share = clamp(params.other_share, 0.0, 1.0);
@@ -552,6 +580,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         feedback = mix(feedback, apply_other_color_chain(raw), share);
     }
 
-    // Keep the loop bounded, then blend feedback with current frame
-    return apply_blend(current, limit_feedback(feedback));
+    // Keep the loop bounded, then blend feedback with current frame. The loop is
+    // kept in float, which would carry values past white from step to step; the
+    // 8-bit store it replaces could not, and scenes are written for that.
+    let previous = limit_feedback(feedback);
+    var out: FeedbackOutput;
+    out.shown = clamp(apply_blend(current, previous), vec4<f32>(0.0), vec4<f32>(1.0));
+    out.kept = out.shown;
+    // At 30 steps a second the two are the same picture, and nothing is scaled.
+    let k = params.step_share;
+    if (params.blend_mode == 7u && k > 0.0 && abs(k - 1.0) > 0.0005) {
+        out.kept = clamp(apply_blend(stamp_for_step(current), previous), vec4<f32>(0.0), vec4<f32>(1.0));
+    }
+    return out;
 }

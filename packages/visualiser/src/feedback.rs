@@ -577,6 +577,7 @@ impl FeedbackConfig {
         uniforms.limit_knee = self.limit.knee;
         uniforms.limit_ceiling = self.limit.ceiling;
         uniforms.centre = [self.centre[0].evaluate(ctx), self.centre[1].evaluate(ctx)];
+        uniforms.step_share = k;
 
         // Fill warp steps - evaluate each parameter
         for (i, step) in self.warp_chain.iter().take(MAX_WARP_CHAIN).enumerate() {
@@ -1214,7 +1215,9 @@ pub struct FeedbackUniforms {
     /// During a transition, how much of the picture still belongs to the scene
     /// on its way out (1 at the start, 0 at the end). 0 outside a transition.
     pub other_share: f32,
-    pub _pad: f32,
+    /// How many thirtieths of a second this step lasts (1 at 30 steps a second).
+    /// The pass scales what the scene leaves in the loop by it.
+    pub step_share: f32,
 
     // Warp steps array (4 × 32 = 128 bytes)
     pub warp_steps: [GpuWarpStep; MAX_WARP_CHAIN],
@@ -1430,6 +1433,9 @@ mod tests {
         assert!((fast.color_steps[1].hsv_h * 4.0 - 0.004).abs() < 1e-7);
         // The waves' phase is a position, not a rate, and is left alone.
         assert_eq!(fast.warp_steps[1].rotation, 0.5);
+        // The pass is told how long the step is, to scale what the scene leaves in the loop.
+        assert!((thirty.step_share - 1.0).abs() < 1e-6);
+        assert!((fast.step_share - 0.25).abs() < 1e-6);
     }
 
     #[test]

@@ -60,6 +60,14 @@ pub struct RenderJobSpec {
     #[serde(default = "default_fps")]
     pub fps: f32,
 
+    /// Steps the engine takes a second. The feedback loop runs once a step, so
+    /// a picture built on it depends on how often the engine steps. With a step
+    /// rate, a render at a lower frame rate takes several steps for each frame it
+    /// saves, and renders at different frame rates show the same picture.
+    /// 0 means one step a frame.
+    #[serde(default)]
+    pub step_rate: f32,
+
     /// Duration in seconds. None means use input signal duration.
     #[serde(default)]
     pub duration: Option<f32>,
@@ -107,6 +115,7 @@ impl RenderJobSpec {
             height: default_height(),
             seed: 0,
             input_sample_rate: default_sample_rate(),
+            step_rate: 0.0,
             preset_name: None,
             output_video: false,
             video_path: None,
@@ -157,6 +166,9 @@ impl RenderJobSpec {
         if self.fps <= 0.0 {
             return Err("FPS must be positive".to_string());
         }
+        if !(self.step_rate >= 0.0) || !self.step_rate.is_finite() {
+            return Err("Step rate must be zero (one step a frame) or positive".to_string());
+        }
         if self.width == 0 || self.height == 0 {
             return Err("Width and height must be positive".to_string());
         }
@@ -164,6 +176,17 @@ impl RenderJobSpec {
             return Err("Sample rate must be positive".to_string());
         }
         Ok(())
+    }
+
+    /// How many steps the engine takes for each frame it saves: the step rate
+    /// over the frame rate, to the nearest whole number and never less than one.
+    /// A frame rate that does not divide the step rate (50 into 120) steps at
+    /// the nearest rate it can (100).
+    pub fn steps_per_frame(&self) -> usize {
+        if self.step_rate <= 0.0 || self.fps <= 0.0 {
+            return 1;
+        }
+        ((self.step_rate / self.fps).round() as usize).max(1)
     }
 
     /// Get the effective video output path.
@@ -451,6 +474,7 @@ mod tests {
             height: 1080,
             seed: 42,
             input_sample_rate: 100.0,
+            step_rate: 0.0,
             preset_name: Some("test".to_string()),
             output_video: false,
             video_path: None,
@@ -482,6 +506,29 @@ mod tests {
         spec.input_path = Some(PathBuf::from("/nonexistent/input.json"));
         spec.script_path = None;
         assert!(spec.validate().is_err());
+    }
+
+    #[test]
+    fn a_step_rate_sets_the_steps_in_a_frame() {
+        let mut spec = RenderJobSpec::new(
+            PathBuf::from("in.json"),
+            PathBuf::from("scene.rhai"),
+            PathBuf::from("out"),
+        );
+        // No step rate: one step a frame, whatever the frame rate.
+        for fps in [24.0, 30.0, 120.0] {
+            spec.fps = fps;
+            assert_eq!(spec.steps_per_frame(), 1);
+        }
+        spec.step_rate = 120.0;
+        for (fps, steps) in [(24.0, 5), (30.0, 4), (60.0, 2), (120.0, 1), (240.0, 1), (50.0, 2)] {
+            spec.fps = fps;
+            assert_eq!(spec.steps_per_frame(), steps, "{fps} fps");
+        }
+        // A step at 30 fps with four steps a frame is exactly a frame at 120 fps,
+        // which is what makes the two renders the same picture.
+        assert_eq!((1.0f32 / 30.0) / 4.0, 1.0f32 / 120.0);
+        assert_eq!((1.0f32 / 60.0) / 2.0, 1.0f32 / 120.0);
     }
 
     #[test]
