@@ -1,0 +1,230 @@
+{
+ "fal_demucs": {
+  "167848-960e9e11146e-ref-8": {
+   "bass": {
+    "improvement_db": 10.81,
+    "si_sdr_db": 9.48
+   },
+   "drums": {
+    "improvement_db": 16.17,
+    "si_sdr_db": 7.11
+   },
+   "other": {
+    "improvement_db": 10.31,
+    "si_sdr_db": 9.65
+   }
+  },
+  "167931-fcf2f9ff4113-ref-8": {
+   "bass": {
+    "improvement_db": 7.75,
+    "si_sdr_db": 8.89
+   },
+   "drums": {
+    "improvement_db": 11.9,
+    "si_sdr_db": 9.99
+   },
+   "other": {
+    "improvement_db": 12.78,
+    "si_sdr_db": -0.37
+   }
+  },
+  "168705-9dd323611de8-ref-8": {
+   "bass": {
+    "improvement_db": -1.83,
+    "si_sdr_db": -1.92
+   },
+   "drums": {
+    "improvement_db": 5.99,
+    "si_sdr_db": -10.78
+   },
+   "other": {
+    "improvement_db": 10.98,
+    "si_sdr_db": 10.71
+   }
+  },
+  "169045-225b4d911ce4-ref-8": {
+   "bass": {
+    "improvement_db": 9.33,
+    "si_sdr_db": 14.24
+   },
+   "drums": {
+    "improvement_db": 7.17,
+    "si_sdr_db": 2.14
+   },
+   "other": {
+    "improvement_db": 6.18,
+    "si_sdr_db": -15.58
+   }
+  },
+  "53273-660cc46958cd-ref-8": {
+   "bass": {
+    "improvement_db": 3.28,
+    "si_sdr_db": -1.62
+   },
+   "drums": {
+    "improvement_db": 17.23,
+    "si_sdr_db": 10.54
+   },
+   "other": {
+    "improvement_db": 6.61,
+    "si_sdr_db": 7.99
+   }
+  },
+  "synth-0101-32005e974d57-ref-8": {
+   "bass": {
+    "improvement_db": -16.37,
+    "si_sdr_db": -30.38
+   },
+   "drums": {
+    "improvement_db": 13.84,
+    "si_sdr_db": 4.95
+   },
+   "other": {
+    "improvement_db": 3.53,
+    "si_sdr_db": 10.92
+   }
+  },
+  "synth-0102-ccea7627b943-ref-8": {
+   "bass": {
+    "improvement_db": -19.56,
+    "si_sdr_db": -33.06
+   },
+   "drums": {
+    "improvement_db": 16.02,
+    "si_sdr_db": 5.21
+   },
+   "other": {
+    "improvement_db": 2.55,
+    "si_sdr_db": 11.09
+   }
+  },
+  "synth-0103-1387f5906c6e-ref-8": {
+   "bass": {
+    "improvement_db": 0.29,
+    "si_sdr_db": -13.16
+   },
+   "drums": {
+    "improvement_db": 8.7,
+    "si_sdr_db": 2.02
+   },
+   "other": {
+    "improvement_db": 3.06,
+    "si_sdr_db": 8.4
+   }
+  }
+ },
+ "lalal": {
+  "167848-960e9e11146e-ref-8": {
+   "bass": {
+    "improvement_db": 13.79,
+    "si_sdr_db": 12.46
+   },
+   "drums": {
+    "improvement_db": 21.43,
+    "si_sdr_db": 12.37
+   },
+   "other": {
+    "improvement_db": 12.98,
+    "si_sdr_db": 12.31
+   }
+  },
+  "167931-fcf2f9ff4113-ref-8": {
+   "bass": {
+    "improvement_db": 8.9,
+    "si_sdr_db": 10.04
+   },
+   "drums": {
+    "improvement_db": 11.14,
+    "si_sdr_db": 9.24
+   },
+   "other": {
+    "improvement_db": 17.39,
+    "si_sdr_db": 4.24
+   }
+  },
+  "168705-9dd323611de8-ref-8": {
+   "bass": {
+    "improvement_db": -1.49,
+    "si_sdr_db": -1.58
+   },
+   "drums": {
+    "improvement_db": 6.24,
+    "si_sdr_db": -10.53
+   },
+   "other": {
+    "improvement_db": 2.16,
+    "si_sdr_db": 1.88
+   }
+  },
+  "169045-225b4d911ce4-ref-8": {
+   "bass": {
+    "improvement_db": 11.92,
+    "si_sdr_db": 16.83
+   },
+   "drums": {
+    "improvement_db": 7.83,
+    "si_sdr_db": 2.8
+   },
+   "other": {
+    "improvement_db": 10.27,
+    "si_sdr_db": -11.5
+   }
+  },
+  "53273-660cc46958cd-ref-8": {
+   "bass": {
+    "improvement_db": 23.11,
+    "si_sdr_db": 18.21
+   },
+   "drums": {
+    "improvement_db": 30.2,
+    "si_sdr_db": 23.51
+   },
+   "other": {
+    "improvement_db": 20.72,
+    "si_sdr_db": 22.1
+   }
+  },
+  "synth-0101-32005e974d57-ref-8": {
+   "bass": {
+    "improvement_db": 33.39,
+    "si_sdr_db": 19.39
+   },
+   "drums": {
+    "improvement_db": 32.37,
+    "si_sdr_db": 23.49
+   },
+   "other": {
+    "improvement_db": 22.99,
+    "si_sdr_db": 30.38
+   }
+  },
+  "synth-0102-ccea7627b943-ref-8": {
+   "bass": {
+    "improvement_db": 13.29,
+    "si_sdr_db": -0.21
+   },
+   "drums": {
+    "improvement_db": 33.56,
+    "si_sdr_db": 22.75
+   },
+   "other": {
+    "improvement_db": 7.1,
+    "si_sdr_db": 15.63
+   }
+  },
+  "synth-0103-1387f5906c6e-ref-8": {
+   "bass": {
+    "improvement_db": 32.67,
+    "si_sdr_db": 19.23
+   },
+   "drums": {
+    "improvement_db": 31.75,
+    "si_sdr_db": 25.06
+   },
+   "other": {
+    "improvement_db": 25.17,
+    "si_sdr_db": 30.51
+   }
+  }
+ }
+}

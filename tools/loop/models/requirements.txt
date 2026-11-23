@@ -1,3 +1,4 @@
 # Optional model-based analysers for the accuracy loop. Installed by setup.sh into
 # .loop/venv, never into the system Python and never as a dependency of Octoseq.
 beat_this==1.1.0
+demucs==4.0.1

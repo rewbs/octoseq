@@ -8,7 +8,8 @@ An analyser is a function `(audio_path, params) -> dict` that returns any of:
     downbeats list of time_s (optional)
     bpm       float
     sections  list of boundary time_s
-    stems     dict of name -> mono float array at STEM_RATE ("drums", "bass", "other")
+    stems     dict of name -> mono float array at STEM_RATE ("vocals", "drums", "bass",
+              "other", plus any extras a source provides)
 
 A part it does not produce is simply left out. Register new analysers in ANALYSERS:
 a wrapper around a local model or a hosted API is scored exactly like the ones
@@ -29,6 +30,7 @@ from pathlib import Path
 import numpy as np
 
 import analyse
+import stems as stem_sources
 
 STEM_RATE = 22050
 
@@ -169,12 +171,47 @@ def beat_this(audio: Path, params: dict | None = None) -> dict:
     return dict(beats=[float(b) for b in beats], downbeats=[float(b) for b in downbeats], bpm=bpm)
 
 
+def stem_source(source: str, **options):
+    """An analyser that gets its stems from one of the sources in stems.py."""
+
+    def run(audio: Path, params: dict | None = None) -> dict:
+        result = stem_sources.separate(source, audio, **options)
+        return dict(
+            stems={label: decode(path) for label, path in result.files.items()},
+            stem_source=result.source,
+            stem_detail=result.detail,
+        )
+
+    run.__name__ = source
+    return run
+
+
 ANALYSERS = {
     "standin": standin,
     "energy": energy,
     "novelty": novelty,
     "bandsplit": bandsplit,
 }
+
+# Every stem source, whether or not it can run on this machine: one that cannot (no
+# key, package not installed) is reported as not run rather than left out silently.
+# Modules have no vocals to score, so LALAL.AI, which bills per stem, is asked only
+# for drums and bass here; everything else is `other`.
+STEM_SOURCES = {
+    "user_stems": stem_source("user"),
+    "lalal": stem_source("lalal", want=("drums", "bass", "other")),
+    "musicai": stem_source("musicai"),
+    "fal_demucs": stem_source("fal_demucs"),
+    "demucs": stem_source("demucs"),
+    "demucs_ft": stem_source("demucs_ft"),
+}
+ANALYSERS.update(STEM_SOURCES)
+STEMS_ONLY = {"bandsplit", *STEM_SOURCES}  # produce nothing but stems
+HOSTED = set(stem_sources.HOSTED)  # cost money per run; results are cached and recorded
+UNVERIFIED = set(stem_sources.UNVERIFIED)  # written from documentation, never run against the service
+# Fed the answer: user-supplied stems are scored by handing the true stems back
+# through the interface. That checks the interface, and is not a candidate for "best".
+REFERENCE_FED = {"user_stems"}
 
 # Model-based analysers are registered only where their packages are installed, so
 # the loop runs without them. Use the model environment's Python to include them.

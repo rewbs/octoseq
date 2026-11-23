@@ -155,5 +155,11 @@ them and scrub them from error messages.
 | ------------------------ | ---------- | ----------------------------------------------------------- |
 | `LALALAI_API_KEY`        | LALAL.AI   | Stem separation                                             |
 | `MUSICAI_API_KEY`        | Music.ai   | Stem separation; beats, chords, sections                    |
+| `MUSICAI_STEMS_WORKFLOW` | Music.ai   | The slug of a stem-separation workflow made in your account |
 | `FAL_KEY`                | fal.ai     | Stem separation with hosted Demucs                          |
 | `ANTHROPIC_API_KEY`      | Claude API | The prompted director (milestone 3)                         |
+
+`python3 tools/loop/stems.py status` says which stem sources can run. The hosted ones
+cost money each time they separate a new file. Results are cached in `.loop/`, and
+what each scored is recorded in `tools/loop/hosted_stem_scores.json`, so the accuracy
+loop does not pay twice and still reports them on a machine with no keys.

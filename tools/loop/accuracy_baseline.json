@@ -13,7 +13,7 @@
       "score": 0.9332,
       "candidates": {
         "standin": 0.9332,
-        "beat_this": 0.9301
+        "beat_this": 0.9302
       }
     },
     "sections": {
@@ -24,10 +24,14 @@
       }
     },
     "stems": {
-      "analyser": "bandsplit",
-      "score": -1.62,
+      "analyser": "lalal",
+      "score": 17.87,
       "candidates": {
-        "bandsplit": -1.62
+        "bandsplit": 2.48,
+        "lalal": 17.87,
+        "fal_demucs": 6.11,
+        "demucs": 6.11,
+        "demucs_ft": 6.26
       }
     }
   },

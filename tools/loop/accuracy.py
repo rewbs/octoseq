@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
 import shutil
 import subprocess
 import sys
@@ -37,6 +38,7 @@ import corpus  # noqa: E402
 import degrade  # noqa: E402
 import modref  # noqa: E402
 import score  # noqa: E402
+import stems as stem_sources  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).parent
@@ -45,7 +47,14 @@ OUT = ROOT / ".loop" / "accuracy"
 GATES = HERE / "gates.json"
 BASELINE = HERE / "accuracy_baseline.json"
 REAL_MUSIC = sorted((ROOT / "data").glob("*.mp3"))
-STEM_TRACKS_PER_SPLIT = 3  # separation is slow to score, so only the first few tracks of each split
+# Stems are scored on a few held-out modules of each kind: separation is slow, and the
+# hosted sources bill by the minute. See stem_tracks() for how they are picked.
+STEM_TRACKS = {"synthetic": 3, "downloaded": 5}
+STEM_MAX_SECONDS = 240.0
+STEM_MIN_PURITY = 0.98  # share of a module's sound that sits on a channel of its own stem class
+HOSTED_SCORES = HERE / "hosted_stem_scores.json"  # what the paid sources scored, so a machine without keys can still report it
+GPU_MODEL_WORKERS = 3  # each keeps its own copy of a model on the GPU
+USER_STEMS_MIN_DB = 40.0  # true stems handed back through the stem interface must come out at least this intact
 MAX_STEM_RESIDUAL_DB = -60.0  # a module whose channel stems do not add up to its mix this well is left out
 
 
@@ -75,6 +84,22 @@ def prepare_safely(job: tuple[dict, tuple[str, ...], bool]) -> dict | str:
         return prepare(*job)
     except Exception as error:  # noqa: BLE001 - reported by the caller
         return str(error)
+
+
+def fresh_workers(count: int) -> ProcessPoolExecutor:
+    """Workers started from scratch rather than forked, for anything that may use the GPU.
+
+    A forked worker cannot use CUDA if its parent has, and the main process never
+    should: it would hold GPU memory for the whole run.
+    """
+    return ProcessPoolExecutor(max_workers=count, mp_context=multiprocessing.get_context("spawn"))
+
+
+def worker_device() -> str:
+    try:
+        return analysers.model_device()
+    except ImportError:
+        return "cpu"
 
 
 def run_analyser(job: tuple[str, str, dict | None]) -> dict:
@@ -149,7 +174,7 @@ def score_split(results: dict, tracks: list[dict], variant_names: tuple[str, ...
 
 def reference_stems(track: dict) -> dict[str, np.ndarray]:
     """Drums, bass and other, summed from the true channel stems and resampled for scoring."""
-    stems_dir = track["work"] / "stems"
+    stems_dir = Path(track["work"]) / "stems"
     by_class: dict[str, np.ndarray] = {}
     for channel, cls in track["reference"]["channel_stem"].items():
         audio = analysers.decode(stems_dir / f"ch{int(channel):02d}.wav")
@@ -157,14 +182,121 @@ def reference_stems(track: dict) -> dict[str, np.ndarray]:
     return by_class
 
 
-def score_stems(name: str, tracks: list[dict]) -> dict | None:
-    rows = []
-    for track in tracks[:STEM_TRACKS_PER_SPLIT]:
-        result = analysers.ANALYSERS[name](track["variants"]["clean"], None)
+def stem_tracks(tracks: list[dict], variant_names: tuple[str, ...]) -> list[dict]:
+    """The held-out modules the stem sources are scored on, with their true stems kept.
+
+    A fixed few of each kind, picked by what the reference says about the module
+    and never by how any source does on it: the first ones that have all of drums,
+    bass and other, keep each to its own channels, and are short enough to keep
+    the hosted sources cheap.
+    """
+    chosen = []
+    for source, count in STEM_TRACKS.items():
+        fits = [
+            t for t in tracks
+            if t["source"] == source
+            and {"drums", "bass", "other"} <= set(t["reference"]["channel_stem"].values())
+            and t["reference"]["duration"] <= STEM_MAX_SECONDS
+            and stem_purity(t["reference"]) >= STEM_MIN_PURITY
+        ]  # fmt: skip
+        chosen += fits[:count]
+    return [prepare(track, variant_names, keep_stems=True) for track in chosen]
+
+
+def stem_purity(reference: dict) -> float:
+    """How much of what is heard sits on a channel of its own stem class, by loudness.
+
+    True stems are whole channels. A module that plays a kick and a bass line on
+    the same channel has no true drum stem to score against, however it is cut.
+    """
+    own = total = 0.0
+    for event in reference["events"]:
+        if event["audible"]:
+            loudness = event.get("loudness", 0.0)
+            total += loudness
+            if event["stem"] == reference["channel_stem"].get(str(event["channel"])):
+                own += loudness
+    return own / total if total else 0.0
+
+
+def supply_true_stems(track: dict) -> None:
+    """Lay a module's true stems out the way a user would supply their own: labelled files beside the track."""
+    work = Path(track["work"])
+    directory = (work / modref.MIX).with_suffix(".stems")
+    classes = sorted(set(track["reference"]["channel_stem"].values()))
+    if all((directory / f"{cls}.flac").exists() for cls in classes):
+        return
+    directory.mkdir(exist_ok=True)
+    for cls in classes:
+        total = 0
+        for channel, channel_class in track["reference"]["channel_stem"].items():
+            if channel_class == cls:
+                total = total + np.asarray(modref.read_wav(work / "stems" / f"ch{int(channel):02d}.wav"), dtype=np.float32)
+        stem_sources.write_flac(directory / f"{cls}.flac", total, rate=track["reference"]["sample_rate"])
+
+
+def fold(estimate: dict[str, np.ndarray], names: set[str]) -> dict[str, np.ndarray]:
+    """Stems the reference has no class for (vocals, guitar and so on) belong to its `other`."""
+    out = {name: audio for name, audio in estimate.items() if name in names}
+    extra = [audio for name, audio in estimate.items() if name not in names]
+    if extra and "other" in names:
+        parts = extra + ([out["other"]] if "other" in out else [])
+        n = min(len(p) for p in parts)
+        out["other"] = np.sum([p[:n] for p in parts], axis=0)
+    return out
+
+
+def stem_job(job: tuple[str, dict]) -> dict:
+    """Separate one module with one source and score it against the true stems.
+
+    Runs in the stem worker: a process of its own, so a model can hold the GPU
+    without the main process ever starting CUDA.
+    """
+    name, track = job
+    try:
+        reference = reference_stems(track)
+        if name in analysers.REFERENCE_FED:
+            supply_true_stems(track)
+        result = analysers.ANALYSERS[name](Path(track["work"]) / modref.MIX, None)
         if result.get("stems") is None:
-            return None
-        rows.append(score.stem_scores(reference_stems(track), result["stems"]))
-    out = {}
+            return dict(not_run="produces no stems")
+        return dict(scores=score.stem_scores(reference, fold(result["stems"], set(reference))), detail=result.get("stem_detail"))
+    except stem_sources.Unavailable as error:
+        return dict(not_run=str(error))
+    except stem_sources.StemError as error:
+        return dict(failed=str(error))
+
+
+def score_stems(name: str, tracks: list[dict], stem_pool) -> dict:
+    """One source's scores over the stem tracks: per stem, per kind of module, and overall.
+
+    A hosted source that cannot run here (no key) is given the scores recorded the
+    last time it did run on the same module and reference, if there are any.
+    """
+    slim = [dict(id=t["id"], source=t["source"], work=str(t["work"]), reference={k: t["reference"][k] for k in ("channel_stem", "sample_rate")}) for t in tracks]
+    results = list(stem_pool.map(stem_job, [(name, t) for t in slim]))
+    recorded = json.loads(HOSTED_SCORES.read_text()) if HOSTED_SCORES.exists() else {}
+    before = json.dumps(recorded, sort_keys=True)
+    # Scores recorded against an older reference say nothing about this one.
+    mine = recorded[name] = {k: v for k, v in recorded.get(name, {}).items() if k.endswith(modref.REFERENCE_VERSION)}
+    from_record = False
+    if name in analysers.HOSTED:
+        for track, result in zip(tracks, results):
+            key = track["work"].name  # module, its checksum and the reference version
+            if "scores" in result:
+                mine[key] = result["scores"]
+            elif "not_run" in result and key in mine:
+                result.clear()
+                result["scores"] = mine[key]
+                from_record = True
+        if json.dumps(recorded, sort_keys=True) != before:
+            HOSTED_SCORES.write_text(json.dumps({k: v for k, v in sorted(recorded.items()) if v}, indent=1, sort_keys=True) + "\n")
+    for key in ("failed", "not_run"):
+        problems = [r[key] for r in results if key in r]
+        if problems:
+            return {key: problems[0]}
+    rows = [r["scores"] for r in results]
+    out: dict = {}
     for cls in ("drums", "bass", "other"):
         values = [r[cls] for r in rows if cls in r]
         if values:
@@ -173,7 +305,18 @@ def score_stems(name: str, tracks: list[dict]) -> dict | None:
                 improvement_db=round(float(np.mean([v["improvement_db"] for v in values])), 2),
             )  # fmt: skip
     out["mean_improvement_db"] = round(float(np.mean([v["improvement_db"] for v in out.values()])), 2) if out else None
+    for source in STEM_TRACKS:
+        values = [v["improvement_db"] for t, r in zip(tracks, rows) if t["source"] == source for v in r.values()]
+        if values:
+            out[f"{source}_improvement_db"] = round(float(np.mean(values)), 2)
+    out["worst_si_sdr_db"] = round(float(min(v["si_sdr_db"] for r in rows for v in r.values())), 2)
     out["tracks"] = len(rows)
+    out["per_track"] = {t["id"]: r for t, r in zip(tracks, rows)}
+    if from_record:
+        out["recorded"] = True
+    detail = next((r.get("detail") for r in results if r.get("detail")), None)
+    if detail:
+        out["detail"] = {k: v for k, v in detail.items() if k in ("provider", "model", "models", "splitter", "endpoint", "device", "workflow")}
     return out
 
 
@@ -328,7 +471,11 @@ def choose(scores: dict) -> dict:
         if candidates:
             best = max(candidates, key=candidates.get)
             chosen[part] = dict(analyser=best, score=candidates[best], candidates=candidates)
-    stems = {name: s["stems"]["mean_improvement_db"] for name, s in scores.items() if s.get("stems") and s["stems"].get("mean_improvement_db") is not None}
+    stems = {
+        name: s["stems"]["mean_improvement_db"]
+        for name, s in scores.items()
+        if name not in analysers.REFERENCE_FED and s.get("stems") and s["stems"].get("mean_improvement_db") is not None
+    }
     if stems:
         best = max(stems, key=stems.get)
         chosen["stems"] = dict(analyser=best, score=stems[best], candidates=stems)
@@ -398,16 +545,49 @@ def write_report(run_dir: Path, report: dict) -> None:
             f"| {name} | {o['f']:.3f} | {o['precision']:.3f} | {o['recall']:.3f} | {ms(perc.get('timing', {}).get('bias_ms'))} | "
             f"{ms(perc.get('timing', {}).get('spread_ms'))} | {ms(soft.get('timing', {}).get('bias_ms'))} | {soft.get('recall')} | {degraded} |"
         )
-    lines += ["", "Other parts (held-out, mean over variants):", "", "| Analyser | Beat F | Beat F (any level) | Tempo right (at some level) | Section F at 3 s | Stem improvement |", "|---|---|---|---|---|---|"]
+    lines += ["", "Other parts (held-out, mean over variants):", "", "| Analyser | Beat F | Beat F (any level) | Tempo right (at some level) | Section F at 3 s |", "|---|---|---|---|---|"]
     for name, s in report["scores"].items():
         clean = s.get("heldout", {}).get("variants", {}).get("clean", {})
-        beats, sections, stems = clean.get("beats"), clean.get("sections"), s.get("stems")
-        if not (beats or sections or stems):
+        beats, sections = clean.get("beats"), clean.get("sections")
+        if not (beats or sections):
             continue
         lines.append(
             f"| {name} | {beats['f'] if beats else '–'} | {beats['best_f'] if beats else '–'} | {beats['tempo_octave'] if beats else '–'} | "
-            f"{sections['f_3s'] if sections else '–'} | {str(stems['mean_improvement_db']) + ' dB' if stems else '–'} |"
+            f"{sections['f_3s'] if sections else '–'} |"
         )
+    with_stems = {name: s["stems"] for name, s in report["scores"].items() if s.get("stems")}
+    if with_stems:
+        lines += [
+            "",
+            "Stems (SI-SDR improvement over handing back the unseparated mix, in dB, against the true stems of "
+            f"{' and '.join(f'{n} {kind}' for kind, n in STEM_TRACKS.items())} held-out modules):",
+            "",
+            "| Source | Mean | Drums | Bass | Other | Synthetic modules | Downloaded modules | Notes |",
+            "|---|---|---|---|---|---|---|---|",
+        ]
+        for name, stems in with_stems.items():
+            notes = []
+            if name in analysers.REFERENCE_FED:
+                notes.append("the true stems, supplied as a user would: checks the interface, not a candidate")
+            if name in analysers.UNVERIFIED:
+                notes.append("unverified: written from the provider's documentation, never run against it")
+            if stems.get("recorded"):
+                notes.append("scores recorded on an earlier run")
+            if "not_run" in stems or "failed" in stems:
+                notes.insert(0, f"not run: {stems['not_run']}" if "not_run" in stems else f"FAILED: {stems['failed']}")
+                lines.append(f"| {name} | – | – | – | – | – | – | {'; '.join(notes)} |")
+                continue
+            detail = stems.get("detail") or {}
+            if detail:
+                notes.append(", ".join(f"{k} {v}" for k, v in detail.items() if isinstance(v, (str, int, float))))
+
+            def db(v):
+                return "–" if v is None else f"{v:+.2f}"
+
+            lines.append(
+                f"| {name} | {db(stems['mean_improvement_db'])} | " + " | ".join(db(stems.get(c, {}).get("improvement_db")) for c in ("drums", "bass", "other"))
+                + f" | {db(stems.get('synthetic_improvement_db'))} | {db(stems.get('downloaded_improvement_db'))} | {'; '.join(notes)} |"
+            )  # fmt: skip
     lines += ["", "## Chosen analyser per part", ""]
     for part, entry in report["chosen"].items():
         lines.append(f"- **{part}**: `{entry['analyser']}` ({entry['score']}); candidates {entry['candidates']}")
@@ -474,6 +654,16 @@ def write_scoreboard(report: dict, gates: dict) -> None:
     if "stems" in chosen:
         name = chosen["stems"]["analyser"]
         row("Stems", "SI-SDR improvement over the unseparated mix", f"{chosen['stems']['score']:+.2f} dB", f"at least {gates['stem_improvement_db']['min']} dB", chosen["stems"]["score"] >= gates["stem_improvement_db"]["min"], name)
+        best = scores[name]["stems"]
+        for cls in ("drums", "bass", "other"):
+            if cls in best:
+                row("Stems", f"{cls}: improvement", f"{best[cls]['improvement_db']:+.2f} dB", "tracked", None, name)
+        if best.get("downloaded_improvement_db") is not None:
+            row("Stems", "improvement on downloaded modules only", f"{best['downloaded_improvement_db']:+.2f} dB", "tracked", None, name)
+        for other, entry in scores.items():
+            stems = entry.get("stems") or {}
+            if other != name and other not in analysers.REFERENCE_FED and stems.get("mean_improvement_db") is not None:
+                row("Stems", "improvement, for comparison", f"{stems['mean_improvement_db']:+.2f} dB", "tracked", None, other)
 
     # Column-aligned, so the file is already in the form the repository's formatter produces.
     header = ["Part", "Measure", "Now", "Target", "Status", "Best analyser"]
@@ -514,7 +704,7 @@ def run(args, params: dict | None = None, pool=None) -> dict:
             if args.quick:
                 items = [i for i in items if int(i["id"].split("-")[1]) in corpus.FIXTURE_SEEDS]
             ready = []
-            jobs = [(item, variant_names, index < STEM_TRACKS_PER_SPLIT and not args.quick) for index, item in enumerate(items)]
+            jobs = [(item, variant_names, False) for item in items]
             for item, result in zip(items, pool.map(prepare_safely, jobs)):
                 if isinstance(result, str):  # a module the player cannot render is skipped, loudly
                     print(f"skipping {item['id']}: {result}", file=sys.stderr)
@@ -525,19 +715,34 @@ def run(args, params: dict | None = None, pool=None) -> dict:
         all_tracks = splits["train"] + splits["heldout"]
 
         scores: dict = {}
-        timed = [n for n in names if n != "bandsplit"]
-        for split, tracks in splits.items():
-            # Models are slow and are never tuned here, so they are only run where
-            # they are judged: on the held-out split.
-            run_here = [n for n in timed if split == "heldout" or n not in analysers.MODELS]
-            results = analyse_all(run_here, tracks, variant_names, params, pool)
-            for name in run_here:
-                scores.setdefault(name, {})[split] = score_split(results[name], tracks, variant_names)
-        if not args.quick:
-            for name in names:
-                stems = score_stems(name, splits["heldout"]) if name == "bandsplit" else None
-                if stems:
-                    scores.setdefault(name, {})["stems"] = stems
+        timed = [n for n in names if n not in analysers.STEMS_ONLY]
+        # Models that run on a GPU get a few workers of their own instead of one per
+        # core: every process that touches the GPU keeps its own copy of the model there.
+        models = [n for n in timed if n in analysers.MODELS]
+        gpu_pool = fresh_workers(GPU_MODEL_WORKERS) if models else None
+        try:
+            on_gpu = bool(gpu_pool) and gpu_pool.submit(worker_device).result() != "cpu"
+            for split, tracks in splits.items():
+                # Models are slow and are never tuned here, so they are only run where
+                # they are judged: on the held-out split.
+                run_here = [n for n in timed if split == "heldout" or n not in analysers.MODELS]
+                on_cpu = [n for n in run_here if not (on_gpu and n in analysers.MODELS)]
+                results = analyse_all(on_cpu, tracks, variant_names, params, pool)
+                if len(on_cpu) < len(run_here):
+                    results.update(analyse_all([n for n in run_here if n not in on_cpu], tracks, variant_names, params, gpu_pool))
+                for name in run_here:
+                    scores.setdefault(name, {})[split] = score_split(results[name], tracks, variant_names)
+        finally:
+            if gpu_pool:
+                gpu_pool.shutdown()
+        stem_names = [n for n in names if n in analysers.STEMS_ONLY]
+        if stem_names and not args.quick:
+            on = stem_tracks(splits["heldout"], variant_names)
+            with fresh_workers(1) as stem_pool:  # one at a time: a separation model fills the GPU
+                for name in stem_names:
+                    scores.setdefault(name, {})["stems"] = score_stems(name, on, stem_pool)
+                    if "failed" in scores[name]["stems"]:
+                        print(f"stem source {name} failed: {scores[name]['stems']['failed']}", file=sys.stderr)
 
         report = dict(
             name=args.name,
@@ -555,6 +760,13 @@ def run(args, params: dict | None = None, pool=None) -> dict:
     finally:
         if own_pool:
             pool.shutdown()
+    fed = scores.get("user_stems", {}).get("stems", {})
+    if "worst_si_sdr_db" in fed:
+        report["instrument_checks"].append(dict(
+            name="user-supplied stems come through the stem interface intact",
+            ok=fed["worst_si_sdr_db"] >= USER_STEMS_MIN_DB,
+            detail=f"true stems handed back score at least {fed['worst_si_sdr_db']:.0f} dB SI-SDR",
+        ))  # fmt: skip
     gates = json.loads(GATES.read_text())["accuracy"]
     baseline = json.loads(BASELINE.read_text()) if BASELINE.exists() and not args.quick else None
     report["hard"], report["target"] = evaluate_gates(report, gates, baseline)

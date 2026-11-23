@@ -21,7 +21,7 @@ if [ ! -x "$CMD" ]; then
   echo "this script is for WSL: on Linux the engine built by cargo already uses the GPU" >&2
   exit 1
 fi
-win_env() { (cd /mnt/c && "$CMD" /c "echo %$1%" 2>/dev/null | tr -d '\r'); }
+win_env() { (cd /mnt/c && "$CMD" /c "echo %$1%" 2>/dev/null </dev/null | tr -d '\r'); }
 
 CARGO="$(wslpath -u "$(win_env USERPROFILE)")/.cargo/bin/cargo.exe"
 if [ ! -x "$CARGO" ]; then
@@ -33,7 +33,7 @@ BUILD="$(wslpath -u "$(win_env LOCALAPPDATA)")/octoseq/visualiser"
 mkdir -p "$BUILD"
 # Copy the source, leaving build output alone on both sides.
 (cd "$ROOT/packages/visualiser" && tar --exclude=./target --exclude=./frames -cf - .) | (cd "$BUILD" && tar -xf -)
-(cd "$BUILD" && "$CARGO" build --release --quiet)
+(cd "$BUILD" && "$CARGO" build --release --quiet </dev/null)
 
 echo "built $BUILD/target/release/visualiser.exe" >&2
 echo "export OCTOSEQ_ENGINE='$BUILD/target/release/visualiser.exe'"

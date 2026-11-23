@@ -89,6 +89,9 @@ python3 tools/loop/perfect_bundle.py song.xm
 
 tools/loop/models/setup.sh                    # optional: install model-based analysers
 .loop/venv/bin/python tools/loop/accuracy.py  # the same loop, with the models included
+
+python3 tools/loop/stems.py status            # which stem sources can run on this machine
+python3 tools/loop/stems.py demucs song.mp3   # separate one file with one source
 ```
 
 ### Why tracker modules
@@ -146,6 +149,31 @@ held-out split, since they are slow and are not tuned here.
 
 The report names the best analyser for each part, judged on the held-out split. That
 is how local models and hosted APIs will be chosen between as they are added.
+
+### Stem sources
+
+Stems come from one interface, `tools/loop/stems.py`, whatever is behind it:
+
+| Source                | What it is                                          | Needs                                       |
+| --------------------- | --------------------------------------------------- | ------------------------------------------- |
+| `user`                | Stem files the user already has, labelled           | The files                                   |
+| `lalal`               | LALAL.AI (hosted)                                   | `LALALAI_API_KEY`                           |
+| `fal_demucs`          | Demucs hosted on fal.ai                             | `FAL_KEY`                                   |
+| `musicai`             | Music.ai (hosted). **Unverified**: never run        | `MUSICAI_API_KEY`, `MUSICAI_STEMS_WORKFLOW` |
+| `demucs`, `demucs_ft` | Demucs run locally, plain and fine-tuned (4x slower) | The model environment                       |
+
+Every source returns labelled files (`vocals`, `drums`, `bass`, `other`, plus extras)
+and records what produced them. Results are cached by the audio's checksum, so a
+paid separation is bought once.
+
+Each source is also an analyser, scored against the true stems of eight held-out
+modules: three synthetic and five downloaded, the first of each that have drums,
+bass and other on channels of their own and are under four minutes. Modules have no
+vocals, so anything a source returns beyond drums and bass counts as `other`.
+`user_stems` hands the true stems back through the interface; it checks the
+interface and is not a candidate. A hosted source with no key is reported as not
+run, or with the scores recorded in `tools/loop/hosted_stem_scores.json` the last
+time it did run on the same modules.
 
 ### Guards against fooling ourselves
 
@@ -246,7 +274,7 @@ Figures are held-out results from the scoreboard when this plan was written.
 | **1b. Slow attacks** (done, mostly by fixing the yardstick) | Soft recall at least 0.6 with percussive recall at least 0.90. Met, but not by a better detector: the misses were mostly the reference timing slow attacks at their steepest point (which for a fade-in is its very end) and splitting notes written together into separate events. Both are corrected (D8, D11 in the queue). Moving soft events in the analyser was tried and switched off (D20)                                               | None                                                               |
 | **1c. Beat tracking** (in progress)                         | Tempo right at some metrical level on at least 95% of tracks; beat F at any level at least 0.95. Done so far: modules with irregular beat grids are scored instead of skipped, and a tracker that follows the music was tried and rejected on held-out modules. The signal-processing stand-in is near its ceiling, so what remains is registering and comparing at least one local model and one hosted service                                 | Go-ahead to install model packages; API keys for hosted candidates |
 | **1d. Sections**                                            | Boundary F within 3 s at least 0.75 (from 0.61, a crude baseline); at least one real analyser registered                                                                                                                                                                                                                                                                                                                                         | API keys for hosted candidates                                     |
-| **1e. Stems**                                               | User-supplied stems, the three hosted providers and one local model all registered as analysers; the best improves on the unseparated mix by at least 3 dB against true stems (from −1.6 dB)                                                                                                                                                                                                                                                     | API keys for the stem providers                                    |
+| **1e. Stems** (done, one provider unverified)               | User-supplied stems, the three hosted providers and one local model all registered as analysers; the best improves on the unseparated mix by at least 3 dB against true stems. Met: LALAL.AI improves on the mix by 17.9 dB, local Demucs by 6.3 dB and Demucs on fal.ai by 6.1 dB, against 2.5 dB for the band-split baseline. LALAL.AI and fal.ai are verified against the live services; Music.ai is written from its documentation and has not been run | A Music.ai key and workflow, to verify that adaptor                |
 | **1f. Drum hits by type**                                   | The reference and scorer extended to kick, snare and hat (the reference already has one event stream per sample); at least one analyser scored on it                                                                                                                                                                                                                                                                                             | None                                                               |
 | **1g. Bundle and worker**                                   | Bundle schema validates; the worker assembles the bundle from the best analyser per part as chosen by the accuracy loop; a stored bundle is reused, never recomputed; every scoreboard target met or its shortfall explained in the queue                                                                                                                                                                                                        | None                                                               |
 | **2. Role binding**                                         | Engine tests pass; a scene asking for an unavailable role fails with a clear error; every scene renders on every track                                                                                                                                                                                                                                                                                                                           | None                                                               |
@@ -263,12 +291,18 @@ every later number is more trustworthy on a wider corpus.
   chunk 1 delivers the real worker.
 - **Two real test tracks.** `data/` has one 18-second and one 283-second track. The
   milestone 1 exit test needs ten.
-- **Software rendering.** Fine for 480x270 checks; full-resolution renders want a GPU.
+- **Rendering speed.** Software rendering is fine for 480x270 checks; full-resolution
+  renders want a GPU, and even there writing PNG frames is the limit (about 12 fps
+  at 1920x1080).
 - **Uncalibrated render thresholds.** No human ratings exist yet to calibrate against.
 - **Tracker music is not all music.** Modules have no vocals, no live playing and no
   mastering. The degraded variants and the real-music check reduce the risk of
   tuning to that, but do not remove it.
-- **Baseline analysers for sections and stems are deliberately crude.** They exist so
-  those scorers are exercised and so real analysers have something to beat.
+- **The baseline analyser for sections is deliberately crude.** It exists so that
+  scorer is exercised and so real analysers have something to beat.
+- **Stems are judged on eight modules.** Enough to rank sources that differ by
+  several decibels, not ones that differ by a fraction of one. Three of the eight are
+  synthetic, and Demucs cannot find a synthetic bass at all, which widens the gap
+  between it and LALAL.AI: on the five downloaded modules it is 13.1 dB against 9.0.
 - **Beat level is ambiguous in modules.** A module does not say which metrical level
   is the beat, so the half, double and off-beat levels are reported alongside.
