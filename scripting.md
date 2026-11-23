@@ -2004,6 +2004,36 @@ fn update(dt, frame) {
 | `.blend.overlay()`    | Contrast enhancement                  |
 | `.blend.difference()` | Subtractive (psychedelic effects)     |
 | `.blend.max()`        | Maximum of both values                |
+| `.blend.over()`       | This frame drawn over the last one    |
+
+`.blend.over()` is the mode for pictures that are mostly trail. The previous frame
+is the background: it shows through wherever this frame drew nothing, so every
+shape leaves a trail that the warp carries away, and the loop fills the frame. The
+scene is drawn on a transparent background in this mode (the others blend whole
+frames, grey background included), and `opacity` and `.color.decay()` set how long
+trails last.
+
+```rhai
+let ring = radial.ring(#{ radius: 0.5, thickness: 0.15 });
+
+fn init(ctx) {
+    ring.scale = inputs.mix.energy.smooth.exponential(0.05, 0.3).add(0.6);
+    scene.add(ring);
+
+    // Each frame the last one comes back a little larger, turned and dimmer.
+    let fb = feedback.builder()
+        .warp.affine(1.015, 0.006)
+        .color.decay(0.985)
+        .color.hsv(0.004, 0.0, 0.0)
+        .blend.over()
+        .opacity(1.0)
+        .build();
+    feedback.enable(fb);
+}
+```
+
+Warp, decay and hue shift are applied once per frame, so the same settings give a
+faster, shorter-lived trail at 60 frames a second than at 30.
 
 #### Feedback Sampling Mode
 

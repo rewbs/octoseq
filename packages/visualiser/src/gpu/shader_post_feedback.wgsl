@@ -170,6 +170,13 @@ fn apply_warp_step(uv: vec2<f32>, step: GpuWarpStep) -> vec2<f32> {
     let centered = uv - center;
     let strength = step.strength;
 
+    // UVs run 0 to 1 across a frame that is usually wider than it is tall, so a
+    // rotation done in UVs shears: circles come back as tilted ellipses. Warps
+    // that turn the picture work in square units and convert back.
+    let dims = vec2<f32>(textureDimensions(feedback_texture));
+    let aspect = vec2<f32>(dims.x / dims.y, 1.0);
+    let square = centered * aspect;
+
     // Calculate edge falloff
     let edge_dist = 1.0 - max(abs(centered.x), abs(centered.y)) * 2.0;
     let falloff_factor = mix(1.0, saturate(edge_dist * 2.0), step.falloff);
@@ -187,7 +194,7 @@ fn apply_warp_step(uv: vec2<f32>, step: GpuWarpStep) -> vec2<f32> {
             let sn = sin(step.rotation * effective_strength);
 
             // Scale
-            var transformed = centered / mix(1.0, s, effective_strength);
+            var transformed = square / mix(1.0, s, effective_strength);
 
             // Rotate
             transformed = vec2<f32>(
@@ -195,8 +202,8 @@ fn apply_warp_step(uv: vec2<f32>, step: GpuWarpStep) -> vec2<f32> {
                 transformed.x * sn + transformed.y * c
             );
 
-            // Translate
-            transformed += vec2<f32>(step.translate_x, step.translate_y) * effective_strength;
+            // Back to UVs, then translate
+            transformed = transformed / aspect + vec2<f32>(step.translate_x, step.translate_y) * effective_strength;
 
             return transformed + center;
         }
@@ -211,8 +218,8 @@ fn apply_warp_step(uv: vec2<f32>, step: GpuWarpStep) -> vec2<f32> {
         }
         // Spiral (radial + rotation)
         case 3u: {
-            let dist = length(centered);
-            let angle = atan2(centered.y, centered.x);
+            let dist = length(square);
+            let angle = atan2(square.y, square.x);
 
             // Rotation proportional to distance and strength
             let new_angle = angle + step.rotation * dist * effective_strength;
@@ -220,7 +227,7 @@ fn apply_warp_step(uv: vec2<f32>, step: GpuWarpStep) -> vec2<f32> {
             // Scale
             let new_dist = dist * (1.0 + (step.scale - 1.0) * effective_strength);
 
-            return center + vec2<f32>(cos(new_angle), sin(new_angle)) * new_dist;
+            return center + vec2<f32>(cos(new_angle), sin(new_angle)) * new_dist / aspect;
         }
         // Noise displacement
         case 4u: {
@@ -397,6 +404,13 @@ fn apply_blend(current: vec4<f32>, feedback: vec4<f32>) -> vec4<f32> {
         // Max
         case 6u: {
             return vec4<f32>(mix(current.rgb, max(current.rgb, feedback.rgb), opacity), current.a);
+        }
+        // Over: this frame's content on top of the previous frame. The scene was
+        // drawn on a transparent background, so its colour is already weighted by
+        // its alpha, and its alpha says how much of the previous frame it hides.
+        case 7u: {
+            let cover = clamp(current.a, 0.0, 1.0);
+            return vec4<f32>(current.rgb + fb.rgb * (1.0 - cover), 1.0);
         }
         default: {
             return current;

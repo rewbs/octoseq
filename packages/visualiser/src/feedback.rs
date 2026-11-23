@@ -187,6 +187,13 @@ pub enum FeedbackBlend {
     Difference,
     /// Maximum of both values.
     Max,
+    /// This frame's content drawn over the previous frame.
+    ///
+    /// The previous frame is the base layer and shows through wherever this
+    /// frame drew nothing, so everything drawn leaves a trail that the warp
+    /// carries away. The scene is rendered on a transparent background for
+    /// this mode; the other modes blend whole frames, background included.
+    Over,
 }
 
 /// When in the pipeline feedback samples from.
@@ -234,6 +241,7 @@ impl FeedbackBlend {
             FeedbackBlend::Overlay => 4,
             FeedbackBlend::Difference => 5,
             FeedbackBlend::Max => 6,
+            FeedbackBlend::Over => 7,
         }
     }
 
@@ -246,6 +254,7 @@ impl FeedbackBlend {
             "overlay" => FeedbackBlend::Overlay,
             "difference" | "diff" => FeedbackBlend::Difference,
             "max" => FeedbackBlend::Max,
+            "over" | "trails" => FeedbackBlend::Over,
             _ => FeedbackBlend::Alpha,
         }
     }
@@ -578,6 +587,14 @@ impl FeedbackConfig {
         }
 
         uniforms
+    }
+
+    /// Whether the scene should be drawn on a transparent background.
+    ///
+    /// True when feedback is on in `Over` mode: the previous frame is then the
+    /// background, and the scene's alpha says where this frame drew something.
+    pub fn wants_transparent_scene(&self) -> bool {
+        self.enabled && self.blend == FeedbackBlend::Over
     }
 
     /// Check if this config contains any signals that need evaluation.
@@ -1027,6 +1044,12 @@ impl BlendBuilder {
         self.0.set_blend(FeedbackBlend::Max);
         self.0
     }
+
+    /// Draw this frame's content over the previous frame (see [`FeedbackBlend::Over`]).
+    pub fn over(mut self) -> FeedbackBuilder {
+        self.0.set_blend(FeedbackBlend::Over);
+        self.0
+    }
 }
 
 /// GPU warp step (32 bytes = 2 × 16-byte blocks).
@@ -1144,6 +1167,8 @@ mod tests {
             FeedbackBlend::Difference
         );
         assert_eq!(FeedbackBlend::from_str("max"), FeedbackBlend::Max);
+        assert_eq!(FeedbackBlend::from_str("over"), FeedbackBlend::Over);
+        assert_eq!(FeedbackBlend::Over.to_u32(), 7);
         assert_eq!(FeedbackBlend::from_str("alpha"), FeedbackBlend::Alpha);
     }
 

@@ -297,4 +297,5 @@ pub fn register_feedback_builder_api(engine: &mut Engine) {
         bb.clone().difference()
     });
     engine.register_fn("max", |bb: &mut BlendBuilder| bb.clone().max());
+    engine.register_fn("over", |bb: &mut BlendBuilder| bb.clone().over());
 }

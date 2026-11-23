@@ -1505,11 +1505,18 @@ impl Renderer {
                     view: self.post_processor.scene_view(),
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.1,
-                            b: 0.1,
-                            a: 1.0,
+                        // With feedback in `Over` mode the previous frame is the
+                        // background: clear to transparent so the scene's alpha
+                        // says where this frame drew something.
+                        load: wgpu::LoadOp::Clear(if state.feedback_config().wants_transparent_scene() {
+                            wgpu::Color::TRANSPARENT
+                        } else {
+                            wgpu::Color {
+                                r: 0.1,
+                                g: 0.1,
+                                b: 0.1,
+                                a: 1.0,
+                            }
                         }),
                         store: wgpu::StoreOp::Store,
                     },
