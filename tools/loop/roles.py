@@ -21,7 +21,8 @@ events and `energy` being a signal on every bundle.
               onset             every audible event
               kick, snare, hat  drum hits by type
               hit               the blows the whole picture may answer: kicks and snares, or the
-                                strongest onsets where there are none, never closer than 0.5 s
+                                strongest onsets where there are none (which includes a track with
+                                no drums, whose kick and snare are stand-ins), never closer than 0.5 s
               section           the start of each section; weight is how big the change is
 
     signals   energy            overall loudness, 0 to 1
@@ -51,7 +52,7 @@ import numpy as np
 import analyse
 import analysers
 
-ROLES_VERSION = "roles-4"
+ROLES_VERSION = "roles-5"
 DERIVED_RATE = 50.0  # samples per second of the derived signals: smooth at any frame rate
 EVENT_ROLES = ("beat", "downbeat", "onset", "kick", "snare", "hat", "hit", "section")
 HIT_MIN_GAP_S = 0.5  # whole-frame blows this far apart stay under the three-flashes-a-second limit
@@ -135,12 +136,20 @@ def bind(
     downbeats: list[float] | None = None,
     sections: list[tuple[float, float]] | None = None,
     drums: dict[str, list[tuple[float, float]]] | None = None,
+    drumless: bool = False,
 ) -> dict:
     """Add roles to a package, in place, from the package itself and the facts given.
 
     `sections` are (start time, strength) and `drums` maps kick/snare/hat to (time,
     weight). The package must already carry its mix signals; `onset` is bound to
     its `events` or `onsetPeaks` stream. Returns the package.
+
+    `drumless` says the track has no drums and `drums` holds stand-ins (the mix's
+    low, middle and high bands). They still fill the kick, snare and hat roles, so
+    that scenes built on drums move, but they are not blows: on such a track nearly
+    every onset is a "kick" and a "snare" at once, all of one weight, and choosing
+    hits among them is choosing at random. `hit` is then the track's strongest
+    onsets instead, heaviest first.
     """
     duration = float(package["durationSec"])
     roles: dict[str, dict] = {}
@@ -182,7 +191,7 @@ def bind(
         for kind in ("kick", "snare", "hat"):
             _stream(package, kind, drums.get(kind) or [])
             roles[kind] = {"events": kind}
-    blows = hits(package, drums)
+    blows = hits(package, None if drumless else drums)
     if blows:
         _stream(package, "hit", blows)
         roles["hit"] = {"events": "hit"}

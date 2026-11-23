@@ -238,7 +238,7 @@ def analyse_track(audio: Path, choices: dict, stem_options: dict | None = None) 
     starts = None if name is None else _run(name, audio)["sections"]
 
     name = choices["drums"]["analyser"]
-    hits = None
+    hits, drumless = None, False
     if name == "drumbands_stem":
         # As scored: the drum stem local Demucs separates. Where that stem is all but
         # silent the track has no drums, and the mix's low, middle and high bands
@@ -247,7 +247,7 @@ def analyse_track(audio: Path, choices: dict, stem_options: dict | None = None) 
         mix = analysers.decode(audio)
         level = 20.0 * np.log10(max(float(np.sqrt(np.mean(heard**2))), 1e-9) / max(float(np.sqrt(np.mean(mix**2))), 1e-9))
         if level < roles.DRUMLESS_DB:
-            heard, heard_in, drum_params = mix, "mix (no drums in the track)", analysers.drum_params("mix")
+            heard, heard_in, drum_params, drumless = mix, "mix (no drums in the track)", analysers.drum_params("mix"), True
         hits = analysers.drum_hits(analysers.drum_envelopes(heard), drum_params)
         parts["drums"]["heardIn"] = heard_in
         package["drumSource"] = heard_in
@@ -268,6 +268,7 @@ def analyse_track(audio: Path, choices: dict, stem_options: dict | None = None) 
         downbeats=grid.get("downbeats"),
         sections=None if starts is None else [(0.0, 1.0)] + [(t, 0.5) for t in starts],
         drums=None if hits is None else {kind: [(t, 1.0) for t in times] for kind, times in hits.items()},
+        drumless=drumless,
     )
     made = recipe(choices, params)
     package["analysis"] = dict(
@@ -559,6 +560,17 @@ def selftest() -> list[tuple[str, bool, str]]:
             rows.append(("worker: asked for, a new one is made and the old one is still to be found", len(calls) == 2 and json.loads(renewed.read_text())["analysis"]["parts"]["sections"]["analyser"] == "novelty" and found is not None and found.read_bytes() == before, f"-> analysed {len(calls)} time(s), old bundle {'kept' if found else 'lost'}"))
         finally:
             globals()["analyse_track"] = real
+
+        # A track with no drums: every onset is a stand-in kick, all of one weight,
+        # and every third onset is a strong one.
+        package = dict(durationSec=6.0, signals=[], eventStreams=[{"name": "onsetPeaks", "events": [{"time": 0.25 * i, "weight": 1.0 if i % 3 == 1 else 0.1} for i in range(24)]}])
+        stand_ins = {"kick": [(0.25 * i, 1.0) for i in range(24)], "snare": [], "hat": []}
+        strong = {round(0.25 * i, 4) for i in range(24) if i % 3 == 1}
+        blows = {}
+        for label, flag in (("drums", False), ("drumless", True)):
+            bound = roles.bind(json.loads(json.dumps(package)), drums=stand_ins, drumless=flag)
+            blows[label] = {e["time"] for e in next(s for s in bound["eventStreams"] if s["name"] == "hit")["events"]}
+        rows.append(("worker: with no drums, the hits are the strongest onsets", blows["drumless"] == strong and blows["drums"] != strong, f"-> {len(blows['drumless'])} hits, all on the {len(strong)} strong onsets; from the stand-in drums {len(blows['drums'] & strong)} of {len(blows['drums'])} were"))
 
         def broken(change) -> list[str]:
             copy = json.loads(json.dumps(made))
