@@ -151,6 +151,7 @@ starting redesign work.
 ```bash
 python3 tools/loop/run.py        # render every scene on every test track and score it
 python3 tools/loop/selftest.py   # after changing tools/loop/analyse.py or metrics.py
+python3 tools/loop/accuracy.py   # score analysis timing against tracker-module ground truth
 ```
 
 - Run the loop after any change to the engine, scenes or analysis, and look at the
@@ -158,6 +159,12 @@ python3 tools/loop/selftest.py   # after changing tools/loop/analyse.py or metri
 - Do not stop for a judgement call. Take the most reversible default and record it
   in [docs/loop/queue.md](docs/loop/queue.md); that file is the batched list of
   everything waiting on the project owner.
+- Run the accuracy loop after any change to analysis. It needs the instrumented
+  module player (`tools/loop/modplayer/build.sh`) and, for the full corpus,
+  `python3 tools/loop/corpus.py restore`. `--quick` uses only the committed fixtures.
+- New analysers (local models, hosted APIs) are registered in
+  `tools/loop/analysers.py` so the accuracy loop scores them like any other. Tune
+  only on the training split; never look at held-out modules while tuning.
 - A hard-gate failure means the output is broken. Do not loosen a gate to make a run
   pass; gates change only in response to human ratings.
 - Headless rendering needs a Vulkan driver. Without a GPU:

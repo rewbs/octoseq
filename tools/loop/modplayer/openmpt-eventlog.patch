@@ -1,0 +1,252 @@
+diff --git a/soundlib/ModChannel.h b/soundlib/ModChannel.h
+index 94a4658..e3492de 100644
+--- a/soundlib/ModChannel.h
++++ b/soundlib/ModChannel.h
+@@ -148,6 +148,13 @@ struct ModChannel
+ 	uint8 nLeftVU, nRightVU;
+ 	uint8 nActiveMacro;
+ 	uint8 volSlideDownStart;
++
++	// Octoseq instrumentation (development builds only): a sample was (re)started and has not been reported yet.
++	uint8 octoseqPending = 0;         // 1 = started this tick, 2 = started earlier but silent so far
++	bool octoseqPortamento = false;
++	uint32 octoseqStartOffset = 0;
++	uint64 octoseqTriggerTime = 0;
++	int32 octoseqOrder = 0, octoseqPattern = 0, octoseqRow = 0, octoseqTick = 0;
+ 	FilterMode nFilterMode;
+ 	uint8 nEFxSpeed, nEFxDelay;              // memory for Invert Loop (EFx, .MOD only)
+ 	uint8 noteSlideParam, noteSlideCounter;  // IMF / PTM Note Slide
+diff --git a/soundlib/OctoseqHook.h b/soundlib/OctoseqHook.h
+new file mode 100644
+index 0000000..117da84
+--- /dev/null
++++ b/soundlib/OctoseqHook.h
+@@ -0,0 +1,62 @@
++/*
++ * OctoseqHook.h
++ * -------------
++ * Purpose: Instrumentation hooks for the Octoseq analysis-accuracy loop.
++ * Notes  : Development-only. Not part of OpenMPT. Applied as a patch by
++ *          octoseq/tools/loop/modplayer/build.sh; never shipped.
++ */
++
++#pragma once
++
++#include <cstdint>
++
++namespace octoseq
++{
++
++// One audible note trigger: a sample (re)started and reached non-zero volume.
++struct NoteEvent
++{
++	uint64_t timeSamples;     // output sample index of the tick on which the sample was (re)started
++	uint64_t audibleSamples;  // output sample index of the first tick with non-zero volume (>= timeSamples)
++	int32_t order, pattern, row, tick;
++	int32_t channel;          // pattern channel, 0-based (background channels report their master channel)
++	int32_t instrument;       // 1-based, 0 = none (sample mode)
++	int32_t sample;           // 1-based
++	int32_t note;             // 1 = C-0, 61 = C-5
++	double playbackRate;      // sample frames consumed per second
++	int32_t realVolume;       // final mix volume, 0..16384
++	int32_t channelVolume;    // 0..256
++	int32_t pan;              // 0..256
++	uint32_t sampleOffset;    // sample frame at which playback started
++	char effectLetter;        // '\0' if none
++	int32_t effectParam;
++	char volLetter;           // '\0' if none
++	int32_t volParam;
++	int32_t cutoff;           // -1 if the resonant filter is off
++	int32_t resonance;
++	bool vibrato, tremolo, arpeggio, portamento, background;
++};
++
++// The start of one pattern row.
++struct RowEvent
++{
++	uint64_t timeSamples;
++	int32_t order, pattern, row;
++	int32_t ticksPerRow;
++	double tempo;             // in the module's own tempo unit (BPM for classic tempo mode)
++	uint32_t samplesPerTick;
++	int32_t rowsPerBeat, rowsPerMeasure;
++	int32_t globalVolume;     // 0..256
++};
++
++struct Hooks
++{
++	void (*note)(const NoteEvent &, void *user) = nullptr;
++	void (*row)(const RowEvent &, void *user) = nullptr;
++	void *user = nullptr;
++};
++
++// Null (the default) disables all instrumentation.
++extern Hooks *g_hooks;
++
++}  // namespace octoseq
+diff --git a/soundlib/Snd_fx.cpp b/soundlib/Snd_fx.cpp
+index 5ba9ee3..57c8ef5 100644
+--- a/soundlib/Snd_fx.cpp
++++ b/soundlib/Snd_fx.cpp
+@@ -2091,6 +2091,9 @@ void CSoundFile::NoteChange(ModChannel &chn, int note, bool bPorta, bool bResetE
+ 			{
+ 				chn.prevNoteOffset = 0;
+ 			}
++			// Octoseq instrumentation: this is the point at which a sample actually (re)starts.
++			chn.octoseqPending = 1;
++			chn.octoseqPortamento = bPorta;
+ 			chn.dwFlags = (chn.dwFlags & CHN_CHANNELFLAGS) | (pSmp->uFlags & CHN_SAMPLEFLAGS);
+ 			chn.dwFlags.reset(CHN_PORTAMENTO);
+ 			if(chn.dwFlags[CHN_SUSTAINLOOP])
+diff --git a/soundlib/Sndfile.cpp b/soundlib/Sndfile.cpp
+index 100793c..ed922d6 100644
+--- a/soundlib/Sndfile.cpp
++++ b/soundlib/Sndfile.cpp
+@@ -10,6 +10,7 @@
+ 
+ 
+ #include "stdafx.h"
++#include <random>
+ #include "Sndfile.h"
+ #include "Container.h"
+ #include "mod_specifications.h"
+@@ -49,6 +50,15 @@
+ OPENMPT_NAMESPACE_BEGIN
+ 
+ 
++// Octoseq instrumentation: the stock player seeds this from the system, which makes
++// random instrument variation (volume/pan/filter swing) differ between renders.
++static mpt::fast_prng OctoseqFixedPrng()
++{
++	std::seed_seq seed{0x0C705E9u, 0x5EEDu};
++	return mpt::fast_prng(seed);
++}
++
++
+ bool SettingCacheCompleteFileBeforeLoading()
+ {
+ 	#ifdef MODPLUG_TRACKER
+@@ -118,7 +128,7 @@ CSoundFile::CSoundFile() :
+ 	m_nType(MOD_TYPE_NONE),
+ 	Patterns(*this),
+ 	Order(*this),
+-	m_PRNG(mpt::make_prng<mpt::fast_prng>(mpt::global_prng())),
++	m_PRNG(OctoseqFixedPrng()),  // Octoseq instrumentation: reproducible renders
+ 	m_visitedRows(*this)
+ #ifdef MODPLUG_TRACKER
+ 	, m_MIDIMapper(*this)
+diff --git a/soundlib/Sndmix.cpp b/soundlib/Sndmix.cpp
+index 3405765..0c40ee9 100644
+--- a/soundlib/Sndmix.cpp
++++ b/soundlib/Sndmix.cpp
+@@ -20,6 +20,13 @@
+ #endif // MODPLUG_TRACKER
+ #include "plugins/PlugInterface.h"
+ #include "OPL.h"
++#include "OctoseqHook.h"
++#include "mod_specifications.h"
++
++namespace octoseq
++{
++Hooks *g_hooks = nullptr;
++}
+ 
+ OPENMPT_NAMESPACE_BEGIN
+ 
+@@ -2121,6 +2128,22 @@ bool CSoundFile::ReadNote()
+ 	m_PlayState.m_nSamplesPerTick = GetTickDuration(m_PlayState);
+ 	m_PlayState.m_nBufferCount = m_PlayState.m_nSamplesPerTick;
+ 
++	if(octoseq::g_hooks && octoseq::g_hooks->row && m_PlayState.m_flags[SONG_FIRSTTICK])
++	{
++		octoseq::RowEvent ev{};
++		ev.timeSamples = m_PlayState.m_lTotalSampleCount;
++		ev.order = m_PlayState.m_nCurrentOrder;
++		ev.pattern = m_PlayState.m_nPattern;
++		ev.row = m_PlayState.m_nRow;
++		ev.ticksPerRow = static_cast<int32>(m_PlayState.TicksOnRow());
++		ev.tempo = m_PlayState.m_nMusicTempo.ToDouble();
++		ev.samplesPerTick = m_PlayState.m_nSamplesPerTick;
++		ev.rowsPerBeat = m_PlayState.m_nCurrentRowsPerBeat;
++		ev.rowsPerMeasure = m_PlayState.m_nCurrentRowsPerMeasure;
++		ev.globalVolume = m_PlayState.m_nGlobalVolume;
++		octoseq::g_hooks->row(ev, octoseq::g_hooks->user);
++	}
++
+ 	// Master Volume + Pre-Amplification / Attenuation setup
+ 	uint32 nMasterVol;
+ 	{
+@@ -2478,6 +2501,73 @@ bool CSoundFile::ReadNote()
+ 
+ 		chn.newLeftVol = chn.newRightVol = 0;
+ 		chn.pCurrentSample = (chn.pModSample && chn.pModSample->HasSampleData() && chn.nLength && chn.IsSamplePlaying()) ? chn.pModSample->samplev() : nullptr;
++
++		// Octoseq instrumentation: report a (re)started sample once it is actually audible.
++		if(chn.octoseqPending)
++		{
++			if(chn.octoseqPending == 1)
++			{
++				chn.octoseqPending = 2;
++				chn.octoseqTriggerTime = m_PlayState.m_lTotalSampleCount;
++				chn.octoseqOrder = m_PlayState.m_nCurrentOrder;
++				chn.octoseqPattern = m_PlayState.m_nPattern;
++				chn.octoseqRow = m_PlayState.m_nRow;
++				chn.octoseqTick = static_cast<int32>(m_PlayState.m_nTickCount);
++				chn.octoseqStartOffset = static_cast<uint32>(chn.position.GetUInt());
++			}
++			if(!chn.pCurrentSample)
++			{
++				// Cut, ended or never started: nothing was heard.
++				chn.octoseqPending = 0;
++			} else if(chn.nRealVolume > 0)
++			{
++				chn.octoseqPending = 0;
++				if(octoseq::g_hooks && octoseq::g_hooks->note)
++				{
++					octoseq::NoteEvent ev{};
++					ev.timeSamples = chn.octoseqTriggerTime;
++					ev.audibleSamples = m_PlayState.m_lTotalSampleCount;
++					ev.order = chn.octoseqOrder;
++					ev.pattern = chn.octoseqPattern;
++					ev.row = chn.octoseqRow;
++					ev.tick = chn.octoseqTick;
++					ev.background = (nChn >= GetNumChannels());
++					ev.channel = ev.background ? static_cast<int32>(chn.nMasterChn) - 1 : static_cast<int32>(nChn);
++					ev.sample = chn.pModSample ? static_cast<int32>(chn.pModSample - Samples) : 0;
++					ev.instrument = 0;
++					if(chn.pModInstrument)
++					{
++						for(INSTRUMENTINDEX i = 1; i <= GetNumInstruments(); i++)
++						{
++							if(Instruments[i] == chn.pModInstrument)
++							{
++								ev.instrument = i;
++								break;
++							}
++						}
++					}
++					ev.note = chn.nNote;
++					ev.playbackRate = chn.increment.ToDouble() * m_MixerSettings.gdwMixingFreq;
++					ev.realVolume = chn.nRealVolume;
++					ev.channelVolume = chn.nVolume;
++					ev.pan = chn.nRealPan;
++					ev.sampleOffset = chn.octoseqStartOffset;
++					const ModCommand &m = chn.rowCommand;
++					const bool sameRow = (ev.row == static_cast<int32>(m_PlayState.m_nRow) && ev.order == static_cast<int32>(m_PlayState.m_nCurrentOrder));
++					ev.effectLetter = (sameRow && m.command != CMD_NONE) ? GetModSpecifications().GetEffectLetter(m.command) : '\0';
++					ev.effectParam = sameRow ? m.param : 0;
++					ev.volLetter = (sameRow && m.volcmd != VOLCMD_NONE) ? GetModSpecifications().GetVolEffectLetter(m.volcmd) : '\0';
++					ev.volParam = sameRow ? m.vol : 0;
++					ev.cutoff = chn.dwFlags[CHN_FILTER] ? chn.nCutOff : -1;
++					ev.resonance = chn.nResonance;
++					ev.vibrato = chn.dwFlags[CHN_VIBRATO];
++					ev.tremolo = chn.dwFlags[CHN_TREMOLO];
++					ev.arpeggio = (sameRow && m.command == CMD_ARPEGGIO && m.param != 0);
++					ev.portamento = chn.octoseqPortamento;
++					octoseq::g_hooks->note(ev, octoseq::g_hooks->user);
++				}
++			}
++		}
+ 		if(chn.pCurrentSample || (chn.HasMIDIOutput() && !chn.dwFlags[CHN_KEYOFF | CHN_NOTEFADE]))
+ 		{
+ 			// Update VU-Meter (nRealVolume is 14-bit)

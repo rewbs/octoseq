@@ -5,6 +5,11 @@
     python3 tools/loop/run.py --seconds 0          # whole tracks
     python3 tools/loop/run.py --scenes 'scenes/*.rhai' --tracks data/super.mp3
     python3 tools/loop/run.py --save-baseline      # accept this run as the baseline
+    python3 tools/loop/run.py --tracks tools/loop/fixtures/modules/synth-0001.mod
+
+A track may be a tracker module instead of an audio file. It is then rendered with
+the instrumented player and the scene is driven by a bundle of known-correct events
+(see perfect_bundle.py) rather than by analysis.
 
 For each (track, scene) pair it renders a clip with the native engine, checks the
 render is deterministic, computes the metrics in metrics.py, applies the gates in
@@ -29,6 +34,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import analyse  # noqa: E402
 import metrics  # noqa: E402
+import perfect_bundle  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 LOOP_DIR = ROOT / ".loop"
@@ -37,6 +43,7 @@ ENGINE = ENGINE_DIR / "target" / "release" / "visualiser"
 GATES = Path(__file__).parent / "gates.json"
 BASELINE = Path(__file__).parent / "baseline.json"
 
+MODULE_SUFFIXES = {".mod", ".xm", ".s3m", ".it", ".mptm"}
 DETERMINISM_SECONDS = 3.0
 SHEET_COLS, SHEET_ROWS = 6, 4
 
@@ -113,7 +120,14 @@ def run_pair(track: Path, scene: Path, run_dir: Path, gates: dict, args) -> dict
     out.mkdir(parents=True, exist_ok=True)
     result: dict = {"id": name, "track": str(track.relative_to(ROOT)), "scene": str(scene.relative_to(ROOT))}
 
-    package_path = analyse.analyse_cached(track, LOOP_DIR / "cache")
+    audio = track
+    if track.suffix.lower() in MODULE_SUFFIXES:
+        # A tracker module: render it and use its known-correct events instead of analysing.
+        bundle = perfect_bundle.build(track)
+        package_path, audio = bundle / "package.json", bundle / "audio.wav"
+        result["perfect_bundle"] = True
+    else:
+        package_path = analyse.analyse_cached(track, LOOP_DIR / "cache")
     package = json.loads(package_path.read_text())
     seconds = package["durationSec"]
     if args.seconds > 0:
@@ -138,7 +152,7 @@ def run_pair(track: Path, scene: Path, run_dir: Path, gates: dict, args) -> dict
     shutil.rmtree(again, ignore_errors=True)
 
     clip = out / "clip.mp4"
-    encode_clip(frames_dir, track, clip, seconds, args.fps)
+    encode_clip(frames_dir, audio, clip, seconds, args.fps)
     shutil.rmtree(frames_dir)
 
     frames = metrics.load_frames(clip)

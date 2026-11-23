@@ -1,0 +1,48 @@
+{
+  "chosen": {
+    "onsets": {
+      "analyser": "standin",
+      "score": 0.8181,
+      "candidates": {
+        "standin": 0.8181,
+        "energy": 0.7017
+      }
+    },
+    "beats": {
+      "analyser": "standin",
+      "score": 0.9019,
+      "candidates": {
+        "standin": 0.9019
+      }
+    },
+    "sections": {
+      "analyser": "novelty",
+      "score": 0.6072,
+      "candidates": {
+        "novelty": 0.6072
+      }
+    },
+    "stems": {
+      "analyser": "bandsplit",
+      "score": -1.62,
+      "candidates": {
+        "bandsplit": -1.62
+      }
+    }
+  },
+  "corpus": {
+    "train": 21,
+    "heldout": 27,
+    "sources": "24 synthetic, 24 downloaded, 0 local"
+  },
+  "params": {
+    "n_fft": 2048,
+    "hop": 441,
+    "log_gain": 10.0,
+    "floor_window_s": 0.2,
+    "threshold_window_s": 2.0,
+    "threshold_k": 0.2,
+    "min_gap_s": 0.08,
+    "onset_shift_s": 0.0106
+  }
+}

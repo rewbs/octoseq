@@ -1,0 +1,34 @@
+{
+  "params": {
+    "n_fft": 2048,
+    "hop": 441,
+    "log_gain": 10.0,
+    "floor_window_s": 0.2,
+    "threshold_window_s": 2.0,
+    "threshold_k": 0.2,
+    "min_gap_s": 0.08,
+    "onset_shift_s": 0.0106
+  },
+  "evidence": {
+    "heldout_onsets": [
+      0.8059,
+      0.8181
+    ],
+    "heldout_beats": [
+      0.8628,
+      0.9019
+    ],
+    "heldout_clean_bias_ms": [
+      -2.51,
+      -1.75
+    ],
+    "real_music_agreement": [
+      0.8921,
+      0.9255
+    ],
+    "corpus": {
+      "train": 21,
+      "heldout": 27
+    }
+  }
+}
