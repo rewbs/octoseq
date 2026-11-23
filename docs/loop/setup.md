@@ -44,6 +44,11 @@ clip renders and `run.py` with no arguments reports no changes against the saved
 baseline. (The scripts in `example-scripts/` are not part of a plain run: each stops
 on a script error on its first frame.)
 
+When the model environment exists (`tools/loop/models/setup.sh`), `run.py` and `video.py`
+use it to separate each audio track's drum stem, once per track, even though they run
+under the system Python. The saved render baseline was made that way; without the
+model environment, bundles take drum hits from the mix and the figures differ.
+
 The first full `accuracy.py` run renders every module in the corpus; later runs reuse
 the cache in `.loop/`. `--jobs` sets how many modules are analysed at once (default 4);
 use about two thirds of the machine's cores.

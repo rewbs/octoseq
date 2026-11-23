@@ -46,7 +46,8 @@ Sent: `super` shows 1 and 2, show 1 again with `--vivid`, and 60 seconds of the
 `dontstop` show.
 
 - **Colours: the default ones, not vivid.** Answered.
-- Ratings against the five review questions: not given yet.
+- Rating: **"Better, keep going."** No figure and no specific complaints given, so the
+  targets set after review 1 stand as they are.
 
 ## Decisions taken by default
 
@@ -168,6 +169,13 @@ Say so to reverse any of these.
 | D72 | A render now fails if its script fails. Before, a scene whose `init()` stopped halfway was rendered with whatever it had set up, and the error was dropped | This is how I found that **all five original example scenes fail on their first frame and always have**: they set `entity.params.…` where the engine has `materialParams`, or trip a sandbox limit. That is why they were "frozen". They are out of the default loop; fixing or retiring them is your call |
 | D73 | Three engine bugs fixed on the way, each with a test or a visible check: an entity built in a loop lost everything set on it; a scene could hold only about a dozen entities (a 500-entry map limit, counted through nested maps, now 50,000); and every object sharing a material got the last object's material settings | The scenes could not be written without them. All three change what existing scripts do, in the direction of doing what the script says |
 | D74 | Shortening trails to cut the `wash` figure was tried and reverted | It took wash under target on two shows and pushed two others over hard gates (strobe rate; too dark). Wash stands at 0.19 to 0.30 against a target of 0.2, and I do not know yet whether that figure tracks what you called ugly |
+
+### Taken after review 2
+
+| #   | Decision | Why this default |
+| --- | -------- | ---------------- |
+| D76 | A bundle for an audio file takes its kick, snare and hat from the drum stem that local Demucs separates, when the model environment exists, and from the mix when it does not. The render loop runs under the system Python and borrows the model environment for this; stems are cached per track | The scoreboard already had it at 0.73 against 0.57 on held-out modules. On analysed bundles of the two fixture modules it took audio sync from within 10% of the perfect bundle on two of six scene renders to four of six. The cost: the render baseline now depends on the model environment being there, as the scoreboard already does |
+| D77 | On a track with no drums (drum stem more than 30 dB below the mix) the three drum roles follow the low, middle and high of the mix instead of being empty | `super` has no drums: its stem is 47 dB down, and with truthful, empty drum roles the scenes mostly stood still (audio sync on `pulse` 0.60 to 0.34). The other way to do this is for scenes to ask for something other than drums; that is a change to the role set, so it is yours to make. The 30 dB line rests on two tracks (47 and 2 dB) |
 
 ## Answered
 

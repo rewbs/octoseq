@@ -185,6 +185,8 @@ python3 tools/loop/accuracy.py   # score analysis timing against tracker-module 
 - Run the accuracy loop with `.loop/venv/bin/python` to include the model analysers.
   Their results are cached; the first run after a model or its settings change is
   slow. Do not run other GPU work while it is going.
+- The render loop's bundles take drum hits from the Demucs drum stem when the model
+  environment exists. Save the render baseline only on a machine that has it.
 - New scenes ask for musical roles (`//! roles: kick, energy`, then `roles.kick`),
   never for named signals. The roles and what binds them are in
   `tools/loop/roles.py` and `scripting.md`.
