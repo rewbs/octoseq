@@ -2,6 +2,7 @@
 """The build loop: render every scene on every test track and score the result.
 
     python3 tools/loop/run.py                      # all scenes x all tracks, 30 s each
+                                                   # (scenes/ and example-scripts/; data/ and two fixture modules)
     python3 tools/loop/run.py --seconds 0          # whole tracks
     python3 tools/loop/run.py --scenes 'scenes/*.rhai' --tracks data/super.mp3
     python3 tools/loop/run.py --save-baseline      # accept this run as the baseline
@@ -51,6 +52,11 @@ GATES = Path(__file__).parent / "gates.json"
 BASELINE = Path(__file__).parent / "baseline.json"
 CHECK_SCENES = Path(__file__).parent / "fixtures" / "scenes"
 
+# What a plain run covers: the real test tracks plus one training and one held-out
+# fixture module (rendered from perfect bundles), against the new scenes and the
+# older example scripts.
+DEFAULT_TRACKS = ["data/*.mp3", "tools/loop/fixtures/modules/synth-0001.mod", "tools/loop/fixtures/modules/synth-0101.mod"]
+DEFAULT_SCENES = ["scenes/*.rhai", "example-scripts/*.rhai"]
 MODULE_SUFFIXES = {".mod", ".xm", ".s3m", ".it", ".mptm"}
 DETERMINISM_SECONDS = 3.0
 SHEET_COLS, SHEET_ROWS = 6, 4
@@ -260,8 +266,8 @@ def write_report(run_dir: Path, results: list[dict], baseline: dict | None, chec
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--tracks", nargs="+", default=["data/*.mp3"])
-    parser.add_argument("--scenes", nargs="+", default=["example-scripts/*.rhai"])
+    parser.add_argument("--tracks", nargs="+", default=DEFAULT_TRACKS)
+    parser.add_argument("--scenes", nargs="+", default=DEFAULT_SCENES)
     parser.add_argument("--seconds", type=float, default=30.0, help="clip length; 0 = whole track")
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--width", type=int, default=480)

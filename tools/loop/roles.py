@@ -8,8 +8,10 @@ provide (packages/visualiser/src/roles.rs).
 This module is where the loop's bundles get that table. `bind` takes a package plus
 whatever musical facts are known about the track (beats, downbeats, sections, drum
 hits) and adds the event streams, the derived signals and the role bindings. A role
-is only bound when there is something real to bind it to: a bundle with no downbeats
-has no `downbeat` role, and a scene that needs one will say so.
+is bound when something real stands behind it. A bundle made with no bar lines has no
+`downbeat` role, and a scene that needs one will say so. But a role that was looked
+for and found empty is still bound: a track with no hi-hats has a `hat` role with no
+events in it, and a scene's hat-driven parts simply stay still.
 
 The role set, version 0. The type never varies: a scene can rely on `kick` being
 events and `energy` being a signal on every bundle.
@@ -46,7 +48,7 @@ import numpy as np
 import analyse
 import analysers
 
-ROLES_VERSION = "roles-0"
+ROLES_VERSION = "roles-1"
 DERIVED_RATE = 50.0  # samples per second of the derived signals: smooth at any frame rate
 EVENT_ROLES = ("beat", "downbeat", "onset", "kick", "snare", "hat", "section")
 SIGNAL_ROLES = ("energy", "brightness", "flux", "onset_strength", "bass", "drums", "beat_phase", "bar_phase", "section_progress", "section_intensity")
@@ -142,9 +144,11 @@ def bind(
         roles["downbeat"] = {"events": "downbeat"}
         _custom(package, "bar_phase", phase(downbeats, duration))
         roles["bar_phase"] = {"custom": "bar_phase"}
-    for kind in ("kick", "snare", "hat"):
-        if drums and drums.get(kind):
-            _stream(package, kind, drums[kind])
+    if drums is not None:
+        # Someone listened for drums, so each type is bound even when there are none
+        # of it: an empty stream says "this track has no hi-hats", which is true.
+        for kind in ("kick", "snare", "hat"):
+            _stream(package, kind, drums.get(kind) or [])
             roles[kind] = {"events": kind}
     if sections is not None and "energy" in signal_names:
         _stream(package, "section", sections or [(0.0, 1.0)])
