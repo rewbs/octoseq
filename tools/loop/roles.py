@@ -20,9 +20,9 @@ events and `energy` being a signal on every bundle.
               downbeat          the first beat of every bar
               onset             every audible event
               kick, snare, hat  drum hits by type
-              hit               the blows the whole picture may answer: kicks and snares, or the
-                                strongest onsets where there are none (which includes a track with
-                                no drums, whose kick and snare are stand-ins), never closer than 0.5 s
+              hit               the blows the whole picture may answer: kicks and snares, and the
+                                strongest onsets of any stretch without them (a passage where the
+                                drums drop out, or a whole track with none), never closer than 0.5 s
               section           the start of each section; weight is how big the change is
 
     signals   energy            overall loudness, 0 to 1
@@ -52,10 +52,13 @@ import numpy as np
 import analyse
 import analysers
 
-ROLES_VERSION = "roles-5"
+ROLES_VERSION = "roles-6"
 DERIVED_RATE = 50.0  # samples per second of the derived signals: smooth at any frame rate
 EVENT_ROLES = ("beat", "downbeat", "onset", "kick", "snare", "hat", "hit", "section")
 HIT_MIN_GAP_S = 0.5  # whole-frame blows this far apart stay under the three-flashes-a-second limit
+# A stretch this long with no kick and no snare is a passage where the drums have
+# dropped out or gone weak (a bar and a bit at 120 BPM): its hits come from its onsets.
+HIT_GAP_S = 2.5
 # The model environment's Python (tools/loop/models/setup.sh). The render loop runs
 # under the system Python, which has no models, and borrows this one when it is there.
 MODEL_PYTHON = Path(__file__).resolve().parents[2] / ".loop" / "venv" / "bin" / "python"
@@ -109,20 +112,30 @@ def section_signals(starts: list[float], duration: float, energy: np.ndarray, en
     return progress, level[i]
 
 
-def hits(package: dict, drums: dict[str, list[tuple[float, float]]] | None) -> list[tuple[float, float]]:
+def hits(package: dict, drums: dict[str, list[tuple[float, float]]] | None, stand_ins: list[tuple[float, float]] | None = None) -> list[tuple[float, float]]:
     """The moments worth a whole-frame blow, heaviest first, kept at least HIT_MIN_GAP_S apart.
 
-    Kicks and snares when the bundle has enough of them; otherwise the strongest
-    third of its onsets. Scenes use `kick`, `snare` and `hat` for small local
-    movements at any rate, and `hit` for anything that flashes or jolts the frame.
+    Kicks and snares where the track has them. Wherever it goes longer than
+    HIT_GAP_S without one, the drums have dropped out or gone weak, and that
+    stretch's hits are the strongest third of its own onsets instead; a track with
+    no drums at all is one such stretch from end to end. `stand_ins` are the
+    stretches (start, end) where `drums` holds stand-ins and not drums (see `bind`):
+    what is in them does not count as a kick or a snare here.
+
+    Scenes use `kick`, `snare` and `hat` for small local movements at any rate, and
+    `hit` for anything that flashes or jolts the frame.
     """
-    candidates = [(t, w) for kind in ("kick", "snare") for t, w in (drums or {}).get(kind, [])]
-    if len(candidates) < 8:
-        streams = {s["name"]: s["events"] for s in package.get("eventStreams", [])}
-        events = streams.get("events") or streams.get("onsetPeaks") or []
-        if events:
-            floor = float(np.percentile([e["weight"] for e in events], 67))
-            candidates = [(e["time"], e["weight"]) for e in events if e["weight"] >= floor]
+    duration = float(package["durationSec"])
+    standing_in = lambda t: any(a <= t < b for a, b in stand_ins or [])  # noqa: E731
+    candidates = [(t, w) for kind in ("kick", "snare") for t, w in (drums or {}).get(kind, []) if not standing_in(t)]
+    streams = {s["name"]: s["events"] for s in package.get("eventStreams", [])}
+    onsets = [(e["time"], e["weight"]) for e in streams.get("events") or streams.get("onsetPeaks") or []]
+    marks = [0.0] + sorted(t for t, _ in candidates) + [duration]
+    for start, end in zip(marks, marks[1:]):
+        inside = [(t, w) for t, w in onsets if start <= t <= end] if end - start > HIT_GAP_S else []
+        if inside:
+            floor = float(np.percentile([w for _, w in inside], 67))
+            candidates += [(t, w) for t, w in inside if w >= floor]
     kept: list[tuple[float, float]] = []
     for t, w in sorted(candidates, key=lambda c: (-c[1], c[0])):
         if all(abs(t - other) >= HIT_MIN_GAP_S for other, _ in kept):
@@ -136,7 +149,7 @@ def bind(
     downbeats: list[float] | None = None,
     sections: list[tuple[float, float]] | None = None,
     drums: dict[str, list[tuple[float, float]]] | None = None,
-    drumless: bool = False,
+    stand_ins: list[tuple[float, float]] | None = None,
 ) -> dict:
     """Add roles to a package, in place, from the package itself and the facts given.
 
@@ -144,12 +157,12 @@ def bind(
     weight). The package must already carry its mix signals; `onset` is bound to
     its `events` or `onsetPeaks` stream. Returns the package.
 
-    `drumless` says the track has no drums and `drums` holds stand-ins (the mix's
-    low, middle and high bands). They still fill the kick, snare and hat roles, so
-    that scenes built on drums move, but they are not blows: on such a track nearly
-    every onset is a "kick" and a "snare" at once, all of one weight, and choosing
-    hits among them is choosing at random. `hit` is then the track's strongest
-    onsets instead, heaviest first.
+    `stand_ins` are the stretches (start, end) in which the track has no drums and
+    `drums` holds stand-ins there: the mix's low, middle and high bands. They still
+    fill the kick, snare and hat roles, so that scenes built on drums keep moving,
+    but they are not blows: in such a stretch nearly every onset is a "kick" and a
+    "snare" at once, all of one weight, and choosing hits among them is choosing at
+    random. `hit` there comes from the strongest onsets instead (see `hits`).
     """
     duration = float(package["durationSec"])
     roles: dict[str, dict] = {}
@@ -191,7 +204,7 @@ def bind(
         for kind in ("kick", "snare", "hat"):
             _stream(package, kind, drums.get(kind) or [])
             roles[kind] = {"events": kind}
-    blows = hits(package, None if drumless else drums)
+    blows = hits(package, drums, stand_ins)
     if blows:
         _stream(package, "hit", blows)
         roles["hit"] = {"events": "hit"}

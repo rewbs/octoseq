@@ -71,6 +71,10 @@ BASELINE = Path(__file__).parent / "accuracy_baseline.json"
 GATES = Path(__file__).parent / "gates.json"
 WORKER_VERSION = "worker-1"
 STEM_LEVELS_VERSION = "levels-2"
+# Whether the drums are playing is judged over a window this long, and a stretch
+# without them must last this long to count: shorter is a gap between hits.
+DRUMLESS_WINDOW_S = 1.0
+DRUMLESS_MIN_S = 2.0
 
 PARTS = ("onsets", "beats", "sections", "drums", "stems")
 MEASURES = {
@@ -173,7 +177,7 @@ def recipe(choices: dict, params: dict) -> dict:
         parts={part: choices[part]["analyser"] for part in PARTS},
         standin=f"{analyse.ANALYSER_VERSION}-{analyse.params_key(params)}",
         roles=roles.ROLES_VERSION,
-        drums=dict(stem=analyse.params_key(analysers.drum_params("stem")), mix=analyse.params_key(analysers.drum_params("mix")), drumless_db=roles.DRUMLESS_DB),
+        drums=dict(stem=analyse.params_key(analysers.drum_params("stem")), mix=analyse.params_key(analysers.drum_params("mix")), drumless_db=roles.DRUMLESS_DB, window_s=DRUMLESS_WINDOW_S, min_s=DRUMLESS_MIN_S, hit_gap_s=roles.HIT_GAP_S),
         stems=STEM_LEVELS_VERSION,
         models={name: analysers.result_version(name) for name in sorted(MODEL_BACKED) if name in {c["analyser"] for c in choices.values()}},
     )
@@ -219,6 +223,40 @@ def _separate(source: str, audio: Path, **options) -> stem_sources.StemSet:
         raise WorkerError(f"stems from {source}: {error}") from error
 
 
+def drumless_stretches(stem: np.ndarray, mix: np.ndarray, rate: int = analysers.STEM_RATE) -> list[tuple[float, float]]:
+    """The stretches (start, end, in seconds) of a track in which the drums are not playing.
+
+    Judged as a whole track is: the drum stem more than 30 dB below the mix is what
+    separation leaves behind where there are no drums. Here that is asked of every
+    quarter second, over the second around it, and a stretch counts when it lasts
+    DRUMLESS_MIN_S. Where the mix itself is all but silent nothing is said: there
+    is no telling drums from none in silence.
+    """
+    hop = rate // 4
+    blocks = min(len(stem), len(mix)) // hop
+    if blocks == 0:
+        return []
+    width = max(1, int(round(DRUMLESS_WINDOW_S * rate / hop)))
+
+    def power(x: np.ndarray) -> np.ndarray:
+        per_block = (x[: blocks * hop].astype(np.float64).reshape(blocks, hop) ** 2).mean(axis=1)
+        padded = np.pad(per_block, (width // 2, width - width // 2 - 1), mode="edge")
+        return np.convolve(padded, np.ones(width) / width, mode="valid")
+
+    drums, everything = power(stem), power(mix)
+    audible = everything > everything.max() * 1e-6
+    absent = audible & (10.0 * np.log10(np.maximum(drums, 1e-18) / np.maximum(everything, 1e-18)) < roles.DRUMLESS_DB)
+    stretches, start = [], None
+    for i, flag in enumerate(list(absent) + [False]):
+        if flag and start is None:
+            start = i
+        elif not flag and start is not None:
+            if (i - start) * hop / rate >= DRUMLESS_MIN_S:
+                stretches.append((round(start * hop / rate, 3), round(i * hop / rate, 3)))
+            start = None
+    return stretches
+
+
 def analyse_track(audio: Path, choices: dict, stem_options: dict | None = None) -> dict:
     """Make a bundle for a track from the analysers chosen. Nothing is stored."""
     params = analyse.load_params()
@@ -238,19 +276,29 @@ def analyse_track(audio: Path, choices: dict, stem_options: dict | None = None) 
     starts = None if name is None else _run(name, audio)["sections"]
 
     name = choices["drums"]["analyser"]
-    hits, drumless = None, False
+    hits, stand_ins = None, None
     if name == "drumbands_stem":
         # As scored: the drum stem local Demucs separates. Where that stem is all but
-        # silent the track has no drums, and the mix's low, middle and high bands
-        # stand in for kick, snare and hat, so scenes built on drums still move.
-        heard, heard_in, drum_params = analysers.decode(_separate("demucs", audio).files["drums"]), "stem", analysers.drum_params("stem")
-        mix = analysers.decode(audio)
-        level = 20.0 * np.log10(max(float(np.sqrt(np.mean(heard**2))), 1e-9) / max(float(np.sqrt(np.mean(mix**2))), 1e-9))
+        # silent there are no drums, and the mix's low, middle and high bands stand in
+        # for kick, snare and hat, so scenes built on drums still move. That is
+        # decided for the whole track first, and then stretch by stretch, so that a
+        # passage where the drums drop out is treated as a track without them is.
+        stem, mix = analysers.decode(_separate("demucs", audio).files["drums"]), analysers.decode(audio)
+        duration = float(package["durationSec"])
+        level = 20.0 * np.log10(max(float(np.sqrt(np.mean(stem**2))), 1e-9) / max(float(np.sqrt(np.mean(mix**2))), 1e-9))
+        stand_ins = [(0.0, duration)] if level < roles.DRUMLESS_DB else drumless_stretches(stem, mix)
+        without = sum(end - start for start, end in stand_ins)
         if level < roles.DRUMLESS_DB:
-            heard, heard_in, drum_params, drumless = mix, "mix (no drums in the track)", analysers.drum_params("mix"), True
-        hits = analysers.drum_hits(analysers.drum_envelopes(heard), drum_params)
-        parts["drums"]["heardIn"] = heard_in
-        package["drumSource"] = heard_in
+            hits, heard_in = analysers.drum_hits(analysers.drum_envelopes(mix), analysers.drum_params("mix")), "mix (no drums in the track)"
+        else:
+            hits, heard_in = analysers.drum_hits(analysers.drum_envelopes(stem), analysers.drum_params("stem")), "stem"
+            if stand_ins:
+                standing_in = lambda t: any(start <= t < end for start, end in stand_ins)  # noqa: E731
+                from_mix = analysers.drum_hits(analysers.drum_envelopes(mix), analysers.drum_params("mix"))
+                hits = {kind: sorted([t for t in times if not standing_in(t)] + [t for t in from_mix.get(kind, []) if standing_in(t)]) for kind, times in hits.items()}
+                heard_in = f"stem, and the mix for the {without:.0f} s of {duration:.0f} s with no drums"
+        parts["drums"]["heardIn"] = package["drumSource"] = heard_in
+        parts["drums"]["withoutDrums"] = [list(stretch) for stretch in stand_ins]
     elif name is not None:
         hits = _run(name, audio)["drums"]
         parts["drums"]["heardIn"] = package["drumSource"] = "mix"
@@ -268,7 +316,7 @@ def analyse_track(audio: Path, choices: dict, stem_options: dict | None = None) 
         downbeats=grid.get("downbeats"),
         sections=None if starts is None else [(0.0, 1.0)] + [(t, 0.5) for t in starts],
         drums=None if hits is None else {kind: [(t, 1.0) for t in times] for kind, times in hits.items()},
-        drumless=drumless,
+        stand_ins=stand_ins,
     )
     made = recipe(choices, params)
     package["analysis"] = dict(
@@ -564,13 +612,25 @@ def selftest() -> list[tuple[str, bool, str]]:
         # A track with no drums: every onset is a stand-in kick, all of one weight,
         # and every third onset is a strong one.
         package = dict(durationSec=6.0, signals=[], eventStreams=[{"name": "onsetPeaks", "events": [{"time": 0.25 * i, "weight": 1.0 if i % 3 == 1 else 0.1} for i in range(24)]}])
-        stand_ins = {"kick": [(0.25 * i, 1.0) for i in range(24)], "snare": [], "hat": []}
+        everywhere = {"kick": [(0.25 * i, 1.0) for i in range(24)], "snare": [], "hat": []}
         strong = {round(0.25 * i, 4) for i in range(24) if i % 3 == 1}
-        blows = {}
-        for label, flag in (("drums", False), ("drumless", True)):
-            bound = roles.bind(json.loads(json.dumps(package)), drums=stand_ins, drumless=flag)
-            blows[label] = {e["time"] for e in next(s for s in bound["eventStreams"] if s["name"] == "hit")["events"]}
-        rows.append(("worker: with no drums, the hits are the strongest onsets", blows["drumless"] == strong and blows["drums"] != strong, f"-> {len(blows['drumless'])} hits, all on the {len(strong)} strong onsets; from the stand-in drums {len(blows['drums'] & strong)} of {len(blows['drums'])} were"))
+
+        def blows(drums, stand_ins=None) -> set[float]:
+            bound = roles.bind(json.loads(json.dumps(package)), drums=drums, stand_ins=stand_ins)
+            return {e["time"] for e in next(s for s in bound["eventStreams"] if s["name"] == "hit")["events"]}
+
+        as_drums, none = blows(everywhere), blows(everywhere, [(0.0, 6.0)])
+        rows.append(("worker: with no drums, the hits are the strongest onsets", none == strong and as_drums != strong, f"-> {len(none)} hits, all on the {len(strong)} strong onsets; from the stand-in drums {len(as_drums & strong)} of {len(as_drums)} were"))
+        # Drums for the first three seconds only: kicks there, strong onsets after.
+        half = blows({"kick": [(0.5 * i, 1.0) for i in range(6)], "snare": [], "hat": []})
+        late = {t for t in half if t > 3.0}
+        rows.append(("worker: where the drums drop out, the hits carry on from the onsets", {t for t in half if t <= 2.5} == {0.5 * i for i in range(6)} and late and late <= strong, f"-> {len(half) - len(late)} kicks, then {len(late)} strong onsets"))
+        # The stem falls silent halfway through a track that plays on.
+        rate, rng = analysers.STEM_RATE, np.random.default_rng(1)
+        tone = 0.3 * np.sin(2 * np.pi * 220.0 * np.arange(12 * rate) / rate)
+        beat = np.concatenate([0.3 * rng.standard_normal(6 * rate), 0.0005 * rng.standard_normal(6 * rate)])
+        found = drumless_stretches(beat.astype(np.float32), (tone + beat).astype(np.float32))
+        rows.append(("worker: a passage with no drums is found in a track that has them", len(found) == 1 and abs(found[0][0] - 6.0) <= 0.75 and found[0][1] >= 11.75, f"-> {found}"))
 
         def broken(change) -> list[str]:
             copy = json.loads(json.dumps(made))
