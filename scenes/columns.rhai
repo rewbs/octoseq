@@ -36,8 +36,8 @@ fn init(ctx) {
     let mist = if style.mist < 0.5 { 0.5 } else { style.mist };
     // `style.at` is where in the frame the scene sits (0, 0 is the middle; x to the
     // right and y down, in frame widths and heights). The eye moves the other way.
-    let ex = style.at[0] * -6.6;
-    let ey = style.at[1] * 3.7;
+    let ex = style.at[0] * -9.57;
+    let ey = style.at[1] * 5.39;
     camera.position = #{ x: ex, y: ey, z: 6.5 };
     camera.target = #{ x: ex, y: ey, z: 0.0 };
 

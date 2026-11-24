@@ -206,6 +206,18 @@ python3 tools/loop/accuracy.py   # score analysis timing against tracker-module 
   file: results are cached and their scores recorded, so never clear
   `.loop/cache/stems` casually. Keys come from the environment or `.env`; never
   print, log or commit one.
+- Every scene keeps a contract, checked by `tools/loop/contract.py`. After writing or
+  changing a scene run `contract.py --render scenes/<name>.rhai`: it renders the
+  scene as it stands, at its crispest and at its mistiest, and all three must pass
+  the hard gates. `scripting.md` has the shapes the scenes are built from and the
+  script language's traps.
+- Fifty of the scenes were each written from a Milkdrop preset
+  (`tools/loop/preset_pool.json`, [docs/design/preset-pool.md](docs/design/preset-pool.md)).
+  After saving the render baseline run `python3 tools/loop/presets.py table`, which
+  rewrites that file from it.
+- The director takes a brief (`director.BRIEF_PARTS`): keep it plain data, and keep
+  its refusals saying what would have been right. It is how a prompt will reach the
+  engine.
 
 ## Coding Conventions
 

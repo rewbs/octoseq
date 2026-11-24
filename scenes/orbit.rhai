@@ -62,7 +62,7 @@ fn init(ctx) {
     let round = clock.scale(0.35);
     camera.position = #{ x: round.sin().scale(7.0), y: t.scale(0.23).sin().scale(2.2), z: round.add(1.5708).sin().scale(7.0) };
     // `style.at` places the scene in the frame; the eye looks past the cube by that much.
-    camera.target = #{ x: 0.0, y: style.at[1] * 3.7, z: 0.0 };
+    camera.target = #{ x: 0.0, y: style.at[1] * 5.39, z: 0.0 };
 
     let body = mesh.cube();
     body.rotation.x = clock.scale(0.7);

@@ -276,9 +276,79 @@ def render(known: dict, only: int | None = None, seconds: float = 30.0) -> int:
     return 0
 
 
+TABLE = ROOT / "docs" / "design" / "preset-pool.md"
+COMPARED = (("flow_speed", "speed"), ("flow_swirl", "swirl"), ("punch", "punch"), ("look_change", "look change"), ("wash", "wash"))
+
+
+def table() -> int:
+    """docs/design/preset-pool.md: each preset, the scene made from it, and the two measured side by side.
+
+    The presets' figures are projectM's renders (`presets.py render`); the
+    scenes' are the render loop's saved baseline. Both are of the first thirty
+    seconds of the same track, measured by the same code.
+    """
+    pool = json.loads(POOL.read_text())
+    theirs = json.loads((OUT / "pool.json").read_text()) if (OUT / "pool.json").exists() else {}
+    baseline = Path(__file__).parent / "baseline.json"
+    ours = json.loads(baseline.read_text()) if baseline.exists() else {}
+    track = Path(RENDER_TRACKS[0]).stem
+
+    def figures(m: dict | None) -> str:
+        if not m:
+            return "not measured"
+        return ", ".join(f"{label} {m[key]:.2f}" for key, label in COMPARED if isinstance(m.get(key), (int, float)) and m[key] == m[key])
+
+    lines = [
+        "# The preset pool",
+        "",
+        "Fifty Milkdrop presets, and the Octoseq scene written from each. This file is",
+        "written by `python3 tools/loop/presets.py table`; do not edit it by hand. The",
+        "presets, the scenes' names and the notes are in `tools/loop/preset_pool.json`.",
+        "",
+        "The presets were chosen by rule, not by taste: five from each of the collection's",
+        "ten categories, each from a different sub-category, picked to spread across what a",
+        "preset can use (`presets.py choose`). Each was rendered by projectM on the loop's",
+        "test tracks and looked at before its scene was written. A scene is meant to be",
+        "similar or better, not a copy: where a preset was dull, or drew nothing, the note",
+        "says what was done instead.",
+        "",
+        f"Figures are for the first thirty seconds of `{track}`: speed (frame widths a second",
+        "where the picture moves), swirl (how far the motion is from one rigid slide, zoom or",
+        "turn), punch (how hard the picture jumps on hits), look change (how different it is",
+        "from eight seconds before) and wash (how much of the frame is filled with soft",
+        "colour). A scene is not required to match its preset's figures, and most punch harder.",
+        "",
+    ]
+    category = None
+    for index, entry in enumerate(pool):
+        if entry["category"] != category:
+            category = entry["category"]
+            lines += [f"## {category}", ""]
+        scene = entry.get("scene")
+        lines += [
+            f"### {index:02d}. {entry['sub_category']}: `{scene}`" if scene else f"### {index:02d}. {entry['sub_category']}",
+            "",
+            f"- Preset: `{entry['preset']}`",
+            f"- It uses: {uses(entry['features'])}",
+        ]
+        if entry.get("saw"):
+            lines.append(f"- It looks like: {entry['saw']}")
+        if scene:
+            lines.append(f"- Scene: [`scenes/{scene}.rhai`](../../scenes/{scene}.rhai); {entry.get('made', '')}")
+        lines += [
+            f"- Preset measured: {figures((theirs.get(slug(entry, index)) or {}).get('figures', {}).get(track))}",
+            f"- Scene measured: {figures(ours.get(f'{track}__{scene}'))}" if scene else "- Scene: not written",
+            "",
+        ]
+    TABLE.write_text("\n".join(lines))
+    print(f"wrote {TABLE.relative_to(ROOT)}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("table", help="write docs/design/preset-pool.md: each preset beside the scene made from it")
     r = sub.add_parser("render", help="projectM's render of each preset in the pool, measured as ours are")
     r.add_argument("--only", type=int, help="only the preset with this number")
     s = sub.add_parser("survey", help="read every preset's features (kept in .loop/presets/survey.json)")
@@ -287,6 +357,8 @@ def main() -> int:
     sub.add_parser("summary", help="what the collection and the pool use")
     args = parser.parse_args()
 
+    if args.command == "table":
+        return table()
     if args.command == "survey":
         survey(collection(), args.category)
         return 0
@@ -297,6 +369,12 @@ def main() -> int:
         return render(known, args.only)
     if args.command == "choose":
         pool = choose(known)
+        # A preset already in the pool keeps the scene made from it and its notes.
+        kept = {e["preset"]: e for e in json.loads(POOL.read_text())} if POOL.exists() else {}
+        for entry in pool:
+            for key in ("scene", "saw", "made"):
+                if key in kept.get(entry["preset"], {}):
+                    entry[key] = kept[entry["preset"]][key]
         POOL.write_text(json.dumps(pool, indent=1) + "\n")
         for index, entry in enumerate(pool):
             print(f"{slug(entry, index):42} {Path(entry['preset']).name[:60]}")

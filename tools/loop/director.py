@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 ROOT = Path(__file__).resolve().parents[2]
 SCENES = ROOT / "scenes"
 SHOWS = ROOT / ".loop" / "shows"
-DIRECTOR_VERSION = "director-4"
+DIRECTOR_VERSION = "director-5"
 
 MAX_HOLD_S = 9.0  # the longest any one look is held (review 1: boring in under ten seconds)
 MIN_HOLD_S = 3.0  # section starts closer together than this are treated as one
@@ -85,6 +85,59 @@ PLACES = [(0.0, 0.0), (-0.2, 0.0), (0.2, 0.0), (0.0, -0.14), (0.0, 0.14), (-0.17
 MISTS = [0.0, 0.1, 0.9, 1.0]
 MIST_STEP = 0.4
 STYLE_LINE = re.compile(r"^let style = .*// @style\s*$", re.MULTILINE)
+
+# A brief is what whoever asks for a show may say about it, as plain data; every
+# part can be left out. It is the door a prompt will come in by: something that
+# turns a person's words into a brief needs to know nothing else about the
+# director, and `contract.py catalogue` tells it what each scene is. A brief that
+# is wrong is refused with a message that says what would have been right, so
+# whatever wrote it can correct itself.
+BRIEF_PARTS = {
+    "scenes": "use only these scenes (a list of names, as in the catalogue)",
+    "avoid": "never use these scenes (a list of names)",
+    "palettes": f"use only these palettes (a list, from {', '.join(sorted(PALETTES))})",
+    "mist": "crisp, misty or both: which kind of look to use (both if left out)",
+    "hold": "the longest one look is held, in seconds",
+    "vivid": "true for colours as written, false for the paler default",
+    "seed": "a whole number: the same brief and seed on the same track give the same show",
+}
+MIST_KINDS = {"crisp": [m for m in MISTS if m < 0.5], "misty": [m for m in MISTS if m >= 0.5], "both": MISTS}
+LONGEST_HOLD_S = 120.0
+
+
+def read_brief(brief: dict | None, scenes_dir: Path = SCENES) -> dict:
+    """Check a brief. Returns it; raises ValueError saying what is wrong and what would be right."""
+    if brief is None:
+        return {}
+    if not isinstance(brief, dict):
+        raise ValueError("a brief is a set of named parts: " + "; ".join(f"{k}: {v}" for k, v in BRIEF_PARTS.items()))
+    unknown = sorted(set(brief) - set(BRIEF_PARTS))
+    if unknown:
+        raise ValueError(f"a brief has no part called {', '.join(unknown)}. Its parts are: " + "; ".join(f"{k}: {v}" for k, v in BRIEF_PARTS.items()))
+    known = sorted(s.stem for s in scenes_dir.glob("*.rhai") if STYLE_LINE.search(s.read_text()))
+    for part in ("scenes", "avoid"):
+        if part in brief:
+            names = brief[part]
+            if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+                raise ValueError(f"a brief's {part} is a list of scene names, such as {known[:3]}")
+            missing = sorted(set(names) - set(known))
+            if missing:
+                raise ValueError(f"no scene is called {', '.join(missing)}. The scenes are: {', '.join(known)}")
+    if "palettes" in brief:
+        names = brief["palettes"]
+        if not isinstance(names, list) or not names or not all(isinstance(n, str) for n in names) or set(names) - set(PALETTES):
+            raise ValueError(f"a brief's palettes is a list of one or more of: {', '.join(sorted(PALETTES))}")
+    if "mist" in brief and brief["mist"] not in MIST_KINDS:
+        raise ValueError(f"a brief's mist is one of: {', '.join(MIST_KINDS)}")
+    if "hold" in brief:
+        hold = brief["hold"]
+        if isinstance(hold, bool) or not isinstance(hold, (int, float)) or not MIN_HOLD_S <= hold <= LONGEST_HOLD_S:
+            raise ValueError(f"a brief's hold is a number of seconds from {MIN_HOLD_S:g} to {LONGEST_HOLD_S:g}")
+    if "vivid" in brief and not isinstance(brief["vivid"], bool):
+        raise ValueError("a brief's vivid is true or false")
+    if "seed" in brief and (isinstance(brief["seed"], bool) or not isinstance(brief["seed"], int) or brief["seed"] < 0):
+        raise ValueError("a brief's seed is a whole number, 0 or more")
+    return dict(brief)
 
 
 def scene_roles(scene: Path) -> set[str]:
@@ -144,11 +197,26 @@ def cut_points(package: dict, max_hold: float = MAX_HOLD_S) -> list[tuple[float,
     return cuts
 
 
-def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vivid: bool = False, max_hold: float = MAX_HOLD_S) -> dict:
-    """Make a show for a bundle. Returns the show as plain data (see `write`)."""
+def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vivid: bool = False, max_hold: float = MAX_HOLD_S, brief: dict | None = None) -> dict:
+    """Make a show for a bundle. Returns the show as plain data (see `write`).
+
+    `brief` narrows what the director may do (see BRIEF_PARTS); where it names
+    a seed, vividness or hold, it is the brief's that count. A show made from a
+    brief carries it, so the show says what was asked for.
+    """
+    asked = read_brief(brief, scenes_dir)
+    seed, vivid, max_hold = asked.get("seed", seed), asked.get("vivid", vivid), float(asked.get("hold", max_hold))
     scenes = usable_scenes(package, scenes_dir)
     if not scenes:
         raise ValueError("no scene can run on this bundle: none has all its roles")
+    playable = [s.stem for s in scenes]
+    if "scenes" in asked:
+        scenes = [s for s in scenes if s.stem in asked["scenes"]]
+    scenes = [s for s in scenes if s.stem not in asked.get("avoid", [])]
+    if not scenes:
+        raise ValueError(f"the brief leaves no scene that can run on this track. Those that can are: {', '.join(playable)}")
+    palettes = [p for p in PALETTES if p in asked.get("palettes", PALETTES)]
+    mists = MIST_KINDS[asked.get("mist", "both")]
     seed = secrets.randbelow(2**31) if seed is None else int(seed)
     rng = random.Random(seed)
     # Mist is drawn from a stream of its own, so that adding it left every show's
@@ -163,12 +231,12 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
     for index, (start, new_section) in enumerate(cuts):
         scene = rng.choice([s for s in scenes if s != scene] or scenes)
         if new_section or palette is None:
-            palette = rng.choice([p for p in PALETTES if p != palette])
+            palette = rng.choice([p for p in palettes if p != palette] or palettes)
             order = rng.sample([0, 1, 2], 3)
         else:
             order = order[1:] + order[:1]
         place = rng.choice([p for p in PLACES if p != place])
-        mist = weather.choice([m for m in MISTS if mist is None or abs(m - mist) >= MIST_STEP - 1e-9])
+        mist = weather.choice([m for m in mists if mist is None or abs(m - mist) >= MIST_STEP - 1e-9] or mists)
         end = cuts[index + 1][0] if index + 1 < len(cuts) else float(package["durationSec"])
         middle = intensity[min(int((start + end) / 2 * rate), len(intensity) - 1)] if intensity else 0.5
         colours = [tuple(c**SCREEN_GAMMA if vivid else c for c in PALETTES[palette][i]) for i in order]
@@ -180,7 +248,10 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
             mist=mist,
             transition=0.0 if new_section else round(min(TRANSITION_BEATS * beat_s, (end - start) * TRANSITION_MAX_SHARE), 3),
         ))  # fmt: skip
-    return dict(director=DIRECTOR_VERSION, seed=seed, vivid=vivid, duration=float(package["durationSec"]), segments=segments)
+    show = dict(director=DIRECTOR_VERSION, seed=seed, vivid=vivid, duration=float(package["durationSec"]), segments=segments)
+    if asked:
+        show["brief"] = asked
+    return show
 
 
 def dressed(source: str, segment: dict) -> str:
@@ -223,6 +294,7 @@ def main() -> int:
     parser.add_argument("track", type=Path, help="an audio file or a tracker module")
     parser.add_argument("--seed", type=int, help="repeat an earlier show instead of making a new one")
     parser.add_argument("--vivid", action="store_true", help="colours as written, not the paler ones the engine makes of them")
+    parser.add_argument("--brief", type=Path, metavar="JSON", help="a brief: which scenes, palettes and kind of look to use (see BRIEF_PARTS)")
     parser.add_argument("-o", "--out", type=Path, help="show directory (default .loop/shows/<track>-<seed>)")
     args = parser.parse_args()
     track = args.track.expanduser().resolve()
@@ -230,7 +302,10 @@ def main() -> int:
         package_path = perfect_bundle.build(track) / "package.json"
     else:
         package_path = worker.bundle(track)
-    show = direct(json.loads(package_path.read_text()), args.seed, vivid=args.vivid)
+    try:
+        show = direct(json.loads(package_path.read_text()), args.seed, vivid=args.vivid, brief=json.loads(args.brief.read_text()) if args.brief else None)
+    except ValueError as error:
+        sys.exit(str(error))
     show["bundle_sha256"] = hashlib.sha256(package_path.read_bytes()).hexdigest()
     path = write(show, args.out or SHOWS / f"{track.stem}-{show['seed']}{'-vivid' if args.vivid else ''}")
     print(describe(show))

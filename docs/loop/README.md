@@ -141,6 +141,42 @@ linger until colour fills the frame (misty); at 0.5 it is as its author wrote it
 The director gives each look one end or the other, never the same end twice running.
 The loop reports how far a show ranges between them as `wash_spread`.
 
+### The scene pool and its contract
+
+There are 58 scenes. Fifty were each written from a Milkdrop preset: the presets
+were chosen by rule (`tools/loop/presets.py choose`: five from each of the
+collection's ten categories, each from a different sub-category, spread across what
+a preset can use), rendered by projectM and looked at, and each scene is meant to be
+similar or better, not a copy. [preset-pool.md](../design/preset-pool.md) lists every
+preset beside its scene with both measured; `presets.py table` writes it.
+
+A show is put together from scenes by something that has never seen them, so every
+scene keeps the same few promises, and `tools/loop/contract.py` checks them:
+
+```bash
+python3 tools/loop/contract.py                       # every scene, the written promises
+python3 tools/loop/contract.py --render scenes/x.rhai   # and render it: as it stands, crisp, misty
+python3 tools/loop/contract.py catalogue             # what every scene says about itself, as JSON
+```
+
+- It asks for musical roles and reads nothing else, so it runs on any track.
+- It carries the style line and uses every part: three colours, a speed, a place in
+  the frame and how misty it is.
+- It says in comments what it is and what each role does. The catalogue is those
+  words, and is what a prompt would be given to choose from.
+- Rendered as it stands, at its crispest and at its mistiest, it passes every hard
+  gate. The director uses both ends, and a scene that is fine in the middle can be
+  black at one and strobing at the other.
+
+Run it with `--render` on any scene you write or change.
+
+The director takes a **brief**: which scenes to use or avoid, which palettes, crisp
+or misty or both, the longest hold, vivid or not, and a seed, all optional
+(`director.BRIEF_PARTS`; `video.py track.mp3 --brief brief.json`). A brief that is
+wrong is refused with a message saying what would have been right. The catalogue and
+the brief are how the engine is kept promptable before there is a prompt: something
+that turns a person's words into a brief needs to know nothing else.
+
 ### Editing a show
 
 The director proposes; `tools/loop/show.py` is how a person changes what it proposed
@@ -511,6 +547,8 @@ Figures are held-out results from the scoreboard when this plan was written.
 | **2. Role binding** (done) | Engine tests pass; a scene asking for an unavailable role fails with a clear error; every scene renders on every track. Scenes declare roles and read `roles.<name>`; bundles bind sixteen of them; the accuracy loop checks on every run that a role-reading scene renders and that one needing a missing role is refused by name | None |
 | **3. Feedback-first rendering** (done) | No hard-gate failures on any scene. Active area and jerkiness targets met on a reference scene; deterministic; the WASM build still compiles. Done: feedback is bounded by default; a blend mode draws each frame over the last, so the previous frame is the base layer; warps no longer shear on a wide frame; and a reference scene, `scenes/vortex.rhai`, meets every gate and target on three of four default tracks, deterministically, with the WASM build compiling. Blended transitions between the scenes of a show are done (both scenes draw, and their pictures and warp fields are mixed in one feedback loop; the loop checks a blend shows both scenes and leaves the background alone, and that a cut does neither). Feedback settings mean the same at any frame rate (D97); the engine can take several steps a frame, so that a 30 fps render is the 120 fps picture (`--step-rate`, D98); and the loop is kept in 16-bit float between steps (D99). Everything is drawn in 16-bit float and tone-mapped in one last pass (D102), and a shutter averages the steps of a frame for motion blur (D103). Whether the tunnel example still whites out (D55) cannot be checked until that scene runs at all (D72). The five older example scenes still fail as before | None |
 | **4. Scenes, director, one command** (first version out for review) | Every scene passes hard gates and targets over whole tracks, first on perfect bundles and then on analysed bundles of the same modules; audio sync on the analysed bundle within 10% of the perfect bundle; two runs of the director differ; each resulting show re-renders identically. Done: three scenes with a shared style line, a rule-based director, and `video.py`. Directed shows pass every hard gate on all four default tracks, differ from run to run and re-render identically. Over whole tracks (one run by hand, 23 November 2026, not yet part of the default loop): 24 clips, none fails a hard gate; the directed shows meet `punch`, `look_change` and `one_hue_share` on every track. `wash` was above its old limit on every directed show (0.23 to 0.33); it is no longer a target (D85). On analysed bundles of the two fixture modules, audio sync reaches the perfect bundle's on four of the six scene renders and is 70% and 83% of it on the other two; `punch` is 3.9 to 7.5 against about 8. That is with drum hits heard in the Demucs drum stem. Heard in the mix, as they were before, sync was within 10% on two of six and 40% to 74% on the rest, and `punch` 3.2 to 5.7. Scene changes inside a section are blended; the web preview cannot play a show yet, cut or blended | Review 2: rate the new videos |
+| **5. A pool of fifty scenes** (done) | Fifty presets chosen by rule and rendered by projectM; a scene written from each; every scene passes the hard gates on every test track as it stands, and at its crispest and mistiest; the engine capabilities the presets need added, each with a loop check. Done: 58 scenes in all, five engine capabilities (`sharpen`, `inset`, `tile`, `echo`, `kaleidoscope`), two engine faults found and fixed on the way |
+| **6. Promptable without a prompt** (done) | A check any scene can be held to; a catalogue of the scenes in words; a director that takes a brief as data and refuses a wrong one usefully. Done: `contract.py`, `contract.py catalogue`, `director.read_brief` |
 
 Chunks 1a to 1f are independent and can run in any order; 1a first is best, because
 every later number is more trustworthy on a wider corpus.

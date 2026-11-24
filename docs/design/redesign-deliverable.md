@@ -274,10 +274,11 @@ fine.
    - 3–5 scenes with shared style controls; rule-based director
    - A wide pool of scenes: 50 varied Milkdrop presets analysed and each recreated
      as a scene that is similar or better, with the engine capabilities they need
-     added where sensible
+     added where sensible (done: [preset-pool.md](preset-pool.md))
    - The engine kept promptable without a prompt: a catalogue describing every
      scene in words, a director that takes a brief as data, and a check that says
-     whether a scene, written by hand or generated, is fit to join the pool
+     whether a scene, written by hand or generated, is fit to join the pool (done:
+     `tools/loop/contract.py` and the director's brief)
    - **Exit test:** ten tracks across genres, each watchable to the end unedited
      (the "fun check")
 2. **Preview and first edits.** Web timeline over the WASM engine: drag transition

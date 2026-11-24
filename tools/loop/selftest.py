@@ -225,6 +225,27 @@ def test_director() -> None:
     same_cuts = [(s["start"], s["scene"], s["palette"]) for s in vivid["segments"]] == [(s["start"], s["scene"], s["palette"]) for s in show["segments"]]
     darker = all(v <= c for a, b in zip(vivid["segments"], show["segments"]) for x, y in zip(a["colours"], b["colours"]) for v, c in zip(x, y))
     check("director: a vivid show is the same show in stronger colours", same_cuts and darker and vivid != show)
+    check("director: a brief that asks for nothing gives the same show", director.direct(package, seed=11, brief={})["segments"] == show["segments"])
+    names = sorted({Path(s["scene"]).stem for s in show["segments"]})
+    only = director.direct(package, seed=11, brief={"scenes": names[:2], "palettes": ["ice"], "mist": "crisp", "hold": 5.0})
+    only_holds = [b - a for a, b in zip([s["start"] for s in only["segments"]], [s["start"] for s in only["segments"]][1:] + [60.0])]
+    check(
+        "director: a brief's scenes, palettes, mist and hold are kept to",
+        {Path(s["scene"]).stem for s in only["segments"]} <= set(names[:2]) and {s["palette"] for s in only["segments"]} == {"ice"} and all(s["mist"] < 0.5 for s in only["segments"]) and max(only_holds) <= 5.0 + 1e-6 and only["brief"]["mist"] == "crisp",
+        f"-> scenes {sorted({Path(s['scene']).stem for s in only['segments']})}, longest hold {max(only_holds):.1f} s",
+    )
+    avoided = director.direct(package, seed=11, brief={"avoid": names[:1]})
+    check("director: a brief's avoided scenes are not used", names[0] not in {Path(s["scene"]).stem for s in avoided["segments"]})
+    check("director: a brief's seed is the show's", director.direct(package, brief={"seed": 11})["segments"] == show["segments"])
+    refusals = []
+    for wrong, must_say in (({"colour": "red"}, "palettes"), ({"scenes": ["no-such-scene"]}, names[0]), ({"mist": "foggy"}, "crisp"), ({"hold": 0.5}, "seconds"), ({"palettes": []}, "ice"), ({"scenes": [], "avoid": []}, names[0])):
+        try:
+            director.direct(package, seed=11, brief=wrong)
+            refusals.append(f"{wrong} was accepted")
+        except ValueError as error:
+            if must_say not in str(error):
+                refusals.append(f"{wrong}: the refusal does not mention {must_say}")
+    check("director: a wrong brief is refused, and the refusal says what would be right", not refusals, f"-> {refusals}")
     others = {json.dumps(director.direct(package)["segments"]) for _ in range(6)}
     check("director: without a seed, runs differ", len(others) > 1, f"-> {len(others)} different shows in 6 runs")
     with tempfile.TemporaryDirectory() as tmp:

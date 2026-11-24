@@ -47,7 +47,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "mandala",
+  "saw": "a six-pointed neon star that keeps re-forming",
+  "made": "kept: the six-fold fold. Ours folds three kinds of moving shape through a kaleidoscope that turns a notch on each hit, so the star is never the same twice"
  },
  {
   "category": "Dancer",
@@ -90,7 +93,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "hatch",
+  "saw": "angular streaks of white, yellow and blue, like a city seen at a slant",
+  "made": "kept: straight streaks at two slants. Ours makes them from bars that slide, with the drums thickening one slant each"
  },
  {
   "category": "Dancer",
@@ -135,7 +141,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "nexus",
+  "saw": "a tunnel, the same on the left as on the right, with a glowing core",
+  "made": "kept: the mirrored tunnel and the core. Ours gets the mirror from an echo laid over an unsymmetrical picture"
  },
  {
   "category": "Dancer",
@@ -180,7 +189,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "streamers",
+  "saw": "an orange haze filling the frame, with yellow streamers rising through it",
+  "made": "kept: the haze and the rising. Ours takes its colours from the show's palette instead of being orange"
  },
  {
   "category": "Dancer",
@@ -230,7 +242,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "wire",
+  "saw": "thin wire curves in several colours on black",
+  "made": "kept: fine line on black. Ours bends each wire with a different part of the band and tumbles them in depth"
  },
  {
   "category": "Drawing",
@@ -275,7 +290,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "dunes",
+  "saw": "relief seen from above, like sand or bark, in brown and teal",
+  "made": "kept: ridges that creep. Ours cuts them by sharpening the loop's brightness against a blur of itself, in the show's colours and not the preset's brown and teal"
  },
  {
   "category": "Drawing",
@@ -318,7 +336,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "lattice",
+  "saw": "glowing lines mirrored four ways, repeating into the middle",
+  "made": "kept: the four-fold mirror and the repeat. Ours repeats by drawing the frame again inside a square in the loop"
  },
  {
   "category": "Drawing",
@@ -371,7 +392,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "spotlights",
+  "saw": "glowing orbs throwing beams, like stage lamps",
+  "made": "kept: lamps and beams. Ours makes the beams by smearing lamps four times brighter than white away from a point above the frame"
  },
  {
   "category": "Drawing",
@@ -417,7 +441,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "rorschach",
+  "saw": "blotches with hard outlines, mirrored down the middle",
+  "made": "kept: the fold and the hard-edged pools. Ours does not cut the colour into steps: in this engine that kills a trail in a few frames"
  },
  {
   "category": "Drawing",
@@ -460,7 +487,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "whirlpools",
+  "saw": "soft rainbow liquid in mirrored whirls",
+  "made": "kept: the whirl and the mirror. Ours shows one whirlpool tiled two by two, each tile the mirror of the next"
  },
  {
   "category": "Fractal",
@@ -506,7 +536,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "cells",
+  "saw": "nearly black, with one small soft blue glow: the dullest of the fifty",
+  "made": "better, not similar: ours is a true feedback fractal, one cell with four half-size copies of the whole picture about it, and so on down"
  },
  {
   "category": "Fractal",
@@ -557,7 +590,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "petal",
+  "saw": "a pale flower bursting outwards over the whole frame",
+  "made": "kept: the opening flower and the pale colour. Ours changes its number of petals on each hit"
  },
  {
   "category": "Fractal",
@@ -606,7 +642,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "hexagon",
+  "saw": "a hexagon with sparks bursting from it, on flat fields of strong colour",
+  "made": "kept: the hexagon, the sparks and the flat fields. Ours nests the hexagon inside itself by drawing the frame again in the loop"
  },
  {
   "category": "Fractal",
@@ -654,7 +693,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "frames",
+  "saw": "rectangles nested like a corridor, in rainbow bands, with a small scribble",
+  "made": "kept: all of it. Ours runs the colour a step per frame of the corridor and puts the melody in the scribble"
  },
  {
   "category": "Fractal",
@@ -697,7 +739,10 @@
    ],
    "hears": [],
    "rating": 5.0
-  }
+  },
+  "scene": "moire",
+  "saw": "two sets of rings crossing into broad curved bands",
+  "made": "kept: the effect itself, which needs nothing but fine rings. Ours gives each set a drum"
  },
  {
   "category": "Geometric",
@@ -742,7 +787,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "cathedral",
+  "saw": "dark pointed arches in green and red",
+  "made": "kept: the arches. Ours stands them in real depth and walks the eye down the nave"
  },
  {
   "category": "Geometric",
@@ -785,7 +833,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "array",
+  "saw": "a marbled black and white texture, mirrored",
+  "made": "by its name, not its look: ours is an array of forty moons, all showing the same phase as one lamp circles them, with a wave of size running through the grid"
  },
  {
   "category": "Geometric",
@@ -830,7 +881,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "triangles",
+  "saw": "a bright grid of coloured lenses",
+  "made": "by its name: ours is five nested triangles turning like clock hands, at full colour as the preset is"
  },
  {
   "category": "Geometric",
@@ -878,7 +932,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "grid",
+  "saw": "a grid of white blobs that swell and break into dots, jumping hard on the drums",
+  "made": "kept: the grid and the punch. Ours runs the kick across the columns and the snare down the rows"
  },
  {
   "category": "Geometric",
@@ -927,7 +984,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "lissajous",
+  "saw": "thin magenta loops drawn on black",
+  "made": "kept: the drawn loops. Ours uses three pens whose rates drift with the music's brightness"
  },
  {
   "category": "Hypnotic",
@@ -966,7 +1026,10 @@
    "tone": [],
    "hears": [],
    "rating": 5.0
-  }
+  },
+  "scene": "diamonds",
+  "saw": "striped diamonds, one inside another, pouring outwards",
+  "made": "kept: all of it. Ours makes each stripe one beat wide"
  },
  {
   "category": "Hypnotic",
@@ -1009,7 +1072,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "vortex",
+  "saw": "swirls and rings in two colours, turning about the middle",
+  "made": "kept: the swirl, the rings and the two colours. Ours sends a ring out on every beat"
  },
  {
   "category": "Hypnotic",
@@ -1054,7 +1120,10 @@
     "bass"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "mercury",
+  "saw": "swirling olive and silver, like liquid metal",
+  "made": "kept: the metal. Ours gets the highlights by sharpening against a wide blur and taking most of the colour out"
  },
  {
   "category": "Hypnotic",
@@ -1104,7 +1173,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "glass",
+  "saw": "pale gradients with glassy shapes over them",
+  "made": "kept: gradients and glass. Ours is five soft lamps behind a lens, with no outline anywhere"
  },
  {
   "category": "Hypnotic",
@@ -1150,7 +1222,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "filigree",
+  "saw": "fine dark-blue tracery",
+  "made": "kept: fine line on dark. Ours is crimped rings through a kaleidoscope of ten, with the trails sharpened into more line"
  },
  {
   "category": "Particles",
@@ -1193,7 +1268,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "motes",
+  "saw": "nearly black, with tiny specks that blink hard on the drums",
+  "made": "kept: specks that blink. Ours hangs them in depth so the eye reads space, and fills more of the frame"
  },
  {
   "category": "Particles",
@@ -1236,7 +1314,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "weave",
+  "saw": "a woven blue and red texture inside a border",
+  "made": "kept: the weave and the border. Ours runs a wave through the warp and another through the weft"
  },
  {
   "category": "Particles",
@@ -1279,7 +1360,10 @@
     "bass"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "spokes",
+  "saw": "a star of twelve spokes",
+  "made": "kept: the twelve spokes. Ours runs the kick round them one way and the snare the other"
  },
  {
   "category": "Particles",
@@ -1324,7 +1408,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "crystal",
+  "saw": "a white and cyan crystal, mirrored into an X",
+  "made": "kept: the hard, nearly white crystal. Ours folds eight ways and lays a small copy of the picture over its own middle"
  },
  {
   "category": "Particles",
@@ -1369,7 +1456,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "swarm",
+  "saw": "nearly black, with small orange sparks spinning fast",
+  "made": "kept: the speed. Ours is three shells of sparks spinning against each other, with far more light in the frame"
  },
  {
   "category": "Reaction",
@@ -1410,7 +1500,10 @@
     "bass"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "automata",
+  "saw": "fine pink cells and blobs growing on black",
+  "made": "kept: growth at the scale of a few pixels. Ours seeds it with points and drives it by sharpening against a very fine blur"
  },
  {
   "category": "Reaction",
@@ -1455,7 +1548,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "contours",
+  "saw": "bands with hard edges in every colour, like a map's height lines",
+  "made": "kept: all of it. This is the look the loop's sharpening gives when it is driven hard"
  },
  {
   "category": "Reaction",
@@ -1503,7 +1599,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "drip",
+  "saw": "liquid in strong colours running down from the top edge over white",
+  "made": "kept: the runs from the top edge. Ours runs over black, as every scene here does"
  },
  {
   "category": "Reaction",
@@ -1548,7 +1647,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "strata",
+  "saw": "bright slanted bands in orange and cyan",
+  "made": "kept: slanted bands in two colours. Ours lays them down from bars that climb the slope"
  },
  {
   "category": "Reaction",
@@ -1591,7 +1693,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "starfield",
+  "saw": "white streaks flying out from a point",
+  "made": "kept: all of it. Ours ties the speed of the flight to how loud the music is"
  },
  {
   "category": "Sparkle",
@@ -1634,7 +1739,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "bokeh",
+  "saw": "soft coloured balls bursting outwards",
+  "made": "kept: all of it. Ours hangs them at different depths so they part as they burst"
  },
  {
   "category": "Sparkle",
@@ -1679,7 +1787,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "jewel",
+  "saw": "thin crystalline lines and rays on dark blue",
+  "made": "kept: line and ray. Ours is three wire cages tumbling inside each other, smeared into rays"
  },
  {
   "category": "Sparkle",
@@ -1722,7 +1833,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "glitch",
+  "saw": "white and pink rectangular blocks breaking up on black",
+  "made": "kept: the blocks and the breakage. Ours moves one block on each sound the music makes, and never between"
  },
  {
   "category": "Sparkle",
@@ -1771,7 +1885,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "nebula",
+  "saw": "a yellow-green glowing cloud",
+  "made": "kept: the cloud. Ours takes its colours from the palette and puts hard stars in front"
  },
  {
   "category": "Sparkle",
@@ -1812,7 +1929,10 @@
     "bass"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "mosaic",
+  "saw": "a wall of small squares that zooms and spins",
+  "made": "kept: the wall and the zoom. Ours runs waves of size over the tiles; it does not spin"
  },
  {
   "category": "Supernova",
@@ -1860,7 +1980,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "amoeba",
+  "saw": "one blob on black, filled with the outlines of its earlier shapes",
+  "made": "kept: all of it. Ours bends the outline with the melody"
  },
  {
   "category": "Supernova",
@@ -1906,7 +2029,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "flare",
+  "saw": "a white star with rays over a field of colour",
+  "made": "kept: the star and its rays. Ours makes them from a light several times brighter than white, and grows it with the section"
  },
  {
   "category": "Supernova",
@@ -1951,7 +2077,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "binary",
+  "saw": "projectM drew this one as a plain white frame; only its name, orbits round a supernova, was left to go on",
+  "made": "from the name: two stars in orbit and three bodies round them, in real depth, each drawing its path"
  },
  {
   "category": "Supernova",
@@ -1996,7 +2125,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "beam",
+  "saw": "a faint bow-tie of light on black",
+  "made": "kept: the two opposed beams. Ours sweeps them like a lighthouse and adds a second pair going the other way"
  },
  {
   "category": "Supernova",
@@ -2043,7 +2175,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "halo",
+  "saw": "rings and arcs in purple and red round a glowing middle",
+  "made": "kept: all of it. Ours breaks each ring and turns alternate ones opposite ways"
  },
  {
   "category": "Waveform",
@@ -2088,7 +2223,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "bubbles",
+  "saw": "marbled blue and green liquid with bubbles in it",
+  "made": "kept: the bubbles and the marbling. The preset's name promised a spectrum, which neither it nor ours shows"
  },
  {
   "category": "Waveform",
@@ -2134,7 +2272,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "pinwheel",
+  "saw": "broad spiral bands in red, green and orange",
+  "made": "kept: the spiral bands. Ours lays them down from three jets on a spinning hub"
  },
  {
   "category": "Waveform",
@@ -2176,7 +2317,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "horizon",
+  "saw": "wavy lines running across a dark frame",
+  "made": "kept: all of it. Ours gives each line a part of the band and bows them a little, like a horizon"
  },
  {
   "category": "Waveform",
@@ -2225,7 +2369,10 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "spirograph",
+  "saw": "a mandala of concentric rings in very strong colour",
+  "made": "kept: the mandala and the colour. Ours draws it stroke by stroke, with five pens on geared wheels seen through a kaleidoscope"
  },
  {
   "category": "Waveform",
@@ -2268,6 +2415,9 @@
     "treb"
    ],
    "rating": 5.0
-  }
+  },
+  "scene": "tunnel",
+  "saw": "yellow and red flower shapes bursting outwards",
+  "made": "kept: the burst and the petals. Ours is a wavering ring thrown outwards, with the melody in the wall"
  }
 ]

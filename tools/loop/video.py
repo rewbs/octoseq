@@ -53,6 +53,7 @@ def main() -> int:
     parser.add_argument("--vivid", action="store_true", help="colours as written, not the paler ones the engine makes of them")
     parser.add_argument("--show", type=Path, help="render this show directory as it stands (see show.py) instead of directing a new one")
     parser.add_argument("--max-hold", type=float, default=director.MAX_HOLD_S, help="the longest the director holds one look, in seconds")
+    parser.add_argument("--brief", type=Path, metavar="JSON", help="a brief for the director: which scenes, palettes and kind of look to use (see director.BRIEF_PARTS)")
     parser.add_argument("--scene", type=Path, help="play this one scene throughout instead of directing a show")
     parser.add_argument("--seconds", type=float, default=0.0, help="stop after this long; 0 = the whole track")
     parser.add_argument("--fps", type=int, default=30)
@@ -108,7 +109,7 @@ def main() -> int:
         print(f"{track.name}: {seconds:.0f} s of {script.name}", flush=True)
     else:
         try:
-            show = director.direct(package, args.seed, vivid=args.vivid, max_hold=args.max_hold)
+            show = director.direct(package, args.seed, vivid=args.vivid, max_hold=args.max_hold, brief=json.loads(args.brief.read_text()) if args.brief else None)
         except ValueError as error:
             sys.exit(str(error))
         show["bundle_sha256"] = hashlib.sha256(package_path.read_bytes()).hexdigest()

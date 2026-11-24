@@ -293,7 +293,7 @@ Group properties:
 
 Notes:
 
-- Children don't need to be added to the scene individually (group membership implies visibility)
+- Children don't need to be added to the scene individually (group membership implies visibility). This holds for a group built inside `init` with no variable left pointing at its children, and a hidden group hides what it holds
 - Nested groups are supported (a group can contain other groups)
 - An entity can only belong to one group at a time
 
@@ -511,6 +511,45 @@ fn update(dt, frame) {
 
 Composed signals are name-keyed and fully isolated from `inputs.customSignals` —
 a composed signal and a derived signal may share a name without shadowing each other.
+
+### Shapes the Primitives Do Not Name
+
+Most of what the scenes in `scenes/` draw is made from `radial.ring`:
+
+```rhai
+// A disc: a ring as thick as it is wide has no hole.
+let disc = radial.ring(#{ radius: 0.2, thickness: 0.4, segments: 32 });
+
+// A square, a triangle, a hexagon: a ring has as many sides as it has segments.
+// A ring of four stands on its corner; turn it an eighth of a turn for a square.
+let square = radial.ring(#{ radius: 1.0, thickness: 0.1, segments: 4 });
+square.rotation.z = 0.7854;
+
+// A straight bar: a short piece of a very large ring. This one is 3.6 long,
+// centred on the group's origin, so the group can place, turn and scale it.
+let bar = radial.ring(#{ radius: 30.0, thickness: 0.09, start_angle: 1.5108, end_angle: 1.6308, segments: 12 });
+bar.position.y = -30.0;
+let holder = scene.group();
+holder.add(bar);
+holder.rotation.z = 0.6;
+
+// A wedge: a ring with no hole, cut down to a slice.
+let wedge = radial.ring(#{ radius: 3.6, thickness: 7.2, start_angle: -0.07, end_angle: 0.07, segments: 6 });
+```
+
+A line across the frame is the top of a `radial.wave` far too big for it: a radius
+of 30 draws (`scenes/horizon.rhai`); one of 80 draws nothing.
+
+Three things about the script language that cost time when the scenes were written:
+
+- A function you write yourself cannot see `radial`, `scene`, `mesh` or any other
+  namespace, nor a variable declared outside it: only what it is passed. Build
+  shapes in `init` and keep helpers to things like setting a material.
+- `thread`, `shared`, `spawn`, `default`, `new` and `match` are among the words
+  the language reserves; a variable called one of them stops the script loading.
+- With the camera 6.5 away the frame is 9.57 across and 5.39 high where the scene
+  sits; 8.94 away, 13.2 by 7.4. `style.at` is in frame widths and heights, so the
+  eye moves by that many of those.
 
 ### Musical Roles
 
@@ -1988,6 +2027,7 @@ fn update(dt, frame) {
 | `.warp.waves`  | `(amount, scale, phase)`                                | Four drifting sine waves bend the frame (Milkdrop's warp) |
 | `.warp.petals` | `(amount, count, phase)`                                | Zoom that depends on direction: `count` petals |
 | `.warp.ripple` | `(amount, rings, phase)`                                | Zoom that depends on distance: `rings` rings |
+| `.warp.tile`   | `(count)`                                               | The last frame `count` by `count` times, in a grid about the centre |
 
 `.centre(x, y)` on the builder moves the point all the warps are centred on away from
 the middle of the frame: `x` to the right and `y` down, in frame widths and heights
@@ -2000,6 +2040,18 @@ setting at 0.5 and moves towards the crisp or the misty value either side. They 
 it for the feedback decay (short trails when crisp, long when misty) and for the
 bloom (tight when crisp). A new scene should do the same, so that the control
 means one thing everywhere.
+
+`tools/loop/contract.py` checks that a scene keeps these promises, and the others a
+show relies on: it asks for roles and reads nothing else, it carries the style line
+and uses every part of it, it says in comments what it is and what each role does,
+and (with `--render`) it passes every hard gate as it stands, at its crispest and at
+its mistiest. `contract.py catalogue` prints what every scene says about itself.
+
+`.warp.tile(2)` draws the last frame four times over at half size, with no copy on
+the centre itself. Each time round the loop every copy gains copies of its own, so a
+shape drawn in the middle is surrounded by smaller copies of the whole picture, and
+those by smaller ones still: what Milkdrop gets from zooming out with its texture
+set to wrap. It acts once a step whatever the step's length; a generation is a step.
 
 The last three differ from place to place, so the picture flows instead of moving as
 one piece. `phase` moves the pattern: give it `timing.time.scale(0.5)`, or a clock
@@ -2016,6 +2068,32 @@ Milkdrop's `warp = 1`; 1 to 3 is gentle, a hit can push it to 8. `petals` and
 | `.color.hsv`            | `(h, s, v)` | Hue/saturation/value shift          |
 | `.color.posterize`      | `(levels)`  | Reduce color levels (2-16 typical)  |
 | `.color.channel_offset` | `(x, y)`    | RGB split / chromatic aberration    |
+| `.color.sharpen`        | `(amount, radius)` or `(amount, radius, tone)` | Push the last frame away from a blurred copy of itself |
+| `.color.inset`          | `(radius, zoom, angle, strength)` or `(..., sides)` | Draw the whole of the last frame again inside a shape at the centre |
+
+`sharpen` compares every point with the average of the points `radius` round it (in
+frame heights; 0.005 is a few pixels, 0.03 is broad) and moves it away from that
+average by `amount` of the difference, each thirtieth of a second. Round and round
+the loop, with a fade to hold it in check, soft colour breaks up into spots, ridges
+and mazes: what Milkdrop's "reaction" presets do with a blurred copy of the frame.
+`tone` says what is compared. At 0 (the default) red, green and blue are each
+sharpened on their own, so they part company and the picture breaks into every
+colour at once. At 1 only brightness is compared, and the ridges form in the
+colours that were already there. A small amount at a small radius (`0.3, 0.004,
+1.0`) only keeps edges crisp in a loop that zooms, which otherwise softens them a
+little every time round.
+
+`inset` is a picture within the picture. `radius` is the shape's size in frame
+heights and `sides` its number of sides (left out, or under 3, it is a circle; 4
+is a square, flat side up). `zoom` shrinks the copy: at 1 the frame's top and
+bottom touch the shape's edge, at 2 the copy is half that size. `angle` turns it,
+in radians, and `strength` is how solid it is, 0 to 1. Because the copy is of the
+last frame, which had a copy in it, the nesting runs all the way down. Like
+`tile`, it nests one level a step.
+
+`posterize` in a loop rounds down, so with a fade it takes a trail to black in a
+few steps. That is a look (see `scenes/glitch.rhai`) and not a way to get flat
+fields of colour: use `sharpen` for those.
 
 #### Blend Methods Reference
 
@@ -2205,6 +2283,11 @@ fn update(dt, frame) {
 | `soft_additive` | Soft additive blending   | `base_color`, `softness`                     |
 | `gradient`      | Two-tone gradient        | `color_top`, `color_bottom`, `blend_height`  |
 
+`emissive` and `wire_glow` draw in the colour they are given. `default` and
+`soft_additive` multiply the mesh's own vertex colours, and the built-in sphere,
+cube and plane carry different colours on different sides: a sphere drawn with
+either is two-toned whatever its tint.
+
 A light can be brighter than white: an `emission_intensity` of 4 is four times as
 bright as 1, not the same thing cut off. The engine draws in float and tone-maps the
 finished picture at the end, so a very bright colour keeps its hue and pales, and
@@ -2311,6 +2394,19 @@ fn update(dt, frame) {
 | `fx.directionalBlur()`     | Directional motion blur  | `amount` (pixels), `angle` (radians), `samples` (2-32)           |
 | `fx.chromaticAberration()` | RGB channel separation   | `amount`, `angle` (radians)                                      |
 | `fx.grain()`               | Deterministic film grain | `amount`, `scale`, `seed`                                        |
+| `fx.echo()`                | A second copy laid over  | `alpha`, `zoom`, `flip` (0 none, 1 left to right, 2 top to bottom, 3 both), `angle` (radians) |
+| `fx.kaleidoscope()`        | One wedge, mirrored round | `segments`, `angle` (radians), `center`                         |
+
+`fx.echo` is Milkdrop's video echo. With `flip: 1` and `alpha: 0.5` it makes a
+picture that is the same on the left as on the right out of a scene that is not.
+Where the copy has run out of picture (it is smaller than the frame, or turned)
+the picture shows through untouched.
+
+`fx.kaleidoscope` keeps the wedge of the picture that starts at `angle` and is half
+of one of `segments` equal slices wide, and mirrors it round `center`. Whatever
+lies outside that wedge is not shown, so turning `angle` turns the wedge over the
+scene, as turning a kaleidoscope's tube turns it over the beads: a scene meant
+for one should have something in every direction (see `scenes/mandala.rhai`).
 
 #### Chain Management
 
