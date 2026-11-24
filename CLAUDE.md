@@ -149,7 +149,7 @@ without waiting on a person. Read [docs/loop/README.md](docs/loop/README.md) bef
 starting redesign work.
 
 ```bash
-python3 tools/loop/run.py        # render every scene on every test track and score it
+python3 tools/loop/run.py --jobs 8   # render every scene on every test track and score it, eight clips at a time
 python3 tools/loop/selftest.py   # after changing tools/loop/analyse.py or metrics.py
 python3 tools/loop/accuracy.py   # score analysis timing against tracker-module ground truth
 ```

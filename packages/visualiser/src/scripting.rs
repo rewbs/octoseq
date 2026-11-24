@@ -2172,7 +2172,7 @@ post.answer = |kind, strength, blows, at| {{
 // (Like `post.answer`, it adds to the chain itself.)
 post.finish = |kind, clock| {{
     if kind == 1 {{
-        __post_chain.push(fx.grain(#{{ amount: 0.14, scale: 5.0, seed: clock.scale(24.0).floor().scale(7.31) }}).__id);
+        __post_chain.push(fx.grain(#{{ amount: 0.08, scale: 5.0, seed: clock.scale(24.0).floor().scale(7.31) }}).__id);
     }} else if kind == 2 {{
         __post_chain.push(fx.dither(#{{ levels: 4.0, pixel: 2.0, mono: 0.0, amount: 1.0 }}).__id);
     }} else if kind == 3 {{

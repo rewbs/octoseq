@@ -156,6 +156,42 @@ the analysis hands the picture too few events to answer. I have not confirmed th
 D127's rows are how I would. The pictures also flash far more than before, by design: up to 7.5 times a
 second where round 1 was held to 3.
 
+### Review 3, round 3 (24 November 2026): the same nine tracks, answers that are not taken back
+
+Sent: the nine tracks again with the same seeds, after D129 to D139. **Waiting for
+your rating.**
+
+| #  | Blows answered (0.85) | In rolls (0.75) | Frame moved at a blow (0.3) | Taken back two frames later (0.35) | Music unanswered (0.05) | Looks with a finish | Targets missed |
+| -- | --------------------- | --------------- | --------------------------- | ---------------------------------- | ----------------------- | ------------------- | -------------- |
+| 01 | 0.98 to 0.97 | 0.98 to 0.97 | 0.39 to 0.39 | 0.44 to 0.05 | 0.00 to 0.00 | 3 of 13 | none |
+| 02 | 0.94 to 0.92 | 0.89 to 0.82 | 0.37 to 0.24 | 0.53 to 0.04 | 0.11 to 0.09 | 14 of 46 | jump_size, dead_time |
+| 03 | 0.98 to 0.99 | 0.95 to 0.96 | 0.47 to 0.27 | 0.56 to 0.08 | 0.00 to 0.00 | 10 of 31 | jump_size |
+| 04 | 0.93 to 0.96 | 0.93 to 0.95 | 0.32 to 0.48 | 0.47 to 0.08 | 0.15 to 0.12 | 5 of 25 | dead_time |
+| 05 | 0.97 to 0.93 | 0.97 to 0.93 | 0.43 to 0.34 | 0.51 to 0.09 | 0.02 to 0.04 | 15 of 46 | none |
+| 06 | 0.97 to 0.96 | 0.97 to 0.95 | 0.49 to 0.34 | 0.56 to 0.06 | 0.02 to 0.03 | 5 of 20 | none |
+| 07 | 0.93 to 0.94 | 0.85 to 0.90 | 0.45 to 0.25 | 0.45 to 0.05 | 0.04 to 0.05 | 20 of 55 | audio_sync, jump_size |
+| 08 | 0.98 to 0.99 | 0.98 to 0.98 | 0.52 to 0.33 | 0.46 to 0.10 | 0.00 to 0.00 | 1 of 16 | flow_swirl |
+| 09 | 0.90 to 0.94 | 0.87 to 0.93 | 0.40 to 0.31 | 0.53 to 0.09 | 0.13 to 0.10 | 14 of 26 | flow_swirl, dead_time |
+
+Each cell is round 2 to round 3, both measured as the figures now stand (D129,
+D130, D137). Every show passes every hard gate. Medians: 0.96 of blows
+answered (0.97 in round 2), 0.95 of those in rolls (0.95), 0.33 of the frame
+moved at each (0.43), and 0.08 of each jump taken back two frames later
+(0.51), which is the figure round 2 was short on.
+
+What I can see is still short, before you look:
+
+- The frame moves less at a blow than in round 2 on 7 of the nine tracks, and 3 are
+  under the target. The answers that stay move the picture less far than the
+  hardest of the eased ones did, and a finish such as the dither or the characters
+  holds part of the frame still. If the shows feel weaker for it, `style.kick` is
+  the one number to raise.
+- "Lands on wrong moments" is not addressed: the picture is given the same hits as
+  in round 2 (D136).
+- The grain finish was too heavy on dark pictures in my first render of this round
+  (it greyed the blacks); it is at 0.08 where it was 0.14, and the nine were
+  rendered again.
+
 ## Decisions taken by default
 
 Say so to reverse any of these.
