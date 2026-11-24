@@ -27,6 +27,10 @@ TILE = 32  # tile size in shrunk pixels; the largest shift it can see is half of
 STEP = 16
 TEXTURE_FLOOR = 0.012  # a tile whose brightness varies less than this (standard deviation, 0 to 1) has nothing to track
 MOVING = 0.02  # frame widths per second above which a tile counts as moving
+# Frames measured at a time. Every frame becomes about a hundred tiles and each tile a
+# spectrum and a correlation surface, some 3 MB a frame in all: a whole track at once
+# asked for 27 GB and was killed for it. In pieces the answer is the same.
+FLOW_CHUNK = 256
 
 
 def load_frames(video: Path, seconds: float = 0.0) -> np.ndarray:
@@ -71,6 +75,12 @@ def tile_flow(luma: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.
     flow is (frames - 1, rows, cols, 2) in shrunk pixels per frame, x then y;
     textured says which tiles had anything to track in both frames.
     """
+    pieces = [_tile_flow(luma[start : start + FLOW_CHUNK + 1]) for start in range(0, max(len(luma) - 1, 1), FLOW_CHUNK)]
+    return np.concatenate([p[0] for p in pieces]), np.concatenate([p[1] for p in pieces]), pieces[0][2], pieces[0][3]
+
+
+def _tile_flow(luma: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """`tile_flow` for a stretch of frames short enough to hold in memory at once."""
     frames = _shrink(luma.astype(np.float32))
     tiles, cx, cy = _tiles(frames)
     window = np.outer(np.hanning(TILE), np.hanning(TILE)).astype(np.float32)
