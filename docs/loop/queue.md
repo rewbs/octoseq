@@ -124,6 +124,33 @@ What the loop says about them, measured over each whole video:
 - The director chose every scene at random (D119). If a look sits badly on its
   passage of music, that is the first place I would look.
 
+### Review 3, round 2 (24 November 2026): the same nine tracks, answering the music
+
+Sent: the nine tracks again with the same seeds, so the same scenes in the same
+order, after D122 to D125. **Waiting for your rating.**
+
+| #  | Blows answered (0.85) | In rolls (0.75) | Frame moved at a blow (0.3) | Music unanswered (0.05) | Most flashes a second | Targets missed |
+| -- | --------------------- | --------------- | --------------------------- | ----------------------- | --------------------- | -------------- |
+| 01 | 0.51 to 0.90 | 0.45 to 0.84 | 0.15 to 0.36 | 0.15 to 0.03 | 7.0 | none |
+| 02 | 0.59 to 0.98 | 0.38 to 0.90 | 0.15 to 0.48 | 0.28 to 0.13 | 4.5 | dead_time |
+| 03 | 0.50 to 0.87 | 0.32 to 0.49 | 0.13 to 0.41 | 0.18 to 0.05 | 5.0 | answered_rolls |
+| 04 | 0.53 to 0.84 | 0.40 to 0.75 | 0.17 to 0.27 | 0.33 to 0.12 | 5.5 | answered, jump_size, dead_time |
+| 05 | 0.60 to 0.94 | 0.55 to 0.94 | 0.13 to 0.38 | 0.12 to 0.02 | 6.0 | none |
+| 06 | 0.44 to 0.90 | 0.38 to 0.87 | 0.16 to 0.40 | 0.29 to 0.07 | 6.5 | dead_time |
+| 07 | 0.62 to 0.96 | 0.41 to 1.00 | 0.18 to 0.44 | 0.11 to 0.04 | 5.0 | none |
+| 08 | 0.38 to 0.96 | 0.35 to 0.98 | 0.16 to 0.44 | 0.33 to 0.02 | 6.5 | flow_swirl |
+| 09 | 0.52 to 0.84 | 0.42 to 0.74 | 0.14 to 0.32 | 0.24 to 0.10 | 7.5 | answered, answered_rolls, dead_time |
+
+Each cell is round 1 to round 2. Every show passes every hard gate. Medians now:
+0.90 of blows answered, 0.87 of those in rolls, 0.40 of the frame at each, 0.05 of
+the music unanswered. Two things the figures show are still short. Track 03's rolls
+are answered only half the time. And on four tracks more than a twentieth of the
+music still goes unanswered; from the scan of single scenes that is not the scenes
+(57 of 58 leave none of the test track unanswered), which points at passages where
+the analysis hands the picture too few events to answer. I have not confirmed that;
+D127's rows are how I would. The pictures also flash far more than before, by design: up to 7.5 times a
+second where round 1 was held to 3.
+
 ## Decisions taken by default
 
 Say so to reverse any of these.
