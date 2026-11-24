@@ -1,5 +1,5 @@
 // Zoom with Wrap post-processing effect
-// Zooms the frame with optional edge wrapping (repeat or mirror)
+// Zooms, turns and slides the frame with optional edge wrapping (repeat or mirror)
 
 struct VertexInput {
     @location(0) position: vec2<f32>,
@@ -15,6 +15,8 @@ struct ZoomWrapUniforms {
     amount: f32,       // Zoom scale factor (<1 = zoom in, >1 = zoom out)
     wrap_mode: f32,    // 0 = repeat, 1 = mirror
     center: vec2<f32>, // Zoom center in normalized coordinates
+    shift: vec2<f32>,  // How far the picture is slid, in frame widths and heights
+    angle: f32,        // How far it is turned about the center, in radians
 }
 
 @group(0) @binding(0) var input_texture: texture_2d<f32>;
@@ -43,8 +45,17 @@ fn wrap_mirror(uv: vec2<f32>) -> vec2<f32> {
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Apply zoom transformation around center
-    let centered = in.uv - params.center;
-    let zoomed = params.center + centered * params.amount;
+    var centered = in.uv - params.center;
+    if (params.angle != 0.0) {
+        // Turned in square coordinates, so that a turn is a turn and not a shear.
+        let dims = vec2<f32>(textureDimensions(input_texture));
+        let aspect = dims.x / dims.y;
+        let p = centered * vec2<f32>(aspect, 1.0);
+        let c = cos(params.angle);
+        let s = sin(params.angle);
+        centered = vec2<f32>(p.x * c - p.y * s, p.x * s + p.y * c) / vec2<f32>(aspect, 1.0);
+    }
+    let zoomed = params.center + centered * params.amount + params.shift;
 
     // Apply wrapping based on mode
     var wrapped_uv: vec2<f32>;

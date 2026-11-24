@@ -302,6 +302,67 @@ fn apply_warp_step(uv: vec2<f32>, step: GpuWarpStep) -> vec2<f32> {
             }
             return fract(fract(centered * n) - vec2<f32>(0.5) + center);
         }
+        // Whirls: `frequency` small whirlpools on a ring about the centre, each
+        // turning the picture round itself, the opposite way to its neighbours.
+        // `rotation` carries the ring round.
+        case 10u: {
+            let n = clamp(floor(step.frequency + 0.5), 1.0, 12.0);
+            let reach = 0.42 / sqrt(n);
+            var moved = square;
+            for (var i = 0.0; i < n; i += 1.0) {
+                let a = step.rotation + i * 6.2831853 / n;
+                let d = square - vec2<f32>(cos(a), sin(a)) * 0.3;
+                let turn = effective_strength * exp(-dot(d, d) / (reach * reach)) * (1.0 - 2.0 * (i % 2.0));
+                let c = cos(turn);
+                let sn = sin(turn);
+                moved += vec2<f32>(d.x * c - d.y * sn, d.x * sn + d.y * c) - d;
+            }
+            return center + moved / aspect;
+        }
+        // Fold: the picture folded into `frequency` equal wedges about the centre,
+        // each the mirror of its neighbours. `rotation` turns the folds. Folding
+        // twice is folding once, so it does not matter how often it is done.
+        case 11u: {
+            let n = floor(step.frequency + 0.5);
+            if (n < 2.0) {
+                return uv;
+            }
+            let wedge = 6.2831853 / n;
+            var a = atan2(square.y, square.x) - step.rotation;
+            a = a - wedge * floor(a / wedge);
+            a = abs(a - wedge * 0.5) + step.rotation;
+            return center + vec2<f32>(cos(a), sin(a)) * length(square) / aspect;
+        }
+        // Flow: the picture carried along a field of slow eddies, like smoke.
+        // `frequency` is how many eddies cross the frame and `rotation` what the
+        // field drifts with. The field runs along the contours of a smooth surface
+        // of hills and hollows, so nothing is squeezed: what flows in flows out.
+        case 12u: {
+            let at = square * step.frequency + vec2<f32>(step.rotation * 0.37, step.rotation * 0.23);
+            let e = 0.35;
+            let across = noise2d(at + vec2<f32>(e, 0.0), 0u).x - noise2d(at - vec2<f32>(e, 0.0), 0u).x;
+            let up = noise2d(at + vec2<f32>(0.0, e), 0u).x - noise2d(at - vec2<f32>(0.0, e), 0u).x;
+            return uv + vec2<f32>(up, -across) / aspect * effective_strength * 0.02;
+        }
+        // Blocks: the frame cut into `frequency` by `frequency` blocks, each pushed
+        // its own way. `rotation` says which arrangement; each whole number is another.
+        case 13u: {
+            let n = max(1.0, floor(step.frequency + 0.5));
+            let block = floor(square * n + vec2<f32>(0.5));
+            let deal = floor(step.rotation);
+            let way = hash21(block + vec2<f32>(deal * 17.0, deal * 31.0)) * 6.2831853;
+            return uv + vec2<f32>(cos(way), sin(way)) / aspect * effective_strength * 0.01;
+        }
+        // Slices: the frame cut into `frequency` bands that slide past one another,
+        // each the opposite way to its neighbours. `rotation` is the way the bands lie.
+        case 14u: {
+            let n = max(1.0, floor(step.frequency + 0.5));
+            let c = cos(step.rotation);
+            let sn = sin(step.rotation);
+            let band = floor((-square.x * sn + square.y * c) * n + 0.5);
+            let way = 1.0 - 2.0 * (band - 2.0 * floor(band * 0.5));
+            return uv + vec2<f32>(c, sn) / aspect * way * effective_strength * 0.01;
+        }
         default: {
             return uv;
         }

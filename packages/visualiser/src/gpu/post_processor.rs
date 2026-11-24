@@ -599,6 +599,10 @@ impl PostProcessor {
             "grain" => include_str!("shader_post_grain.wgsl"),
             "echo" => include_str!("shader_post_echo.wgsl"),
             "kaleidoscope" => include_str!("shader_post_kaleidoscope.wgsl"),
+            "dither" => include_str!("shader_post_dither.wgsl"),
+            "ascii" => include_str!("shader_post_ascii.wgsl"),
+            "crt" => include_str!("shader_post_crt.wgsl"),
+            "halftone" => include_str!("shader_post_halftone.wgsl"),
             _ => return Err(format!("Unknown effect: {}", effect_id)),
         };
 

@@ -1041,6 +1041,7 @@ let envelope = events.to_signal(#{
 | --------------------- | -------------------------------- | -------------------------------------------------------------------------------- |
 | `"impulse"`           | Single-frame spike               | -                                                                                |
 | `"step"`              | Instant rise, holds indefinitely | -                                                                                |
+| `"count"`             | How many events there have been so far, whatever their weights | -                                                  |
 | `"attack_decay"`      | Rise then fall                   | `attack_beats`, `decay_beats`                                                    |
 | `"adsr"`              | Full ADSR envelope               | `attack_beats`, `decay_beats`, `sustain_level`, `sustain_beats`, `release_beats` |
 | `"gaussian"`          | Bell curve                       | `width_beats` (approx 95% of bell)                                               |
@@ -2029,6 +2030,11 @@ fn update(dt, frame) {
 | `.warp.petals` | `(amount, count, phase)`                                | Zoom that depends on direction: `count` petals |
 | `.warp.ripple` | `(amount, rings, phase)`                                | Zoom that depends on distance: `rings` rings |
 | `.warp.tile`   | `(count)`                                               | The last frame `count` by `count` times, in a grid about the centre |
+| `.warp.whirls` | `(amount, count, phase)`                                | `count` small whirlpools on a ring about the centre, turning opposite ways; `phase` carries the ring round |
+| `.warp.fold`   | `(sides, angle)`                                        | The picture folded into `sides` mirrored wedges: trails become a figure with that many sides |
+| `.warp.flow`   | `(amount, scale, phase)`                                | Carried along a field of slow eddies, like smoke; `scale` eddies cross the frame |
+| `.warp.blocks` | `(amount, count, deal)`                                 | Cut into `count` by `count` blocks, each pushed its own way; each whole number of `deal` is another arrangement |
+| `.warp.slices` | `(amount, count, angle)`                                | Cut into `count` bands sliding past one another, alternate ways, lying at `angle` |
 
 `.centre(x, y)` on the builder moves the point all the warps are centred on away from
 the middle of the frame: `x` to the right and `y` down, in frame widths and heights
@@ -2045,18 +2051,47 @@ means one thing everywhere.
 Two more parts of the style line say how a look answers a blow. Every scene ends with
 
 ```rhai
-post.answer(style.answer, style.kick, hit, style.at);
+post.answer(style.answer, style.kick, roles.hit, style.at);
 ```
 
 which makes the whole frame do one plain thing on every hit, on top of whatever
-the scene itself does: `style.answer` picks which (1 punch: the picture jumps towards
-the eye; 2 flash; 3 jolt: it lurches sideways; 4 split: its colours are knocked
-apart; 5 burst: it smears outwards; 6 ghost: a copy of it leaps outwards; 0 nothing)
-and `style.kick` how hard (1 is the plain amount). `hit` is the scene's own hit
-envelope. Keep that envelope short, a tenth of a beat or so: a review found the
-shows unresponsive, and what fixed it was answers that are large and over quickly.
-One that lingers runs into the next, and then no blow stands out
-(`tools/loop/response.py` measures this).
+the scene itself does. It is given the blows themselves (`roles.hit`), not the
+scene's hit envelope: the engine shapes the answer. `style.kick` says how hard (1 is
+the plain amount) and `style.answer` picks which:
+
+| | | |
+| --- | --- | --- |
+| 1 | punch | the picture jumps towards the eye |
+| 2 | flash | it flares, and jumps a little |
+| 3 | jolt | it lurches sideways and in |
+| 4 | split | its colours are knocked apart |
+| 5 | burst | it smears outwards from its middle |
+| 6 | ghost | a second copy of it leaps outwards and fades |
+| 7 | notch | it turns a sixteenth of the way round, and stays there |
+| 8 | swing | it tips over to its other side, and drifts on that way |
+| 9 | slide | it jumps to the next corner of a square, and drifts on along that side |
+| 0 | | nothing |
+
+An answer has to be sudden and visible, and must not be taken back at once. A review
+found shows whose answers were there for one frame and gone the next "twitchy, not
+punchy". There are two ways of not being taken back, and the kinds use both. One to
+six arrive at once and ease back over four tenths of a beat, fast at first and then
+slowly. Seven to nine do not come back at all: the picture is turned or moved, and
+goes on from where it was put until the next blow. (They jump as well as change
+direction. A steady movement that only reversed on a blow was too slight a change
+to see.)
+
+A scene can build an answer that stays for itself, from a count of the blows:
+
+```rhai
+let count = roles.hit.to_signal(#{ envelope: "count" });   // how many blows so far
+let way = count.scale(3.14159265).cos();                    // 1 or -1, changing on every blow
+ring.rotation.z = way.integrate(0.0).scale(1.2);            // turns one way, then the other
+```
+
+The scene's own `hit` envelope is a different thing and stays short, a tenth of a
+beat or so. `tools/loop/response.py` measures all of this (`undone` is how much of
+the picture's jump on a blow has been taken back two frames later).
 
 `tools/loop/contract.py` checks that a scene keeps these promises, and the others a
 show relies on: it asks for roles and reads nothing else, it carries the style line
@@ -2406,13 +2441,30 @@ fn update(dt, frame) {
 | `fx.colorGrade()`          | Color correction         | `brightness`, `contrast`, `saturation`, `gamma`, `tint`          |
 | `fx.vignette()`            | Darkened edges           | `intensity`, `smoothness`, `color`                               |
 | `fx.distortion()`          | Barrel/pincushion        | `amount`, `center`                                               |
-| `fx.zoomWrap()`            | Zoom with edge wrapping  | `amount` (<1=zoom in), `center`, `wrap_mode` ("repeat"/"mirror") |
+| `fx.zoomWrap()`            | Zoom, turn and slide, with edge wrapping | `amount` (<1=zoom in), `center`, `angle` (radians, about `center`), `shift` (`#{ x, y }` in frame widths and heights), `wrap_mode` ("repeat"/"mirror") |
 | `fx.radialBlur()`          | Radial motion blur       | `strength`, `center`, `samples` (2-32)                           |
 | `fx.directionalBlur()`     | Directional motion blur  | `amount` (pixels), `angle` (radians), `samples` (2-32)           |
 | `fx.chromaticAberration()` | RGB channel separation   | `amount`, `angle` (radians)                                      |
 | `fx.grain()`               | Deterministic film grain | `amount`, `scale`, `seed`                                        |
 | `fx.echo()`                | A second copy laid over  | `alpha`, `zoom`, `flip` (0 none, 1 left to right, 2 top to bottom, 3 both), `angle` (radians) |
 | `fx.kaleidoscope()`        | One wedge, mirrored round | `segments`, `angle` (radians), `center`                         |
+| `fx.dither()`              | A few shades on a coarse grid, the rest made up by a pattern of dots | `levels` (shades of each colour), `pixel` (an element's side, in 270ths of the frame's height), `mono` (1 = each element black or its own colour), `amount` |
+| `fx.ascii()`               | Rows of characters       | `rows` (down the frame), `colour` (0 white, 1 the picture's), `gain`, `amount` |
+| `fx.crt()`                 | An old tube, a worn tape | `lines`, `mask`, `bleed`, `wobble`, `curve`, `phase` (the time: what the wobble changes with) |
+| `fx.halftone()`            | A screen of dots         | `cells` (dots down the frame), `angle`, `colour` (1 = a screen each for red, green and blue), `amount` |
+
+The last four change what the picture is made of and not what it shows, and are
+sized against the frame's height, so they look the same at any resolution. A scene
+does not use them itself. It ends with
+
+```rhai
+post.finish(style.finish, timing.time);
+```
+
+and the show decides: `style.finish` is 0 for none, 1 grain (new every twenty-fourth
+of a second), 2 dither, 3 two-tone dither, 4 ascii, 5 tape (`fx.crt`), 6 dots
+(`fx.halftone`). The finish goes on last, over the answer to a blow, so the grid of
+dots or characters stays still while the picture jumps under it.
 
 `fx.echo` is Milkdrop's video echo. With `flip: 1` and `alpha: 0.5` it makes a
 picture that is the same on the left as on the right out of a scene that is not.

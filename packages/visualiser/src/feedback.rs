@@ -107,6 +107,16 @@ pub enum WarpOperator {
     Ripple,
     /// The last frame drawn several times over, in a grid about the centre.
     Tile,
+    /// Several small whirlpools on a ring about the centre.
+    Whirls,
+    /// The picture folded into mirrored wedges about the centre.
+    Fold,
+    /// The picture carried along a field of slow eddies.
+    Flow,
+    /// The frame cut into blocks, each pushed its own way.
+    Blocks,
+    /// The frame cut into bands that slide past one another.
+    Slices,
 }
 
 impl WarpOperator {
@@ -123,6 +133,11 @@ impl WarpOperator {
             WarpOperator::Petals => 7,
             WarpOperator::Ripple => 8,
             WarpOperator::Tile => 9,
+            WarpOperator::Whirls => 10,
+            WarpOperator::Fold => 11,
+            WarpOperator::Flow => 12,
+            WarpOperator::Blocks => 13,
+            WarpOperator::Slices => 14,
         }
     }
 
@@ -138,6 +153,11 @@ impl WarpOperator {
             "petals" => WarpOperator::Petals,
             "ripple" => WarpOperator::Ripple,
             "tile" => WarpOperator::Tile,
+            "whirls" => WarpOperator::Whirls,
+            "fold" => WarpOperator::Fold,
+            "flow" => WarpOperator::Flow,
+            "blocks" => WarpOperator::Blocks,
+            "slices" => WarpOperator::Slices,
             _ => WarpOperator::None,
         }
     }
@@ -1072,6 +1092,109 @@ impl WarpBuilder {
             WarpOperator::Tile,
             WarpParams {
                 frequency: count.into(),
+                ..Default::default()
+            },
+        ));
+        self.0
+    }
+
+    /// Add `count` small whirlpools on a ring about the centre, each turning the
+    /// picture round itself by `amount` radians a thirtieth of a second at its
+    /// middle, the opposite way to its neighbours. `phase` carries the ring round.
+    pub fn whirls(
+        mut self,
+        amount: impl Into<SignalOrF32>,
+        count: impl Into<SignalOrF32>,
+        phase: impl Into<SignalOrF32>,
+    ) -> FeedbackBuilder {
+        self.0.push_warp(WarpStep::new(
+            WarpOperator::Whirls,
+            WarpParams {
+                strength: amount.into(),
+                frequency: count.into(),
+                rotation: phase.into(),
+                ..Default::default()
+            },
+        ));
+        self.0
+    }
+
+    /// Fold the picture into `sides` equal wedges about the centre, each the mirror
+    /// of its neighbours: whatever trails the loop holds become a figure with that
+    /// many sides. `angle` turns the folds. Folding twice is folding once, so it
+    /// acts the same whatever the step's length. Under 2 it does nothing.
+    pub fn fold(
+        mut self,
+        sides: impl Into<SignalOrF32>,
+        angle: impl Into<SignalOrF32>,
+    ) -> FeedbackBuilder {
+        self.0.push_warp(WarpStep::new(
+            WarpOperator::Fold,
+            WarpParams {
+                frequency: sides.into(),
+                rotation: angle.into(),
+                ..Default::default()
+            },
+        ));
+        self.0
+    }
+
+    /// Carry the picture along a field of slow eddies, like smoke, by `amount`.
+    /// `scale` is how many eddies cross the frame and `phase` what the field drifts
+    /// with. Nothing is squeezed or stretched: what flows in flows out.
+    pub fn flow(
+        mut self,
+        amount: impl Into<SignalOrF32>,
+        scale: impl Into<SignalOrF32>,
+        phase: impl Into<SignalOrF32>,
+    ) -> FeedbackBuilder {
+        self.0.push_warp(WarpStep::new(
+            WarpOperator::Flow,
+            WarpParams {
+                strength: amount.into(),
+                frequency: scale.into(),
+                rotation: phase.into(),
+                ..Default::default()
+            },
+        ));
+        self.0
+    }
+
+    /// Cut the frame into `count` by `count` blocks and push each its own way by
+    /// `amount`. `deal` says which arrangement: every whole number is another, so
+    /// a count of the blows deals the blocks afresh on every blow.
+    pub fn blocks(
+        mut self,
+        amount: impl Into<SignalOrF32>,
+        count: impl Into<SignalOrF32>,
+        deal: impl Into<SignalOrF32>,
+    ) -> FeedbackBuilder {
+        self.0.push_warp(WarpStep::new(
+            WarpOperator::Blocks,
+            WarpParams {
+                strength: amount.into(),
+                frequency: count.into(),
+                rotation: deal.into(),
+                ..Default::default()
+            },
+        ));
+        self.0
+    }
+
+    /// Cut the frame into `count` bands that slide past one another by `amount`,
+    /// each the opposite way to its neighbours. `angle` is the way the bands lie.
+    pub fn slices(
+        mut self,
+        amount: impl Into<SignalOrF32>,
+        count: impl Into<SignalOrF32>,
+        angle: impl Into<SignalOrF32>,
+    ) -> FeedbackBuilder {
+        self.0.push_warp(WarpStep::new(
+            WarpOperator::Slices,
+            WarpParams {
+                strength: amount.into(),
+                frequency: count.into(),
+                rotation: angle.into(),
                 ..Default::default()
             },
         ));

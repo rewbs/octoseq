@@ -151,15 +151,51 @@ measures what had been missed, and its figures are targets in the render loop:
 | --- | --- | --- |
 | `answered` | the share of kicks and snares at which the picture visibly jumps | at least 0.85 |
 | `answered_rolls` | the same for blows within a fifth of a second of another | at least 0.75 |
-| `jump_size` | how much more of the frame changes at a blow than around it | at least 0.3 |
+| `jump_size` | how much more of the frame changes at a blow than when the picture is at rest | at least 0.3 |
+| `undone` | how much of the picture's jump on a blow has been taken back two frames later | at most 0.35 |
 | `dead_time` | the share of two-second stretches with music in them that go unanswered | at most 0.05 |
 | `stray_jumps` | the share of the picture's jumps that land on no sound | at most 0.1 |
 
-A jump is a frame in which far more of the picture changes than has been changing
-around it. That is why a large answer that lingers scores worse than a short one:
-the next blow arrives while the picture is still moving and does not stand out.
-The flashing limit is no longer a gate (the owner: "Strobing is OK in audio
+A jump is a frame in which the picture starts to change far more than it did the
+frame before, and than it does at rest (the lower quartile of the second and a half
+around it). It is a rise and not a peak: a picture that hits and eases back goes on
+changing after the hit, and in a detailed picture those frames change as much as
+the hit did, so asking for a peak that stands clear would count an eased answer as
+no answer. `undone` is there because the second round of review 3 answered nearly
+every blow, largely, and was still wrong: each answer was there for a frame and
+gone ("twitchy, not punchy"). Those shows measure 0.50: half of each jump had been
+taken back two frames later. What is wanted is an answer that is "sudden and
+visible" and is not taken back at once, which leaves two kinds: one that eases
+back, and one that stays (the picture turns, or changes direction, and keeps to it
+until the next blow). Both score low. The flashing limit is no longer a gate (the owner: "Strobing is OK in audio
 visuals"); the figure is still reported.
+
+Every scene hands the whole-frame answer the hits themselves
+(`post.answer(style.answer, style.kick, roles.hit, style.at)`) and the engine shapes
+it. There are nine answers in two families. Six arrive at once and ease back over
+four tenths of a beat; three turn or move the picture and leave it there until the
+next blow. Measured on ten scenes, the ones that stay answer every blow, rolls
+included, with nothing taken back (`undone` 0.02); the ones that ease back answer
+nine in ten or more, with a third to a half taken back two frames later. The
+director takes a look's answer from the family the look before did not.
+
+The figures ask about the `hit` role: every kick and snare where the track has
+drums, the strongest onsets where it has none.
+
+### Finishes
+
+A look may also be given a finish, laid over everything last
+(`post.finish(style.finish, timing.time)`): film grain, dither, two-tone dither,
+ASCII characters, tape (scan lines, colour mask, wobble) or halftone dots. They
+change what the picture is made of and not what it shows, and are sized against
+the frame's height. The director gives about one look in three a finish, never
+the same one twice running; a brief's `finishes` part narrows that or turns it off.
+
+### Rendering several clips at once
+
+`run.py --jobs 8` renders eight clips at a time and gives the same figures as one
+at a time. A clip is one core's work whatever the graphics card. See
+[setup.md](setup.md) for what that is worth on a laptop and on a rented machine.
 
 ### The scene pool and its contract
 

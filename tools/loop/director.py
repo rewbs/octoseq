@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 ROOT = Path(__file__).resolve().parents[2]
 SCENES = ROOT / "scenes"
 SHOWS = ROOT / ".loop" / "shows"
-DIRECTOR_VERSION = "director-6"
+DIRECTOR_VERSION = "director-7"
 
 MAX_HOLD_S = 9.0  # the longest any one look is held (review 1: boring in under ten seconds)
 MIN_HOLD_S = 3.0  # section starts closer together than this are treated as one
@@ -85,12 +85,27 @@ PLACES = [(0.0, 0.0), (-0.2, 0.0), (0.2, 0.0), (0.0, -0.14), (0.0, 0.14), (-0.17
 MISTS = [0.0, 0.1, 0.9, 1.0]
 MIST_STEP = 0.4
 # How a look answers a blow with the whole frame: see `post.answer` in the engine
-# (1 punch, 2 flash, 3 jolt, 4 split, 5 burst, 6 ghost). Review 3 found the shows
+# (1 punch, 2 flash, 3 jolt, 4 split, 5 burst, 6 ghost, which arrive at once and
+# ease back; 7 notch, 8 swing, 9 slide, which turn or move the picture and leave
+# it there until the next blow). Review 3 found the shows
 # "nowhere close to being sufficiently responsive", and that when several things
 # answered several parts of the band no link between sound and picture could be
 # made out. So every look answers every blow in one plain way, and a different way
 # from the look before.
-ANSWERS = [1, 2, 3, 4, 5, 6]
+ANSWERS = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+# The two families: those that ease back and those that stay. A look takes its
+# answer from the family the look before did not, so a cut changes the kind of
+# answer as well as the answer. (Measured on ten scenes, the ones that stay answer
+# every blow with almost nothing taken back; the ones that ease back answer nine
+# in ten or more, with a fifth to a third taken back two frames later.)
+STAYING = {7, 8, 9}
+# A finish is one more thing laid over a whole look, last of all, that changes what
+# the picture is made of and not what it shows: see `post.finish` in the engine.
+# Review 3 asked for "film-grain, dithering, low-fi, type things" and "even some
+# ascii-art type filters". About one look in three gets one, and never the same
+# one twice running: a show that is all finish has no plain picture to set it off.
+FINISHES = {"grain": 1, "dither": 2, "two-tone": 3, "ascii": 4, "tape": 5, "dots": 6}
+FINISH_SHARE = 1 / 3
 STYLE_LINE = re.compile(r"^let style = .*// @style\s*$", re.MULTILINE)
 
 # A brief is what whoever asks for a show may say about it, as plain data; every
@@ -104,6 +119,7 @@ BRIEF_PARTS = {
     "avoid": "never use these scenes (a list of names)",
     "palettes": f"use only these palettes (a list, from {', '.join(sorted(PALETTES))})",
     "mist": "crisp, misty or both: which kind of look to use (both if left out)",
+    "finishes": f"use only these finishes (a list, from {', '.join(FINISHES)}; an empty list for none)",
     "hold": "the longest one look is held, in seconds",
     "vivid": "true for colours as written, false for the paler default",
     "seed": "a whole number: the same brief and seed on the same track give the same show",
@@ -136,6 +152,10 @@ def read_brief(brief: dict | None, scenes_dir: Path = SCENES) -> dict:
             raise ValueError(f"a brief's palettes is a list of one or more of: {', '.join(sorted(PALETTES))}")
     if "mist" in brief and brief["mist"] not in MIST_KINDS:
         raise ValueError(f"a brief's mist is one of: {', '.join(MIST_KINDS)}")
+    if "finishes" in brief:
+        names = brief["finishes"]
+        if not isinstance(names, list) or not all(isinstance(n, str) for n in names) or set(names) - set(FINISHES):
+            raise ValueError(f"a brief's finishes is a list of any of: {', '.join(FINISHES)} (an empty list for none)")
     if "hold" in brief:
         hold = brief["hold"]
         if isinstance(hold, bool) or not isinstance(hold, (int, float)) or not MIN_HOLD_S <= hold <= LONGEST_HOLD_S:
@@ -231,6 +251,10 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
     weather = random.Random(f"{seed}:mist")
     # And so is the answer, for the same reason.
     blows = random.Random(f"{seed}:answer")
+    # And the finish.
+    surface = random.Random(f"{seed}:finish")
+    finishes = [FINISHES[name] for name in FINISHES if name in asked.get("finishes", FINISHES)]
+    last_finish = None
     intensity, rate = _signal(package, "section_intensity")
     cuts = cut_points(package, max_hold)
     beats = [e["time"] for e in _stream(package, "beat")]
@@ -246,7 +270,10 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
             order = order[1:] + order[:1]
         place = rng.choice([p for p in PLACES if p != place])
         mist = weather.choice([m for m in mists if mist is None or abs(m - mist) >= MIST_STEP - 1e-9] or mists)
-        answer = blows.choice([a for a in ANSWERS if a != answer])
+        answer = blows.choice([a for a in ANSWERS if answer is None or (a in STAYING) != (answer in STAYING)])
+        finish = 0
+        if finishes and surface.random() < FINISH_SHARE:
+            finish = last_finish = surface.choice([f for f in finishes if f != last_finish] or finishes)
         end = cuts[index + 1][0] if index + 1 < len(cuts) else float(package["durationSec"])
         middle = intensity[min(int((start + end) / 2 * rate), len(intensity) - 1)] if intensity else 0.5
         colours = [tuple(c**SCREEN_GAMMA if vivid else c for c in PALETTES[palette][i]) for i in order]
@@ -258,6 +285,7 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
             mist=mist,
             answer=answer,
             kick=round(0.85 + 0.4 * float(middle), 2),
+            finish=finish,
             transition=0.0 if new_section else round(min(TRANSITION_BEATS * beat_s, (end - start) * TRANSITION_MAX_SHARE), 3),
         ))  # fmt: skip
     show = dict(director=DIRECTOR_VERSION, seed=seed, vivid=vivid, duration=float(package["durationSec"]), segments=segments)
@@ -271,8 +299,8 @@ def dressed(source: str, segment: dict) -> str:
     a, b, c = segment["colours"]
     at = [float(v) for v in segment.get("at", (0.0, 0.0))]
     mist = float(segment.get("mist", 0.5))
-    answer, kick = int(segment.get("answer", 1)), float(segment.get("kick", 1.0))
-    line = f"let style = #{{ a: {list(a)}, b: {list(b)}, c: {list(c)}, speed: {segment['speed']}, at: {at}, mist: {mist}, answer: {answer}, kick: {kick} }}; // @style"
+    answer, kick, finish = int(segment.get("answer", 1)), float(segment.get("kick", 1.0)), int(segment.get("finish", 0))
+    line = f"let style = #{{ a: {list(a)}, b: {list(b)}, c: {list(c)}, speed: {segment['speed']}, at: {at}, mist: {mist}, answer: {answer}, kick: {kick}, finish: {finish} }}; // @style"
     return STYLE_LINE.sub(lambda _: line, source, count=1)
 
 

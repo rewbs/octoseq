@@ -1092,6 +1092,15 @@ impl Signal {
                 }
             }
 
+            EnvelopeShape::Count => {
+                // One for each event that has happened, whatever its weight
+                if dt >= 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+
             EnvelopeShape::AttackDecay => {
                 if dt < 0.0 {
                     0.0

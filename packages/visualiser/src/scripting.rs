@@ -623,6 +623,23 @@ impl ScriptEngine {
                 "center".into(),
                 options.get("center").cloned().unwrap_or(default_center),
             );
+            let no_shift = {
+                let mut c = rhai::Map::new();
+                c.insert("x".into(), Dynamic::from(0.0_f64));
+                c.insert("y".into(), Dynamic::from(0.0_f64));
+                Dynamic::from(c)
+            };
+            effect.insert(
+                "shift".into(),
+                options.get("shift").cloned().unwrap_or(no_shift),
+            );
+            effect.insert(
+                "angle".into(),
+                options
+                    .get("angle")
+                    .cloned()
+                    .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+            );
             PENDING_POST_EFFECTS.with(|cell| {
                 cell.borrow_mut().insert(id, effect.clone());
             });
@@ -806,6 +823,196 @@ impl ScriptEngine {
                         .get("angle")
                         .cloned()
                         .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                PENDING_POST_EFFECTS.with(|cell| {
+                    cell.borrow_mut().insert(id, effect.clone());
+                });
+                effect
+            },
+        );
+
+        engine.register_fn(
+            "__fx_create_dither",
+            |options: rhai::Map| -> rhai::Map {
+                let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let mut effect = rhai::Map::new();
+                effect.insert("__id".into(), Dynamic::from(id));
+                effect.insert("__type".into(), Dynamic::from("post_effect"));
+                effect.insert("__effect_id".into(), Dynamic::from("dither"));
+                effect.insert("enabled".into(), Dynamic::from(true));
+                effect.insert(
+                    "levels".into(),
+                    options
+                        .get("levels")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(4.0_f64)),
+                );
+                effect.insert(
+                    "pixel".into(),
+                    options
+                        .get("pixel")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(2.0_f64)),
+                );
+                effect.insert(
+                    "mono".into(),
+                    options
+                        .get("mono")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                effect.insert(
+                    "amount".into(),
+                    options
+                        .get("amount")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                PENDING_POST_EFFECTS.with(|cell| {
+                    cell.borrow_mut().insert(id, effect.clone());
+                });
+                effect
+            },
+        );
+
+        engine.register_fn(
+            "__fx_create_ascii",
+            |options: rhai::Map| -> rhai::Map {
+                let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let mut effect = rhai::Map::new();
+                effect.insert("__id".into(), Dynamic::from(id));
+                effect.insert("__type".into(), Dynamic::from("post_effect"));
+                effect.insert("__effect_id".into(), Dynamic::from("ascii"));
+                effect.insert("enabled".into(), Dynamic::from(true));
+                effect.insert(
+                    "rows".into(),
+                    options
+                        .get("rows")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(34.0_f64)),
+                );
+                effect.insert(
+                    "colour".into(),
+                    options
+                        .get("colour")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                effect.insert(
+                    "gain".into(),
+                    options
+                        .get("gain")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                effect.insert(
+                    "amount".into(),
+                    options
+                        .get("amount")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                PENDING_POST_EFFECTS.with(|cell| {
+                    cell.borrow_mut().insert(id, effect.clone());
+                });
+                effect
+            },
+        );
+
+        engine.register_fn(
+            "__fx_create_crt",
+            |options: rhai::Map| -> rhai::Map {
+                let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let mut effect = rhai::Map::new();
+                effect.insert("__id".into(), Dynamic::from(id));
+                effect.insert("__type".into(), Dynamic::from("post_effect"));
+                effect.insert("__effect_id".into(), Dynamic::from("crt"));
+                effect.insert("enabled".into(), Dynamic::from(true));
+                effect.insert(
+                    "lines".into(),
+                    options
+                        .get("lines")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.5_f64)),
+                );
+                effect.insert(
+                    "mask".into(),
+                    options
+                        .get("mask")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.25_f64)),
+                );
+                effect.insert(
+                    "bleed".into(),
+                    options
+                        .get("bleed")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                effect.insert(
+                    "wobble".into(),
+                    options
+                        .get("wobble")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                effect.insert(
+                    "curve".into(),
+                    options
+                        .get("curve")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.12_f64)),
+                );
+                effect.insert(
+                    "phase".into(),
+                    options
+                        .get("phase")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                PENDING_POST_EFFECTS.with(|cell| {
+                    cell.borrow_mut().insert(id, effect.clone());
+                });
+                effect
+            },
+        );
+
+        engine.register_fn(
+            "__fx_create_halftone",
+            |options: rhai::Map| -> rhai::Map {
+                let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let mut effect = rhai::Map::new();
+                effect.insert("__id".into(), Dynamic::from(id));
+                effect.insert("__type".into(), Dynamic::from("post_effect"));
+                effect.insert("__effect_id".into(), Dynamic::from("halftone"));
+                effect.insert("enabled".into(), Dynamic::from(true));
+                effect.insert(
+                    "cells".into(),
+                    options
+                        .get("cells")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(54.0_f64)),
+                );
+                effect.insert(
+                    "angle".into(),
+                    options
+                        .get("angle")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.4_f64)),
+                );
+                effect.insert(
+                    "colour".into(),
+                    options
+                        .get("colour")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                effect.insert(
+                    "amount".into(),
+                    options
+                        .get("amount")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
                 );
                 PENDING_POST_EFFECTS.with(|cell| {
                     cell.borrow_mut().insert(id, effect.clone());
@@ -1830,6 +2037,26 @@ fx.kaleidoscope = |options| {{
     __post_effects["" + effect.__id] = effect;
     effect
 }};
+fx.dither = |options| {{
+    let effect = __fx_create_dither(options);
+    __post_effects["" + effect.__id] = effect;
+    effect
+}};
+fx.ascii = |options| {{
+    let effect = __fx_create_ascii(options);
+    __post_effects["" + effect.__id] = effect;
+    effect
+}};
+fx.crt = |options| {{
+    let effect = __fx_create_crt(options);
+    __post_effects["" + effect.__id] = effect;
+    effect
+}};
+fx.halftone = |options| {{
+    let effect = __fx_create_halftone(options);
+    __post_effects["" + effect.__id] = effect;
+    effect
+}};
 
 // Post-processing chain management (post namespace)
 let post = #{{}};
@@ -1870,21 +2097,41 @@ post.setOrder = |order| {{
 
 // The standard answers to a blow: what the whole frame does on a hit, whatever
 // the scene is drawing. `kind` picks one, `strength` scales it (1 is the plain
-// amount), `blow` is the scene's hit envelope and `at` where the scene sits.
-// Every kind moves the whole picture at once, so the link between the sound and
-// the picture is plain in every scene, and each is different enough from the
+// amount), `blows` is the events to answer (`roles.hit`) and `at` where the scene
+// sits. Every kind moves the whole picture at once, so the link between the sound
+// and the picture is plain in every scene, and each is different enough from the
 // rest that a show can change it from look to look.
+//
+// An answer has to be sudden and visible, and must not be taken back at once: a
+// review called answers that were there for one frame and gone the next "twitchy,
+// not punchy". There are two ways of not being taken back. The first six kinds
+// arrive at once and ease back over four tenths of a beat, fast at first and then
+// slowly. (Over seven tenths less of each jump has been taken back two frames
+// later, but in a busy scene the blows run together: the scenes already shortest
+// of answers lost half of what they had.)
+// The last three do not come back at all: the picture is turned or moved, and
+// goes on from where it was put until the next blow.
 //   1 punch: the picture jumps towards the eye and eases back
 //   2 flash: it flares, and jumps a little
 //   3 jolt:  it lurches sideways and in
 //   4 split: its colours are knocked apart
 //   5 burst: it smears outwards from its middle
 //   6 ghost: a second copy of it leaps outwards and fades
+//   7 notch: it turns a sixteenth of the way round and stays there
+//   8 swing: it tips over to its other side and drifts on that way
+//   9 slide: it jumps to the next corner of a square and drifts on along that side
+// (Swing and slide jump as well as change direction: a steady movement that only
+// reversed was too slight a change to see, and was measured as answering six to
+// eight blows in ten where the notch answers them all.)
 //   0 (or anything else): nothing
 // (It adds to the chain itself: a closure on `post` may not call back into `post`.)
-post.answer = |kind, strength, blow, at| {{
+post.answer = |kind, strength, blows, at| {{
     let centre = #{{ x: 0.5 + at[0], y: 0.5 + at[1] }};
-    let b = blow.clamp(0.0, 1.5).scale(strength);
+    let b = blows.to_signal(#{{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.4, easing: "quadratic_out" }}).clamp(0.0, 1.5).scale(strength);
+    // How many blows there have been, and which way things are going: 1 or -1,
+    // changing on every blow.
+    let count = blows.to_signal(#{{ envelope: "count" }});
+    let way = count.scale(3.14159265).cos();
     if kind == 1 {{
         __post_chain.push(fx.zoomWrap(#{{ amount: b.scale(-0.24).add(1.0), center: centre, wrap_mode: "mirror" }}).__id);
     }} else if kind == 2 {{
@@ -1900,6 +2147,42 @@ post.answer = |kind, strength, blow, at| {{
         __post_chain.push(fx.radialBlur(#{{ strength: b.scale(0.75), center: centre, samples: 16 }}).__id);
     }} else if kind == 6 {{
         __post_chain.push(fx.echo(#{{ alpha: b.scale(0.9).clamp(0.0, 0.95), zoom: b.scale(0.75).add(1.0), flip: 0.0, angle: 0.0 }}).__id);
+    }} else if kind == 7 {{
+        __post_chain.push(fx.zoomWrap(#{{ amount: b.scale(-0.06).add(1.0), angle: count.scale(0.3927 * strength), center: centre, wrap_mode: "mirror" }}).__id);
+    }} else if kind == 8 {{
+        __post_chain.push(fx.zoomWrap(#{{ amount: b.scale(-0.06).add(1.0), angle: way.scale(0.2 * strength).add(way.integrate(0.0).scale(0.25)), center: centre, wrap_mode: "mirror" }}).__id);
+    }} else if kind == 9 {{
+        let heading = count.scale(1.5707963);
+        let across = heading.cos();
+        let down = heading.sin();
+        __post_chain.push(fx.zoomWrap(#{{ amount: b.scale(-0.06).add(1.0), shift: #{{ x: across.scale(0.09 * strength).add(across.integrate(0.0).scale(0.08)), y: down.scale(0.15 * strength).add(down.integrate(0.0).scale(0.13)) }}, center: centre, wrap_mode: "mirror" }}).__id);
+    }}
+}};
+
+// A finish: one more thing laid over the whole picture, last of all, that changes
+// what it is made of and not what it shows. `kind` picks one, `clock` is the time
+// in seconds (`timing.time`), which the grain and the tape's wobble change with.
+//   1 grain:    film grain, new every twenty-fourth of a second
+//   2 dither:   four shades of each colour on a coarse grid
+//   3 two-tone: every element of a coarse grid black or its own colour
+//   4 ascii:    the picture as rows of characters
+//   5 tape:     scan lines, a colour mask, smeared colour, wobbling lines
+//   6 dots:     a halftone screen
+//   0 (or anything else): nothing
+// (Like `post.answer`, it adds to the chain itself.)
+post.finish = |kind, clock| {{
+    if kind == 1 {{
+        __post_chain.push(fx.grain(#{{ amount: 0.14, scale: 5.0, seed: clock.scale(24.0).floor().scale(7.31) }}).__id);
+    }} else if kind == 2 {{
+        __post_chain.push(fx.dither(#{{ levels: 4.0, pixel: 2.0, mono: 0.0, amount: 1.0 }}).__id);
+    }} else if kind == 3 {{
+        __post_chain.push(fx.dither(#{{ levels: 2.0, pixel: 2.0, mono: 1.0, amount: 1.0 }}).__id);
+    }} else if kind == 4 {{
+        __post_chain.push(fx.ascii(#{{ rows: 34.0, colour: 1.0, gain: 1.4, amount: 1.0 }}).__id);
+    }} else if kind == 5 {{
+        __post_chain.push(fx.crt(#{{ lines: 0.55, mask: 0.25, bleed: 1.0, wobble: 1.0, curve: 0.12, phase: clock }}).__id);
+    }} else if kind == 6 {{
+        __post_chain.push(fx.halftone(#{{ cells: 54.0, angle: 0.4, colour: 0.0, amount: 1.0 }}).__id);
     }}
 }};
 
@@ -3560,6 +3843,22 @@ feedback.is_enabled = || {{
                             Self::eval_color_channel(center.get("y"), 0.5, eval_ctx, frame_cache);
                         instance.set_param("center", EffectParamValue::Vec2([x, y]));
                     }
+                    if let Some(shift) = effect_map
+                        .get("shift")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
+                        let x =
+                            Self::eval_color_channel(shift.get("x"), 0.0, eval_ctx, frame_cache);
+                        let y =
+                            Self::eval_color_channel(shift.get("y"), 0.0, eval_ctx, frame_cache);
+                        instance.set_param("shift", EffectParamValue::Vec2([x, y]));
+                    }
+                    if let Some(v) = effect_map
+                        .get("angle")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("angle", v);
+                    }
                 }
                 "radial_blur" => {
                     if let Some(v) = effect_map
@@ -3663,6 +3962,122 @@ feedback.is_enabled = || {{
                         .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
                     {
                         instance.set_param("angle", v);
+                    }
+                }
+                "dither" => {
+                    if let Some(v) = effect_map
+                        .get("levels")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("levels", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("pixel")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("pixel", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("mono")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("mono", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("amount")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("amount", v);
+                    }
+                }
+                "ascii" => {
+                    if let Some(v) = effect_map
+                        .get("rows")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("rows", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("colour")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("colour", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("gain")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("gain", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("amount")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("amount", v);
+                    }
+                }
+                "crt" => {
+                    if let Some(v) = effect_map
+                        .get("lines")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("lines", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("mask")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("mask", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("bleed")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("bleed", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("wobble")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("wobble", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("curve")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("curve", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("phase")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("phase", v);
+                    }
+                }
+                "halftone" => {
+                    if let Some(v) = effect_map
+                        .get("cells")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("cells", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("angle")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("angle", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("colour")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("colour", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("amount")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("amount", v);
                     }
                 }
                 "kaleidoscope" => {

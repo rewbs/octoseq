@@ -70,6 +70,10 @@
     "stray_jumps": {
       "max": 0.1,
       "why": "the picture should not jump where the music makes no sound (review 3: 'doesn't land when there are no hits')"
+    },
+    "undone": {
+      "max": 0.35,
+      "why": "an answer should not be taken back at once (review 3, round 2: nine shows whose answers were half undone two frames later, out one frame and back the next, were rated 'twitchy, not punchy'; the owner: an answer 'just has to be sudden and visible')"
     }
   },
   "accuracy": {

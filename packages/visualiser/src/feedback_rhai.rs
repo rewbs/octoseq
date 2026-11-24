@@ -265,6 +265,39 @@ pub fn register_feedback_builder_api(engine: &mut Engine) {
         },
     );
 
+    // whirls(amount, count, phase), fold(sides, angle), flow(amount, scale, phase),
+    // blocks(amount, count, deal), slices(amount, count, angle)
+    engine.register_fn(
+        "whirls",
+        |wb: &mut WarpBuilder, amount: Dynamic, count: Dynamic, phase: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(wb.clone().whirls(to_signal_or_f32(amount)?, to_signal_or_f32(count)?, to_signal_or_f32(phase)?))
+        },
+    );
+    engine.register_fn(
+        "fold",
+        |wb: &mut WarpBuilder, sides: Dynamic, angle: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(wb.clone().fold(to_signal_or_f32(sides)?, to_signal_or_f32(angle)?))
+        },
+    );
+    engine.register_fn(
+        "flow",
+        |wb: &mut WarpBuilder, amount: Dynamic, scale: Dynamic, phase: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(wb.clone().flow(to_signal_or_f32(amount)?, to_signal_or_f32(scale)?, to_signal_or_f32(phase)?))
+        },
+    );
+    engine.register_fn(
+        "blocks",
+        |wb: &mut WarpBuilder, amount: Dynamic, count: Dynamic, deal: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(wb.clone().blocks(to_signal_or_f32(amount)?, to_signal_or_f32(count)?, to_signal_or_f32(deal)?))
+        },
+    );
+    engine.register_fn(
+        "slices",
+        |wb: &mut WarpBuilder, amount: Dynamic, count: Dynamic, angle: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(wb.clone().slices(to_signal_or_f32(amount)?, to_signal_or_f32(count)?, to_signal_or_f32(angle)?))
+        },
+    );
+
     // shear(strength)
     engine.register_fn(
         "shear",

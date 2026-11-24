@@ -141,6 +141,36 @@ def test_metrics() -> None:
     check("response: the same jumps a quarter of a second late answer nothing, and are stray", late["answered"] < 0.2 and late["stray_jumps"] > 0.8, f"-> {late}")
     check("response: a picture that only slides answers nothing", sliding.get("answered", 0.0) < 0.05 and sliding["dead_time"] > 0.95, f"-> {sliding}")
     check("response: a jump is most of the frame when the whole frame moves", on_time["jump_size"] > 0.5, f"-> {on_time['jump_size']:.2f}")
+
+    # Twitch: the same blows answered by a blip (there one frame, gone the next),
+    # by a hit that eases back over eight frames, and by a step that stays, on a
+    # pattern that can be moved by any distance.
+    rows, cols = np.mgrid[0:72, 0:128]
+    frames_of = {int(round(t * 30)) + 1 for t in blows}
+
+    def moved_by(distance: float) -> np.ndarray:
+        return 0.4 + 0.4 * np.sin(2 * np.pi * (cols - distance) / 24.0) * np.cos(2 * np.pi * rows / 36.0)
+
+    def answering(ease_frames: int) -> np.ndarray:
+        age, out = 99, []
+        for i in range(300):
+            age = 0 if i in frames_of else age + 1
+            out.append(moved_by(12.0 * max(0.0, 1.0 - age / ease_frames) ** 2))
+        return np.stack(out)
+
+    def stepping() -> np.ndarray:
+        count, out = 0, []
+        for i in range(300):
+            count += i in frames_of
+            out.append(moved_by(5.0 * count))
+        return np.stack(out)
+
+    blip = response.compute(answering(1), 30.0, drummed)
+    eased = response.compute(answering(8), 30.0, drummed)
+    stays = response.compute(stepping(), 30.0, drummed)
+    check("response: a blip is taken back at once", blip["undone"] > 0.9 and blip["answered"] > 0.95, f"-> {blip}")
+    check("response: a hit that eases back is not", eased["undone"] < 0.4 and eased["answered"] > 0.95, f"-> {eased}")
+    check("response: nor is a step that stays, and it answers every blow of a roll", stays["undone"] < 0.05 and stays["answered"] > 0.95 and stays["answered_rolls"] > 0.95, f"-> {stays}")
     check("smooth flow is smoother than strobe", flow["jerkiness"] < strobe["jerkiness"])
 
     # Brightness that follows an audio envelope should register as in sync.
@@ -247,7 +277,12 @@ def test_director() -> None:
     check("director: a crisp look follows a misty one, and a misty one a crisp", all((a < 0.5) != (b < 0.5) for a, b in zip(mists, mists[1:])), f"-> {mists[:6]}")
     check("director: louder sections run faster", show["segments"][-1]["speed"] > show["segments"][0]["speed"])
     answers = [s["answer"] for s in show["segments"]]
-    check("director: each look answers a blow in a different way from the last", all(a != b for a, b in zip(answers, answers[1:])) and set(answers) <= set(director.ANSWERS), f"-> {answers[:8]}")
+    check("director: each look answers a blow in a different way from the last, easing back and staying by turns", all((a in director.STAYING) != (b in director.STAYING) for a, b in zip(answers, answers[1:])) and set(answers) <= set(director.ANSWERS), f"-> {answers[:8]}")
+    laid = [s["finish"] for s in show["segments"] if s["finish"]]
+    check("director: some looks get a finish, never the same one twice running", set(laid) <= set(director.FINISHES.values()) and all(a != b for a, b in zip(laid, laid[1:])) and len(laid) < len(show["segments"]), f"-> {[s['finish'] for s in show['segments']][:12]}")
+    no_finish = director.direct(package, seed=4, brief={"finishes": []})
+    one_finish = director.direct(package, seed=4, brief={"finishes": ["ascii"]})
+    check("director: a brief can ask for no finish, or for one kind only", not any(s["finish"] for s in no_finish["segments"]) and {s["finish"] for s in one_finish["segments"]} <= {0, director.FINISHES["ascii"]} and [s["scene"] for s in no_finish["segments"]] == [s["scene"] for s in one_finish["segments"]], f"-> {[s['finish'] for s in one_finish['segments']][:12]}")
     check("director: and harder in a louder section", show["segments"][-1]["kick"] > show["segments"][0]["kick"])
     check("director: the same seed gives the same show", director.direct(package, seed=11) == show)
     vivid = director.direct(package, seed=11, vivid=True)

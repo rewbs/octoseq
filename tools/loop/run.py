@@ -33,6 +33,7 @@ import shutil
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -585,6 +586,7 @@ def main() -> int:
     parser.add_argument("--width", type=int, default=480)
     parser.add_argument("--height", type=int, default=270)
     parser.add_argument("--name", default=time.strftime("%Y%m%d-%H%M%S"))
+    parser.add_argument("--jobs", type=int, default=1, help="clips rendered at once. A clip is one core's work whatever the graphics card, so up to the number of cores")
     parser.add_argument("--no-build", action="store_true", help="skip cargo build")
     parser.add_argument("--no-checks", action="store_true", help="skip the engine checks")
     parser.add_argument("--save-baseline", action="store_true")
@@ -610,14 +612,28 @@ def main() -> int:
     checks = [] if args.no_checks else engine_checks(tracks[0], run_dir, gates, args)
     for check in checks:
         print(f"{'ok  ' if check['ok'] else 'FAIL'} {check['name']} ({check['detail']})", flush=True)
-    results = []
-    for track in tracks:
-        for scene in scenes:
-            r = run_pair(track, scene, run_dir, gates, args)
-            results.append(r)
-            print(f"{r['status']:5} {r['id']} ({r['render_seconds']}s)", flush=True)
-            for problem in r["hard"]:
-                print(f"      FAIL {problem}")
+    pairs = [(track, scene) for track in tracks for scene in scenes]
+
+    def one(pair: tuple[Path, Path]) -> dict:
+        return run_pair(pair[0], pair[1], run_dir, gates, args)
+
+    def said(r: dict) -> dict:
+        print(f"{r['status']:5} {r['id']} ({r['render_seconds']}s)", flush=True)
+        for problem in r["hard"]:
+            print(f"      FAIL {problem}")
+        return r
+
+    if args.jobs > 1:
+        # The first clip of each track is done alone: it is what makes the track's
+        # bundle (or brings it up to date), and the rest, which share it, must not
+        # all try to at the same moment.
+        first = {(track, scenes[0]): said(one((track, scenes[0]))) for track in tracks}
+        rest = [pair for pair in pairs if pair not in first]
+        with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+            done = first | {pair: said(r) for pair, r in zip(rest, pool.map(one, rest))}
+        results = [done[pair] for pair in pairs]
+    else:
+        results = [said(one(pair)) for pair in pairs]
 
     write_report(run_dir, results, baseline, checks)
     print(f"\nreport: {(run_dir / 'report.md').relative_to(ROOT)}")

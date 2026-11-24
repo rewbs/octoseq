@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCENES = ROOT / "scenes"
 TRACKS = ["data/dontstop.mp3", "tools/loop/fixtures/modules/synth-0101.mod"]
 STYLE_LINE = re.compile(r"^let style = #\{(.*)\}; // @style$", re.M)
-STYLE_KEYS = ("a", "b", "c", "speed", "at", "mist", "answer", "kick")
+STYLE_KEYS = ("a", "b", "c", "speed", "at", "mist", "answer", "kick", "finish")
 MISTS = {"crisp": 0.0, "misty": 1.0}
 ROLE_LINE = re.compile(r"^//!\s*roles:\s*(.+)$", re.M)
 ROLE_NOTE = re.compile(r"^//   (\w+(?:, \w+)*)\s{2,}(.+)$", re.M)  # "//   kick, snare   what they do"
@@ -93,8 +93,14 @@ def written(scene: Path) -> list[str]:
             broken.append(f"never uses style.{part}")
     if "fn misted(" not in code:
         broken.append("has no `misted` function")
-    if not re.search(r"post\.answer\(style\.answer, style\.kick, \w+, style\.at\);", code):
-        broken.append("does not answer a blow with the whole frame (`post.answer(style.answer, style.kick, hit, style.at);`)")
+    # The whole frame's answer is given the blows themselves, not the scene's own
+    # hit envelope: the engine shapes the answer (it eases back, or it stays). On
+    # the scene's short envelope it was there one frame and gone the next, and
+    # review 3 called that "twitchy, not punchy".
+    if not re.search(r"post\.answer\(style\.answer, style\.kick, roles\.hit, style\.at\);", code):
+        broken.append("does not answer a blow with the whole frame (`post.answer(style.answer, style.kick, roles.hit, style.at);`)")
+    if "post.finish(style.finish, timing.time);" not in code:
+        broken.append("does not let the show lay a finish over it (`post.finish(style.finish, timing.time);`, last of all)")
     # A scene whose eye circles it can only be placed up and down, so either part
     # of style.at will do.
     if "feedback.builder()" in code and not re.search(r"\.centre\([^)]*style\.at\[", code):

@@ -334,7 +334,7 @@ pub fn evaluate_particle_envelope(age_beats: f32, envelope: &ParticleEnvelope) -
                 0.0
             }
         }
-        EnvelopeShape::Step => 1.0,
+        EnvelopeShape::Step | EnvelopeShape::Count => 1.0,
         EnvelopeShape::AttackDecay => {
             if age_beats < envelope.attack_beats {
                 // Attack phase

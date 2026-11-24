@@ -272,6 +272,7 @@ fn parse_envelope(options: &Map) -> ParticleEnvelope {
         envelope.shape = match shape_str.as_str() {
             "impulse" => EnvelopeShape::Impulse,
             "step" => EnvelopeShape::Step,
+            "count" => EnvelopeShape::Count,
             "attack_decay" | "attackDecay" => EnvelopeShape::AttackDecay,
             "adsr" => EnvelopeShape::Adsr,
             "gaussian" => EnvelopeShape::Gaussian,

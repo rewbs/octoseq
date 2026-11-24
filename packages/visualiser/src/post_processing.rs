@@ -481,6 +481,14 @@ impl PostEffectRegistry {
                     EffectParamDef::vec2("center", [0.5, 0.5])
                         .with_description("Zoom center in normalized coordinates"),
                 )
+                .param(
+                    EffectParamDef::vec2("shift", [0.0, 0.0])
+                        .with_description("How far the picture is slid, in frame widths and heights"),
+                )
+                .param(
+                    EffectParamDef::float("angle", 0.0)
+                        .with_description("How far the picture is turned about the center, in radians"),
+                )
                 .build(),
         );
 
@@ -619,6 +627,132 @@ impl PostEffectRegistry {
                 .param(
                     EffectParamDef::vec2("center", [0.5, 0.5])
                         .with_description("The middle, in normalized coordinates"),
+                )
+                .build(),
+        );
+
+        // Dither effect
+        // Note: Parameter order must match shader uniform struct layout
+        self.register(
+            PostEffect::builder("dither")
+                .name("Dither")
+                .description("The picture in a few shades on a coarse grid, the missing shades made up by a pattern of dots")
+                .param(
+                    EffectParamDef::float("levels", 4.0)
+                        .with_range(2.0, 64.0)
+                        .with_description("Shades of each colour"),
+                )
+                .param(
+                    EffectParamDef::float("pixel", 2.0)
+                        .with_range(1.0, 64.0)
+                        .with_description("The side of one picture element, in 270ths of the frame's height"),
+                )
+                .param(
+                    EffectParamDef::float("mono", 0.0)
+                        .with_range(0.0, 1.0)
+                        .with_description("0 = each colour dithered on its own; 1 = each element black or its own colour"),
+                )
+                .param(
+                    EffectParamDef::float("amount", 1.0)
+                        .with_range(0.0, 1.0)
+                        .with_description("0 = the picture as it was, 1 = all dither"),
+                )
+                .build(),
+        );
+
+        // ASCII effect
+        // Note: Parameter order must match shader uniform struct layout
+        self.register(
+            PostEffect::builder("ascii")
+                .name("ASCII")
+                .description("The picture as rows of characters, each chosen for how bright the picture is under it")
+                .param(
+                    EffectParamDef::float("rows", 34.0)
+                        .with_range(4.0, 400.0)
+                        .with_description("Rows of characters down the frame"),
+                )
+                .param(
+                    EffectParamDef::float("colour", 1.0)
+                        .with_range(0.0, 1.0)
+                        .with_description("0 = white characters; 1 = each in the colour of the picture under it"),
+                )
+                .param(
+                    EffectParamDef::float("gain", 1.0)
+                        .with_range(0.0, 16.0)
+                        .with_description("The picture's brightness is multiplied by this before a character is chosen"),
+                )
+                .param(
+                    EffectParamDef::float("amount", 1.0)
+                        .with_range(0.0, 1.0)
+                        .with_description("0 = the picture as it was, 1 = all characters"),
+                )
+                .build(),
+        );
+
+        // CRT effect
+        // Note: Parameter order must match shader uniform struct layout
+        self.register(
+            PostEffect::builder("crt")
+                .name("CRT")
+                .description("The picture as an old tube or a worn tape would show it")
+                .param(
+                    EffectParamDef::float("lines", 0.5)
+                        .with_range(0.0, 1.0)
+                        .with_description("How dark the gaps between scan lines are"),
+                )
+                .param(
+                    EffectParamDef::float("mask", 0.25)
+                        .with_range(0.0, 1.0)
+                        .with_description("How strongly each column shows only red, green or blue"),
+                )
+                .param(
+                    EffectParamDef::float("bleed", 1.0)
+                        .with_range(0.0, 8.0)
+                        .with_description("How far colour smears sideways; 1 is plain"),
+                )
+                .param(
+                    EffectParamDef::float("wobble", 1.0)
+                        .with_range(0.0, 8.0)
+                        .with_description("How far each line is knocked sideways from moment to moment; 1 is plain"),
+                )
+                .param(
+                    EffectParamDef::float("curve", 0.12)
+                        .with_range(0.0, 1.0)
+                        .with_description("How far the face of the tube bulges; 0 is flat"),
+                )
+                .param(
+                    EffectParamDef::float("phase", 0.0)
+                        .with_range(-1000000000.0, 1000000000.0)
+                        .with_description("The time in seconds: what the wobble changes with"),
+                )
+                .build(),
+        );
+
+        // Halftone effect
+        // Note: Parameter order must match shader uniform struct layout
+        self.register(
+            PostEffect::builder("halftone")
+                .name("Halftone")
+                .description("The picture as a screen of dots, each as big as the picture is bright there")
+                .param(
+                    EffectParamDef::float("cells", 54.0)
+                        .with_range(4.0, 1000.0)
+                        .with_description("Dots down the frame"),
+                )
+                .param(
+                    EffectParamDef::float("angle", 0.4)
+                        .with_range(-1000.0, 1000.0)
+                        .with_description("Which way the screen of dots is turned, in radians"),
+                )
+                .param(
+                    EffectParamDef::float("colour", 0.0)
+                        .with_range(0.0, 1.0)
+                        .with_description("0 = one screen in the picture's colours; 1 = a screen each for red, green and blue"),
+                )
+                .param(
+                    EffectParamDef::float("amount", 1.0)
+                        .with_range(0.0, 1.0)
+                        .with_description("0 = the picture as it was, 1 = all dots"),
                 )
                 .build(),
         );

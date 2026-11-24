@@ -2,18 +2,18 @@
 
 // LIQUID
 // Three lights wander the frame and a ring breathes in the middle. What makes the
-// picture is the loop: every frame the last one comes back bent by slow waves, so
-// the lights' trails run like ink in water, changing colour as they age. Loud music
-// stirs the water faster; a hit throws it.
+// picture is the loop: every frame the last one comes back carried a little way
+// along slow eddies, so the lights' trails run like ink in water, changing colour
+// as they age. Loud music stirs the water faster; a hit throws it.
 //
-//   hit      the water is thrown: the waves jump and the picture lurches forward
+//   hit      the water is thrown: the eddies surge and the picture lurches forward
 //   kick     the first light swells
 //   snare    the second light swells
 //   hat      the third light swells
 //   bass     the ring opens
 //   energy   how fast the water moves
 
-let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0], mist: 0.5, answer: 1, kick: 1.0 }; // @style
+let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0], mist: 0.5, answer: 1, kick: 1.0, finish: 0 }; // @style
 
 // `style.mist` says how misty the look is, from 0 (crisp: short trails and a tight
 // glow, so bright shapes sit on black) to 1 (misty: trails that linger until colour
@@ -40,7 +40,7 @@ fn init(ctx) {
     camera.position = #{ x: ex, y: ey, z: 6.5 };
     camera.target = #{ x: ex, y: ey, z: 0.0 };
 
-    // Short and sharp: an answer that lingers runs into the next one, and then no blow stands out.
+    // Short and sharp, for the scene's own movement. The whole frame's answer, at the end, has shapes of its own.
     let hit = roles.hit.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.1 });
     let kick = roles.kick.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.4 });
     let snare = roles.snare.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.4 });
@@ -68,7 +68,7 @@ fn init(ctx) {
     iris.scale = bass.scale(0.8).add(hit.scale(0.7)).add(0.5);
     scene.add(glow(iris, style.c, 0.8));
 
-    // The loop. Waves bend the last frame, more when loud and far more on a hit; it
+    // The loop. Eddies carry the last frame, more when loud and far more on a hit; it
     // grows a little each frame, so trails travel outwards; it turns one way and
     // then the other on two slow speeds that never line up; and its colour creeps
     // round the wheel, so a trail is a rainbow of its own age.
@@ -77,7 +77,7 @@ fn init(ctx) {
     // back in, on a period of half a minute, so the same scene has several looks.
     let tide = t.scale(0.21).sin().scale(0.022).add(1.018);
     let fb = feedback.builder()
-        .warp.waves(hit.scale(9.0).add(level.scale(2.5)).add(2.6), 1.0, clock)
+        .warp.flow(hit.scale(9.0).add(level.scale(2.5)).add(2.6).scale(0.3), 3.0, clock.scale(0.6))
         .warp.affine(hit.scale(0.07).add(tide), turn)
         .color.hsv(0.004, 0.0, 0.0)
         .color.decay(misted(0.965, style.mist, 0.85, 0.988))
@@ -91,5 +91,7 @@ fn init(ctx) {
 
     // The whole frame answers every blow as well, in the way the show asks for
     // (`style.answer`: see post.answer in scripting.md), so the link is never in doubt.
-    post.answer(style.answer, style.kick, hit, style.at);
+    post.answer(style.answer, style.kick, roles.hit, style.at);
+    // And the show may lay a finish over it all (`style.finish`: grain, dither, characters and so on).
+    post.finish(style.finish, timing.time);
 }

@@ -150,6 +150,44 @@ Not finished, and not needed. What is known:
   them) and has not been tried.
 - On ARM64, PyTorch would run on the CPU only.
 
+## A rented machine, for rendering
+
+A clip is one core's work. The graphics card hardly matters: a rented RTX 4090
+rendered a clip in the same 22 seconds as a laptop, at 3% use. So what a bigger
+machine gives is more clips at once, through `run.py --jobs`. An 18-core machine
+with `--jobs 16` does the whole loop (58 scenes and the director on four tracks,
+with the engine checks) in 13 minutes; one clip at a time on a laptop it is 100.
+The same option is worth about three times on a laptop (`--jobs 8`), where the
+graphics card is the limit.
+
+What worked, on RunPod (a "community" RTX 4090 pod with 18 cores, about $0.34 an
+hour, image `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04`):
+
+- Create the pod with `NVIDIA_DRIVER_CAPABILITIES=all` in its environment, an SSH
+  port (22/tcp) and a public key (`PUBLIC_KEY`), then follow the Linux steps above.
+- Add `libx11-6 libxext6 libegl1 libgl1` to the system packages. Without them
+  NVIDIA's Vulkan driver does not load and the engine renders on the CPU through
+  Mesa (it still works, slowly). `vulkaninfo --summary` should name the card.
+- The image's Python is 3.11 and the tools need 3.12:
+  `curl -LsSf https://astral.sh/uv/install.sh | sh`, then
+  `uv venv --seed --python 3.12 ~/py312` and put `~/py312/bin` first on the path.
+- PyTorch did not find CUDA on that pod (in the image's own Python either), so
+  Demucs ran on its CPU. That costs minutes for a handful of tracks.
+
+Two rules:
+
+- **The code reaches the machine from GitHub, never from the working tree.** The
+  working tree holds `.env`, with the keys of the paid stem services. Clone the
+  branch there; to try uncommitted work, send only what git tracks
+  (`git diff HEAD --binary | ssh ... 'git apply'`, after `git add -N` for new files).
+- **Its analysis is its own.** It makes its bundles from the audio it has, with
+  its own Demucs. Its figures can be compared with one another, and its hard gates
+  mean what they mean anywhere, but the render baseline is saved on the working
+  machine, from that machine's bundles.
+
+Stop or terminate the pod when the work is done: it bills by the hour whether or
+not it is rendering.
+
 ## projectM (optional)
 
 Only for re-making the Milkdrop reference (`tools/loop/milkdrop.py render`); the

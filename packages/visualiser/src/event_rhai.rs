@@ -469,6 +469,7 @@ pub fn parse_to_signal_options(map: &Map) -> ToSignalOptions {
             opts.envelope = match s.as_str() {
                 "impulse" => EnvelopeShape::Impulse,
                 "step" => EnvelopeShape::Step,
+                "count" => EnvelopeShape::Count,
                 "attack_decay" => EnvelopeShape::AttackDecay,
                 "adsr" => EnvelopeShape::Adsr,
                 "gaussian" => EnvelopeShape::Gaussian,

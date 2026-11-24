@@ -1758,6 +1758,10 @@ pub enum EnvelopeShape {
     Impulse,
     /// Step function: rises at event time and holds indefinitely.
     Step,
+    /// One for every event so far, whatever its weight: summed (the default), how
+    /// many events there have been. What something that changes on each event and
+    /// stays changed is built from: `count.scale(PI).cos()` flips between 1 and -1.
+    Count,
     /// Attack-decay envelope: rises over attack_beats, falls over decay_beats.
     AttackDecay,
     /// Full ADSR envelope with explicit sustain duration.

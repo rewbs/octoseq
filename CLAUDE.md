@@ -216,12 +216,17 @@ python3 tools/loop/accuracy.py   # score analysis timing against tracker-module 
   After saving the render baseline run `python3 tools/loop/presets.py table`, which
   rewrites that file from it.
 - The picture must answer the music, and `tools/loop/response.py` measures whether it
-  does: `answered`, `answered_rolls`, `jump_size`, `dead_time`. Work on scenes is
-  judged by those first. Change one thing at a time and test it on a few scenes
-  before a full scan: three changes made together once hid that two of them made
-  things worse. Short, hard answers score well; large lingering ones run together.
+  does: `answered`, `answered_rolls`, `jump_size`, `undone`, `dead_time`. Work on
+  scenes is judged by those first. Change one thing at a time and test it on a few
+  scenes before a full scan: three changes made together once hid that two of them
+  made things worse. An answer must be sudden and visible, and not taken back at
+  once: it eases back, or it stays (a turn, a change of direction). One that is gone
+  by the next frame was rated "twitchy, not punchy".
 - Every scene's main movement follows `roles.hit`, which is every kick and snare,
-  and ends with `post.answer(style.answer, style.kick, hit, style.at);`.
+  and ends with `post.answer(style.answer, style.kick, roles.hit, style.at);`. The
+  engine shapes that answer; `style.answer` picks one of nine.
+- The loops can run on a rented GPU machine ([docs/loop/setup.md](docs/loop/setup.md)).
+  It takes the code from GitHub: never copy the working tree to it, which holds `.env`.
 - The director takes a brief (`director.BRIEF_PARTS`): keep it plain data, and keep
   its refusals saying what would have been right. It is how a prompt will reach the
   engine.
