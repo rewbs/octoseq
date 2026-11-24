@@ -257,6 +257,14 @@ pub fn register_feedback_builder_api(engine: &mut Engine) {
         },
     );
 
+    // tile(count)
+    engine.register_fn(
+        "tile",
+        |wb: &mut WarpBuilder, count: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(wb.clone().tile(to_signal_or_f32(count)?))
+        },
+    );
+
     // shear(strength)
     engine.register_fn(
         "shear",
@@ -315,11 +323,17 @@ pub fn register_feedback_builder_api(engine: &mut Engine) {
         },
     );
 
-    // sharpen(amount, radius)
+    // sharpen(amount, radius) and sharpen(amount, radius, tone)
     engine.register_fn(
         "sharpen",
         |cb: &mut ColorBuilder, amount: Dynamic, radius: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
-            Ok(cb.clone().sharpen(to_signal_or_f32(amount)?, to_signal_or_f32(radius)?))
+            Ok(cb.clone().sharpen(to_signal_or_f32(amount)?, to_signal_or_f32(radius)?, 0.0))
+        },
+    );
+    engine.register_fn(
+        "sharpen",
+        |cb: &mut ColorBuilder, amount: Dynamic, radius: Dynamic, tone: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(cb.clone().sharpen(to_signal_or_f32(amount)?, to_signal_or_f32(radius)?, to_signal_or_f32(tone)?))
         },
     );
 

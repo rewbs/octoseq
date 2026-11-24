@@ -105,6 +105,8 @@ pub enum WarpOperator {
     Petals,
     /// A zoom that depends on distance from the centre.
     Ripple,
+    /// The last frame drawn several times over, in a grid about the centre.
+    Tile,
 }
 
 impl WarpOperator {
@@ -120,6 +122,7 @@ impl WarpOperator {
             WarpOperator::Waves => 6,
             WarpOperator::Petals => 7,
             WarpOperator::Ripple => 8,
+            WarpOperator::Tile => 9,
         }
     }
 
@@ -134,6 +137,7 @@ impl WarpOperator {
             "waves" => WarpOperator::Waves,
             "petals" => WarpOperator::Petals,
             "ripple" => WarpOperator::Ripple,
+            "tile" => WarpOperator::Tile,
             _ => WarpOperator::None,
         }
     }
@@ -629,8 +633,14 @@ impl FeedbackConfig {
                 offset_y: params.channel_offset[1],
             };
             match step.operator {
-                // Its amount is how far it pushes each thirtieth of a second.
-                ColorOperator::Sharpen => gpu.offset_x = params.channel_offset[0] * k,
+                // Its amount is how far it pushes each thirtieth of a second; its
+                // tone is a setting, not a rate.
+                ColorOperator::Sharpen => {
+                    gpu.offset_x = params.channel_offset[0] * k;
+                    gpu.hsv_h = params.hsv_shift[0];
+                    gpu.hsv_s = 0.0;
+                    gpu.hsv_v = 0.0;
+                }
                 // Its angle is a position, not a rate; its strength is a cover,
                 // read per thirtieth of a second like a shape's.
                 ColorOperator::Inset => {
@@ -1050,6 +1060,24 @@ impl WarpBuilder {
         self.0
     }
 
+    /// Draw the last frame `count` by `count` times, in a grid about the loop's
+    /// centre with no copy on the centre itself. Each time round the loop every
+    /// copy gains copies of its own, so a shape drawn in the middle is surrounded
+    /// by smaller copies of the whole picture, and those by smaller ones still:
+    /// what Milkdrop gets from zooming out with the texture set to wrap. Under 2
+    /// it does nothing. It acts once a step, whatever the step's length: a
+    /// generation is a step.
+    pub fn tile(mut self, count: impl Into<SignalOrF32>) -> FeedbackBuilder {
+        self.0.push_warp(WarpStep::new(
+            WarpOperator::Tile,
+            WarpParams {
+                frequency: count.into(),
+                ..Default::default()
+            },
+        ));
+        self.0
+    }
+
     /// Add a shear warp.
     /// Parameters can be f32 or Signal for audio-reactive effects.
     pub fn shear(mut self, strength: impl Into<SignalOrF32>) -> FeedbackBuilder {
@@ -1140,15 +1168,23 @@ impl ColorBuilder {
     /// it in check the picture breaks into spots, stripes and mazes: what
     /// Milkdrop's "reaction" presets do with a blurred copy of the frame. A
     /// negative amount softens instead.
+    ///
+    /// `tone` says what is compared. At 0 each of red, green and blue is
+    /// sharpened on its own, so they part company and the picture breaks into
+    /// every colour at once. At 1 only brightness is compared and the colour is
+    /// made a brighter or darker shade of itself, so ridges and furrows form in
+    /// the colours that were there. Between, a mix.
     pub fn sharpen(
         mut self,
         amount: impl Into<SignalOrF32>,
         radius: impl Into<SignalOrF32>,
+        tone: impl Into<SignalOrF32>,
     ) -> FeedbackBuilder {
         self.0.push_color(ColorStep::new(
             ColorOperator::Sharpen,
             ColorParams {
                 channel_offset: [amount.into(), radius.into()],
+                hsv_shift: [tone.into(), SignalOrF32::Scalar(0.0), SignalOrF32::Scalar(0.0)],
                 ..Default::default()
             },
         ));
@@ -1522,7 +1558,7 @@ mod tests {
         let stems = HashMap::new();
         let custom = HashMap::new();
         let composed = HashMap::new();
-        let builder = ColorBuilder(FeedbackBuilder::new()).sharpen(0.4, 0.01);
+        let builder = ColorBuilder(FeedbackBuilder::new()).sharpen(0.4, 0.01, 0.75);
         let config = ColorBuilder(builder).inset(0.3, 1.0, 0.5, 0.36, 4.0).build();
         let mut at = |dt: f32| {
             let mut ctx = EvalContext::new(0.0, dt, 0, None, &inputs, &bands, &stems, &custom, &composed, &stats, &mut state, None);
@@ -1532,6 +1568,7 @@ mod tests {
         assert_eq!(thirty.color_steps[0].color_type, 5);
         assert_eq!(thirty.color_steps[0].offset_x, 0.4);
         assert_eq!(thirty.color_steps[0].offset_y, 0.01);
+        assert_eq!(thirty.color_steps[0].hsv_h, 0.75);
         assert_eq!(thirty.color_steps[1].color_type, 6);
         assert_eq!(thirty.color_steps[1].offset_x, 0.3);
         assert_eq!(thirty.color_steps[1].offset_y, 1.0);
@@ -1543,6 +1580,7 @@ mod tests {
         let fast = at(1.0 / 120.0);
         assert!((fast.color_steps[0].offset_x * 4.0 - 0.4).abs() < 1e-6);
         assert_eq!(fast.color_steps[0].offset_y, 0.01);
+        assert_eq!(fast.color_steps[0].hsv_h, 0.75);
         assert!((1.0 - (1.0 - fast.color_steps[1].hsv_s).powi(4) - 0.36).abs() < 1e-5);
         assert_eq!(fast.color_steps[1].hsv_h, 0.5);
     }

@@ -280,10 +280,14 @@ def capability_checks(track: Path, out: Path, args) -> list[dict]:
 
     An echo flipped left to right, and a kaleidoscope, must both put the ring on
     the right as well; an inset must put a small one in the middle; and a loop
-    that sharpens must show more fine detail than the same loop without. The
-    plain ring is rendered too: it has nothing on the right and nothing in the
-    middle, which is what shows the first three checks can fail, and the soft
-    loop is the fourth's.
+    that sharpens must show more fine detail than the same loop without; and a
+    loop that tiles must put a ring in the right half. The plain ring is
+    rendered too: it has nothing on the right and nothing in the middle, which
+    is what shows those checks can fail, and the soft loop does the same for the
+    sharpening one. (Sharpening by brightness alone, `tone`, has no check here:
+    on a picture of one colour it does what sharpening colour by colour does,
+    and no simple picture of two tells them apart by a number. The engine's own
+    tests cover the setting reaching the shader.)
     """
     if track.suffix.lower() in MODULE_SUFFIXES:
         package_path = perfect_bundle.build(track) / "package.json"
@@ -291,7 +295,7 @@ def capability_checks(track: Path, out: Path, args) -> list[dict]:
         package_path = worker.bundle(track, stale="reanalyse")
     plain = argparse.Namespace(**{**vars(args), "step_rate": 0, "shutter": 0.0})
     frames = {}
-    for name in ("ring-left", "ring-echo", "ring-kaleidoscope", "ring-inset", "ring-soft", "ring-sharp"):
+    for name in ("ring-left", "ring-echo", "ring-kaleidoscope", "ring-inset", "ring-tiled", "ring-soft", "ring-sharp"):
         frames_dir = out / name / "frames"
         ok, log = render_frames(package_path, CHECK_SCENES / f"{name}.rhai", frames_dir, 2.0, plain)
         if not ok:
@@ -326,6 +330,12 @@ def capability_checks(track: Path, out: Path, args) -> list[dict]:
     ))  # fmt: skip
     soft, sharp = detail(frames["ring-soft"]), detail(frames["ring-sharp"])
     checks.append(dict(name="a loop that sharpens has more fine detail", ok=sharp > 1.15 * soft, detail=f"{100 * (sharp / max(soft, 1e-9) - 1):.0f}% more than the same loop without"))
+    tiled, plain_right = red(frames["ring-tiled"], 0.5, 1.0), red(frames["ring-left"], 0.5, 1.0)
+    checks.append(dict(
+        name="a loop that tiles draws the picture again in every quarter",
+        ok=tiled > 0.03 * left and plain_right < 0.1 * tiled,
+        detail=f"red in the right half is {100 * tiled / max(left, 1e-9):.1f}% of the ring's; the plain ring has {100 * plain_right / max(left, 1e-9):.1f}% there",
+    ))  # fmt: skip
     return checks
 
 

@@ -292,6 +292,16 @@ fn apply_warp_step(uv: vec2<f32>, step: GpuWarpStep) -> vec2<f32> {
             let new_dist = dist * (1.0 + effective_strength * sin(step.frequency * 12.566 * dist - step.rotation));
             return center + vec2<f32>(cos(angle), sin(angle)) * new_dist / aspect;
         }
+        // Tile: the last frame `frequency` by `frequency` times, in a grid about
+        // the centre with no copy on it: what was at the centre comes back at the
+        // middle of each tile.
+        case 9u: {
+            let n = floor(step.frequency + 0.5);
+            if (n < 2.0) {
+                return uv;
+            }
+            return fract(fract(centered * n) - vec2<f32>(0.5) + center);
+        }
         default: {
             return uv;
         }
@@ -397,7 +407,8 @@ fn loop_step_of(kind: u32) -> i32 {
     return -1;
 }
 
-// Sharpen (5): offset_x is the amount, offset_y the radius in frame heights.
+// Sharpen (5): offset_x is the amount, offset_y the radius in frame heights, and
+// hsv_h what is compared: 0 each colour on its own, 1 brightness alone.
 // The point is compared with the average of eight around it, on two rings.
 fn sharpened(uv: vec2<f32>, color: vec4<f32>, op: GpuColorStep) -> vec4<f32> {
     let dims = vec2<f32>(textureDimensions(feedback_texture));
@@ -409,8 +420,13 @@ fn sharpened(uv: vec2<f32>, color: vec4<f32>, op: GpuColorStep) -> vec4<f32> {
         let at = clamp(uv + vec2<f32>(cos(a), sin(a)) * reach * ring, vec2<f32>(0.001), vec2<f32>(0.999));
         sum += textureSampleLevel(feedback_texture, tex_sampler, at, 0.0).rgb;
     }
-    let blurred = sum / 9.0;
-    return vec4<f32>(max(color.rgb + (color.rgb - blurred) * op.offset_x, vec3<f32>(0.0)), color.a);
+    let each = color.rgb - sum / 9.0;
+    // By brightness the colour is scaled, not added to: a ridge is a brighter
+    // shade of what was there, and not a step towards white.
+    let weights = vec3<f32>(0.2126, 0.7152, 0.0722);
+    let together = color.rgb * (dot(each, weights) / max(dot(color.rgb, weights), 0.05));
+    let push = mix(each, together, clamp(op.hsv_h, 0.0, 1.0));
+    return vec4<f32>(max(color.rgb + push * op.offset_x, vec3<f32>(0.0)), color.a);
 }
 
 // Inset (6): offset_x is the shape's radius in frame heights, offset_y how much of
