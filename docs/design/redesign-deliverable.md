@@ -272,13 +272,30 @@ fine.
      the [accuracy scoreboard](../loop/scoreboard.md) is met
    - Engine: role binding, feedback-first compositing, blended transitions
    - 3–5 scenes with shared style controls; rule-based director
+   - A wide pool of scenes: 50 varied Milkdrop presets analysed and each recreated
+     as a scene that is similar or better, with the engine capabilities they need
+     added where sensible
+   - The engine kept promptable without a prompt: a catalogue describing every
+     scene in words, a director that takes a brief as data, and a check that says
+     whether a scene, written by hand or generated, is fit to join the pool
    - **Exit test:** ten tracks across genres, each watchable to the end unedited
+     (the "fun check")
 2. **Preview and first edits.** Web timeline over the WASM engine: drag transition
    points, swap the scene for a section, re-roll.
-3. **Prompt.** Model-backed director at depth 1.
+3. **AI re-interpretation.** A finished show re-rendered through a video model that
+   keeps the music's timing. The director emits control passes as a product of a
+   show (brightness or edges for a change of material, a choreographed skeleton for
+   characters), pieces are cut at the director's cuts, and the loop gates the
+   result on whether its motion follows the control, on punch and on audio sync.
 4. **3D.** glTF subset, Blender baking pipeline, model slots in scenes.
-5. **Later:** generated assets and scenes (prompt depths 2 and 3), then the upload
+5. **Later:** generated assets and scenes, prompting at every depth, then the upload
    service.
+
+Changed by the project owner on 23 November 2026. Milestone 3 was "Prompt: a
+model-backed director at depth 1". Prompting is only really useful in its
+milestone 5 form, and the third milestone existed to keep the engine from becoming
+unpromptable; that risk is now covered by the three things listed under milestone 1.
+AI re-interpretation, tried on the side that day, became a milestone of its own.
 
 The upload service is deliberately last: it is only worth building once milestone 1's
 exit test passes.
@@ -293,7 +310,7 @@ exit test passes.
 | Stems          | User-supplied, or one of three hosted providers behind one interface                                                    |
 | Determinism    | Rendering is deterministic for audio + show and audio + scene; generation varies                                        |
 | Timeline UI    | Thin local web page over the WASM engine                                                                                |
-| Prompt depth   | Depth 1 now; 2 and 3 are future items                                                                                   |
+| Prompt depth   | All depths are future items (milestone 5). Milestone 1 keeps the engine promptable: a scene catalogue, a director brief, a scene check |
 | 3D direction   | Deep import from Blender into Octoseq's engine, with Blender as baker                                                   |
 | Renderer       | Keep the existing engine; do not adopt Bevy or three.js                                                                 |
 
