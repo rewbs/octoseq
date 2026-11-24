@@ -60,7 +60,10 @@ fn init(ctx) {
         light.position.y = angle.add(1.5708).sin().scale(0.62).mul(radius);
         let drum = if i == 0 { kick } else if i == 4 { snare } else { hat };
         let colour = if i == 0 { style.a } else if i == 4 { style.b } else { style.c };
-        light.scale = drum.scale(1.2).add(0.8);
+        // The small lights follow the hi-hat, which on a busy track comes more than
+        // three times a second: they may twitch, but not double in size, or the
+        // part of the frame they are crossing flashes at that rate.
+        light.scale = drum.scale(if big { 0.7 } else { 0.3 }).add(0.8);
         scene.add(glow(light, colour, hit.scale(0.4).add(0.6)));
     }
 

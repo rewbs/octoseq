@@ -49,6 +49,37 @@ Sent: `super` shows 1 and 2, show 1 again with `--vivid`, and 60 seconds of the
 - Rating: **"Better, keep going."** No figure and no specific complaints given, so the
   targets set after review 1 stand as they are.
 
+### Review 3 (23 November 2026): the fun check, nine tracks you supplied
+
+Sent: a whole-track show for each of the nine tracks in your `Documents/tracks`,
+30 minutes in all, at 960x540, made by `video.py` with nothing chosen by hand
+(seeds 101 to 109). **Waiting for your rating.**
+
+What the loop says about them, measured over each whole video:
+
+| #  | Track | Length | Looks | Scenes | Punch (2.0) | Look change (0.4) | Swirl (0.62) | Jerkiness (under 1.0) | Most flashes a second (3.0) | Audio sync (0.2) | Targets missed |
+| -- | ----- | ------ | ----- | ------ | ----------- | ----------------- | ------------ | --------------------- | --------------------------- | ---------------- | -------------- |
+| 01 | Broken acidity ripping through reality (Edit) | 1:23 | 13 | 13 | 2.39 | 0.63 | 0.72 | 0.81 | 2.0 | 0.19 | audio_sync |
+| 02 | Ikouille, El Memorelven | 4:26 | 46 | 33 | 2.04 | 0.63 | 0.63 | 0.71 | 2.0 | 0.12 | audio_sync |
+| 03 | SBTRKT, Wildfire | 3:35 | 31 | 25 | 2.62 | 0.67 | 0.68 | 0.80 | 2.5 | 0.23 | none |
+| 04 | The Mingeworthy Principles, Sur Paris | 2:33 | 25 | 20 | 2.69 | 0.62 | 0.69 | 0.82 | 3.0 | 0.26 | none |
+| 05 | The Mingeworthy Principles, paintBlueEyesBlack | 4:22 | 46 | 33 | 3.12 | 0.61 | 0.67 | 0.70 | 2.5 | 0.32 | none |
+| 06 | Warrawee Circuit | 2:13 | 20 | 16 | 2.49 | 0.67 | 0.65 | 0.88 | 2.5 | 0.40 | none |
+| 07 | hybrid^bmp, Radioactive Playground | 6:25 | 55 | 37 | 2.72 | 0.63 | 0.61 | 0.72 | 2.5 | 0.22 | flow_swirl |
+| 08 | rewbs, dedramatisons (unfinished) | 2:05 | 16 | 12 | 2.48 | 0.61 | 0.55 | 0.93 | 3.0 | 0.32 | flow_swirl |
+| 09 | rewbs, redramatisons (unfinished) | 3:11 | 26 | 23 | 2.56 | 0.69 | 0.61 | 0.79 | 2.0 | 0.23 | flow_swirl |
+
+- Every show passes every hard gate. One did not at first: track 05 flashed 3.5 times
+  a second for five seconds, in `well`, one of the first eight scenes. That is fixed
+  (D121) and track 05 was rendered again. The other eight were made before the fix
+  and passed as they were.
+- Punch and look change are met on all nine. Swirl is missed narrowly on three and
+  audio sync on two; the table says which.
+- The nine shows have 278 looks between them and use 58 of the 58 scenes. The
+  most used: `starfield` (11), `binary` (9), `pulse` (9), `drip` (9), `spirograph` (8). Never drawn: none.
+- The director chose every scene at random (D119). If a look sits badly on its
+  passage of music, that is the first place I would look.
+
 ## Decisions taken by default
 
 Say so to reverse any of these.
@@ -233,6 +264,7 @@ aren't just energy/amplitude bands, 3d integration, show editing."
 | D118 | The three things promised in place of the prompt milestone (D111) are built. `tools/loop/contract.py` checks that a scene keeps the promises a show relies on, and `contract.py catalogue` prints what every scene says about itself; the director takes a brief (`director.BRIEF_PARTS`, `video.py --brief`) | The contract: a scene asks for roles and reads nothing else; carries the style line and uses every part of it; says in comments what it is and what each role does; and, rendered as it stands, at its crispest and at its mistiest, passes every hard gate. All 58 scenes keep it. A brief is plain data with seven optional parts: scenes to use, scenes to avoid, palettes, crisp or misty or both, the longest hold, vivid, and a seed. A wrong brief is refused with a message saying what would have been right, so whatever wrote it can correct itself. The director's version is now `director-5`: with 58 scenes to choose from, a seed gives a different show than it did |
 | D119 | The director still chooses each look's scene at random from all that can play, never the same twice running. It does not yet fit a scene to the music | With eight scenes of one temper this did not matter. With 58 it can put the slowest scene (`nebula`) on a drop or the fastest (`swarm`) on a breakdown. The loop has no figure that would tell a good match from a bad one, so I have not guessed at a rule; the catalogue and the brief are where one would go. I expect this to be the first thing the fun check shows, and it is the first thing I would look at after it |
 | D120 | The whole of `dontstop` (283 s) was rendered as a show from the pool before calling the pool done: 39 looks, 32 different scenes | The loop sees only the first thirty seconds of a show, three or four looks, and the fun check will be whole tracks. No hard gate fails and no target is missed: punch 3.10, look change 0.66, swirl 0.68, jerkiness 0.74, at most 2.5 flashes a second, wash ranging by 0.35. Before the pool the same track gave punch 2.77 and look change 0.58. This check is still run by hand (`run.py --seconds 0 --scenes director --tracks data/dontstop.mp3`) |
+| D121 | `well`, one of the first eight scenes, flashed over the limit in the fun check and is calmed: its six small rim lights no longer more than double in size on every hi-hat | Track 05 of the fun check failed the strobe gate (3.5 flashes a second, limit 3) for the five seconds `well` played at its misty setting. The loop's test tracks had only brought it to the limit (3.0), never over: the hi-hats on this track come faster. The lights now grow by 30% on a hi-hat where they grew by 150%, and the two large ones by 70% on kick and snare. In the loop its worst is now 1.5 flashes a second; its punch fell (2.74 to 2.57 on `dontstop`) and is still above target. The lesson for the contract: a scene is checked crisp and misty on one track, and a track with faster drums can still take it over. Checking on a second, busier track is the next thing I would add to it |
 
 ## Answered
 
