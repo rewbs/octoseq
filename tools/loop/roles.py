@@ -52,10 +52,14 @@ import numpy as np
 import analyse
 import analysers
 
-ROLES_VERSION = "roles-6"
+ROLES_VERSION = "roles-7"
 DERIVED_RATE = 50.0  # samples per second of the derived signals: smooth at any frame rate
 EVENT_ROLES = ("beat", "downbeat", "onset", "kick", "snare", "hat", "hit", "section")
-HIT_MIN_GAP_S = 0.5  # whole-frame blows this far apart stay under the three-flashes-a-second limit
+# Two blows closer together than a frame of video are one blow. This was half a second,
+# to keep a scene that flashed on every hit under three flashes a second; the owner
+# ruled the limit out (review 3: "Strobing is OK in audio visuals"), and with it a
+# `hit` stream that skipped every blow of a roll but the heaviest.
+HIT_MIN_GAP_S = 1 / 30
 # A stretch this long with no kick and no snare is a passage where the drums have
 # dropped out or gone weak (a bar and a bit at 120 BPM): its hits come from its onsets.
 HIT_GAP_S = 2.5
@@ -65,7 +69,9 @@ MODEL_PYTHON = Path(__file__).resolve().parents[2] / ".loop" / "venv" / "bin" / 
 # A drum stem this far below the mix is what separation leaves behind on a track
 # with no drums (-47 dB on the drumless test track, -2 dB on the one with drums).
 DRUMLESS_DB = -30.0
-SIGNAL_ROLES = ("energy", "brightness", "flux", "onset_strength", "bass", "drums", "melody", "vocals", "beat_phase", "bar_phase", "section_progress", "section_intensity")
+SIGNAL_ROLES = ("energy", "brightness", "flux", "onset_strength", "bass", "drums", "melody", "vocals", "lead", "beat_phase", "bar_phase", "section_progress", "section_intensity")
+LEAD_PARTS = ("Drums", "Bass", "Other", "Vocals")
+LEAD_OVER_S = 1.0  # which part leads is judged over this long, so the lead does not flicker between two
 
 
 def _stream(package: dict, name: str, events: list[tuple[float, float]]) -> None:
@@ -112,18 +118,51 @@ def section_signals(starts: list[float], duration: float, energy: np.ndarray, en
     return progress, level[i]
 
 
-def hits(package: dict, drums: dict[str, list[tuple[float, float]]] | None, stand_ins: list[tuple[float, float]] | None = None) -> list[tuple[float, float]]:
-    """The moments worth a whole-frame blow, heaviest first, kept at least HIT_MIN_GAP_S apart.
+def lead_level(package: dict) -> np.ndarray | None:
+    """The level of whichever part of the band is loudest at each moment, at DERIVED_RATE.
 
-    Kicks and snares where the track has them. Wherever it goes longer than
+    A scene that follows one part goes still when that part does, whatever the
+    rest of the band is doing: review 3 saw a picture "tracking vocals when the
+    vocals are quiet... but the drums are blaring... and there's nothing much
+    happening". This follows the part that is carrying the music instead. Which
+    part that is, is judged on the parts' loudness against each other over
+    LEAD_OVER_S; the level given is that part's own, against its own loudest, so
+    a quiet part that leads still uses the whole range. Where two parts are close
+    the answer is a mix of the two. With no stems it is the mix's loudness.
+    """
+    n = int(round(float(package["durationSec"]) * DERIVED_RATE)) + 1
+    grid = np.arange(n) / DERIVED_RATE
+    parts = []
+    for signal in package.get("stemSignals", []):
+        if signal["feature"] == "energy" and signal["label"] in LEAD_PARTS and len(signal["values"]) > 1:
+            values = np.asarray(signal["values"], dtype=float)
+            parts.append(np.interp(grid, np.arange(len(values)) / float(signal["rate"]), values))
+    if not parts:
+        mix = next((s for s in package.get("signals", []) if s["name"] == "energy" and len(s["values"]) > 1), None)
+        if mix is None:
+            return None
+        parts = [np.interp(grid, np.arange(len(mix["values"])) / float(mix["rate"]), np.asarray(mix["values"], dtype=float))]
+    width = max(1, int(round(LEAD_OVER_S * DERIVED_RATE)))
+    kernel = np.ones(width) / width
+    sustained = np.stack([np.convolve(p, kernel, mode="same") for p in parts])
+    weights = sustained**4
+    weights = weights / np.maximum(weights.sum(axis=0), 1e-12)
+    own = np.stack([p / max(float(np.percentile(p, 95)), 1e-9) for p in parts])
+    return np.clip((weights * own).sum(axis=0), 0.0, 1.5)
+
+
+def hits(package: dict, drums: dict[str, list[tuple[float, float]]] | None, stand_ins: list[tuple[float, float]] | None = None) -> list[tuple[float, float]]:
+    """Every blow: what the picture should visibly answer, rolls included.
+
+    Kicks and snares where the track has them, all of them. Wherever it goes longer than
     HIT_GAP_S without one, the drums have dropped out or gone weak, and that
     stretch's hits are the strongest third of its own onsets instead; a track with
     no drums at all is one such stretch from end to end. `stand_ins` are the
     stretches (start, end) where `drums` holds stand-ins and not drums (see `bind`):
     what is in them does not count as a kick or a snare here.
 
-    Scenes use `kick`, `snare` and `hat` for small local movements at any rate, and
-    `hit` for anything that flashes or jolts the frame.
+    A scene's main movement follows `hit`. `kick`, `snare` and `hat` are for telling
+    the drums apart, in a scene that keeps what each one moves clearly apart.
     """
     duration = float(package["durationSec"])
     standing_in = lambda t: any(a <= t < b for a, b in stand_ins or [])  # noqa: E731
@@ -187,6 +226,11 @@ def bind(
     for role, label in (("drums", "Drums"), ("melody", "Other"), ("vocals", "Vocals")):
         if (label, "energy") in stem_features and label in stems:
             roles[role] = {"stem": label, "feature": "energy"}
+
+    lead = lead_level(package)
+    if lead is not None:
+        _custom(package, "lead", lead)
+        roles["lead"] = {"custom": "lead"}
 
     if beats and len(beats) >= 2:
         _stream(package, "beat", [(t, 1.0) for t in beats])

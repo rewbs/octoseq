@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 ROOT = Path(__file__).resolve().parents[2]
 SCENES = ROOT / "scenes"
 SHOWS = ROOT / ".loop" / "shows"
-DIRECTOR_VERSION = "director-5"
+DIRECTOR_VERSION = "director-6"
 
 MAX_HOLD_S = 9.0  # the longest any one look is held (review 1: boring in under ten seconds)
 MIN_HOLD_S = 3.0  # section starts closer together than this are treated as one
@@ -84,6 +84,13 @@ PLACES = [(0.0, 0.0), (-0.2, 0.0), (0.2, 0.0), (0.0, -0.14), (0.0, 0.14), (-0.17
 # already most of the way to misty.
 MISTS = [0.0, 0.1, 0.9, 1.0]
 MIST_STEP = 0.4
+# How a look answers a blow with the whole frame: see `post.answer` in the engine
+# (1 punch, 2 flash, 3 jolt, 4 split, 5 burst, 6 ghost). Review 3 found the shows
+# "nowhere close to being sufficiently responsive", and that when several things
+# answered several parts of the band no link between sound and picture could be
+# made out. So every look answers every blow in one plain way, and a different way
+# from the look before.
+ANSWERS = [1, 2, 3, 4, 5, 6]
 STYLE_LINE = re.compile(r"^let style = .*// @style\s*$", re.MULTILINE)
 
 # A brief is what whoever asks for a show may say about it, as plain data; every
@@ -222,12 +229,14 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
     # Mist is drawn from a stream of its own, so that adding it left every show's
     # scenes, colours and places as they were.
     weather = random.Random(f"{seed}:mist")
+    # And so is the answer, for the same reason.
+    blows = random.Random(f"{seed}:answer")
     intensity, rate = _signal(package, "section_intensity")
     cuts = cut_points(package, max_hold)
     beats = [e["time"] for e in _stream(package, "beat")]
     beat_s = sorted(b - a for a, b in zip(beats, beats[1:]))[len(beats) // 2 - 1] if len(beats) > 2 else 0.5
     segments = []
-    scene, palette, order, place, mist = None, None, [0, 1, 2], None, None
+    scene, palette, order, place, mist, answer = None, None, [0, 1, 2], None, None, None
     for index, (start, new_section) in enumerate(cuts):
         scene = rng.choice([s for s in scenes if s != scene] or scenes)
         if new_section or palette is None:
@@ -237,6 +246,7 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
             order = order[1:] + order[:1]
         place = rng.choice([p for p in PLACES if p != place])
         mist = weather.choice([m for m in mists if mist is None or abs(m - mist) >= MIST_STEP - 1e-9] or mists)
+        answer = blows.choice([a for a in ANSWERS if a != answer])
         end = cuts[index + 1][0] if index + 1 < len(cuts) else float(package["durationSec"])
         middle = intensity[min(int((start + end) / 2 * rate), len(intensity) - 1)] if intensity else 0.5
         colours = [tuple(c**SCREEN_GAMMA if vivid else c for c in PALETTES[palette][i]) for i in order]
@@ -246,6 +256,8 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
             speed=round(0.75 + 0.6 * float(middle), 2),
             at=list(place),
             mist=mist,
+            answer=answer,
+            kick=round(0.85 + 0.4 * float(middle), 2),
             transition=0.0 if new_section else round(min(TRANSITION_BEATS * beat_s, (end - start) * TRANSITION_MAX_SHARE), 3),
         ))  # fmt: skip
     show = dict(director=DIRECTOR_VERSION, seed=seed, vivid=vivid, duration=float(package["durationSec"]), segments=segments)
@@ -259,7 +271,8 @@ def dressed(source: str, segment: dict) -> str:
     a, b, c = segment["colours"]
     at = [float(v) for v in segment.get("at", (0.0, 0.0))]
     mist = float(segment.get("mist", 0.5))
-    line = f"let style = #{{ a: {list(a)}, b: {list(b)}, c: {list(c)}, speed: {segment['speed']}, at: {at}, mist: {mist} }}; // @style"
+    answer, kick = int(segment.get("answer", 1)), float(segment.get("kick", 1.0))
+    line = f"let style = #{{ a: {list(a)}, b: {list(b)}, c: {list(c)}, speed: {segment['speed']}, at: {at}, mist: {mist}, answer: {answer}, kick: {kick} }}; // @style"
     return STYLE_LINE.sub(lambda _: line, source, count=1)
 
 

@@ -14,6 +14,8 @@ from pathlib import Path
 
 import numpy as np
 
+import response
+
 METRIC_W, METRIC_H = 128, 72
 
 
@@ -355,4 +357,6 @@ def compute(frames: np.ndarray, fps: float, package: dict) -> dict:
         out["punch"] = punch
     if look_change is not None:
         out["look_change"] = look_change
+    # Whether the picture answers the music: see response.py.
+    out.update(response.compute(luma, fps, package))
     return out

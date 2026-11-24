@@ -36,11 +36,11 @@ ROOT = Path(__file__).resolve().parents[2]
 SCENES = ROOT / "scenes"
 TRACKS = ["data/dontstop.mp3", "tools/loop/fixtures/modules/synth-0101.mod"]
 STYLE_LINE = re.compile(r"^let style = #\{(.*)\}; // @style$", re.M)
-STYLE_KEYS = ("a", "b", "c", "speed", "at", "mist")
+STYLE_KEYS = ("a", "b", "c", "speed", "at", "mist", "answer", "kick")
 MISTS = {"crisp": 0.0, "misty": 1.0}
 ROLE_LINE = re.compile(r"^//!\s*roles:\s*(.+)$", re.M)
 ROLE_NOTE = re.compile(r"^//   (\w+(?:, \w+)*)\s{2,}(.+)$", re.M)  # "//   kick, snare   what they do"
-FIGURES = ("punch", "look_change", "flow_speed", "flow_swirl", "active_area", "wash", "one_hue_share", "max_flashes_per_sec", "black_fraction")
+FIGURES = ("answered", "answered_rolls", "jump_size", "dead_time", "punch", "look_change", "flow_swirl", "active_area", "black_fraction")
 
 
 def declared(text: str) -> list[str]:
@@ -93,6 +93,8 @@ def written(scene: Path) -> list[str]:
             broken.append(f"never uses style.{part}")
     if "fn misted(" not in code:
         broken.append("has no `misted` function")
+    if not re.search(r"post\.answer\(style\.answer, style\.kick, \w+, style\.at\);", code):
+        broken.append("does not answer a blow with the whole frame (`post.answer(style.answer, style.kick, hit, style.at);`)")
     # A scene whose eye circles it can only be placed up and down, so either part
     # of style.at will do.
     if "feedback.builder()" in code and not re.search(r"\.centre\([^)]*style\.at\[", code):

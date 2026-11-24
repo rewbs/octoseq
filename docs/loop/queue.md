@@ -53,7 +53,51 @@ Sent: `super` shows 1 and 2, show 1 again with `--vivid`, and 60 seconds of the
 
 Sent: a whole-track show for each of the nine tracks in your `Documents/tracks`,
 30 minutes in all, at 960x540, made by `video.py` with nothing chosen by hand
-(seeds 101 to 109). **Waiting for your rating.**
+(seeds 101 to 109).
+
+Rated **"Not fun"**, "a resounding" one: "The potential is clear but we need some
+substantial changes." The variety of scenes is good and more is wanted. "The biggest
+problem is the music responsiveness. The vast majority of the videos, throughout, are
+simply nowhere close to being sufficiently responsive." Three causes were named, and
+a fourth thing asked for:
+
+1. Where the picture does respond, "it's often not emphasised enough. The motion is
+   too small, too slow... extremely conservative and unexciting."
+2. "Too many things responding to different elements, and it's hard to make out a
+   clear responsive link." Several things answering several parts should be "quite
+   clearly demarcated. Like nearly 2 scenes split screen. Or one controls the shader
+   the other the shapes."
+3. "The stem being tracked is not the dominant feature of the music at that point...
+   In any given measure, unless the audio is silent or we're in a deliberate break...
+   there should be something majorly responsive going on."
+4. Drum rolls and breaks: what follows the drums must land "on all hits in a roll",
+   and not land "when there are no hits".
+
+Every one of the nine had passed every hard gate, and most every target, so again the
+targets were wrong. `punch`, the one figure meant to catch this, looks only at the
+bundle's `hit` stream, and I had made that stream never closer together than half a
+second so that a scene flashing on it could not strobe. It was blind to everything
+above. You also ruled the strobe limit out: "We don't need a photosensitivity
+safeguard. Strobing is OK in audio visuals."
+
+What changed in response (`tools/loop/response.py`, measured on those nine videos):
+
+| What you said | What the loop now measures, and found | New target |
+| --- | --- | --- |
+| Nowhere close to sufficiently responsive | `answered`: the share of kicks and snares at which the picture visibly jumps. 0.38 to 0.62 | at least 0.85 |
+| It must land on all hits in a roll | `answered_rolls`: the same for blows within a fifth of a second of another. 0.32 to 0.55 | at least 0.75 |
+| The motion is too small, too slow | `jump_size`: how much more of the frame changes at a blow than around it | at least 0.3 of the frame |
+| In any given measure something majorly responsive should be going on | `dead_time`: the share of two-second stretches with music in which under a third of what calls for an answer gets one. 0.11 to 0.33 | at most 0.05 |
+| It must not land when there are no hits | `stray_jumps`: the share of the picture's jumps that fall on no sound. 0.00 to 0.02, so this was not the fault in these videos; it guards the fixes | at most 0.1 |
+| Strobing is OK | `max_flashes_per_sec` is no longer a hard gate. It is still reported | none |
+
+For scale: projectM's renders of the fifty presets answer a median of 0.13 of the
+blows, so what you are asking for is well beyond Milkdrop, not a return to it. The
+thresholds rest on this one review and are there to be moved by the next.
+
+The other things you asked for are in the queue below as D122 onwards: more film
+grain, dithering, lo-fi and ASCII-art filters, more kinds of warp and less of the
+waves, more palettes, fractals and other procedural scenes.
 
 What the loop says about them, measured over each whole video:
 
@@ -265,6 +309,13 @@ aren't just energy/amplitude bands, 3d integration, show editing."
 | D119 | The director still chooses each look's scene at random from all that can play, never the same twice running. It does not yet fit a scene to the music | With eight scenes of one temper this did not matter. With 58 it can put the slowest scene (`nebula`) on a drop or the fastest (`swarm`) on a breakdown. The loop has no figure that would tell a good match from a bad one, so I have not guessed at a rule; the catalogue and the brief are where one would go. I expect this to be the first thing the fun check shows, and it is the first thing I would look at after it |
 | D120 | The whole of `dontstop` (283 s) was rendered as a show from the pool before calling the pool done: 39 looks, 32 different scenes | The loop sees only the first thirty seconds of a show, three or four looks, and the fun check will be whole tracks. No hard gate fails and no target is missed: punch 3.10, look change 0.66, swirl 0.68, jerkiness 0.74, at most 2.5 flashes a second, wash ranging by 0.35. Before the pool the same track gave punch 2.77 and look change 0.58. This check is still run by hand (`run.py --seconds 0 --scenes director --tracks data/dontstop.mp3`) |
 | D121 | `well`, one of the first eight scenes, flashed over the limit in the fun check and is calmed: its six small rim lights no longer more than double in size on every hi-hat | Track 05 of the fun check failed the strobe gate (3.5 flashes a second, limit 3) for the five seconds `well` played at its misty setting. The loop's test tracks had only brought it to the limit (3.0), never over: the hi-hats on this track come faster. The lights now grow by 30% on a hi-hat where they grew by 150%, and the two large ones by 70% on kick and snare. In the loop its worst is now 1.5 flashes a second; its punch fell (2.74 to 2.57 on `dontstop`) and is still above target. The lesson for the contract: a scene is checked crisp and misty on one track, and a track with faster drums can still take it over. Checking on a second, busier track is the next thing I would add to it |
+| D122 | The limit on flashing is no longer a hard gate. `max_flashes_per_sec` is still measured and reported | Your ruling: "We don't need a photosensitivity safeguard. Strobing is OK in audio visuals." It had shaped more than one gate: I had spaced the `hit` stream half a second apart so that a scene flashing on it could not strobe, and had cut scenes' answers to the drums down wherever several of them changed the same part of the frame. Both are undone below |
+| D123 | `hit` is now every blow: each kick and each snare, rolls included, and where the drums drop out the strongest onsets as before. Bundles are `roles-7` | Review 3: what follows the drums must land "on all hits in a roll". The half-second spacing made that impossible by construction. With nothing else changed, the median scene went from answering about half the blows to 0.73 of blows answered, 0.64 of those in rolls, 0.11 of the frame moving at each |
+| D124 | Every look answers every blow with the whole frame as well as with whatever the scene itself does: `post.answer`, in one of six ways (punch, flash, jolt, split, burst, ghost). The director gives each look a way, never the same twice running, and a strength that rises with the section's loudness. The style line gains `answer` and `kick`; the director is `director-6` | Review 3, your second point: with several things answering several parts "it's hard to make out a clear responsive link", and your remedy, "one controls the shader the other the shapes". So the drums own the frame, in one plain way per look, and the scene's shapes do the rest. Measured on all 58 scenes: 0.98 of blows answered, 0.98 of those in rolls, 0.25 of the frame moving at each |
+| D125 | A scene's answer to a blow lasts a quarter as long as it did, and the whole-frame answer is half as hard again | Chosen by testing one change at a time on ten scenes, because my first attempt, three changes at once, made the full scan worse (the median scene fell from 0.98 of blows answered to 0.81, and two scenes blew out to white). Alone: every answer half as large again took the ten from 0.74 answered to 0.30; each blow pushing the scene's clock on, to 0.32; reading the leading part in place of a fixed one, to 0.66. All three are reverted. A large answer that lingers runs into the next and then no blow stands out. The opposite, short and hard, took the ten to 1.00 answered, 0.99 in rolls and 0.48 of the frame. On all 58: 1.00 of blows answered, 1.00 of those in rolls, 0.43 of the frame moving at each. 57 of 58 meet the answered target, 58 the rolls target, 47 the jump-size target and 57 the dead-time target. Still short of answered or jump size: `amoeba`, `beam`, `drip`, `glitch`, `mercury`, `petal`, `pinwheel`, `rorschach`, `spotlights`, `tunnel`, `well` |
+| D126 | A `lead` role is in every bundle: the level of whichever of drums, bass, melody and voice is loudest at the moment, each measured against its own loudest. No scene reads it yet | Review 3, your third point: "the stem being tracked is not the dominant feature of the music at that point". Converting the 43 scenes that read one part's level to read `lead` was tried and reverted (D125): it cost a little on the response figures and I had no figure that could show its benefit. The whole-frame answer already covers your example (drums blaring, picture following a quiet voice), since the drums now always move the frame. What is left is a passage with no drums where a scene follows the wrong sustained part; that needs its own measure before the conversion is tried again |
+| D127 | The accuracy loop now scores blows as you asked for them: every kick and snare found whichever it is taken for, the blows inside a roll found, and none found where the drums have stopped. Targets 0.9, 0.9 and at most 0.1 a second | "Drum roll and drum break detection... We might benefit from bespoke logic trying to detect this specifically." Before building any, the loop has to be able to say how the present detector does; the rows are on the scoreboard after the next accuracy run. Not yet done: that run, and any change to the detector |
+| D128 | Not started, from review 3, in the order I would take them: film grain, dithering, lo-fi and ASCII-art filters as finishes the director can lay over any look; more kinds of warp, and the waves warp used less (it is in most of the 58); more palettes; fractal and other procedural scenes | You called responsiveness "the biggest problem", so that came first. `jerkiness` now runs over its target (under 1.0, set after review 1 when the complaint was flicker) on many scenes, because a sharp answer is by that measure a jerk. The two reviews pull opposite ways on it; You have since said to ignore it for now, so it is no longer a target; the figure is still reported |
 
 ## Answered
 

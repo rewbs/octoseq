@@ -584,7 +584,7 @@ Signal API.
 | `downbeat`                | events | The first beat of every bar                                 |
 | `onset`                   | events | Every audible event                                         |
 | `kick`, `snare`, `hat`    | events | Drum hits by type                                           |
-| `hit`                     | events | The blows the whole frame may answer, at least 0.5 s apart  |
+| `hit`                     | events | Every blow: each kick and snare, rolls included; with no drums, the strongest onsets |
 | `section`                 | events | The start of each section; weight is the size of the change |
 | `energy`                  | signal | Overall loudness, 0 to 1                                    |
 | `brightness`              | signal | Where the spectrum's weight sits, dark to bright            |
@@ -592,6 +592,7 @@ Signal API.
 | `onset_strength`          | signal | The envelope the onsets were picked from                    |
 | `bass`, `drums`           | signal | How loud the bass and the drums are                         |
 | `melody`, `vocals`        | signal | How loud the rest of the band is, and the voice (need stems) |
+| `lead`                    | signal | The level of whichever part is loudest now, against its own loudest |
 | `beat_phase`, `bar_phase` | signal | 0 to 1 across each beat and each bar                        |
 | `section_progress`        | signal | 0 to 1 across each section                                  |
 | `section_intensity`       | signal | Each section's loudness against the loudest, held for it    |
@@ -2040,6 +2041,22 @@ setting at 0.5 and moves towards the crisp or the misty value either side. They 
 it for the feedback decay (short trails when crisp, long when misty) and for the
 bloom (tight when crisp). A new scene should do the same, so that the control
 means one thing everywhere.
+
+Two more parts of the style line say how a look answers a blow. Every scene ends with
+
+```rhai
+post.answer(style.answer, style.kick, hit, style.at);
+```
+
+which makes the whole frame do one plain thing on every hit, on top of whatever
+the scene itself does: `style.answer` picks which (1 punch: the picture jumps towards
+the eye; 2 flash; 3 jolt: it lurches sideways; 4 split: its colours are knocked
+apart; 5 burst: it smears outwards; 6 ghost: a copy of it leaps outwards; 0 nothing)
+and `style.kick` how hard (1 is the plain amount). `hit` is the scene's own hit
+envelope. Keep that envelope short, a tenth of a beat or so: a review found the
+shows unresponsive, and what fixed it was answers that are large and over quickly.
+One that lingers runs into the next, and then no blow stands out
+(`tools/loop/response.py` measures this).
 
 `tools/loop/contract.py` checks that a scene keeps these promises, and the others a
 show relies on: it asks for roles and reads nothing else, it carries the style line

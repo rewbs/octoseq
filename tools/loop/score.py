@@ -225,6 +225,9 @@ def stem_scores(reference: dict[str, np.ndarray], estimate: dict[str, np.ndarray
 
 
 DRUM_TYPES = ("kick", "snare", "hat")
+ROLL_GAP_S = 0.2  # blows closer together than this are a roll
+BREAK_S = 2.0  # this long with no drum of any kind is a break
+BREAK_EDGE_S = 0.25  # a detection this close to a break's ends belongs to the drums either side
 
 
 def drum_tallies(ref_drums: dict[str, list[list[float]]], det_drums: dict[str, list[float]]) -> dict:
@@ -250,7 +253,52 @@ def drum_tallies(ref_drums: dict[str, list[list[float]]], det_drums: dict[str, l
             detections=int(len(det)), hits=len(pairs),
             errors=[float(det[j] - ref_t[i]) for i, j in pairs],
         )  # fmt: skip
+    blows = blow_tally(ref_drums, det_drums)
+    if blows:
+        out["blows"] = blows
     return out
+
+
+def blow_tally(ref_drums: dict[str, list[list[float]]], det_drums: dict[str, list[float]]) -> dict | None:
+    """Kicks and snares as one stream of blows, whatever each was taken for.
+
+    A picture that jumps on a blow does not care which drum it was, so a snare
+    found as a kick still counts here. Two things are counted apart, because a
+    review asked for them by name: the blows inside a roll (closer than ROLL_GAP_S
+    to another), which a detector that needs quiet between events will miss; and
+    blows found in a break (BREAK_S or more with no drum of any kind in the
+    reference), which are all false.
+    """
+    def merged(times: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        out: list[tuple[float, float]] = []
+        for t, w in sorted(times):
+            if out and t - out[-1][0] <= 1 / 30:
+                out[-1] = (out[-1][0], max(out[-1][1], w))
+            else:
+                out.append((t, w))
+        return out
+
+    ref = merged([(float(t), float(w)) for kind in ("kick", "snare") for t, w in ref_drums.get(kind) or []])
+    required = [i for i, (_, weight) in enumerate(ref) if weight >= SIGNIFICANT_WEIGHT]
+    if not required:
+        return None
+    ref_t = np.array([t for t, _ in ref], dtype=float)
+    det = np.array([t for t, _ in merged([(float(t), 1.0) for kind in ("kick", "snare") for t in det_drums.get(kind) or []])], dtype=float)
+    pairs = match(ref_t, det, ONSET_TOLERANCE_S) if len(det) else []
+    hit = {i for i, _ in pairs}
+    near = lambda i: (i > 0 and ref_t[i] - ref_t[i - 1] < ROLL_GAP_S) or (i + 1 < len(ref_t) and ref_t[i + 1] - ref_t[i] < ROLL_GAP_S)  # noqa: E731
+    rolled = [i for i in required if near(i)]
+    every = sorted(float(t) for events in ref_drums.values() for t, _ in events or [])
+    break_s, break_false = 0.0, 0
+    for a, b in zip(every, every[1:]):
+        if b - a >= BREAK_S:
+            lo, hi = a + BREAK_EDGE_S, b - BREAK_EDGE_S
+            break_s += hi - lo
+            break_false += int(((det > lo) & (det < hi)).sum())
+    return dict(
+        required=len(required), required_hit=sum(i in hit for i in required), detections=int(len(det)), hits=len(pairs),
+        rolled=len(rolled), rolled_hit=sum(i in hit for i in rolled), break_s=break_s, break_false=break_false,
+    )  # fmt: skip
 
 
 def drum_summary(tallies: list[dict]) -> dict:
@@ -269,4 +317,15 @@ def drum_summary(tallies: list[dict]) -> dict:
         out[kind] = dict(precision=round(precision, 4), recall=round(recall, 4), f=round(f, 4), bias_ms=timing["bias_ms"], spread_ms=timing["spread_ms"], tracks=len(rows))
     if out:
         out["mean_f"] = round(float(np.mean([out[kind]["f"] for kind in DRUM_TYPES if kind in out])), 4)
+    rows = [t["blows"] for t in tallies if "blows" in t]
+    if rows:
+        total = lambda key: sum(r[key] for r in rows)  # noqa: E731
+        out["blows"] = dict(
+            recall=round(total("required_hit") / max(total("required"), 1), 4),
+            precision=round(total("hits") / max(total("detections"), 1), 4),
+            roll_recall=round(total("rolled_hit") / total("rolled"), 4) if total("rolled") else None,
+            rolled=total("rolled"),
+            break_false_per_s=round(total("break_false") / total("break_s"), 4) if total("break_s") > 0 else None,
+            break_s=round(total("break_s"), 1),
+        )
     return out

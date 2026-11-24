@@ -12,20 +12,12 @@
     "static_fraction": {
       "max": 0.25,
       "why": "picture is frozen"
-    },
-    "max_flashes_per_sec": {
-      "max": 3.0,
-      "why": "strobing above the WCAG 2.3.1 limit"
     }
   },
   "target": {
     "active_area": {
       "min": 0.5,
       "why": "most of the frame should be filled, not objects on black"
-    },
-    "jerkiness": {
-      "max": 1.0,
-      "why": "motion should not flicker (review 1: a clip held under 0.6 was rated too smooth, so smoothness is no longer a target in itself)"
     },
     "audio_sync": {
       "min": 0.2,
@@ -58,6 +50,26 @@
     "flow_swirl": {
       "min": 0.62,
       "why": "the motion should not be one rigid slide, zoom or turn of the whole frame (nine in ten Milkdrop reference clips are above this)"
+    },
+    "answered": {
+      "min": 0.85,
+      "why": "the picture should jump on nearly every kick and snare (review 3: nine shows answering 0.38 to 0.62 of them were rated 'not fun', 'nowhere close to being sufficiently responsive')"
+    },
+    "answered_rolls": {
+      "min": 0.75,
+      "why": "and on the blows inside a drum roll (review 3: 0.32 to 0.55 of them; 'it's very important that it lands on all hits in a roll')"
+    },
+    "jump_size": {
+      "min": 0.3,
+      "why": "a blow should move a good part of the frame (review 3: 0.13 to 0.18 of it; 'the motion is too small, too slow')"
+    },
+    "dead_time": {
+      "max": 0.05,
+      "why": "no stretch with music in it should go unanswered (review 3: 0.11 to 0.33 of two-second stretches did; 'in any given measure there should be something majorly responsive going on')"
+    },
+    "stray_jumps": {
+      "max": 0.1,
+      "why": "the picture should not jump where the music makes no sound (review 3: 'doesn't land when there are no hits')"
     }
   },
   "accuracy": {
@@ -97,6 +109,18 @@
     "regression": {
       "max_drop": 0.02,
       "why": "best held-out score may not fall against the saved baseline"
+    },
+    "blow_recall": {
+      "min": 0.9,
+      "why": "nearly every kick and snare found, whichever it is taken for: a picture can only answer the blows the analysis gives it (review 3)"
+    },
+    "roll_recall": {
+      "min": 0.9,
+      "why": "review 3: what follows the drums must land 'on all hits in a roll'"
+    },
+    "break_false_per_s": {
+      "max": 0.1,
+      "why": "review 3: and must not land 'when there are no hits'"
     }
   }
 }

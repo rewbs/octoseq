@@ -13,7 +13,7 @@
 //   melody   how far its skin bulges and pinches
 //   energy   how fast it turns and wanders
 
-let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0], mist: 0.5 }; // @style
+let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0], mist: 0.5, answer: 1, kick: 1.0 }; // @style
 
 // `style.mist` runs from 0 (crisp) to 1 (misty); at 0.5 a setting is the scene's own.
 fn misted(own, mist, crisp, misty) {
@@ -33,7 +33,8 @@ fn init(ctx) {
     camera.position = #{ x: ex, y: ey, z: 8.94 };
     camera.target = #{ x: ex, y: ey, z: 0.0 };
 
-    let hit = roles.hit.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.45 });
+    // Short and sharp: an answer that lingers runs into the next one, and then no blow stands out.
+    let hit = roles.hit.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.113 });
     let kick = roles.kick.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.3 });
     let level = roles.energy.smooth.exponential(0.05, 0.4);
     let bass = roles.bass.smooth.exponential(0.03, 0.3);
@@ -67,4 +68,8 @@ fn init(ctx) {
     feedback.enable(fb);
 
     post.add(fx.bloom(#{ threshold: misted(0.4, style.mist, 0.5, 0.35), intensity: misted(0.8, style.mist, 0.5, 1.0), radius: misted(6.0, style.mist, 4.0, 10.0) }));
+
+    // The whole frame answers every blow as well, in the way the show asks for
+    // (`style.answer`: see post.answer in scripting.md), so the link is never in doubt.
+    post.answer(style.answer, style.kick, hit, style.at);
 }

@@ -717,6 +717,14 @@ def write_scoreboard(report: dict, gates: dict) -> None:
             if kind in drums:
                 bias = "" if drums[kind]["bias_ms"] is None else f", bias {drums[kind]['bias_ms']:+.1f} ms"
                 row("Drum hits", f"{kind} F", f"{drums[kind]['f']:.3f}{bias}", "tracked", None, name)
+        blows = drums.get("blows")
+        if blows:
+            row("Drum hits", "blows found, kick or snare, whichever each was taken for", f"{blows['recall']:.3f}", f"at least {gates['blow_recall']['min']}", blows["recall"] >= gates["blow_recall"]["min"], name)
+            row("Drum hits", "of the detected blows, those that are real", f"{blows['precision']:.3f}", "tracked", None, name)
+            if blows.get("roll_recall") is not None:
+                row("Drum hits", f"blows inside a roll found ({blows['rolled']} of them)", f"{blows['roll_recall']:.3f}", f"at least {gates['roll_recall']['min']}", blows["roll_recall"] >= gates["roll_recall"]["min"], name)
+            if blows.get("break_false_per_s") is not None:
+                row("Drum hits", f"false blows a second where the drums have stopped ({blows['break_s']:.0f} s of breaks)", f"{blows['break_false_per_s']:.3f}", f"at most {gates['break_false_per_s']['max']}", blows["break_false_per_s"] <= gates["break_false_per_s"]["max"], name)
         for other, entry in scores.items():
             if other != name and "drums_clean" in entry.get("heldout", {}):
                 row("Drum hits", f"mean F, for comparison ({entry['heldout']['variants']['clean']['drums']['tracks']} modules)", f"{entry['heldout']['drums_clean']:.3f}", "tracked", None, other)

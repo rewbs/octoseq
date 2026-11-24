@@ -14,7 +14,7 @@
 //   section_progress   the size of the small wheel: which flower is being drawn
 //   energy   how fast the wheels roll
 
-let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0], mist: 0.5 }; // @style
+let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0], mist: 0.5, answer: 1, kick: 1.0 }; // @style
 
 // `style.mist` runs from 0 (crisp) to 1 (misty); at 0.5 a setting is the scene's own.
 fn misted(own, mist, crisp, misty) {
@@ -38,7 +38,8 @@ fn init(ctx) {
     camera.position = #{ x: ex, y: ey, z: 8.94 };
     camera.target = #{ x: ex, y: ey, z: 0.0 };
 
-    let hit = roles.hit.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.3 });
+    // Short and sharp: an answer that lingers runs into the next one, and then no blow stands out.
+    let hit = roles.hit.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.075 });
     let kick = roles.kick.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.25 });
     let level = roles.energy.smooth.exponential(0.05, 0.4);
     let bass = roles.bass.smooth.exponential(0.05, 0.5);
@@ -74,4 +75,8 @@ fn init(ctx) {
     post.add(fx.kaleidoscope(#{ segments: 8.0, angle: notch, center: #{ x: 0.5 + style.at[0], y: 0.5 + style.at[1] } }));
     post.add(fx.colorGrade(#{ saturation: 1.35, contrast: 1.1 }));
     post.add(fx.bloom(#{ threshold: misted(0.4, style.mist, 0.45, 0.35), intensity: misted(0.9, style.mist, 0.7, 1.0), radius: misted(7.0, style.mist, 5.0, 10.0) }));
+
+    // The whole frame answers every blow as well, in the way the show asks for
+    // (`style.answer`: see post.answer in scripting.md), so the link is never in doubt.
+    post.answer(style.answer, style.kick, hit, style.at);
 }

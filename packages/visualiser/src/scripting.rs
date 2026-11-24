@@ -1868,6 +1868,41 @@ post.setOrder = |order| {{
     __post_chain = order;
 }};
 
+// The standard answers to a blow: what the whole frame does on a hit, whatever
+// the scene is drawing. `kind` picks one, `strength` scales it (1 is the plain
+// amount), `blow` is the scene's hit envelope and `at` where the scene sits.
+// Every kind moves the whole picture at once, so the link between the sound and
+// the picture is plain in every scene, and each is different enough from the
+// rest that a show can change it from look to look.
+//   1 punch: the picture jumps towards the eye and eases back
+//   2 flash: it flares, and jumps a little
+//   3 jolt:  it lurches sideways and in
+//   4 split: its colours are knocked apart
+//   5 burst: it smears outwards from its middle
+//   6 ghost: a second copy of it leaps outwards and fades
+//   0 (or anything else): nothing
+// (It adds to the chain itself: a closure on `post` may not call back into `post`.)
+post.answer = |kind, strength, blow, at| {{
+    let centre = #{{ x: 0.5 + at[0], y: 0.5 + at[1] }};
+    let b = blow.clamp(0.0, 1.5).scale(strength);
+    if kind == 1 {{
+        __post_chain.push(fx.zoomWrap(#{{ amount: b.scale(-0.24).add(1.0), center: centre, wrap_mode: "mirror" }}).__id);
+    }} else if kind == 2 {{
+        __post_chain.push(fx.zoomWrap(#{{ amount: b.scale(-0.09).add(1.0), center: centre, wrap_mode: "mirror" }}).__id);
+        __post_chain.push(fx.colorGrade(#{{ brightness: b.scale(0.45), contrast: b.scale(0.5).add(1.0) }}).__id);
+    }} else if kind == 3 {{
+        __post_chain.push(fx.zoomWrap(#{{ amount: b.scale(-0.15).add(1.0), center: #{{ x: b.scale(0.3).add(0.5 + at[0]), y: 0.5 + at[1] }}, wrap_mode: "mirror" }}).__id);
+    }} else if kind == 4 {{
+        __post_chain.push(fx.zoomWrap(#{{ amount: b.scale(-0.12).add(1.0), center: centre, wrap_mode: "mirror" }}).__id);
+        __post_chain.push(fx.chromaticAberration(#{{ amount: b.scale(0.06), angle: 0.0 }}).__id);
+    }} else if kind == 5 {{
+        __post_chain.push(fx.zoomWrap(#{{ amount: b.scale(-0.09).add(1.0), center: centre, wrap_mode: "mirror" }}).__id);
+        __post_chain.push(fx.radialBlur(#{{ strength: b.scale(0.75), center: centre, samples: 16 }}).__id);
+    }} else if kind == 6 {{
+        __post_chain.push(fx.echo(#{{ alpha: b.scale(0.9).clamp(0.0, 0.95), zoom: b.scale(0.75).add(1.0), flip: 0.0, angle: 0.0 }}).__id);
+    }}
+}};
+
 // === Feedback System (V7) ===
 // Frame feedback for Milkdrop-style temporal visual memory
 // Uses fluent builder API for easy chaining and autocomplete support

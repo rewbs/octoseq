@@ -141,6 +141,26 @@ linger until colour fills the frame (misty); at 0.5 it is as its author wrote it
 The director gives each look one end or the other, never the same end twice running.
 The loop reports how far a show ranges between them as `wash_spread`.
 
+### Whether the picture answers the music
+
+Review 3 rated nine whole-track shows "not fun", above all for not answering the
+music, though every one had passed every gate and target. `tools/loop/response.py`
+measures what had been missed, and its figures are targets in the render loop:
+
+| Figure | What it is | Target |
+| --- | --- | --- |
+| `answered` | the share of kicks and snares at which the picture visibly jumps | at least 0.85 |
+| `answered_rolls` | the same for blows within a fifth of a second of another | at least 0.75 |
+| `jump_size` | how much more of the frame changes at a blow than around it | at least 0.3 |
+| `dead_time` | the share of two-second stretches with music in them that go unanswered | at most 0.05 |
+| `stray_jumps` | the share of the picture's jumps that land on no sound | at most 0.1 |
+
+A jump is a frame in which far more of the picture changes than has been changing
+around it. That is why a large answer that lingers scores worse than a short one:
+the next blow arrives while the picture is still moving and does not stand out.
+The flashing limit is no longer a gate (the owner: "Strobing is OK in audio
+visuals"); the figure is still reported.
+
 ### The scene pool and its contract
 
 There are 58 scenes. Fifty were each written from a Milkdrop preset: the presets

@@ -115,6 +115,32 @@ def test_metrics() -> None:
     check("flowing pattern is not static", flow["static_fraction"] == 0.0)
     check("flowing pattern is smooth", flow["jerkiness"] < 0.4, f"-> {flow['jerkiness']:.2f}")
     check("flowing pattern does not flash", flow["max_flashes_per_sec"] <= 3, f"-> {flow['max_flashes_per_sec']}")
+
+    # The response figures, on pictures whose right answer is known: one that jumps
+    # on every blow and at no other time, the same jumps a quarter of a second
+    # late, and one that slides steadily and never jumps.
+    import response
+
+    blows = [1.0 + 0.5 * i for i in range(12)] + [7.0 + 0.1 * i for i in range(8)]
+    drummed = {"durationSec": 10.0, "roles": {}, "eventStreams": [{"name": "kick", "events": [{"time": t, "weight": 1.0} for t in blows]}]}
+    texture = np.random.default_rng(3).random((72, 128)) * 0.8
+
+    def picture(jump_times: list[float]) -> np.ndarray:
+        shown, out = texture, []
+        frames_of = {int(round(t * 30)) + 1 for t in jump_times}
+        for i in range(300):
+            if i in frames_of:
+                shown = np.roll(shown, 17, axis=1)
+            out.append(shown)
+        return np.stack(out)
+
+    on_time = response.compute(picture(blows), 30.0, drummed)
+    late = response.compute(picture([t + 0.25 for t in blows[:12]]), 30.0, drummed)
+    sliding = response.compute(np.stack([np.roll(texture, i, axis=1) for i in range(300)]), 30.0, drummed)
+    check("response: a picture that jumps on every blow answers them all, rolls included", on_time["answered"] > 0.95 and on_time["answered_rolls"] > 0.95 and on_time["dead_time"] == 0.0 and on_time["stray_jumps"] == 0.0, f"-> {on_time}")
+    check("response: the same jumps a quarter of a second late answer nothing, and are stray", late["answered"] < 0.2 and late["stray_jumps"] > 0.8, f"-> {late}")
+    check("response: a picture that only slides answers nothing", sliding.get("answered", 0.0) < 0.05 and sliding["dead_time"] > 0.95, f"-> {sliding}")
+    check("response: a jump is most of the frame when the whole frame moves", on_time["jump_size"] > 0.5, f"-> {on_time['jump_size']:.2f}")
     check("smooth flow is smoother than strobe", flow["jerkiness"] < strobe["jerkiness"])
 
     # Brightness that follows an audio envelope should register as in sync.
@@ -220,6 +246,9 @@ def test_director() -> None:
     mists = [s["mist"] for s in show["segments"]]
     check("director: a crisp look follows a misty one, and a misty one a crisp", all((a < 0.5) != (b < 0.5) for a, b in zip(mists, mists[1:])), f"-> {mists[:6]}")
     check("director: louder sections run faster", show["segments"][-1]["speed"] > show["segments"][0]["speed"])
+    answers = [s["answer"] for s in show["segments"]]
+    check("director: each look answers a blow in a different way from the last", all(a != b for a, b in zip(answers, answers[1:])) and set(answers) <= set(director.ANSWERS), f"-> {answers[:8]}")
+    check("director: and harder in a louder section", show["segments"][-1]["kick"] > show["segments"][0]["kick"])
     check("director: the same seed gives the same show", director.direct(package, seed=11) == show)
     vivid = director.direct(package, seed=11, vivid=True)
     same_cuts = [(s["start"], s["scene"], s["palette"]) for s in vivid["segments"]] == [(s["start"], s["scene"], s["palette"]) for s in show["segments"]]

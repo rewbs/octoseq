@@ -215,6 +215,13 @@ python3 tools/loop/accuracy.py   # score analysis timing against tracker-module 
   (`tools/loop/preset_pool.json`, [docs/design/preset-pool.md](docs/design/preset-pool.md)).
   After saving the render baseline run `python3 tools/loop/presets.py table`, which
   rewrites that file from it.
+- The picture must answer the music, and `tools/loop/response.py` measures whether it
+  does: `answered`, `answered_rolls`, `jump_size`, `dead_time`. Work on scenes is
+  judged by those first. Change one thing at a time and test it on a few scenes
+  before a full scan: three changes made together once hid that two of them made
+  things worse. Short, hard answers score well; large lingering ones run together.
+- Every scene's main movement follows `roles.hit`, which is every kick and snare,
+  and ends with `post.answer(style.answer, style.kick, hit, style.at);`.
 - The director takes a brief (`director.BRIEF_PARTS`): keep it plain data, and keep
   its refusals saying what would have been right. It is how a prompt will reach the
   engine.

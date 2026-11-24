@@ -12,7 +12,7 @@
 //   melody   how far the lamps wander
 //   energy   how fast they drift
 
-let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0], mist: 0.5 }; // @style
+let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0], mist: 0.5, answer: 1, kick: 1.0 }; // @style
 
 // `style.mist` runs from 0 (crisp) to 1 (misty); at 0.5 a setting is the scene's own.
 fn misted(own, mist, crisp, misty) {
@@ -36,7 +36,8 @@ fn init(ctx) {
     camera.position = #{ x: ex, y: ey, z: 8.94 };
     camera.target = #{ x: ex, y: ey, z: 0.0 };
 
-    let hit = roles.hit.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.6 });
+    // Short and sharp: an answer that lingers runs into the next one, and then no blow stands out.
+    let hit = roles.hit.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.15 });
     let kick = roles.kick.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.4 });
     let level = roles.energy.smooth.exponential(0.05, 0.4);
     let bright = roles.bass.smooth.exponential(0.1, 0.6).scale(0.35).add(0.55);
@@ -71,4 +72,8 @@ fn init(ctx) {
     post.add(fx.directionalBlur(#{ amount: frost, angle: 1.5708, samples: 32 }));
     post.add(fx.distortion(#{ amount: hit.scale(-0.15).sub(0.12), center: #{ x: 0.5 + style.at[0], y: 0.5 + style.at[1] } }));
     post.add(fx.chromaticAberration(#{ amount: hit.scale(0.012).add(0.006), angle: clock }));
+
+    // The whole frame answers every blow as well, in the way the show asks for
+    // (`style.answer`: see post.answer in scripting.md), so the link is never in doubt.
+    post.answer(style.answer, style.kick, hit, style.at);
 }

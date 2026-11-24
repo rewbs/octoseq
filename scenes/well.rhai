@@ -12,7 +12,7 @@
 //   bass     how wide the rim is
 //   energy   how fast the lights race and the rings fall
 
-let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0], mist: 0.5 }; // @style
+let style = #{ a: [1.0, 0.3, 0.12], b: [0.1, 0.75, 1.0], c: [1.0, 0.88, 0.35], speed: 1.0, at: [0.0, 0.0], mist: 0.5, answer: 1, kick: 1.0 }; // @style
 
 // `style.mist` says how misty the look is, from 0 (crisp: short trails and a tight
 // glow, so bright shapes sit on black) to 1 (misty: trails that linger until colour
@@ -39,7 +39,8 @@ fn init(ctx) {
     camera.position = #{ x: ex, y: ey, z: 6.5 };
     camera.target = #{ x: ex, y: ey, z: 0.0 };
 
-    let hit = roles.hit.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.4 });
+    // Short and sharp: an answer that lingers runs into the next one, and then no blow stands out.
+    let hit = roles.hit.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.1 });
     let kick = roles.kick.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.35 });
     let snare = roles.snare.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.45 });
     let hat = roles.hat.to_signal(#{ envelope: "attack_decay", attack_beats: 0.01, decay_beats: 0.15 });
@@ -86,4 +87,8 @@ fn init(ctx) {
     feedback.enable(fb);
 
     post.add(fx.bloom(#{ threshold: misted(0.55, style.mist, 0.7, 0.55), intensity: misted(0.7, style.mist, 0.35, 0.7), radius: misted(10.0, style.mist, 5.0, 10.0) }));
+
+    // The whole frame answers every blow as well, in the way the show asks for
+    // (`style.answer`: see post.answer in scripting.md), so the link is never in doubt.
+    post.answer(style.answer, style.kick, hit, style.at);
 }
