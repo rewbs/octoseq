@@ -1,0 +1,2273 @@
+[
+ {
+  "category": "Dancer",
+  "family": "Aurora",
+  "sub_category": "Aurora",
+  "preset": "Dancer/Aurora/$$$ Royal - Mashup (259).milk",
+  "alternates": [
+   "Dancer/Aurora/Jc - Crystal Shards.milk",
+   "Dancer/Aurora/shifter - urchin kali mod.milk"
+  ],
+  "features": {
+   "decay": 0.9,
+   "zoom": 0.99951,
+   "rot": 0.2599,
+   "warp": 0.01105,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "dx",
+    "dy",
+    "rot"
+   ],
+   "by_place": true,
+   "echo": true,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 3,
+   "spectrum_waves": 0,
+   "custom_shapes": 1,
+   "textured_shapes": 1,
+   "shape_copies": 1,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": false,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [
+    "brighten",
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Dancer",
+  "family": "Hatches",
+  "sub_category": "Hatches",
+  "preset": "Dancer/Hatches/suksma - biotoxins on strings - chrystalmouthze plumputate rodeo drive.milk",
+  "alternates": [
+   "Dancer/Hatches/suksma - biotoxins on strings - log smell.milk",
+   "Dancer/Hatches/suksma - biotoxins on strings - papa smurf kingpin.milk"
+  ],
+  "features": {
+   "decay": 0.955,
+   "zoom": 0.99951,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 1,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 4,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Dancer",
+  "family": "Nexus",
+  "sub_category": "Nexus Mirror",
+  "preset": "Dancer/Nexus Mirror/EoS - ascopic d.milk",
+  "alternates": [
+   "Dancer/Nexus Mirror/EoS - ascopic e better.milk",
+   "Dancer/Nexus Mirror/EoS - ascopic e.milk"
+  ],
+  "features": {
+   "decay": 0.96,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": true,
+   "echo_flip": 1,
+   "waveform": false,
+   "wave_mode": 2,
+   "custom_waves": 2,
+   "spectrum_waves": 0,
+   "custom_shapes": 1,
+   "textured_shapes": 0,
+   "shape_copies": 1,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": false,
+   "comp_shader": false,
+   "blur": false,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.980001,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Dancer",
+  "family": "Streamers",
+  "sub_category": "Streamers",
+  "preset": "Dancer/Streamers/$$$ Royal - Mashup (149).milk",
+  "alternates": [
+   "Dancer/Streamers/$$$ Royal - Mashup (152).milk",
+   "Dancer/Streamers/$$$ Royal - Mashup (154).milk"
+  ],
+  "features": {
+   "decay": 0.96,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.033,
+   "zoom_exponent": 1.22019,
+   "fields": [],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 1,
+   "waveform": false,
+   "wave_mode": 2,
+   "custom_waves": 3,
+   "spectrum_waves": 0,
+   "custom_shapes": 2,
+   "textured_shapes": 2,
+   "shape_copies": 2,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": false,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.98,
+   "tone": [
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Dancer",
+  "family": "Wire",
+  "sub_category": "Wire",
+  "preset": "Dancer/Wire/EoS_Phat technicolor F breather C.milk",
+  "alternates": [
+   "Dancer/Wire/EoS_Phat technicolor F breather E.milk",
+   "Dancer/Wire/EoS_Phat_3d tracers.milk"
+  ],
+  "features": {
+   "decay": 0.96,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "rot",
+    "sx",
+    "sy",
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 2,
+   "custom_waves": 2,
+   "spectrum_waves": 0,
+   "custom_shapes": 1,
+   "textured_shapes": 1,
+   "shape_copies": 1,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": false,
+   "comp_shader": false,
+   "blur": false,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Drawing",
+  "family": "Dunes",
+  "sub_category": "Dunes",
+  "preset": "Drawing/Dunes/shifter + Flexi - liquid circuitry from the hive nz+ darq kngettes.milk",
+  "alternates": [
+   "Drawing/Dunes/shifter + Flexi - liquid circuitry from the hive nz+ metasigiliser decompiler translator.milk",
+   "Drawing/Dunes/shifter + Flexi - liquid circuitry from the hive nz+ phuqre.milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 4.10046,
+   "fields": [
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": true,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 1,
+   "spectrum_waves": 0,
+   "custom_shapes": 3,
+   "textured_shapes": 1,
+   "shape_copies": 345,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Drawing",
+  "family": "Fractal",
+  "sub_category": "Fractal Mirror",
+  "preset": "Drawing/Fractal Mirror/suksma - fiShbRaiN - witchcraft (metropolish remix) - vieg.milk",
+  "alternates": [
+   "Drawing/Fractal Mirror/suksma - the spook in the gasmask.milk",
+   "Drawing/Fractal/suksma - dreaming and dmt is the plant foreman observes and troubleshoots major employee and mechanical problems.milk"
+  ],
+  "features": {
+   "decay": 0.955,
+   "zoom": 0.99951,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 1,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 2,
+   "spectrum_waves": 0,
+   "custom_shapes": 2,
+   "textured_shapes": 1,
+   "shape_copies": 592,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Drawing",
+  "family": "Lasers",
+  "sub_category": "Lasers",
+  "preset": "Drawing/Lasers/suksma - god, most comp shaders look pretty nice with this - pitkanen spher nz+.milk",
+  "alternates": [
+   "Drawing/Lasers/suksma - god, most comp shaders look pretty nice with this - pitkanen spher.milk",
+   "Drawing/Lasers/suksma - hey suse, won't you fucking whistle, mo mer.milk"
+  ],
+  "features": {
+   "decay": 0.965,
+   "zoom": 0.99951,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "cx",
+    "cy",
+    "rot",
+    "sx",
+    "sy",
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": true,
+   "echo_flip": 3,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 2,
+   "textured_shapes": 0,
+   "shape_copies": 1536,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.7,
+   "tone": [
+    "brighten",
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Drawing",
+  "family": "Rorschach",
+  "sub_category": "Rorschach Mirror",
+  "preset": "Drawing/Rorschach Mirror/Hexcollie - Julian Shader Wars3 - endlessly tired nz+.milk",
+  "alternates": [
+   "Drawing/Rorschach Mirror/Hexcollie - Julian Shader Wars3 - endlessly tired.milk",
+   "Drawing/Rorschach Mirror/Hexcollie - Julian Shader Wars3 - spug ett nz+ validating phantoms.milk"
+  ],
+  "features": {
+   "decay": 0.96,
+   "zoom": 1.063,
+   "rot": 0.0,
+   "warp": 0.00054,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 1,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 2,
+   "textured_shapes": 0,
+   "shape_copies": 1536,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.56,
+   "tone": [
+    "brighten",
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Drawing",
+  "family": "Whirlpools",
+  "sub_category": "Whirlpools Mirror",
+  "preset": "Drawing/Whirlpools Mirror/technothrob holotorics - mrt worth your wile equi intrapheron petron.milk",
+  "alternates": [
+   "Drawing/Whirlpools/suksma - fiShbRaiN - witchcraft (phugly shame on remix) - darning kneedless - satanopize roam3 nz+.milk",
+   "Drawing/Whirlpools/suksma - fiShbRaiN - witchcraft (phugly shame on remix) - darning kneedless - satanopize roam3.milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 0.9998,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 0.8802,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 2,
+   "textured_shapes": 0,
+   "shape_copies": 1536,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.5,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Fractal",
+  "family": "Blobby",
+  "sub_category": "Blobby",
+  "preset": "Fractal/Blobby/va ultramix2 - 28.milk",
+  "alternates": [
+   "Fractal/Blobby/va ultramix2 - 29.milk",
+   "Fractal/Blobby/va ultramix2 - 30.milk"
+  ],
+  "features": {
+   "decay": 0.94,
+   "zoom": 13.290894,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 0.999998,
+   "fields": [
+    "dx",
+    "dy"
+   ],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 0,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 1,
+   "textured_shapes": 0,
+   "shape_copies": 1,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": false,
+   "comp_shader": false,
+   "blur": false,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Fractal",
+  "family": "Loops",
+  "sub_category": "Loops",
+  "preset": "Fractal/Loops/phat_RippleNebula99h-EoS mod_mod6.milk",
+  "alternates": [
+   "Fractal/Loops/EoS+Phat Blue_blinky_lights.milk",
+   "Fractal/Loops/EoS+Phat Fractical_dancer_v2d.milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "dx",
+    "dy",
+    "rot",
+    "sx",
+    "sy",
+    "warp",
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": true,
+   "echo_flip": 1,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 2,
+   "textured_shapes": 1,
+   "shape_copies": 2,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": false,
+   "comp_shader": false,
+   "blur": false,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.63,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Fractal",
+  "family": "Nested Hexagon",
+  "sub_category": "Nested Hexagon",
+  "preset": "Fractal/Nested Hexagon/An Digital FX Edit 2 martin - girlie affairs Internal LightFX AdamFX b.milk",
+  "alternates": [
+   "Fractal/Nested Hexagon/An Digital FX Edit 2 martin - girlie affairs Internal LightFX AdamFX c nz+.milk",
+   "Fractal/Nested Hexagon/BEST OF ADAMFX 2 Flexi + Geiss - Bipolar vs reaction diffusion + Deamon Lord + EOS 29.milk"
+  ],
+  "features": {
+   "decay": 0.5,
+   "zoom": 0.9999,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "dx",
+    "rot",
+    "zoom"
+   ],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 3,
+   "waveform": true,
+   "wave_mode": 4,
+   "custom_waves": 1,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.98,
+   "tone": [
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Fractal",
+  "family": "Pointy",
+  "sub_category": "Pointy",
+  "preset": "Fractal/Pointy/Bdrv Aderrasi - Chromatic Voyage bdrv etAL.milk",
+  "alternates": [
+   "Fractal/Pointy/Bdrv Aderrasi - Divine Finery (Vishnu's Tophat) bdrv etAL3.milk",
+   "Fractal/Pointy/Bdrv Aderrasi - Inhuman Emotion bw5.milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.179141,
+   "zoom_exponent": 0.198902,
+   "fields": [
+    "dx",
+    "dy",
+    "rot",
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 5,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 3,
+   "textured_shapes": 3,
+   "shape_copies": 3,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": false,
+   "comp_shader": false,
+   "blur": false,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Fractal",
+  "family": "Wave Interference",
+  "sub_category": "Wave Interference",
+  "preset": "Fractal/Wave Interference/amandio c - interference pattern 3.milk",
+  "alternates": [
+   "Fractal/Wave Interference/amandio c - interference pattern 4.milk",
+   "Fractal/Wave Interference/amandio c - interference pattern 2.milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 0.9981,
+   "rot": 0.0,
+   "warp": 0.00909,
+   "zoom_exponent": 1.00182,
+   "fields": [],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 3,
+   "waveform": true,
+   "wave_mode": 2,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 1,
+   "textured_shapes": 0,
+   "shape_copies": 500,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": false,
+   "comp_shader": false,
+   "blur": false,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.49,
+   "tone": [
+    "brighten",
+    "darken",
+    "invert"
+   ],
+   "hears": [],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Geometric",
+  "family": "Cathedral",
+  "sub_category": "Cathedral",
+  "preset": "Geometric/Cathedral/martin - flexi - laser dome [bipolar focus intent] - alienth nz+.milk",
+  "alternates": [
+   "Geometric/Cathedral/martin - flexi - laser dome [bipolar focus intent] - anaphase nz+.milk",
+   "Geometric/Cathedral/xtramartin (99).milk"
+  ],
+  "features": {
+   "decay": 0.5,
+   "zoom": 0.9999,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 3,
+   "waveform": true,
+   "wave_mode": 6,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.98,
+   "tone": [
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Geometric",
+  "family": "Sphere Array",
+  "sub_category": "Sphere Array",
+  "preset": "Geometric/Sphere Array/akish - placard - do what you say - i can't stand you.milk",
+  "alternates": [
+   "Geometric/Sphere Array/akish - placard - you were always so hard to find.milk",
+   "Geometric/Sphere Array/amandio c - typhoon season (inside) - eid (-sdi) nz+.milk"
+  ],
+  "features": {
+   "decay": 0.98,
+   "zoom": 0.9901,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 0.24298,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 2,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 2,
+   "textured_shapes": 0,
+   "shape_copies": 800,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 2.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Geometric",
+  "family": "Triangles Solo",
+  "sub_category": "Triangles Solo",
+  "preset": "Geometric/Triangles Solo/suksma - jerry kludging the dimswitch.milk",
+  "alternates": [
+   "Geometric/Triangles Solo/Zylot - new work.milk",
+   "Geometric/Triangles Solo/phalsiphiqathe.milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 48.8495,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.00183,
+   "fields": [
+    "dx",
+    "dy"
+   ],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 4,
+   "spectrum_waves": 0,
+   "custom_shapes": 3,
+   "textured_shapes": 3,
+   "shape_copies": 3,
+   "borders": false,
+   "motion_vectors": true,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Geometric",
+  "family": "Wire Grid",
+  "sub_category": "Wire Grid",
+  "preset": "Geometric/Wire Grid/suksma - doubting the gods but with horrible logic roam3 ODing on morgues nz+.milk",
+  "alternates": [
+   "Geometric/Wire Grid/suksma - doubting the gods but with horrible logic roam3 ODing on morgues nz+2.milk",
+   "Geometric/Wire Grid/suksma - doubting the gods but with horrible logic roam3 ODing on morgues nz.milk"
+  ],
+  "features": {
+   "decay": 0.9,
+   "zoom": 0.9803,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 0.35177,
+   "fields": [
+    "dx",
+    "dy"
+   ],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 7,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": true,
+   "motion_vectors": true,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 2.995,
+   "tone": [
+    "brighten"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Geometric",
+  "family": "Wire Trace",
+  "sub_category": "Wire Trace",
+  "preset": "Geometric/Wire Trace/Eosphat-chasers22feedmebrains.milk",
+  "alternates": [
+   "Geometric/Wire Trace/Eosphat-chasers23feedmebrainsv2.milk",
+   "Geometric/Wire Trace/387.milk"
+  ],
+  "features": {
+   "decay": 0.96,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.033004,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "sx",
+    "sy"
+   ],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 3,
+   "waveform": false,
+   "wave_mode": 2,
+   "custom_waves": 4,
+   "spectrum_waves": 0,
+   "custom_shapes": 4,
+   "textured_shapes": 1,
+   "shape_copies": 4,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": false,
+   "comp_shader": false,
+   "blur": false,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.28,
+   "tone": [
+    "brighten",
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Hypnotic",
+  "family": "Illusion Radiate",
+  "sub_category": "Illusion Radiate",
+  "preset": "Hypnotic/Illusion Radiate/i made hexcollies day! [enhanced 1].milk",
+  "alternates": [
+   "Hypnotic/Illusion Radiate/i made hexcollies day!.milk",
+   "Hypnotic/Illusion Radiate/MegalomaGreg - Ambitions [Flexi's mix 33 highest grade pixel fucker] [remix 02 and call back your hexcollie].milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 0.99971,
+   "rot": 0.0,
+   "warp": 0.0,
+   "zoom_exponent": 1.00262,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 0,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Hypnotic",
+  "family": "Polar",
+  "sub_category": "Polar Mirror",
+  "preset": "Hypnotic/Polar Mirror/GreatWho + Flexi - Lasershow [bipolar gapminder RGB grind].milk",
+  "alternates": [
+   "Hypnotic/Polar Mirror/GreatWho + Flexi - Lasershow [bipolar gapminder neon].milk",
+   "Hypnotic/Polar Mirror/GreatWho + Flexi - Lasershow [bipolar gapminder party].milk"
+  ],
+  "features": {
+   "decay": 0.98,
+   "zoom": 1.01,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 2.11299,
+   "fields": [],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 6,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 2,
+   "textured_shapes": 1,
+   "shape_copies": 1025,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 2.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Hypnotic",
+  "family": "Polar Closeup",
+  "sub_category": "Polar Closeup",
+  "preset": "Hypnotic/Polar Closeup/goody + flexi - emotive dissonance - integral anomaly - dissonant rift.milk",
+  "alternates": [
+   "Hypnotic/Polar Closeup/goody + flexi - emotive dissonance - integral anomaly - dissonant rift2 roam.milk",
+   "Hypnotic/Polar Closeup/goody + flexi - emotive dissonance - integral anomaly - dissonant rift2.milk"
+  ],
+  "features": {
+   "decay": 0.98,
+   "zoom": 0.99703,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "dx",
+    "dy",
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 4,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.9,
+   "tone": [],
+   "hears": [
+    "bass"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Hypnotic",
+  "family": "Polar Static",
+  "sub_category": "Polar Static",
+  "preset": "Hypnotic/Polar Static/TonyMilkdrop - Nuclear [Flexi - help out + alien complex] --- Isosceles edit1.milk",
+  "alternates": [
+   "Hypnotic/Polar Static/TonyMilkdrop - Nuclear [Flexi - help out + alien complex] --- Isosceles edit2.milk",
+   "Hypnotic/Polar Static/TonyMilkdrop - Nuclear [Flexi - help out + alien complex].milk"
+  ],
+  "features": {
+   "decay": 0.98,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "dx",
+    "dy",
+    "rot",
+    "zoom"
+   ],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 6,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 2.0,
+   "tone": [
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Hypnotic",
+  "family": "Polar Warp",
+  "sub_category": "Polar Warp",
+  "preset": "Hypnotic/Polar Warp/flexi - grind my glitch up [003].milk",
+  "alternates": [
+   "Hypnotic/Polar Warp/flexi - grind my glitch up [004].milk",
+   "Hypnotic/Polar Warp/flexi - grind my glitch up [015].milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 0.99951,
+   "rot": 0.0,
+   "warp": 0.15038,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "dx",
+    "dy"
+   ],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 0,
+   "custom_waves": 1,
+   "spectrum_waves": 1,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Particles",
+  "family": "Blobby",
+  "sub_category": "Blobby",
+  "preset": "Particles/Blobby/hypra-a-astral hypra-a-plane fairlly amazing bullshit.milk",
+  "alternates": [
+   "Particles/Blobby/dixplosi.milk",
+   "Particles/Blobby/amandio c - pulse - we are going to need your permission.milk"
+  ],
+  "features": {
+   "decay": 0.925,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 1,
+   "textured_shapes": 0,
+   "shape_copies": 353,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Particles",
+  "family": "Grid",
+  "sub_category": "Grid",
+  "preset": "Particles/Grid/Stahlregen & flexi + Geiss + Rovastar - Tides (Blur-Spark Motion RMX)(Jelly).milk",
+  "alternates": [
+   "Particles/Grid/Stahlregen & flexi + Geiss + Rovastar - Tides (Blur-Spark Motion RMX)_1.milk",
+   "Particles/Grid/SUF5C3~1.milk"
+  ],
+  "features": {
+   "decay": 0.99,
+   "zoom": 1.025,
+   "rot": 0.0,
+   "warp": 0.11284,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 0,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": true,
+   "motion_vectors": true,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 2.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Particles",
+  "family": "Points",
+  "sub_category": "Points",
+  "preset": "Particles/Points/$$$ Royal - Mashup (103).milk",
+  "alternates": [
+   "Particles/Points/stahlregen & fishbrain + flexi + geiss + shifter - stonecraft (mashup 19c).milk",
+   "Particles/Points/$$$ Royal - Mashup (102).milk"
+  ],
+  "features": {
+   "decay": 0.973,
+   "zoom": 1.064,
+   "rot": 0.0,
+   "warp": 0.0,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 4,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": false,
+   "motion_vectors": true,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": false,
+   "noise": false,
+   "textures": [],
+   "gamma": 2.0,
+   "tone": [
+    "darken"
+   ],
+   "hears": [
+    "bass"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Particles",
+  "family": "Points Trails",
+  "sub_category": "Points Trails",
+  "preset": "Particles/Points Trails/Jc - Crystalography.milk",
+  "alternates": [
+   "Particles/Points Trails/EVET + fiShbRaiN + Geiss - gandalf does it best- Quadrille.milk",
+   "Particles/Points Trails/fed's explode.milk"
+  ],
+  "features": {
+   "decay": 0.925,
+   "zoom": 0.99951,
+   "rot": 0.0,
+   "warp": 0.72142,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "warp"
+   ],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 1,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": false,
+   "noise": false,
+   "textures": [],
+   "gamma": 2.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Particles",
+  "family": "Swarm",
+  "sub_category": "Swarm",
+  "preset": "Particles/Swarm/$$$ Royal - Mashup (401).milk",
+  "alternates": [
+   "Particles/Swarm/$$$ Royal - Mashup (402).milk",
+   "Particles/Swarm/$$$ Royal - Mashup (488).milk"
+  ],
+  "features": {
+   "decay": 0.5,
+   "zoom": 0.9999,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 3,
+   "waveform": false,
+   "wave_mode": 0,
+   "custom_waves": 1,
+   "spectrum_waves": 1,
+   "custom_shapes": 1,
+   "textured_shapes": 0,
+   "shape_copies": 256,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.98,
+   "tone": [
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Reaction",
+  "family": "Automata",
+  "sub_category": "Automata",
+  "preset": "Reaction/Automata/suksma - barium titanate --- Isosceles edit06.milk",
+  "alternates": [
+   "Reaction/Automata/suksma - ignore visual queues.milk",
+   "Reaction/Automata/suksma - Hexcollie - Julian Carnival - shimmy dumb grid dogmaklyasm.milk"
+  ],
+  "features": {
+   "decay": 0.968,
+   "zoom": 0.99951,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 3,
+   "textured_shapes": 0,
+   "shape_copies": 3,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.7,
+   "tone": [],
+   "hears": [
+    "bass"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Reaction",
+  "family": "Dunes",
+  "sub_category": "Dunes",
+  "preset": "Reaction/Dunes/shifter + Flexi - liquid circuitry from the neon grafitti hive nz+.milk",
+  "alternates": [
+   "Reaction/Dunes/shifter + flexi - liquid circuitry from the fractalism hive --- Isosceles edit3.milk",
+   "Reaction/Dunes/shifter + flexi - liquid circuitry from the fractalism hive --- Isosceles edit4.milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 4.10046,
+   "fields": [
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": true,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 7,
+   "custom_waves": 1,
+   "spectrum_waves": 0,
+   "custom_shapes": 1,
+   "textured_shapes": 0,
+   "shape_copies": 1,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Reaction",
+  "family": "Liquid Gradient",
+  "sub_category": "Liquid Gradient",
+  "preset": "Reaction/Liquid Gradient/Flexi - leaving colors - magic happened to my wallpaper.milk",
+  "alternates": [
+   "Reaction/Liquid Gradient/Flexi - leaving colors MOI.milk",
+   "Reaction/Liquid Gradient/Rovastar - Mosaics Of Ages.milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 0.990099,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 0.921783,
+   "fields": [
+    "dx",
+    "dy"
+   ],
+   "by_place": true,
+   "echo": true,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 0,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": false,
+   "comp_shader": false,
+   "blur": false,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [
+    "invert"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Reaction",
+  "family": "Mountains",
+  "sub_category": "Mountains",
+  "preset": "Reaction/Mountains/cope + flexi - mother-of-whirl [no fnords were hurt] - 1-ret nz+.milk",
+  "alternates": [
+   "Reaction/Mountains/cope + flexi - mother-of-whirl [other kids toys].milk",
+   "Reaction/Mountains/cope + flexi - mother-of-whirl [walking on new grounds].milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 0.9998,
+   "rot": 0.02,
+   "warp": 0.01,
+   "zoom_exponent": 0.9995,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 6,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.14,
+   "tone": [
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Reaction",
+  "family": "Windy",
+  "sub_category": "Windy",
+  "preset": "Reaction/Windy/goody + geiss  - dead cold nz+.milk",
+  "alternates": [
+   "Reaction/Windy/goody + geiss  - dead cold roam3.milk",
+   "Reaction/Windy/goody + geiss  - dead cold.milk"
+  ],
+  "features": {
+   "decay": 0.98,
+   "zoom": 1.00189,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 5,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.9,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Sparkle",
+  "family": "Explosions",
+  "sub_category": "Explosions",
+  "preset": "Sparkle/Explosions/$$$ Royal - Mashup (412).milk",
+  "alternates": [
+   "Sparkle/Explosions/Waltra - Articulated Series.milk",
+   "Sparkle/Explosions/Stahlregen + Amandio C - Rototranslate difference layers 2 + on dotes2 flacc roams aletta ocean.milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 0.9995,
+   "rot": 0.0,
+   "warp": 0.009,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 0,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 3,
+   "textured_shapes": 1,
+   "shape_copies": 73,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Sparkle",
+  "family": "Jewel",
+  "sub_category": "Jewel",
+  "preset": "Sparkle/Jewel/Goody + martin - crystal palace - Aqua Lumens.milk",
+  "alternates": [
+   "Sparkle/Jewel/Goody + martin - crystal palace - Aqua Lumens5.milk",
+   "Sparkle/Jewel/Goody + martin - crystal palace - Ocular Anima - not so g slow.milk"
+  ],
+  "features": {
+   "decay": 0.5,
+   "zoom": 0.9999,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 3,
+   "waveform": false,
+   "wave_mode": 5,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.98,
+   "tone": [
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Sparkle",
+  "family": "Mass Squares",
+  "sub_category": "Mass Squares",
+  "preset": "Sparkle/Mass Squares/suksma - dotes hostile undertake - antiborg.milk",
+  "alternates": [
+   "Sparkle/Mass Squares/suksma - dotes hostile undertake - can't even remember her blood mist eminant roam3.milk",
+   "Sparkle/Mass Squares/suksma - dotes hostile undertake - can't even remember her blood mist eminant.milk"
+  ],
+  "features": {
+   "decay": 0.98,
+   "zoom": 1.0303,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.47412,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 0,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 3,
+   "textured_shapes": 1,
+   "shape_copies": 73,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 2.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Sparkle",
+  "family": "Mass Stars",
+  "sub_category": "Mass Stars",
+  "preset": "Sparkle/Mass Stars/suksma - ed geining hateops - Fixation Nail Trimmer.milk",
+  "alternates": [
+   "Sparkle/Mass Stars/suksma - ed geining hateops - Matrix Moral Infinite.milk",
+   "Sparkle/Mass Stars/suksma - ed geining hateops - Antitoxin Maim Rifler.milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "dx",
+    "dy",
+    "warp"
+   ],
+   "by_place": true,
+   "echo": true,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 3,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 1,
+   "textured_shapes": 0,
+   "shape_copies": 1,
+   "borders": false,
+   "motion_vectors": true,
+   "warp_shader": true,
+   "comp_shader": false,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.7,
+   "tone": [
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Sparkle",
+  "family": "Squares",
+  "sub_category": "Squares",
+  "preset": "Sparkle/Squares/suksma - barium titanate --- Isosceles edit07.milk",
+  "alternates": [
+   "Sparkle/Squares/suksma - barium titanate --- Isosceles edit15.milk",
+   "Sparkle/Squares/suksma - barium titanate --- Isosceles edit17.milk"
+  ],
+  "features": {
+   "decay": 0.968,
+   "zoom": 0.99951,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 0,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 4,
+   "textured_shapes": 0,
+   "shape_copies": 4,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.7,
+   "tone": [],
+   "hears": [
+    "bass"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Supernova",
+  "family": "Burst",
+  "sub_category": "Burst",
+  "preset": "Supernova/Burst/suksma - Dark One - Clouds - das yi hyper phosphene ejaculate.milk",
+  "alternates": [
+   "Supernova/Burst/suksma - Dark One - Clouds - i forcibly shoved the crowbar down my skeletal remain.milk",
+   "Supernova/Burst/suksma - Dark One - Clouds - simple embellishment of the least noticeable infinite dimensioned fractal c.milk"
+  ],
+  "features": {
+   "decay": 0.99,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "warp",
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 0,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 2,
+   "textured_shapes": 0,
+   "shape_copies": 2,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.7,
+   "tone": [
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Supernova",
+  "family": "Lasers",
+  "sub_category": "Lasers",
+  "preset": "Supernova/Lasers/$$$ Royal - Mashup (63).milk",
+  "alternates": [
+   "Supernova/Lasers/$$$ Royal - Mashup (83).milk",
+   "Supernova/Lasers/$$$ Royal - Mashup (96).milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 0.97,
+   "rot": -6.27999,
+   "warp": 0.00052,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "rot",
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 1,
+   "custom_waves": 3,
+   "spectrum_waves": 3,
+   "custom_shapes": 3,
+   "textured_shapes": 3,
+   "shape_copies": 3,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 2.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Supernova",
+  "family": "Orbits",
+  "sub_category": "Orbits",
+  "preset": "Supernova/Orbits/Syst3mFailur - satanic ring V2.milk",
+  "alternates": [
+   "Supernova/Orbits/Syst3mFailur - phat - EoS planetfunk-tracers(devilglobe-1).milk",
+   "Supernova/Orbits/yin - 252 - Artificial poles of the continuum (remix #2).milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.125206,
+   "zoom_exponent": 1.0,
+   "fields": [],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 2,
+   "waveform": false,
+   "wave_mode": 2,
+   "custom_waves": 1,
+   "spectrum_waves": 0,
+   "custom_shapes": 1,
+   "textured_shapes": 1,
+   "shape_copies": 1,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": false,
+   "comp_shader": false,
+   "blur": false,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.7,
+   "tone": [
+    "darken"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Supernova",
+  "family": "Radiate",
+  "sub_category": "Radiate",
+  "preset": "Supernova/Radiate/EvilJim - #26 I see Light!.milk",
+  "alternates": [
+   "Supernova/Radiate/Krash and Zylot - Snowflake Halo (Ice Cube mix).milk",
+   "Supernova/Radiate/Krash - Snowflake Halo.milk"
+  ],
+  "features": {
+   "decay": 0.9,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 3,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": false,
+   "comp_shader": false,
+   "blur": false,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Supernova",
+  "family": "Stars",
+  "sub_category": "Stars",
+  "preset": "Supernova/Stars/PieturP - HSL-tunnelvisions_morphing - mash0000 - solidity in discontinuity vs quantum instability.milk",
+  "alternates": [
+   "Supernova/Stars/PieturP - HSL-tunnelvisions.milk",
+   "Supernova/Stars/138.milk"
+  ],
+  "features": {
+   "decay": 0.5,
+   "zoom": 0.99951,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "dx",
+    "dy",
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": true,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 6,
+   "custom_waves": 2,
+   "spectrum_waves": 0,
+   "custom_shapes": 2,
+   "textured_shapes": 2,
+   "shape_copies": 2,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": false,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Waveform",
+  "family": "Spectrum",
+  "sub_category": "Spectrum",
+  "preset": "Waveform/Spectrum/phlab salute.milk",
+  "alternates": [
+   "Waveform/Spectrum/suksma - loosely involved in grey market dog openers.milk",
+   "Waveform/Spectrum/suksma - negative infinity for not flinching - couldn't not - 777.milk"
+  ],
+  "features": {
+   "decay": 0.98,
+   "zoom": 1.0018,
+   "rot": 0.0,
+   "warp": 0.01,
+   "zoom_exponent": 1.00815,
+   "fields": [
+    "dy"
+   ],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": false,
+   "wave_mode": 1,
+   "custom_waves": 3,
+   "spectrum_waves": 3,
+   "custom_shapes": 1,
+   "textured_shapes": 1,
+   "shape_copies": 11,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 2.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Waveform",
+  "family": "Wire Circular",
+  "sub_category": "Wire Circular",
+  "preset": "Waveform/Wire Circular/Geiss - Reaction Diffusion (Puddle Mix)s a aa aa.milk",
+  "alternates": [
+   "Waveform/Wire Circular/fed's blur 5! massive trip mix.milk",
+   "Waveform/Wire Circular/mosaic octopus 7.milk"
+  ],
+  "features": {
+   "decay": 0.98,
+   "zoom": 0.99951,
+   "rot": 0.0,
+   "warp": 0.00909,
+   "zoom_exponent": 1.0,
+   "fields": [
+    "rot",
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 0,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 1.9,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Waveform",
+  "family": "Wire Flat Double",
+  "sub_category": "Wire Flat Double",
+  "preset": "Waveform/Wire Flat Double/Stahlregen - Downpour x Spectre PS2 (Contact Mix).milk",
+  "alternates": [
+   "Waveform/Wire Flat Double/Stahlregen - Downpour x Spectre PS2.milk",
+   "Waveform/Wire Flat Double/Stahlregen - Downpour x Spectre PS2b.milk"
+  ],
+  "features": {
+   "decay": 0.98,
+   "zoom": 0.99999,
+   "rot": 0.0,
+   "warp": 0.0181,
+   "zoom_exponent": 0.99999,
+   "fields": [],
+   "by_place": false,
+   "echo": false,
+   "echo_flip": 0,
+   "waveform": true,
+   "wave_mode": 6,
+   "custom_waves": 0,
+   "spectrum_waves": 0,
+   "custom_shapes": 0,
+   "textured_shapes": 0,
+   "shape_copies": 0,
+   "borders": true,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 2.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Waveform",
+  "family": "Wire Spirograph",
+  "sub_category": "Wire Spirograph",
+  "preset": "Waveform/Wire Spirograph/Fumbling_Foo & Cope, Flexi, Martin, Orb - Star Forge v8 hue shifter.milk",
+  "alternates": [
+   "Waveform/Wire Spirograph/Fumbling_Foo & Flexi, Martin, Orb - Acid Mandala v1a.milk",
+   "Waveform/Wire Spirograph/Fumbling_Foo & Flexi, Martin, Orb - Acid Mandala v1b.milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.0,
+   "zoom_exponent": 1.14947,
+   "fields": [
+    "dx",
+    "rot",
+    "zoom"
+   ],
+   "by_place": true,
+   "echo": true,
+   "echo_flip": 3,
+   "waveform": false,
+   "wave_mode": 0,
+   "custom_waves": 1,
+   "spectrum_waves": 1,
+   "custom_shapes": 1,
+   "textured_shapes": 0,
+   "shape_copies": 1,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": false,
+   "textures": [],
+   "gamma": 2.0,
+   "tone": [
+    "invert"
+   ],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ },
+ {
+  "category": "Waveform",
+  "family": "Wire Tunnel",
+  "sub_category": "Wire Tunnel",
+  "preset": "Waveform/Wire Tunnel/fiShbRaiN + geiss + goody + stahlregen + martin + others - a butterfly dreaming it was a demon.milk",
+  "alternates": [
+   "Waveform/Wire Tunnel/Serge + martin - crystal palace005.milk",
+   "Waveform/Wire Tunnel/Serge + 158 009.milk"
+  ],
+  "features": {
+   "decay": 1.0,
+   "zoom": 1.00971,
+   "rot": 0.0,
+   "warp": 0.25579,
+   "zoom_exponent": 2.19476,
+   "fields": [],
+   "by_place": false,
+   "echo": true,
+   "echo_flip": 3,
+   "waveform": true,
+   "wave_mode": 0,
+   "custom_waves": 1,
+   "spectrum_waves": 1,
+   "custom_shapes": 3,
+   "textured_shapes": 1,
+   "shape_copies": 3,
+   "borders": false,
+   "motion_vectors": false,
+   "warp_shader": true,
+   "comp_shader": true,
+   "blur": true,
+   "noise": true,
+   "textures": [],
+   "gamma": 1.0,
+   "tone": [],
+   "hears": [
+    "bass",
+    "mid",
+    "treb"
+   ],
+   "rating": 5.0
+  }
+ }
+]

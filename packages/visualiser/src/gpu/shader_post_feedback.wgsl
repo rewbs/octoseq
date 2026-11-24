@@ -384,6 +384,61 @@ fn apply_other_color_chain(color: vec4<f32>) -> vec4<f32> {
     return result;
 }
 
+// Where in the colour chain a step of this kind sits, or -1. Sharpen and inset
+// need more of the last frame than the one point the other steps work on, so the
+// main function runs them itself, on the raw sample, before the rest of the chain.
+fn loop_step_of(kind: u32) -> i32 {
+    let count = min(params.color_count, 4u);
+    for (var i: u32 = 0u; i < count; i++) {
+        if (params.color_steps[i].color_type == kind) {
+            return i32(i);
+        }
+    }
+    return -1;
+}
+
+// Sharpen (5): offset_x is the amount, offset_y the radius in frame heights.
+// The point is compared with the average of eight around it, on two rings.
+fn sharpened(uv: vec2<f32>, color: vec4<f32>, op: GpuColorStep) -> vec4<f32> {
+    let dims = vec2<f32>(textureDimensions(feedback_texture));
+    let reach = vec2<f32>(op.offset_y * dims.y / dims.x, op.offset_y);
+    var sum = color.rgb;
+    for (var i: i32 = 0; i < 8; i++) {
+        let a = f32(i) * 0.7853982;
+        let ring = select(1.0, 0.5, (i % 2) == 1);
+        let at = clamp(uv + vec2<f32>(cos(a), sin(a)) * reach * ring, vec2<f32>(0.001), vec2<f32>(0.999));
+        sum += textureSampleLevel(feedback_texture, tex_sampler, at, 0.0).rgb;
+    }
+    let blurred = sum / 9.0;
+    return vec4<f32>(max(color.rgb + (color.rgb - blurred) * op.offset_x, vec3<f32>(0.0)), color.a);
+}
+
+// Inset (6): offset_x is the shape's radius in frame heights, offset_y how much of
+// the frame it holds, hsv_h its angle, hsv_s how solid it is, posterize_levels its
+// number of sides (under 3 is a circle). It sits at the loop's centre.
+fn inset(uv: vec2<f32>, color: vec4<f32>, op: GpuColorStep) -> vec4<f32> {
+    let dims = vec2<f32>(textureDimensions(feedback_texture));
+    let aspect = dims.x / dims.y;
+    let centre = vec2<f32>(0.5 + params.centre_x, 0.5 + params.centre_y);
+    let p = (uv - centre) * vec2<f32>(aspect, 1.0);
+    let c = cos(op.hsv_h);
+    let s = sin(op.hsv_h);
+    let turned = vec2<f32>(p.x * c - p.y * s, p.x * s + p.y * c);
+    var edge = length(turned);
+    if (op.posterize_levels >= 3.0) {
+        let sector = 6.2831853 / op.posterize_levels;
+        let ang = atan2(turned.y, turned.x);
+        edge = edge * cos(ang - sector * floor(ang / sector + 0.5));
+    }
+    let radius = max(op.offset_x, 0.0001);
+    let inside = 1.0 - smoothstep(radius * 0.96, radius, edge);
+    // The frame's top and bottom land on the shape's edge when it holds all of it.
+    let src = vec2<f32>(0.5) + turned / vec2<f32>(aspect, 1.0) * (0.5 / radius) * max(op.offset_y, 0.0001);
+    let within = step(0.0, src.x) * step(src.x, 1.0) * step(0.0, src.y) * step(src.y, 1.0);
+    let copy = textureSampleLevel(feedback_texture, tex_sampler, clamp(src, vec2<f32>(0.001), vec2<f32>(0.999)), 0.0);
+    return mix(color, copy, inside * within * clamp(op.hsv_s, 0.0, 1.0));
+}
+
 // Check if any color step uses channel offset (needs special handling)
 fn has_channel_offset() -> bool {
     let count = min(params.color_count, 4u);
@@ -574,6 +629,14 @@ fn fs_main(in: VertexOutput) -> FeedbackOutput {
         }
     } else {
         feedback = textureSample(feedback_texture, tex_sampler, clamped_uv);
+        let sharpen_at = loop_step_of(5u);
+        if (sharpen_at >= 0) {
+            feedback = sharpened(clamped_uv, feedback, params.color_steps[sharpen_at]);
+        }
+        let inset_at = loop_step_of(6u);
+        if (inset_at >= 0) {
+            feedback = inset(in.uv, feedback, params.color_steps[inset_at]);
+        }
         feedback = apply_color_chain(feedback);
     }
 

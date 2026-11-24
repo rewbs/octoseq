@@ -315,6 +315,28 @@ pub fn register_feedback_builder_api(engine: &mut Engine) {
         },
     );
 
+    // sharpen(amount, radius)
+    engine.register_fn(
+        "sharpen",
+        |cb: &mut ColorBuilder, amount: Dynamic, radius: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(cb.clone().sharpen(to_signal_or_f32(amount)?, to_signal_or_f32(radius)?))
+        },
+    );
+
+    // inset(radius, zoom, angle, strength) and inset(radius, zoom, angle, strength, sides)
+    engine.register_fn(
+        "inset",
+        |cb: &mut ColorBuilder, radius: Dynamic, zoom: Dynamic, angle: Dynamic, strength: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(cb.clone().inset(to_signal_or_f32(radius)?, to_signal_or_f32(zoom)?, to_signal_or_f32(angle)?, to_signal_or_f32(strength)?, 0.0))
+        },
+    );
+    engine.register_fn(
+        "inset",
+        |cb: &mut ColorBuilder, radius: Dynamic, zoom: Dynamic, angle: Dynamic, strength: Dynamic, sides: Dynamic| -> Result<FeedbackBuilder, Box<EvalAltResult>> {
+            Ok(cb.clone().inset(to_signal_or_f32(radius)?, to_signal_or_f32(zoom)?, to_signal_or_f32(angle)?, to_signal_or_f32(strength)?, to_signal_or_f32(sides)?))
+        },
+    );
+
     // ========================================================================
     // BlendBuilder methods - each returns FeedbackBuilder for chaining
     // ========================================================================

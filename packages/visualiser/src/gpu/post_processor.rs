@@ -597,6 +597,8 @@ impl PostProcessor {
             "directional_blur" => include_str!("shader_post_directional_blur.wgsl"),
             "chromatic_aberration" => include_str!("shader_post_chromatic_aberration.wgsl"),
             "grain" => include_str!("shader_post_grain.wgsl"),
+            "echo" => include_str!("shader_post_echo.wgsl"),
+            "kaleidoscope" => include_str!("shader_post_kaleidoscope.wgsl"),
             _ => return Err(format!("Unknown effect: {}", effect_id)),
         };
 

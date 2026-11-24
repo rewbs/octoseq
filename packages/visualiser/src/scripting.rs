@@ -770,6 +770,90 @@ impl ScriptEngine {
             effect
         });
 
+        engine.register_fn(
+            "__fx_create_echo",
+            |options: rhai::Map| -> rhai::Map {
+                let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let mut effect = rhai::Map::new();
+                effect.insert("__id".into(), Dynamic::from(id));
+                effect.insert("__type".into(), Dynamic::from("post_effect"));
+                effect.insert("__effect_id".into(), Dynamic::from("echo"));
+                effect.insert("enabled".into(), Dynamic::from(true));
+                effect.insert(
+                    "alpha".into(),
+                    options
+                        .get("alpha")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.5_f64)),
+                );
+                effect.insert(
+                    "zoom".into(),
+                    options
+                        .get("zoom")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                effect.insert(
+                    "flip".into(),
+                    options
+                        .get("flip")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                effect.insert(
+                    "angle".into(),
+                    options
+                        .get("angle")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                PENDING_POST_EFFECTS.with(|cell| {
+                    cell.borrow_mut().insert(id, effect.clone());
+                });
+                effect
+            },
+        );
+
+        engine.register_fn(
+            "__fx_create_kaleidoscope",
+            |options: rhai::Map| -> rhai::Map {
+                let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let mut effect = rhai::Map::new();
+                effect.insert("__id".into(), Dynamic::from(id));
+                effect.insert("__type".into(), Dynamic::from("post_effect"));
+                effect.insert("__effect_id".into(), Dynamic::from("kaleidoscope"));
+                effect.insert("enabled".into(), Dynamic::from(true));
+                effect.insert(
+                    "segments".into(),
+                    options
+                        .get("segments")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(6.0_f64)),
+                );
+                effect.insert(
+                    "angle".into(),
+                    options
+                        .get("angle")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                let default_center = {
+                    let mut c = rhai::Map::new();
+                    c.insert("x".into(), Dynamic::from(0.5_f64));
+                    c.insert("y".into(), Dynamic::from(0.5_f64));
+                    Dynamic::from(c)
+                };
+                effect.insert(
+                    "center".into(),
+                    options.get("center").cloned().unwrap_or(default_center),
+                );
+                PENDING_POST_EFFECTS.with(|cell| {
+                    cell.borrow_mut().insert(id, effect.clone());
+                });
+                effect
+            },
+        );
+
         engine.register_fn("__fx_clear_effects", || {
             PENDING_POST_EFFECTS.with(|cell| {
                 cell.borrow_mut().clear();
@@ -1733,6 +1817,16 @@ fx.chromaticAberration = |options| {{
 }};
 fx.grain = |options| {{
     let effect = __fx_create_grain(options);
+    __post_effects["" + effect.__id] = effect;
+    effect
+}};
+fx.echo = |options| {{
+    let effect = __fx_create_echo(options);
+    __post_effects["" + effect.__id] = effect;
+    effect
+}};
+fx.kaleidoscope = |options| {{
+    let effect = __fx_create_kaleidoscope(options);
     __post_effects["" + effect.__id] = effect;
     effect
 }};
@@ -3476,6 +3570,56 @@ feedback.is_enabled = || {{
                         .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
                     {
                         instance.set_param("seed", v);
+                    }
+                }
+                "echo" => {
+                    if let Some(v) = effect_map
+                        .get("alpha")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("alpha", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("zoom")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("zoom", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("flip")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("flip", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("angle")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("angle", v);
+                    }
+                }
+                "kaleidoscope" => {
+                    if let Some(v) = effect_map
+                        .get("segments")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("segments", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("angle")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("angle", v);
+                    }
+                    if let Some(center) = effect_map
+                        .get("center")
+                        .and_then(|d| d.clone().try_cast::<rhai::Map>())
+                    {
+                        let x =
+                            Self::eval_color_channel(center.get("x"), 0.5, eval_ctx, frame_cache);
+                        let y =
+                            Self::eval_color_channel(center.get("y"), 0.5, eval_ctx, frame_cache);
+                        instance.set_param("center", EffectParamValue::Vec2([x, y]));
                     }
                 }
                 _ => {}

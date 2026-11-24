@@ -570,6 +570,58 @@ impl PostEffectRegistry {
                 )
                 .build(),
         );
+
+        // Echo effect
+        // Note: Parameter order must match shader uniform struct layout
+        self.register(
+            PostEffect::builder("echo")
+                .name("Echo")
+                .description("A second copy of the picture laid over it: zoomed, turned, flipped")
+                .param(
+                    EffectParamDef::float("alpha", 0.5)
+                        .with_range(0.0, 1.0)
+                        .with_description("How much of the copy shows"),
+                )
+                .param(
+                    EffectParamDef::float("zoom", 1.0)
+                        .with_range(0.1, 10.0)
+                        .with_description("The copy's size against the picture's"),
+                )
+                .param(
+                    EffectParamDef::float("flip", 0.0)
+                        .with_range(0.0, 3.0)
+                        .with_description("0 = none, 1 = left to right, 2 = top to bottom, 3 = both"),
+                )
+                .param(
+                    EffectParamDef::float("angle", 0.0)
+                        .with_range(-1000.0, 1000.0)
+                        .with_description("The copy's turn in radians"),
+                )
+                .build(),
+        );
+
+        // Kaleidoscope effect
+        // Note: Parameter order must match shader uniform struct layout
+        self.register(
+            PostEffect::builder("kaleidoscope")
+                .name("Kaleidoscope")
+                .description("One wedge of the picture mirrored round a centre")
+                .param(
+                    EffectParamDef::float("segments", 6.0)
+                        .with_range(0.0, 64.0)
+                        .with_description("Number of wedges (under 2 leaves the picture alone)"),
+                )
+                .param(
+                    EffectParamDef::float("angle", 0.0)
+                        .with_range(-1000.0, 1000.0)
+                        .with_description("Which way the first wedge points, in radians"),
+                )
+                .param(
+                    EffectParamDef::vec2("center", [0.5, 0.5])
+                        .with_description("The middle, in normalized coordinates"),
+                )
+                .build(),
+        );
     }
 
     /// Register a new effect.

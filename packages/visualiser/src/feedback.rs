@@ -153,6 +153,11 @@ pub enum ColorOperator {
     Posterize,
     /// Channel offset: RGB split / chromatic aberration.
     ChannelOffset,
+    /// Sharpen: the last frame pushed away from a blurred copy of itself (or,
+    /// with a negative amount, towards it).
+    Sharpen,
+    /// Inset: the whole of the last frame drawn again, small, inside a shape.
+    Inset,
 }
 
 impl ColorOperator {
@@ -164,6 +169,8 @@ impl ColorOperator {
             ColorOperator::HsvShift => 2,
             ColorOperator::Posterize => 3,
             ColorOperator::ChannelOffset => 4,
+            ColorOperator::Sharpen => 5,
+            ColorOperator::Inset => 6,
         }
     }
 
@@ -176,6 +183,8 @@ impl ColorOperator {
             "channel_offset" | "channeloffset" | "rgb_split" | "chromatic" => {
                 ColorOperator::ChannelOffset
             }
+            "sharpen" => ColorOperator::Sharpen,
+            "inset" => ColorOperator::Inset,
             _ => ColorOperator::None,
         }
     }
@@ -609,7 +618,7 @@ impl FeedbackConfig {
         // Fill color steps - evaluate each parameter
         for (i, step) in self.color_chain.iter().take(MAX_COLOR_CHAIN).enumerate() {
             let params = step.params.evaluate(ctx);
-            uniforms.color_steps[i] = GpuColorStep {
+            let mut gpu = GpuColorStep {
                 color_type: step.operator.to_u32(),
                 decay_rate: params.decay_rate.max(0.0).powf(k),
                 posterize_levels: params.posterize_levels,
@@ -619,6 +628,19 @@ impl FeedbackConfig {
                 offset_x: params.channel_offset[0],
                 offset_y: params.channel_offset[1],
             };
+            match step.operator {
+                // Its amount is how far it pushes each thirtieth of a second.
+                ColorOperator::Sharpen => gpu.offset_x = params.channel_offset[0] * k,
+                // Its angle is a position, not a rate; its strength is a cover,
+                // read per thirtieth of a second like a shape's.
+                ColorOperator::Inset => {
+                    gpu.hsv_h = params.hsv_shift[0];
+                    gpu.hsv_s = 1.0 - (1.0 - params.hsv_shift[1].clamp(0.0, 1.0)).powf(k);
+                    gpu.hsv_v = 0.0;
+                }
+                _ => {}
+            }
+            uniforms.color_steps[i] = gpu;
         }
 
         uniforms
@@ -1109,6 +1131,60 @@ impl ColorBuilder {
     }
 }
 
+impl ColorBuilder {
+    /// Sharpen the last frame against a blurred copy of itself.
+    ///
+    /// Each step, every point moves away from the average of the points
+    /// `radius` around it (in frame heights) by `amount` of the difference.
+    /// Edges grow crisper every time round the loop, and with a fade to hold
+    /// it in check the picture breaks into spots, stripes and mazes: what
+    /// Milkdrop's "reaction" presets do with a blurred copy of the frame. A
+    /// negative amount softens instead.
+    pub fn sharpen(
+        mut self,
+        amount: impl Into<SignalOrF32>,
+        radius: impl Into<SignalOrF32>,
+    ) -> FeedbackBuilder {
+        self.0.push_color(ColorStep::new(
+            ColorOperator::Sharpen,
+            ColorParams {
+                channel_offset: [amount.into(), radius.into()],
+                ..Default::default()
+            },
+        ));
+        self.0
+    }
+
+    /// Draw the whole of the last frame again, shrunk into a shape at the
+    /// loop's centre: a picture within the picture, and one within that.
+    ///
+    /// `radius` is the shape's size in frame heights. `zoom` shrinks the copy:
+    /// at 1 the frame's top and bottom touch the shape's edge, at 2 the copy
+    /// is half that size and more of the frame's width fits. `angle` turns the
+    /// copy, in radians; `strength` is how solid it is, 0 to 1; `sides` makes
+    /// the shape a polygon (0 is a circle). This is Milkdrop's shape textured
+    /// with the previous frame.
+    pub fn inset(
+        mut self,
+        radius: impl Into<SignalOrF32>,
+        zoom: impl Into<SignalOrF32>,
+        angle: impl Into<SignalOrF32>,
+        strength: impl Into<SignalOrF32>,
+        sides: impl Into<SignalOrF32>,
+    ) -> FeedbackBuilder {
+        self.0.push_color(ColorStep::new(
+            ColorOperator::Inset,
+            ColorParams {
+                channel_offset: [radius.into(), zoom.into()],
+                hsv_shift: [angle.into(), strength.into(), SignalOrF32::Scalar(0.0)],
+                posterize_levels: sides.into(),
+                ..Default::default()
+            },
+        ));
+        self.0
+    }
+}
+
 /// Sub-builder for blend mode selection. Returned by `builder.blend`.
 #[derive(Clone, Debug)]
 pub struct BlendBuilder(pub FeedbackBuilder);
@@ -1436,6 +1512,39 @@ mod tests {
         // The pass is told how long the step is, to scale what the scene leaves in the loop.
         assert!((thirty.step_share - 1.0).abs() < 1e-6);
         assert!((fast.step_share - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sharpen_and_inset_reach_the_gpu_scaled_to_the_step() {
+        let (mut state, stats) = test_eval_ctx();
+        let inputs = HashMap::new();
+        let bands = HashMap::new();
+        let stems = HashMap::new();
+        let custom = HashMap::new();
+        let composed = HashMap::new();
+        let builder = ColorBuilder(FeedbackBuilder::new()).sharpen(0.4, 0.01);
+        let config = ColorBuilder(builder).inset(0.3, 1.0, 0.5, 0.36, 4.0).build();
+        let mut at = |dt: f32| {
+            let mut ctx = EvalContext::new(0.0, dt, 0, None, &inputs, &bands, &stems, &custom, &composed, &stats, &mut state, None);
+            config.to_uniforms(&mut ctx)
+        };
+        let thirty = at(1.0 / 30.0);
+        assert_eq!(thirty.color_steps[0].color_type, 5);
+        assert_eq!(thirty.color_steps[0].offset_x, 0.4);
+        assert_eq!(thirty.color_steps[0].offset_y, 0.01);
+        assert_eq!(thirty.color_steps[1].color_type, 6);
+        assert_eq!(thirty.color_steps[1].offset_x, 0.3);
+        assert_eq!(thirty.color_steps[1].offset_y, 1.0);
+        assert_eq!(thirty.color_steps[1].hsv_h, 0.5);
+        assert!((thirty.color_steps[1].hsv_s - 0.36).abs() < 1e-6);
+        assert_eq!(thirty.color_steps[1].posterize_levels, 4.0);
+        // At 120 steps a second four steps do what one did: a quarter of the
+        // push each time, and a cover that compounds to the same.
+        let fast = at(1.0 / 120.0);
+        assert!((fast.color_steps[0].offset_x * 4.0 - 0.4).abs() < 1e-6);
+        assert_eq!(fast.color_steps[0].offset_y, 0.01);
+        assert!((1.0 - (1.0 - fast.color_steps[1].hsv_s).powi(4) - 0.36).abs() < 1e-5);
+        assert_eq!(fast.color_steps[1].hsv_h, 0.5);
     }
 
     #[test]

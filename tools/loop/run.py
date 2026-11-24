@@ -246,7 +246,7 @@ def engine_checks(track: Path, run_dir: Path, gates: dict, args) -> list[dict]:
             checks.append(dict(name=name, ok=False, detail=result["hard"][0] if result.get("hard") else "did not render"))
         else:
             checks.append(dict(name=name, ok=(blown > limit) == should_blow, detail=f"{blown * 100:.0f}% of frames blown out"))
-    return checks + light_checks(track, run_dir / "checks", small) + transition_checks(track, run_dir / "checks", small) + frame_rate_checks(track, run_dir / "checks", small)
+    return checks + light_checks(track, run_dir / "checks", small) + capability_checks(track, run_dir / "checks", small) + transition_checks(track, run_dir / "checks", small) + frame_rate_checks(track, run_dir / "checks", small)
 
 
 def load_frames_full(frames: Path, width: int, height: int) -> np.ndarray:
@@ -273,6 +273,60 @@ def hue_of(colour) -> float:
     if top == g:
         return ((b - r) / (top - bottom) + 2.0) / 6.0
     return ((r - g) / (top - bottom) + 4.0) / 6.0
+
+
+def capability_checks(track: Path, out: Path, args) -> list[dict]:
+    """The loop's own tricks, each on a red ring at the left of a black frame.
+
+    An echo flipped left to right, and a kaleidoscope, must both put the ring on
+    the right as well; an inset must put a small one in the middle; and a loop
+    that sharpens must show more fine detail than the same loop without. The
+    plain ring is rendered too: it has nothing on the right and nothing in the
+    middle, which is what shows the first three checks can fail, and the soft
+    loop is the fourth's.
+    """
+    if track.suffix.lower() in MODULE_SUFFIXES:
+        package_path = perfect_bundle.build(track) / "package.json"
+    else:
+        package_path = worker.bundle(track, stale="reanalyse")
+    plain = argparse.Namespace(**{**vars(args), "step_rate": 0, "shutter": 0.0})
+    frames = {}
+    for name in ("ring-left", "ring-echo", "ring-kaleidoscope", "ring-inset", "ring-soft", "ring-sharp"):
+        frames_dir = out / name / "frames"
+        ok, log = render_frames(package_path, CHECK_SCENES / f"{name}.rhai", frames_dir, 2.0, plain)
+        if not ok:
+            return [dict(name=f"the {name.split('-')[1]} fixture renders", ok=False, detail=log.strip().splitlines()[-1] if log.strip() else "did not render")]
+        frames[name] = load_frames_full(frames_dir / "frame_%05d.png", plain.width, plain.height)[-1].astype(np.float32) / 255.0
+        shutil.rmtree(frames_dir)
+
+    def red(frame: np.ndarray, lo: float, hi: float) -> float:
+        """How much red there is between two fractions of the frame's width."""
+        w = frame.shape[1]
+        part = frame[:, int(lo * w) : int(hi * w)]
+        return float(np.clip(part[..., 0] - part[..., 1:].max(axis=-1), 0, None).mean())
+
+    def detail(frame: np.ndarray) -> float:
+        grey = frame.mean(axis=-1)
+        return float(np.abs(np.diff(grey, axis=1)).mean() + np.abs(np.diff(grey, axis=0)).mean())
+
+    left = red(frames["ring-left"], 0.0, 0.5)
+    checks = []
+    for name, what in (("ring-echo", "an echo flipped left to right"), ("ring-kaleidoscope", "a kaleidoscope")):
+        ours, theirs = red(frames[name], 0.5, 1.0), red(frames[name], 0.0, 0.5)
+        checks.append(dict(
+            name=f"{what} puts the ring on the right as well",
+            ok=ours > 0.2 * left and 0.7 < ours / max(theirs, 1e-9) < 1.4 and red(frames["ring-left"], 0.5, 1.0) < 0.02 * left,
+            detail=f"red on the right is {100 * ours / max(theirs, 1e-9):.0f}% of the red on the left; the plain ring has {100 * red(frames['ring-left'], 0.5, 1.0) / max(left, 1e-9):.0f}%",
+        ))  # fmt: skip
+    middle, plain_middle = red(frames["ring-inset"], 0.38, 0.62), red(frames["ring-left"], 0.38, 0.62)
+    checks.append(dict(
+        name="an inset draws the picture again, small, in the middle",
+        ok=middle > 0.01 * left and plain_middle < 0.1 * middle,
+        detail=f"red in the middle is {100 * middle / max(left, 1e-9):.1f}% of the ring's; the plain ring has {100 * plain_middle / max(left, 1e-9):.1f}% there",
+    ))  # fmt: skip
+    soft, sharp = detail(frames["ring-soft"]), detail(frames["ring-sharp"])
+    checks.append(dict(name="a loop that sharpens has more fine detail", ok=sharp > 1.15 * soft, detail=f"{100 * (sharp / max(soft, 1e-9) - 1):.0f}% more than the same loop without"))
+    return checks
 
 
 BRIGHT_COLOUR, BRIGHT_TIMES = (1.0, 0.2, 0.05), 4.0  # as in fixtures/scenes/brighter-than-white.rhai
