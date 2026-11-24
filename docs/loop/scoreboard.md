@@ -6,37 +6,41 @@ Held-out split: 117 modules (97 more are used for tuning; 24 synthetic, 190 down
 4 others left out as unusable).
 Instrument checks: 17 of 17 pass.
 
-| Part      | Measure                                                    | Now                 | Target              | Status      | Best analyser    |
-| --------- | ---------------------------------------------------------- | ------------------- | ------------------- | ----------- | ---------------- |
-| Onsets    | F on clean audio                                           | 0.874               | at least 0.8        | met         | `standin`        |
-| Onsets    | worst F through reverb, compression, MP3                   | 0.846               | tracked             | –           | `standin`        |
-| Onsets    | percussive recall                                          | 0.928               | at least 0.8        | met         | `standin`        |
-| Onsets    | percussive timing bias / spread                            | -1.5 ms / 8.9 ms    | bias within 16.7 ms | met         | `standin`        |
-| Onsets    | soft recall                                                | 0.693               | at least 0.6        | met         | `standin`        |
-| Onsets    | soft timing bias / spread                                  | -6.8 ms / 16.4 ms   | bias within 16.7 ms | met         | `standin`        |
-| Onsets    | soft: typical offset of the nearest detection              | -5.3 ms             | tracked             | –           | `standin`        |
-| Onsets    | attack type labelled correctly                             | 78%                 | tracked             | –           | `standin`        |
-| Beats     | F at any metrical level, mean over variants                | 0.933               | at least 0.95       | **not met** | `standin`        |
-| Beats     | F at the module's own level                                | 0.736               | tracked             | –           | `standin`        |
-| Beats     | F at any level on the 15 modules with irregular beat grids | 0.858               | tracked             | –           | `standin`        |
-| Beats     | tempo right at some metrical level                         | 91%                 | at least 95%        | **not met** | `standin`        |
-| Sections  | boundary F within 3 s, mean over variants                  | 0.540               | at least 0.75       | **not met** | `novelty_grid`   |
-| Sections  | boundary F within 3 s, for comparison                      | 0.520               | tracked             | –           | `novelty`        |
-| Sections  | boundary F within 3 s, for comparison                      | 0.496               | tracked             | –           | `change`         |
-| Drum hits | mean F over kick, snare and hat, clean audio (39 modules)  | 0.727               | tracked             | –           | `drumbands_stem` |
-| Drum hits | kick F                                                     | 0.738, bias -1.9 ms | tracked             | –           | `drumbands_stem` |
-| Drum hits | snare F                                                    | 0.592, bias +1.0 ms | tracked             | –           | `drumbands_stem` |
-| Drum hits | hat F                                                      | 0.851, bias +3.8 ms | tracked             | –           | `drumbands_stem` |
-| Drum hits | mean F, for comparison (117 modules)                       | 0.574               | tracked             | –           | `drumbands`      |
-| Stems     | SI-SDR improvement over the unseparated mix                | +17.87 dB           | at least 3.0 dB     | met         | `lalal`          |
-| Stems     | drums: improvement                                         | +21.82 dB           | tracked             | –           | `lalal`          |
-| Stems     | bass: improvement                                          | +16.95 dB           | tracked             | –           | `lalal`          |
-| Stems     | other: improvement                                         | +14.85 dB           | tracked             | –           | `lalal`          |
-| Stems     | improvement on downloaded modules only                     | +13.11 dB           | tracked             | –           | `lalal`          |
-| Stems     | improvement, for comparison                                | +2.48 dB            | tracked             | –           | `bandsplit`      |
-| Stems     | improvement, for comparison                                | +6.11 dB            | tracked             | –           | `fal_demucs`     |
-| Stems     | improvement, for comparison                                | +6.11 dB            | tracked             | –           | `demucs`         |
-| Stems     | improvement, for comparison                                | +6.26 dB            | tracked             | –           | `demucs_ft`      |
+| Part      | Measure                                                             | Now                 | Target              | Status      | Best analyser    |
+| --------- | ------------------------------------------------------------------- | ------------------- | ------------------- | ----------- | ---------------- |
+| Onsets    | F on clean audio                                                    | 0.874               | at least 0.8        | met         | `standin`        |
+| Onsets    | worst F through reverb, compression, MP3                            | 0.846               | tracked             | –           | `standin`        |
+| Onsets    | percussive recall                                                   | 0.928               | at least 0.8        | met         | `standin`        |
+| Onsets    | percussive timing bias / spread                                     | -1.5 ms / 8.9 ms    | bias within 16.7 ms | met         | `standin`        |
+| Onsets    | soft recall                                                         | 0.693               | at least 0.6        | met         | `standin`        |
+| Onsets    | soft timing bias / spread                                           | -6.8 ms / 16.4 ms   | bias within 16.7 ms | met         | `standin`        |
+| Onsets    | soft: typical offset of the nearest detection                       | -5.3 ms             | tracked             | –           | `standin`        |
+| Onsets    | attack type labelled correctly                                      | 78%                 | tracked             | –           | `standin`        |
+| Beats     | F at any metrical level, mean over variants                         | 0.933               | at least 0.95       | **not met** | `standin`        |
+| Beats     | F at the module's own level                                         | 0.736               | tracked             | –           | `standin`        |
+| Beats     | F at any level on the 15 modules with irregular beat grids          | 0.858               | tracked             | –           | `standin`        |
+| Beats     | tempo right at some metrical level                                  | 91%                 | at least 95%        | **not met** | `standin`        |
+| Sections  | boundary F within 3 s, mean over variants                           | 0.540               | at least 0.75       | **not met** | `novelty_grid`   |
+| Sections  | boundary F within 3 s, for comparison                               | 0.520               | tracked             | –           | `novelty`        |
+| Sections  | boundary F within 3 s, for comparison                               | 0.496               | tracked             | –           | `change`         |
+| Drum hits | mean F over kick, snare and hat, clean audio (39 modules)           | 0.727               | tracked             | –           | `drumbands_stem` |
+| Drum hits | kick F                                                              | 0.738, bias -1.9 ms | tracked             | –           | `drumbands_stem` |
+| Drum hits | snare F                                                             | 0.592, bias +1.0 ms | tracked             | –           | `drumbands_stem` |
+| Drum hits | hat F                                                               | 0.851, bias +3.8 ms | tracked             | –           | `drumbands_stem` |
+| Drum hits | blows found, kick or snare, whichever each was taken for            | 0.705               | at least 0.9        | **not met** | `drumbands_stem` |
+| Drum hits | of the detected blows, those that are real                          | 0.788               | tracked             | –           | `drumbands_stem` |
+| Drum hits | blows inside a roll found (2802 of them)                            | 0.558               | at least 0.9        | **not met** | `drumbands_stem` |
+| Drum hits | false blows a second where the drums have stopped (201 s of breaks) | 0.528               | at most 0.1         | **not met** | `drumbands_stem` |
+| Drum hits | mean F, for comparison (117 modules)                                | 0.574               | tracked             | –           | `drumbands`      |
+| Stems     | SI-SDR improvement over the unseparated mix                         | +17.87 dB           | at least 3.0 dB     | met         | `lalal`          |
+| Stems     | drums: improvement                                                  | +21.82 dB           | tracked             | –           | `lalal`          |
+| Stems     | bass: improvement                                                   | +16.95 dB           | tracked             | –           | `lalal`          |
+| Stems     | other: improvement                                                  | +14.85 dB           | tracked             | –           | `lalal`          |
+| Stems     | improvement on downloaded modules only                              | +13.11 dB           | tracked             | –           | `lalal`          |
+| Stems     | improvement, for comparison                                         | +2.48 dB            | tracked             | –           | `bandsplit`      |
+| Stems     | improvement, for comparison                                         | +6.11 dB            | tracked             | –           | `fal_demucs`     |
+| Stems     | improvement, for comparison                                         | +6.11 dB            | tracked             | –           | `demucs`         |
+| Stems     | improvement, for comparison                                         | +6.26 dB            | tracked             | –           | `demucs_ft`      |
 
 Each row is the best analyser for that part on the held-out split. Targets live in
 `tools/loop/gates.json`. A change to analysis counts as an improvement only if it
