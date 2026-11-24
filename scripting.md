@@ -2452,8 +2452,19 @@ fn update(dt, frame) {
 | `fx.ascii()`               | Rows of characters       | `rows` (down the frame), `colour` (0 white, 1 the picture's), `gain`, `amount` |
 | `fx.crt()`                 | An old tube, a worn tape | `lines`, `mask`, `bleed`, `wobble`, `curve`, `phase` (the time: what the wobble changes with) |
 | `fx.halftone()`            | A screen of dots         | `cells` (dots down the frame), `angle`, `colour` (1 = a screen each for red, green and blue), `amount` |
+| `fx.ground()`              | A picture made of arithmetic, under the scene | `kind` (1 Julia set, 2 marble, 3 cells, 4 tunnel), `zoom`, `angle`, `phase`, `p1`, `p2`, `amount`, `a`, `b`, `c` (three colours, each `[r, g, b]`), `at` (its middle, as `style.at`) |
 
-The last four change what the picture is made of and not what it shows, and are
+`fx.ground` draws a picture from nothing but arithmetic and lays it under the scene:
+it shows where the scene is dark and gives way where the scene is bright. What `p1`
+and `p2` mean depends on the kind. For the Julia set they are the two parts of its
+number (try a point 0.7885 from zero, and walk it round the circle); for marble,
+how far it is stirred and how many bands of colour it has; for cells, how wide the
+gaps are and how far the cells wander; for the tunnel, how many panels go round
+it and how much it twists. `phase` is what it changes with: add a count of the
+blows to it and every blow leaves the ground somewhere new (`scenes/julia.rhai`,
+`marble`, `honeycomb` and `wormhole` each do).
+
+The four before it (dither, ascii, crt, halftone) change what the picture is made of and not what it shows, and are
 sized against the frame's height, so they look the same at any resolution. A scene
 does not use them itself. It ends with
 

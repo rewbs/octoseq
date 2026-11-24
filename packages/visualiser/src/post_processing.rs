@@ -756,6 +756,105 @@ impl PostEffectRegistry {
                 )
                 .build(),
         );
+
+        // Ground effect
+        // Note: Parameter order must match shader uniform struct layout
+        self.register(
+            PostEffect::builder("ground")
+                .name("Ground")
+                .description("A picture made of arithmetic (a Julia set, marble, cells, a tunnel) laid under the scene where the scene is dark")
+                .param(
+                    EffectParamDef::float("kind", 1.0)
+                        .with_range(0.0, 8.0)
+                        .with_description("1 Julia set, 2 marble, 3 cells, 4 tunnel"),
+                )
+                .param(
+                    EffectParamDef::float("zoom", 2.0)
+                        .with_range(0.001, 1000.0)
+                        .with_description("How much of the ground the frame takes in"),
+                )
+                .param(
+                    EffectParamDef::float("angle", 0.0)
+                        .with_range(-1000000.0, 1000000.0)
+                        .with_description("How far the ground is turned, in radians"),
+                )
+                .param(
+                    EffectParamDef::float("phase", 0.0)
+                        .with_range(-1000000000.0, 1000000000.0)
+                        .with_description("What the ground changes with"),
+                )
+                .param(
+                    EffectParamDef::float("p1", 0.0)
+                        .with_range(-1000.0, 1000.0)
+                        .with_description("Julia: real part. Marble: how far it is stirred. Cells: width of the gaps. Tunnel: panels round it"),
+                )
+                .param(
+                    EffectParamDef::float("p2", 0.0)
+                        .with_range(-1000.0, 1000.0)
+                        .with_description("Julia: imaginary part. Marble: bands of colour. Cells: how far they wander. Tunnel: its twist"),
+                )
+                .param(
+                    EffectParamDef::float("amount", 1.0)
+                        .with_range(0.0, 4.0)
+                        .with_description("How bright the ground is"),
+                )
+                .param(
+                    EffectParamDef::float("cx", 0.5)
+                        .with_range(-10.0, 10.0)
+                        .with_description("The ground's middle, across"),
+                )
+                .param(
+                    EffectParamDef::float("cy", 0.5)
+                        .with_range(-10.0, 10.0)
+                        .with_description("The ground's middle, down"),
+                )
+                .param(
+                    EffectParamDef::float("ar", 1.0)
+                        .with_range(0.0, 4.0)
+                        .with_description("Colour a, red"),
+                )
+                .param(
+                    EffectParamDef::float("ag", 0.3)
+                        .with_range(0.0, 4.0)
+                        .with_description("Colour a, green"),
+                )
+                .param(
+                    EffectParamDef::float("ab", 0.1)
+                        .with_range(0.0, 4.0)
+                        .with_description("Colour a, blue"),
+                )
+                .param(
+                    EffectParamDef::float("br", 0.1)
+                        .with_range(0.0, 4.0)
+                        .with_description("Colour b, red"),
+                )
+                .param(
+                    EffectParamDef::float("bg", 0.7)
+                        .with_range(0.0, 4.0)
+                        .with_description("Colour b, green"),
+                )
+                .param(
+                    EffectParamDef::float("bb", 1.0)
+                        .with_range(0.0, 4.0)
+                        .with_description("Colour b, blue"),
+                )
+                .param(
+                    EffectParamDef::float("cr", 1.0)
+                        .with_range(0.0, 4.0)
+                        .with_description("Colour c, red"),
+                )
+                .param(
+                    EffectParamDef::float("cg", 0.9)
+                        .with_range(0.0, 4.0)
+                        .with_description("Colour c, green"),
+                )
+                .param(
+                    EffectParamDef::float("cb", 0.4)
+                        .with_range(0.0, 4.0)
+                        .with_description("Colour c, blue"),
+                )
+                .build(),
+        );
     }
 
     /// Register a new effect.

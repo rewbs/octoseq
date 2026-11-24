@@ -199,7 +199,8 @@ at a time. A clip is one core's work whatever the graphics card. See
 
 ### The scene pool and its contract
 
-There are 58 scenes. Fifty were each written from a Milkdrop preset: the presets
+There are 62 scenes. Four (julia, marble, honeycomb, wormhole) stand on a picture
+made of arithmetic, `fx.ground`. Fifty were each written from a Milkdrop preset: the presets
 were chosen by rule (`tools/loop/presets.py choose`: five from each of the
 collection's ten categories, each from a different sub-category, spread across what
 a preset can use), rendered by projectM and looked at, and each scene is meant to be

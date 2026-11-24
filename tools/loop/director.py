@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 ROOT = Path(__file__).resolve().parents[2]
 SCENES = ROOT / "scenes"
 SHOWS = ROOT / ".loop" / "shows"
-DIRECTOR_VERSION = "director-7"
+DIRECTOR_VERSION = "director-8"
 
 MAX_HOLD_S = 9.0  # the longest any one look is held (review 1: boring in under ten seconds)
 MIN_HOLD_S = 3.0  # section starts closer together than this are treated as one
@@ -64,6 +64,21 @@ PALETTES = {
     "ice": [(1.0, 0.93, 0.82), (0.2, 0.4, 1.0), (1.0, 0.25, 0.5)],
     "dusk": [(1.0, 0.25, 0.2), (0.1, 0.8, 0.6), (0.4, 0.25, 1.0)],
     "neon": [(0.1, 1.0, 0.5), (0.3, 0.4, 1.0), (1.0, 0.9, 0.2)],
+    # Twelve more, after review 3 ("more variety in the colour palette would be good
+    # too"). Each is three colours well apart round the wheel, like the first five:
+    # a palette close to one hue was what review 1 called ugly.
+    "sunset": [(1.0, 0.45, 0.1), (1.0, 0.15, 0.45), (0.35, 0.2, 0.9)],
+    "forest": [(0.2, 0.85, 0.3), (0.95, 0.8, 0.2), (0.1, 0.7, 0.6)],
+    "candy": [(1.0, 0.45, 0.75), (0.45, 0.85, 1.0), (1.0, 0.95, 0.55)],
+    "rust": [(0.9, 0.35, 0.15), (0.95, 0.75, 0.45), (0.15, 0.55, 0.6)],
+    "ultra": [(0.55, 0.1, 1.0), (0.1, 0.3, 1.0), (1.0, 0.1, 0.5)],
+    "citrus": [(1.0, 0.85, 0.1), (1.0, 0.45, 0.0), (0.4, 0.95, 0.2)],
+    "ocean": [(0.05, 0.6, 0.9), (0.1, 0.9, 0.75), (0.95, 0.95, 1.0)],
+    "blood": [(1.0, 0.08, 0.1), (1.0, 0.85, 0.75), (0.3, 0.5, 0.7)],
+    "vapor": [(1.0, 0.45, 0.85), (0.3, 0.95, 0.95), (0.6, 0.45, 1.0)],
+    "earth": [(0.75, 0.5, 0.25), (0.45, 0.65, 0.3), (0.9, 0.85, 0.7)],
+    "toxic": [(0.75, 1.0, 0.0), (0.6, 0.0, 1.0), (1.0, 0.35, 0.0)],
+    "pastel": [(1.0, 0.7, 0.65), (0.65, 0.85, 1.0), (0.75, 1.0, 0.75)],
 }
 # The engine works in linear light, so a palette colour comes out paler on screen
 # than its numbers read: a channel set to 0.1 shows at about 0.35. A vivid show
@@ -253,6 +268,8 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
     blows = random.Random(f"{seed}:answer")
     # And the finish.
     surface = random.Random(f"{seed}:finish")
+    # And, from director-8, the palette.
+    paint = random.Random(f"{seed}:palette")
     finishes = [FINISHES[name] for name in FINISHES if name in asked.get("finishes", FINISHES)]
     last_finish = None
     intensity, rate = _signal(package, "section_intensity")
@@ -264,8 +281,8 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
     for index, (start, new_section) in enumerate(cuts):
         scene = rng.choice([s for s in scenes if s != scene] or scenes)
         if new_section or palette is None:
-            palette = rng.choice([p for p in palettes if p != palette] or palettes)
-            order = rng.sample([0, 1, 2], 3)
+            palette = paint.choice([p for p in palettes if p != palette] or palettes)
+            order = paint.sample([0, 1, 2], 3)
         else:
             order = order[1:] + order[:1]
         place = rng.choice([p for p in PLACES if p != place])

@@ -1022,6 +1022,148 @@ impl ScriptEngine {
         );
 
         engine.register_fn(
+            "__fx_create_ground",
+            |options: rhai::Map| -> rhai::Map {
+                let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+                let mut effect = rhai::Map::new();
+                effect.insert("__id".into(), Dynamic::from(id));
+                effect.insert("__type".into(), Dynamic::from("post_effect"));
+                effect.insert("__effect_id".into(), Dynamic::from("ground"));
+                effect.insert("enabled".into(), Dynamic::from(true));
+                effect.insert(
+                    "kind".into(),
+                    options
+                        .get("kind")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                effect.insert(
+                    "zoom".into(),
+                    options
+                        .get("zoom")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(2.0_f64)),
+                );
+                effect.insert(
+                    "angle".into(),
+                    options
+                        .get("angle")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                effect.insert(
+                    "phase".into(),
+                    options
+                        .get("phase")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                effect.insert(
+                    "p1".into(),
+                    options
+                        .get("p1")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                effect.insert(
+                    "p2".into(),
+                    options
+                        .get("p2")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.0_f64)),
+                );
+                effect.insert(
+                    "amount".into(),
+                    options
+                        .get("amount")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                effect.insert(
+                    "cx".into(),
+                    options
+                        .get("cx")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.5_f64)),
+                );
+                effect.insert(
+                    "cy".into(),
+                    options
+                        .get("cy")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.5_f64)),
+                );
+                effect.insert(
+                    "ar".into(),
+                    options
+                        .get("ar")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                effect.insert(
+                    "ag".into(),
+                    options
+                        .get("ag")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.3_f64)),
+                );
+                effect.insert(
+                    "ab".into(),
+                    options
+                        .get("ab")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.1_f64)),
+                );
+                effect.insert(
+                    "br".into(),
+                    options
+                        .get("br")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.1_f64)),
+                );
+                effect.insert(
+                    "bg".into(),
+                    options
+                        .get("bg")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.7_f64)),
+                );
+                effect.insert(
+                    "bb".into(),
+                    options
+                        .get("bb")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                effect.insert(
+                    "cr".into(),
+                    options
+                        .get("cr")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(1.0_f64)),
+                );
+                effect.insert(
+                    "cg".into(),
+                    options
+                        .get("cg")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.9_f64)),
+                );
+                effect.insert(
+                    "cb".into(),
+                    options
+                        .get("cb")
+                        .cloned()
+                        .unwrap_or_else(|| Dynamic::from(0.4_f64)),
+                );
+                PENDING_POST_EFFECTS.with(|cell| {
+                    cell.borrow_mut().insert(id, effect.clone());
+                });
+                effect
+            },
+        );
+
+        engine.register_fn(
             "__fx_create_kaleidoscope",
             |options: rhai::Map| -> rhai::Map {
                 let id = EFFECT_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -2054,6 +2196,20 @@ fx.crt = |options| {{
 }};
 fx.halftone = |options| {{
     let effect = __fx_create_halftone(options);
+    __post_effects["" + effect.__id] = effect;
+    effect
+}};
+// A ground: a picture made of arithmetic, laid under the scene where the scene is
+// dark. `kind` is 1 for a Julia set, 2 marble, 3 cells, 4 a tunnel. Its three
+// colours can be given as `a`, `b` and `c` (each `[r, g, b]`, as in a scene's
+// style) and its middle as `at` (as `style.at`).
+fx.ground = |options| {{
+    let o = options;
+    if "a" in o {{ o.ar = o.a[0]; o.ag = o.a[1]; o.ab = o.a[2]; }}
+    if "b" in o {{ o.br = o.b[0]; o.bg = o.b[1]; o.bb = o.b[2]; }}
+    if "c" in o {{ o.cr = o.c[0]; o.cg = o.c[1]; o.cb = o.c[2]; }}
+    if "at" in o {{ o.cx = 0.5 + o.at[0]; o.cy = 0.5 + o.at[1]; }}
+    let effect = __fx_create_ground(o);
     __post_effects["" + effect.__id] = effect;
     effect
 }};
@@ -4078,6 +4234,116 @@ feedback.is_enabled = || {{
                         .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
                     {
                         instance.set_param("amount", v);
+                    }
+                }
+                "ground" => {
+                    if let Some(v) = effect_map
+                        .get("kind")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("kind", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("zoom")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("zoom", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("angle")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("angle", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("phase")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("phase", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("p1")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("p1", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("p2")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("p2", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("amount")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("amount", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("cx")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("cx", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("cy")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("cy", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("ar")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("ar", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("ag")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("ag", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("ab")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("ab", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("br")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("br", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("bg")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("bg", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("bb")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("bb", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("cr")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("cr", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("cg")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("cg", v);
+                    }
+                    if let Some(v) = effect_map
+                        .get("cb")
+                        .and_then(|d| Self::eval_effect_param(d, eval_ctx, frame_cache))
+                    {
+                        instance.set_param("cb", v);
                     }
                 }
                 "kaleidoscope" => {
