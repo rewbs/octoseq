@@ -2343,13 +2343,45 @@ feedback.is_enabled = || {{
         }
 
         // Clean up stale entries from __entities:
-        // Keep only entries that are either in scene_id_set or referenced by a scope variable
+        // Keep only entries that are in scene_id_set, referenced by a scope variable,
+        // or held, at any depth, by a group that is kept. What a group holds is drawn
+        // with it whether or not the script kept a variable for it: a scene that
+        // builds everything inside `init` keeps none.
+        let parents: std::collections::HashMap<i64, i64> = entities
+            .iter()
+            .filter_map(|(key, value)| {
+                let id = key.to_string().parse::<i64>().ok()?;
+                let map = value.read_lock::<rhai::Map>()?;
+                let parent = map.get("__parent_id")?.as_int().ok()?;
+                Some((id, parent))
+            })
+            .collect();
+        let held_by_kept = |id: i64| {
+            let mut current = id;
+            // Groups nest a few deep at most; the bound only guards a cycle.
+            for _ in 0..64 {
+                match parents.get(&current) {
+                    Some(&parent) => {
+                        if scene_id_set.contains(&parent) || scope_referenced_ids.contains(&parent)
+                        {
+                            return true;
+                        }
+                        current = parent;
+                    }
+                    None => return false,
+                }
+            }
+            false
+        };
         let keys_to_remove: Vec<String> = entities
             .keys()
             .filter_map(|key| {
                 let key_str = key.to_string();
                 if let Ok(id) = key_str.parse::<i64>() {
-                    if !scene_id_set.contains(&id) && !scope_referenced_ids.contains(&id) {
+                    if !scene_id_set.contains(&id)
+                        && !scope_referenced_ids.contains(&id)
+                        && !held_by_kept(id)
+                    {
                         return Some(key_str);
                     }
                 }
@@ -5316,6 +5348,42 @@ mod tests {
         // Verify the group's position was set
         let (_, group_entity) = engine.scene_graph.groups().next().unwrap();
         assert!((group_entity.transform.position.x - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn a_group_built_inside_init_is_drawn_with_what_it_holds() {
+        let mut engine = ScriptEngine::new();
+
+        // Nothing here outlives `init`: no variable is left for the engine to
+        // find the group's children by. They must be drawn all the same.
+        let script = r#"
+            fn init(ctx) {
+                let outer = scene.group();
+                let inner = scene.group();
+                let near = mesh.cube();
+                let deep = mesh.sphere();
+                outer.add(near);
+                inner.add(deep);
+                outer.add(inner);
+                scene.add(outer);
+                let loose = mesh.cube();
+            }
+
+            fn update(dt, frame) {
+            }
+        "#;
+
+        assert!(engine.load_script(script));
+        let signals = make_signals(0.0, 0.016, 0.0, 0.0);
+        run_update(&mut engine, &signals);
+        run_update(&mut engine, &signals);
+
+        assert_eq!(engine.scene_graph.groups().count(), 2);
+        assert_eq!(
+            engine.scene_graph.meshes().count(),
+            2,
+            "both meshes held by the group are drawn, and the loose one is not"
+        );
     }
 
     #[test]

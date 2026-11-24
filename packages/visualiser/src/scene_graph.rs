@@ -791,10 +791,41 @@ impl SceneGraph {
     }
 
     /// Get all entities currently in the scene (for rendering).
+    ///
+    /// An entity is in the scene if it was added to it, or if it sits, at any
+    /// depth, in a group that was: adding a group adds what it holds, and a
+    /// hidden group hides what it holds. Entities added themselves come first,
+    /// in the order they were added; those that come with a group follow in the
+    /// order they were made, so the order never depends on a hash map's.
     pub fn scene_entities(&self) -> impl Iterator<Item = (EntityId, &SceneEntity)> {
-        self.scene_entities
-            .iter()
-            .filter_map(|&id| self.entities.get(&id).map(|e| (id, e)))
+        let mut ids = self.scene_entities.clone();
+        let mut held: Vec<EntityId> = self
+            .parent_ids
+            .keys()
+            .copied()
+            .filter(|id| !self.scene_entities.contains(id) && self.held_by_scene_group(*id))
+            .collect();
+        held.sort_by_key(|id| id.0);
+        ids.extend(held);
+        ids.into_iter()
+            .filter_map(move |id| self.entities.get(&id).map(|e| (id, e)))
+    }
+
+    /// Whether some group above this entity is in the scene, with that group and
+    /// every group between them visible.
+    fn held_by_scene_group(&self, id: EntityId) -> bool {
+        let mut current = self.parent_ids.get(&id).copied();
+        while let Some(parent) = current {
+            match self.entities.get(&parent) {
+                Some(SceneEntity::Group(group)) if group.visible => {}
+                _ => return false,
+            }
+            if self.scene_entities.contains(&parent) {
+                return true;
+            }
+            current = self.parent_ids.get(&parent).copied();
+        }
+        false
     }
 
     /// Get all mesh instances in the scene.
@@ -996,6 +1027,43 @@ mod tests {
         assert!(scene.destroy(id));
         assert!(!scene.exists(id));
         assert!(!scene.is_in_scene(id));
+    }
+
+    #[test]
+    fn a_group_in_the_scene_brings_what_it_holds() {
+        let mut scene = SceneGraph::new();
+        let outer = scene.create_group();
+        let inner = scene.create_group();
+        let held = scene.create_mesh(MeshType::Cube);
+        let deep = scene.create_mesh(MeshType::Sphere);
+        let loose = scene.create_mesh(MeshType::Plane);
+        assert!(scene.set_parent(held, outer));
+        assert!(scene.set_parent(inner, outer));
+        assert!(scene.set_parent(deep, inner));
+        let drawn = |scene: &SceneGraph| scene.meshes().map(|(id, _)| id).collect::<Vec<_>>();
+
+        // Nothing is drawn until the group is added; then all it holds is, at
+        // any depth, and what is in no group is not.
+        assert!(drawn(&scene).is_empty());
+        scene.add_to_scene(outer);
+        assert_eq!(drawn(&scene), vec![held, deep]);
+        assert!(!drawn(&scene).contains(&loose));
+
+        // Adding a held entity itself as well does not draw it twice.
+        scene.add_to_scene(held);
+        assert_eq!(drawn(&scene), vec![held, deep]);
+
+        // A hidden group hides what it holds, and only that.
+        if let Some(SceneEntity::Group(group)) = scene.get_mut(inner) {
+            group.visible = false;
+        }
+        assert_eq!(drawn(&scene), vec![held]);
+
+        // Taking the group out of the scene takes what it held with it.
+        scene.remove_from_scene(outer);
+        assert_eq!(drawn(&scene), vec![held]);
+        scene.remove_from_scene(held);
+        assert!(drawn(&scene).is_empty());
     }
 
     #[test]

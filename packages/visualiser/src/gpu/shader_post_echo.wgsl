@@ -42,7 +42,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     p = vec2<f32>(p.x * c - p.y * s, p.x * s + p.y * c);
     let flip = i32(round(params.flip));
     p = vec2<f32>(select(p.x, -p.x, flip == 1 || flip == 3), select(p.y, -p.y, flip >= 2));
-    let at = clamp(p / vec2<f32>(aspect, 1.0) + vec2<f32>(0.5), vec2<f32>(0.0), vec2<f32>(1.0));
-    let copy = textureSampleLevel(input_texture, input_sampler, at, 0.0);
-    return vec4<f32>(mix(base.rgb, copy.rgb, clamp(params.alpha, 0.0, 1.0)), base.a);
+    let at = p / vec2<f32>(aspect, 1.0) + vec2<f32>(0.5);
+    // Where the copy has run out of picture (it is smaller than the frame, or
+    // turned) there is no copy: the picture shows through untouched.
+    let within = step(0.0, at.x) * step(at.x, 1.0) * step(0.0, at.y) * step(at.y, 1.0);
+    let copy = textureSampleLevel(input_texture, input_sampler, clamp(at, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0);
+    return vec4<f32>(mix(base.rgb, copy.rgb, clamp(params.alpha, 0.0, 1.0) * within), base.a);
 }
