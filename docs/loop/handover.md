@@ -161,14 +161,14 @@ complaint about round 2, "lands on wrong moments", is about those hits.
   `--jobs 16`. How it was set up is in [setup.md](setup.md). The pod is terminated;
   nothing is running. The key is `runpod_api_key` in the `secrets` CLI inside WSL.
   Two rules: the pod takes the code from GitHub (never copy the working tree: it
-  holds `.env`), and the owner's nine tracks have not been uploaded (asked in D139,
-  not yet answered).
+  holds `.env`), and the owner's files are asked about before they
+  are uploaded. The nine review tracks have been asked about and may be uploaded
+  (the owner, 25 November: "Yes they may be uploaded"); none has been yet.
 
 ## Waiting on the owner
 
 - Whether "keep the model" was also meant as acceptance of ADTOF's non-commercial
   licence. I took it so (D144) and said so; it is one flag to reverse.
-- Whether the nine review tracks may be uploaded to a rented machine (D139).
 - The older items in queue.md's "Needed from you": more test tracks, a Music.ai key.
 
 ## What I would do next, in order
@@ -267,8 +267,9 @@ Each of these cost time once. They are in the order I would want to have been to
 - **Never copy the working tree to another machine.** It holds `.env`. The first
   attempt was stopped by the permission system, and it was right. The pod takes
   the code from GitHub, and uncommitted work as a diff of tracked files.
-- **The owner's own files are not mine to upload.** The nine review tracks stayed
-  on this machine; the question is in the queue.
+- **The owner's own files are not mine to upload without asking.** The nine review
+  tracks stayed on this machine until the owner was asked; the answer was yes, for
+  those nine. Ask again for anything else.
 - **When a permission is refused, do not work round it: say what was wanted and
   why.** Installing ADTOF (no licence file, non-commercial weights) was refused,
   put to the owner, and done when the owner said to try it.
