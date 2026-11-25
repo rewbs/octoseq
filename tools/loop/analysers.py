@@ -281,6 +281,49 @@ ADTOF_LABELS = {"kick": 35, "snare": 38, "hat": 42}  # of its five classes; toms
 ADTOF_OFFSET_S = 0.006
 
 
+def _adtof_peaks(drum_stem: Path, thresholds=None) -> dict[int, list[float]]:
+    """Run ADTOF Frame_RNN on a drum stem, chunking on GPU if the track exceeds cuDNN's GRU frame cap."""
+    import tempfile
+
+    import torch
+    from adtof_pytorch import (
+        FRAME_RNN_THRESHOLDS,
+        LABELS_5,
+        PeakPicker,
+        calculate_n_bins,
+        create_frame_rnn_model,
+        get_default_weights_path,
+        load_audio_for_model,
+        load_pytorch_weights,
+        transcribe_to_midi,
+    )
+
+    device = model_device()
+    try:
+        unused = Path(tempfile.gettempdir()) / "octoseq-adtof-unused.mid"  # asked for activations, it writes no file
+        act = transcribe_to_midi(str(drum_stem), str(unused), device=device, return_activations=True)
+    except RuntimeError as error:
+        if "CUDNN" not in str(error).upper():
+            raise
+        # cuDNN's GRU rejects sequences over 65,535 frames (~10m55s at 100 fps). Run in overlapping 300s chunks.
+        model = create_frame_rnn_model(calculate_n_bins()).eval()
+        model = load_pytorch_weights(model, get_default_weights_path(), strict=False).to(device)
+        x = load_audio_for_model(str(drum_stem))
+        total = x.shape[1]
+        chunk, overlap = 30000, 500
+        act = np.zeros((1, total, len(LABELS_5)), dtype=np.float32)
+        pos = 0
+        with torch.no_grad():
+            while pos < total:
+                lo, hi = max(0, pos - overlap), min(total, pos + chunk + overlap)
+                pred = model(x[:, lo:hi].to(device)).cpu().numpy()
+                keep_lo, keep_hi = pos - lo, min(total, pos + chunk) - lo
+                act[:, pos : pos + (keep_hi - keep_lo), :] = pred[:, keep_lo:keep_hi, :]
+                pos += chunk
+    use = FRAME_RNN_THRESHOLDS if thresholds is None else thresholds
+    return PeakPicker(thresholds=use, fps=100).pick(act, labels=LABELS_5, label_offset=0)[0]
+
+
 def adtof_stem(audio: Path, params: dict | None = None) -> dict:
     """Kick, snare and hat hits from ADTOF, listening to the drum stem that local Demucs separates.
 
@@ -296,15 +339,30 @@ def adtof_stem(audio: Path, params: dict | None = None) -> dict:
     NONCOMMERCIAL). And it is slow without a graphics card: about the length of
     the track.
     """
-    import tempfile
-
-    from adtof_pytorch import FRAME_RNN_THRESHOLDS, LABELS_5, PeakPicker, transcribe_to_midi
-
     stems = stem_sources.separate("demucs", audio)
-    unused = Path(tempfile.gettempdir()) / "octoseq-adtof-unused.mid"  # asked for activations, it writes no file
-    act = transcribe_to_midi(str(stems.files["drums"]), str(unused), device=model_device(), return_activations=True)
-    peaks = PeakPicker(thresholds=FRAME_RNN_THRESHOLDS, fps=100).pick(act, labels=LABELS_5, label_offset=0)[0]
+    peaks = _adtof_peaks(stems.files["drums"])
     return dict(drums={kind: sorted(float(t) + ADTOF_OFFSET_S for t in peaks.get(label, [])) for kind, label in ADTOF_LABELS.items()})
+
+
+def drums_hybrid_stem(audio: Path, params: dict | None = None) -> dict:
+    """Per-drum hybrid chosen on the training split: ADTOF kick and snare, band-detector hat, on the Demucs drum stem.
+
+    On all 59 training modules with stems, ADTOF wins kick (45-10 modules, median F
+    0.955 vs 0.737) and snare (30-18, median 0.585 vs 0.502), while the band detector
+    wins hat on 28 of 38 modules (median 0.909 vs 0.873, mean 0.797 vs 0.711) and
+    avoids ADTOF's misses on synthetic/bright hi-hats.
+    """
+    stems = stem_sources.separate("demucs", audio)
+    drum_path = stems.files["drums"]
+    peaks = _adtof_peaks(drum_path)
+    bands = drum_hits(drum_envelopes(decode(drum_path)), drum_params("stem"))
+    return dict(
+        drums={
+            "kick": sorted(float(t) + ADTOF_OFFSET_S for t in peaks.get(ADTOF_LABELS["kick"], [])),
+            "snare": sorted(float(t) + ADTOF_OFFSET_S for t in peaks.get(ADTOF_LABELS["snare"], [])),
+            "hat": bands["hat"],
+        }
+    )
 
 
 def _istft(spec: np.ndarray, n_fft: int, hop: int, length: int) -> np.ndarray:
@@ -446,10 +504,15 @@ if stem_sources.demucs_installed():
 if stem_sources.demucs_installed() and importlib.util.find_spec("adtof_pytorch"):
     ANALYSERS["adtof_stem"] = adtof_stem
     MODELS.add("adtof_stem")
+    ANALYSERS["drums_hybrid_stem"] = drums_hybrid_stem
+    MODELS.add("drums_hybrid_stem")
 # Analysers whose licence does not allow commercial use. They are scored like any
 # other, but the worker does not pick one for a bundle unless the environment says
 # that is acceptable (OCTOSEQ_NONCOMMERCIAL=1): whether it is, is the owner's call.
-NONCOMMERCIAL = {"adtof_stem": "its weights are licensed CC BY-NC-SA 4.0, for non-commercial use only"}
+NONCOMMERCIAL = {
+    "adtof_stem": "its weights are licensed CC BY-NC-SA 4.0, for non-commercial use only",
+    "drums_hybrid_stem": "uses ADTOF weights, licensed CC BY-NC-SA 4.0, for non-commercial use only",
+}
 # The owner was told of that licence with round 4 of review 3 and answered "Yes, keep
 # the model" (24 November 2026). Set this to False to go back to asking the
 # environment (OCTOSEQ_NONCOMMERCIAL=1) each time.
@@ -458,7 +521,7 @@ NONCOMMERCIAL_ACCEPTED = True
 # its own copy of the model there, so the number is what fits, not what is fastest:
 # Beat This is small and spends most of its time on the CPU preparing audio, so it
 # takes many; Demucs fills a couple of gigabytes each.
-GPU_WORKERS = {"beat_this": 8, "drumbands_stem": 2, "adtof_stem": 2}
+GPU_WORKERS = {"beat_this": 8, "drumbands_stem": 2, "adtof_stem": 2, "drums_hybrid_stem": 2}
 
 
 def result_version(name: str) -> str:
@@ -474,12 +537,14 @@ def result_version(name: str) -> str:
         return "htdemucs-shifts1-" + analyse.params_key(drum_params("stem")) + f"-{DRUM_FFT}-{DRUM_HOP}"
     if name == "adtof_stem":
         return f"htdemucs-shifts1-adtof-frame-rnn-own-thresholds-offset{ADTOF_OFFSET_S * 1000:g}ms"
+    if name == "drums_hybrid_stem":
+        return f"{result_version('adtof_stem')}__hat-{analyse.params_key(drum_params('stem'))}-{DRUM_FFT}-{DRUM_HOP}"
     return "1"
 
 
 # Too slow to run on everything (Demucs separates a module at about seven times real
 # time on a laptop GPU): scored on the clean audio of every third held-out module.
-SAMPLED = {"drumbands_stem", "adtof_stem"}
+SAMPLED = {"drumbands_stem", "adtof_stem", "drums_hybrid_stem"}
 SAMPLE_EVERY = 3
 
 # Which analysers accept the tunable parameter set of analyse.py.

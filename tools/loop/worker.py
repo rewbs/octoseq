@@ -91,13 +91,13 @@ TIE = {"onsets": 0.01, "beats": 0.01, "sections": 0.01, "drums": 0.01, "stems": 
 # model, 4 the four-model Demucs, 10 a hosted service. Unlisted analysers cost 1.
 COST = {
     "standin": 0, "energy": 0, "novelty": 0, "change": 0, "novelty_grid": 0, "drumbands": 0, "bandsplit": 0,
-    "beat_this": 1, "drumbands_stem": 1, "adtof_stem": 2, "demucs": 1, "demucs_ft": 4,
+    "beat_this": 1, "drumbands_stem": 1, "adtof_stem": 2, "drums_hybrid_stem": 2, "demucs": 1, "demucs_ft": 4,
     "fal_demucs": 10, "lalal": 10, "musicai": 10,
 }  # fmt: skip
 SIGNAL_PROCESSING = {name for name, cost in COST.items() if cost == 0}
-MODEL_BACKED = {"beat_this", "drumbands_stem", "adtof_stem", "demucs", "demucs_ft"}
+MODEL_BACKED = {"beat_this", "drumbands_stem", "adtof_stem", "drums_hybrid_stem", "demucs", "demucs_ft"}
 # A model that an older model environment may not have: it is passed over there, not failed on.
-NEEDS_PACKAGE = {"adtof_stem": "adtof_pytorch"}
+NEEDS_PACKAGE = {"adtof_stem": "adtof_pytorch", "drums_hybrid_stem": "adtof_pytorch"}
 # What a person preferred on real music, where the modules cannot say. It breaks a
 # tie and nothing more: an analyser that scores clearly better still wins.
 # Drums: the owner watched the same nine tracks with each detector's hits (review 3,
@@ -293,7 +293,7 @@ def analyse_track(audio: Path, choices: dict, stem_options: dict | None = None) 
 
     name = choices["drums"]["analyser"]
     hits, stand_ins = None, None
-    if name in ("drumbands_stem", "adtof_stem"):
+    if name in ("drumbands_stem", "adtof_stem", "drums_hybrid_stem"):
         # As scored: the drum stem local Demucs separates. Where that stem is all but
         # silent there are no drums, and the mix's low, middle and high bands stand in
         # for kick, snare and hat, so scenes built on drums still move. That is
@@ -307,8 +307,8 @@ def analyse_track(audio: Path, choices: dict, stem_options: dict | None = None) 
         if level < roles.DRUMLESS_DB:
             hits, heard_in = analysers.drum_hits(analysers.drum_envelopes(mix), analysers.drum_params("mix")), "mix (no drums in the track)"
         else:
-            # The band detector listens to the stem here; the network is asked for its own answer.
-            hits = _run(name, audio)["drums"] if name == "adtof_stem" else analysers.drum_hits(analysers.drum_envelopes(stem), analysers.drum_params("stem"))
+            # The band detector listens to the stem here; model-backed detectors are asked for their own answer.
+            hits = _run(name, audio)["drums"] if name in ("adtof_stem", "drums_hybrid_stem") else analysers.drum_hits(analysers.drum_envelopes(stem), analysers.drum_params("stem"))
             heard_in = "stem"
             if stand_ins:
                 standing_in = lambda t: any(start <= t < end for start, end in stand_ins)  # noqa: E731
