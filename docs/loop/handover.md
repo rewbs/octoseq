@@ -1,7 +1,7 @@
-# Handover: Octoseq redesign, 24 November 2026
+# Handover: Octoseq redesign, 24–25 November 2026
 
 For the next agent to pick this work up cold. Read this, then
-[queue.md](queue.md) (every decision and every failed experiment, D1 to D143),
+[queue.md](queue.md) (every decision and every failed experiment, D1 to D150),
 [README.md](README.md) (what the loops measure) and `CLAUDE.md` (the standing rules).
 
 ## The job and its rules
@@ -25,19 +25,20 @@ The owner's standing rules, which have not changed:
 - Never print, log or commit a key. Hosted stem services cost money: never clear
   `.loop/cache/stems`, and do not spend on them.
 - RunPod may be used for anything, with a check-in to the owner every $25 spent.
-  $1.17 has been spent so far.
+  About **$1.30** has been spent so far ($1.17 prior + ~$0.13 across three failed
+  pod boots in this session; all pods terminated).
 
 ## Where things are
 
 | What | Where |
 | --- | --- |
 | The working checkout | WSL2, Ubuntu-24.04, `~/code/octoseq` (`\\wsl.localhost\Ubuntu-24.04\home\p14\code\octoseq`) |
-| The checkout to push from | Windows, `C:\Users\P14\code\octoseq`, remote `wsl` points at the WSL one: `git fetch -q wsl <branch> && git merge -q --ff-only FETCH_HEAD && git push origin <branch>` |
+| The checkout to push from | Windows, `C:\Users\P14\code\octoseq`, remote `wsl` points at the WSL one: `git fetch -q wsl <branch>; git merge -q --ff-only FETCH_HEAD; git push origin <branch>` |
 | The engine the loops render with | a Windows build: run `tools/loop/win-engine.sh` after any change under `packages/visualiser` |
-| Model environment | `.loop/venv` (Demucs, Beat This, and now ADTOF) |
+| Model environment | `.loop/venv` (Demucs, Beat This, ADTOF) |
 | The owner's nine review tracks | `.loop/funcheck/tracks/` (copied from `C:\Users\P14\Documents\tracks`); seeds 101 to 109 |
-| Review videos | `.loop/funcheck` (round 1), `funcheck2`, `funcheck3`, `funcheck4`; copies for the owner in `C:\Users\P14\code\octoseq\.loop\preview\` |
-| The roadmap page for the owner | https://claude.ai/artifact/Hd5kZ6HVbw656kLvAWDH8p |
+| Review videos | `.loop/funcheck` (round 1), `funcheck2`, `funcheck3`, `funcheck4`, `funcheck5`; copies for the owner in `C:\Users\P14\code\octoseq\.loop\preview\funcheck5\` |
+| The roadmap page for the owner | https://claude.ai/artifact/Hd5kZ6HVbw656kLvAWDH8p (external Claude.ai artifact; not directly editable from this harness — owner needs to update or run in Claude.ai) |
 
 Driving WSL from the Windows side: write a script file and run it with
 `wsl.exe -d Ubuntu-24.04 bash -l /mnt/c/.../script.sh`. Inline `bash -c '...'`
@@ -67,14 +68,17 @@ runs overwrite one another's temporary scenes.
 | Round 2 | "Still not right": "twitchy, not punchy", "lands on wrong moments". Later: an answer "just has to be sudden and visible", e.g. a change of rotation or direction | Answers that are not taken back (below) |
 | Round 3 | "Better, keep going" | Grounds, palettes, the drum-transcription trial |
 | Round 4 | "Yes, keep the model" (asked whether it lands on the drums better than round 3) | Same nine tracks, drums from ADTOF. It is now the drums' analyser for every bundle (D144) |
+| Round 5 | Pending owner review (delivered in `.loop/preview/funcheck5/`) | 30 new scenes + 15 shaders + 15 palettes (D145), `director-10` intensity+`lead` scene fitting (D146) and +25% `style.kick` (D149), `drums_hybrid_stem` (D147). Zero hard failures; 6/9 clean passes; medians vs re-scored Round 4: `intensity_fit` +0.290→+0.528, `lead_sync` +0.126→+0.166, `jump_size` 0.376→0.418 (9/9 ≥ 0.30), `undone` 0.097→0.080, `dead_time` 0.022→0.008 |
 
 The owner's wish list from review 3, and where each item stands: more responsive
 (done, rated better); grain, dither, lo-fi, ASCII filters (done: six finishes);
 more dynamic warping and fewer waves (done in part: five warps, waves in 20 scenes
-of 62 where they were in 32 of 58); fractals and procedural generators (done: four
-grounds); more palettes (done: 17); drum rolls and breaks detected properly (open:
-see below); picking the dominant stem for the moment (not done: a `lead` role is in
-every bundle and no scene reads it; a first try at using it measured slightly worse).
+of 92); fractals and procedural generators (done: **19 grounds** in `fx.ground`);
+more palettes (done: **32 palettes**); drum rolls and breaks detected properly
+(improved via `drums_hybrid_stem`, mean F 0.761, hat F 0.851, blows/rolls/breaks still
+below 0.9/0.9/0.1); picking the dominant stem & fitting scenes to music (done in
+`director-10` via `section_intensity` + `lead` + dominant-stem matching, measured by
+`intensity_fit` and `lead_sync` in `metrics.py`; 20 new scenes also read `roles.lead`).
 
 ## How the picture answers the music
 
@@ -82,14 +86,18 @@ every bundle and no scene reads it; a first try at using it measured slightly wo
   track has drums, the strongest onsets where it has none.
 - Every scene ends with `post.answer(style.answer, style.kick, roles.hit, style.at)`
   and `post.finish(style.finish, timing.time)`. The engine shapes both
-  (`packages/visualiser/src/scripting.rs`, the prelude).
+  (`packages/visualiser/src/scripting.rs`, the prelude). `director-10` sets
+  `style.kick = round(1.06 + 0.5 * middle, 2)` (D149).
 - Nine answers in two families. One to six arrive at once and ease back over four
   tenths of a beat. Seven to nine (notch, swing, slide) turn or move the frame and
   leave it there until the next blow. The director alternates the families.
 - `tools/loop/response.py` measures it: `answered`, `answered_rolls`, `jump_size`,
   `undone`, `dead_time`, `stray_jumps`. `undone` is the one that caught "twitchy":
   how much of a jump has been taken back two frames later (round 2: 0.51; round 3:
-  0.08; target at most 0.35).
+  0.08; round 5: 0.08; target at most 0.35).
+- **Parked future metric (D148):** single-frame `changed_area` (`jump_size`)
+  under-reports rotation snaps and direction reversals (`kind` 7–9); the owner
+  agreed to park optical-flow-based reactivity assessment as a future feature.
 
 What was tried and did not work is in queue.md D132, so that it is not tried again:
 longer or eased envelopes on the scenes' own movement, a longer ease on the
@@ -98,98 +106,91 @@ the eased answers. Two wrong versions of the twitch measure are described in D12
 
 ## What a show can now be made of
 
-- **62 scenes** (`scenes/`), each keeping a written contract. 50 came from Milkdrop
-  presets; 4 stand on a ground.
+- **92 scenes** (`scenes/`), each keeping a written contract (`docs/design/preset-pool.md`
+  lists all 92). 50 came from Milkdrop presets; 19 stand on procedural grounds; 15
+  more are geometry/3D/feedback/Milkdrop-inspired scenes added in D145 (split between
+  high-energy rhythmic scenes and calm melodic scenes reading `lead`/`brightness`).
 - **Finishes** (`post.finish`): grain, dither, two-tone dither, ASCII, tape, halftone
   dots. About one look in three gets one.
-- **Warps** for the feedback loop: whirls, fold, flow, blocks, slices are new. A new
-  warp that moves the picture a lot between blows costs answered blows: six swaps
-  were put back for that (D135).
-- **Grounds** (`fx.ground`): a Julia set, marble, cells, a tunnel, drawn from the
-  frame's coordinates alone and laid under a scene. Scenes julia, marble, honeycomb,
-  wormhole.
-- **17 palettes** in `director.py`, drawn from their own random stream.
+- **Warps** for the feedback loop: whirls, fold, flow, blocks, slices. A warp or
+  shader that modulates high-frequency parameters continuously between blows costs
+  answered blows (D135, D145, D146).
+- **Grounds** (`fx.ground`, kinds `1..=19` in `shader_post_ground.wgsl`): Julia set,
+  marble, cells, tunnel, plus 15 new shaders added in D145 (kifs, plasma, metaballs,
+  warp_stars, truchet, gyroid, aurora, Voronoi caustics, hexgrid, galaxy, raytunnel,
+  Apollonian stained glass, circuit traces, Chladni nodal plates, synthwave grid).
+- **32 palettes** in `director.py`, drawn from their own random stream.
+- **Music-fitting director (`director-10`, D146 & D149):** ranks scenes by proximity
+  of baseline `motion` rank to each segment's normalized `section_intensity` + `lead`,
+  plus dominant-stem / `lead` role bonuses (penalizing drum-only scenes when drums
+  are weak), drawing from the top 5–12 matching scenes.
 
-## Drum detection: the open problem
+## Drum detection: current state (D147)
 
-The picture can only answer the hits analysis hands it, and the owner's second
-complaint about round 2, "lands on wrong moments", is about those hits.
+| Held-out modules (39) | `drumbands_stem` | `adtof_stem` | **`drums_hybrid_stem` (in use)** | Target |
+| --- | --- | --- | --- | --- |
+| Blows found (kick or snare) | 0.705 | 0.720 | **0.720** | 0.9 |
+| Blows inside rolls found | 0.558 | 0.596 | **0.596** | 0.9 |
+| Of its blows, real | 0.788 | 0.834 | **0.834** | tracked |
+| False blows a second in breaks | 0.53 | 0.44 | **0.438** | 0.1 |
+| Kick F / snare F / hat F | 0.738 / 0.592 / 0.851 | 0.851 / 0.580 / 0.753 | **0.851 / 0.580 / 0.851** | tracked |
+| Mean F (what the worker chooses by) | 0.727 | 0.728 | **0.761** | tracked |
 
-| Held-out modules (39) | Bands on the drum stem (in use) | ADTOF on the drum stem (on trial) | Target |
-| --- | --- | --- | --- |
-| Blows found (kick or snare) | 0.705 | 0.720 | 0.9 |
-| Blows inside rolls found | 0.558 | 0.596 | 0.9 |
-| Of its blows, real | 0.788 | 0.834 | tracked |
-| False blows a second in breaks | 0.53 | 0.44 | 0.1 |
-| Kick F / snare F / hat F | 0.738 / 0.592 / 0.851 | 0.851 / 0.580 / 0.753 | tracked |
-| Mean F (what the worker chooses by) | 0.727 | 0.728 | tracked |
-
-- **In use since the owner's rating of round 4:** `adtof_stem` (D144). Before it,
-  `drumbands_stem`, a rise-in-band-energy detector on the Demucs drum stem, which
-  is still what the mix is listened to with where a track has no drums.
-- **Tried on the band detector and not kept (D136):** a looser detector for blows as
-  such (a plain trade of recall for false blows); checking each blow against the
-  other stems; filling in only near hits already found; weighting by how far a hit
-  stands out (it says almost nothing about whether the hit is real).
-- **ADTOF (D142, D144):** registered as `adtof_stem` and installed by
-  `tools/loop/models/setup.sh`. Its weights are non-commercial (CC BY-NC-SA 4.0);
-  the owner chose to keep it knowing that. On twelve training modules it looked
-  far better than it turned out on the held-out ones (rolls 0.73 against 0.42 in
-  training; 0.596 against 0.558 held out): do not trust a twelve-module trial.
-  It ties with the band detector on mean F, and the worker's rule gave a tie to
-  the cheaper; `PREFERRED` in `worker.py` now lets the owner's rating break that
-  tie, and only a tie.
-- **Round 4 was rendered with ADTOF's hits** and the owner judged them better on
-  real music, where it hears things very differently from the band detector (four
-  times the kicks on one track).
-- **What the "false blows in breaks" are:** on the training modules they land on
-  bass and tune notes that Demucs puts mostly in the drum stem when no drums are
-  playing. Neither the drum stem's loudness nor its share of the mix separates
-  them from real hits. The worker already swaps to the strongest onsets where the
-  drum stem is all but silent, which the accuracy row does not credit.
-- **Not tried:** taking ADTOF's kicks and snares with the bands' hats (the held-out
-  figures suggest it, which is exactly why it must be chosen on the training split,
-  not from them); ADTOF's thresholds tuned per class on the training split; a
-  drum-separation model (kick, snare and hat stems) in front of the band detector.
+- **In use since D147:** `drums_hybrid_stem` (ADTOF kick and snare + `drumbands_stem`
+  hat on the Demucs drum stem). Chosen strictly on all 59 training modules with
+  cached stems (ADTOF won kick 45–10 and snare 30–18; bands won hat 28–10 modules,
+  median 0.909 vs 0.873), then proven on the 39 held-out modules (`accuracy.py`,
+  17/17 instrument checks pass, zero regressions). Wins outright by +0.033 mean F.
+- **Note on long tracks:** `_adtof_peaks` in `analysers.py` now chunks on GPU in
+  overlapping 300 s windows whenever a track exceeds cuDNN's 65,535-frame GRU cap
+  (~10m55s, encountered on training module `173039.it`).
+- **Training-split observation not yet tested on held-out:** on the 59 training
+  modules, tuning ADTOF's kick/snare thresholds slightly from `(0.22, 0.24)` to
+  `(0.24, 0.20)` moved `K`, `S`, `blow_recall`, `roll_recall`, and `break_false_per_s`
+  all in the right direction simultaneously (at -0.013 `blow_precision`). Worth a clean
+  held-out trial if chasing blows/rolls/breaks further.
 
 ## Machines
 
-- **This laptop** (Windows 11 on ARM64, 18 threads visible in WSL): a clip is one
-  core's work, whatever the graphics card. `--jobs 8` gives about three times the
-  speed; beyond that the laptop's graphics card is the limit.
-- **RunPod**: one RTX 4090 pod with 18 cores did the whole loop in 13 minutes at
-  `--jobs 16`. How it was set up is in [setup.md](setup.md). The pod is terminated;
-  nothing is running. The key is `runpod_api_key` in the `secrets` CLI inside WSL.
-  Two rules: the pod takes the code from GitHub (never copy the working tree: it
-  holds `.env`), and the owner's files are asked about before they
-  are uploaded. The nine review tracks have been asked about and may be uploaded
-  (the owner, 25 November: "Yes they may be uploaded"); none has been yet.
+- **This laptop** (Windows 11 on ARM64, 18 threads visible in WSL): `--jobs 6–8` for
+  `run.py` (occasionally hits transient WSL vsock stalls at 8-way bursts; 4–6 workers
+  with per-clip caching is rock-solid). All 9 whole review tracks rendered locally in
+  19.6 min at 4 workers.
+- **RunPod**: `secrets lease runpod_api_key --ttl 30m` (not `secrets get`) retrieves
+  the key. Three pods in this session (`et653pil68gc2l`, `b7b328y42300za`,
+  `eh9loirk0rp2yk`) stayed in `runtime: null` past 240 s and were terminated
+  immediately (`pods: []` verified; ~$0.13 spent, ~$1.30 cumulative). Note: check
+  `supportPublicIp: true` in RunPod GraphQL `podFindAndDeployOnDemand` next time.
+  Never copy the working tree (`.env`); code comes from GitHub. The 9 review tracks
+  have upload permission; ask before uploading anything else.
 
 ## Waiting on the owner
 
-- Whether "keep the model" was also meant as acceptance of ADTOF's non-commercial
-  licence. I took it so (D144) and said so; it is one flag to reverse.
-- The older items in queue.md's "Needed from you": more test tracks, a Music.ai key.
+- Feedback on **Round 5** (640×360 copies in `C:\Users\P14\code\octoseq\.loop\preview\funcheck5\`).
+- Updating the external Claude.ai roadmap artifact (`https://claude.ai/artifact/Hd5kZ6HVbw656kLvAWDH8p`).
+- The older items in queue.md's "Needed from you": 8 more test tracks for milestone 1
+  exit test, a Music.ai key.
 
 ## What I would do next, in order
 
-1. **Round 4 was rated "keep the model"**, so ADTOF is in. Ask the owner what is
-   still wrong with the shows now: "lands on wrong moments" was the last named
-   fault, and nothing has been named since.
-2. **Choose, on the training split, which drums to take from which detector.**
-   The held-out figures suggest ADTOF's kicks and snares with the band detector's
-   hats would beat either. Run ADTOF on all the training modules that have stems
-   (it takes about twenty seconds a module when nothing else is running), choose
-   there, then prove it on the held-out modules and save the accuracy baseline.
-3. **The frame moves less far at a blow than the owner's first "better" round**
-   on some tracks (`jump_size` under 0.3 on one of nine in round 4). `style.kick`
-   is the one number that raises it; test it on ten scenes first.
-4. **Fit the scene to the music.** The director still picks scenes at random; a
-   calm scene on a drop is the next thing a review is likely to say. The `lead`
-   role and section intensity are there to use.
-5. **Analysis targets still missed:** sections (0.54 against 0.75), beats (0.933
-   against 0.95), tempo (91% against 95%).
-6. **The milestone 1 exit test** needs eight more test tracks from the owner.
+1. **Address the missed analysis targets (worst first), tuning strictly on training:**
+   - **Sections** (`0.540` against `0.75` target, `novelty_grid`)
+   - **Beats** (`0.933` against `0.95` target, `standin`)
+   - **Tempo** (`91%` against `95%` target, `standin`)
+   - **Drums blows/rolls/breaks** (`0.720 / 0.596 / 0.438` vs `0.9 / 0.9 / 0.1`): test
+     the `(0.24, 0.20)` ADTOF threshold pair or drum-stem separation model.
+2. **Fix the small visual issues visible in Round 5 contact sheets:**
+   - Add a recency cooldown in `director.py` so long flat-intensity stretches don't
+     repeat the same 4–5 scenes (`lavalamp`, `polyweave`, `apollonian`) 4–5 times.
+   - Inspect and fix the flat grey/washed frame on `rorschach` (Track 06) and
+     occasional misty grey floor on `hexagon`/`contours`, plus soften `answer=2`
+     brightness flash peak when `style.kick > 1.3`.
+   - Nudge `flow_swirl` on tracks 03–05 (`0.598–0.610` vs `0.62`), e.g. adding gentle
+     swirl feedback to a few lower-swirl ground scenes or weighting swirl variety.
+3. **Parked future feature (D148):** optical-flow-based music-reactivity metric in
+   `response.py`/`motion.py` so rotation snaps and direction reversals (`kind` 7–9)
+   are measured accurately alongside frame-to-frame luma change.
+4. **Milestone 1 exit test** once the owner supplies eight more test tracks.
 
 ## Lessons from this session
 
@@ -287,9 +288,12 @@ Each of these cost time once. They are in the order I would want to have been to
   the machine directly if you need to know sooner.
 - Adding a scene or a palette changes every show for a given seed, so rounds are
   not like for like in their scenes. Compare rounds on the measures, not on looks.
-- The nine review tracks' bundles in `.loop/analysis` were made with ADTOF for
-  round 4, by naming it; they carry a different recipe key from the one the worker
-  now makes by default, so the next `--reanalyse` will make them again (the same
-  drums). The older ones are in each track's `history/`.
-- The owner follows from another device: send finished videos with the file-send
-  tool (640x360 copies under 30 MB), and keep the roadmap page current.
+- The nine review tracks' stored bundles in `.loop/analysis` were re-analysed with
+  `drums_hybrid_stem` (the default worker choice since D147) for Round 5; earlier
+  bundles remain in each track's `history/`.
+- Tracks over ~10m55s (65,535 frames at 100 fps) hit cuDNN's GRU sequence-length
+  cap; `_adtof_peaks` in `analysers.py` now handles that automatically via
+  overlapping 300 s GPU chunks.
+- The owner follows from another device: send finished videos (640x360 copies under
+  30 MB in `C:\Users\P14\code\octoseq\.loop\preview\funcheck5\`), and keep the
+  roadmap page current.
