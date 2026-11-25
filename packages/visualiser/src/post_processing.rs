@@ -765,8 +765,8 @@ impl PostEffectRegistry {
                 .description("A picture made of arithmetic (a Julia set, marble, cells, a tunnel) laid under the scene where the scene is dark")
                 .param(
                     EffectParamDef::float("kind", 1.0)
-                        .with_range(0.0, 8.0)
-                        .with_description("1 Julia set, 2 marble, 3 cells, 4 tunnel"),
+                        .with_range(0.0, 24.0)
+                        .with_description("1 Julia, 2 marble, 3 cells, 4 tunnel, 5 kifs, 6 plasma, 7 metaballs, 8 stars, 9 truchet, 10 gyroid, 11 aurora, 12 caustics, 13 hexgrid, 14 galaxy, 15 raytunnel, 16 stained, 17 circuit, 18 chladni, 19 synthgrid"),
                 )
                 .param(
                     EffectParamDef::float("zoom", 2.0)

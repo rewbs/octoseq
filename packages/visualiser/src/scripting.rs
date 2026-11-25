@@ -2200,7 +2200,7 @@ fx.halftone = |options| {{
     effect
 }};
 // A ground: a picture made of arithmetic, laid under the scene where the scene is
-// dark. `kind` is 1 for a Julia set, 2 marble, 3 cells, 4 a tunnel. Its three
+// dark. `kind` is 1..19 (see shader_post_ground.wgsl). Its three
 // colours can be given as `a`, `b` and `c` (each `[r, g, b]`, as in a scene's
 // style) and its middle as `at` (as `style.at`).
 fx.ground = |options| {{
