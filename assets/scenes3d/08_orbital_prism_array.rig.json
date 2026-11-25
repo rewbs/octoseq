@@ -1,0 +1,45 @@
+{
+  "schema_version": "scene_rig.v2",
+  "rig_id": "first_party/08_orbital_prism_array",
+  "simulation_mode": "stateless",
+  "sim_step_hz": 60,
+  "template": "orbital_prism_array",
+  "material_style": "stylized_pbr",
+  "geometry": {
+    "source": "procedural",
+    "primitive": "instanced_orbital_prisms",
+    "instance_count": 640,
+    "glb_asset_ref": ""
+  },
+  "camera": {
+    "rig": "orbital_staying",
+    "fov_deg": 52.0,
+    "near": 0.25,
+    "far": 120.0,
+    "orbit_speed": 0.06,
+    "cut_every_bars": 8
+  },
+  "palette": {
+    "bg_rgb": [0.008, 0.015, 0.028],
+    "drums_rgb": [0.12, 0.96, 0.74],
+    "bass_rgb": [0.22, 0.52, 1.0],
+    "vocals_rgb": [1.0, 0.34, 0.72],
+    "other_rgb": [1.0, 0.84, 0.24]
+  },
+  "reactivity": {
+    "kick_punch": 1.1,
+    "fill_turbulence": 1.0,
+    "stem_spotlight": 1.25,
+    "bar_wave_amp": 0.65,
+    "wireframe_glow": 0.75,
+    "hit_gather_gain": 1.0,
+    "staying_step_gain": 1.0,
+    "tonal_shift_gain": 1.0
+  },
+  "conditioning": {
+    "mrt_enabled": true,
+    "depth_near": 0.5,
+    "depth_far": 52.0,
+    "wireframe_thickness": 1.2
+  }
+}

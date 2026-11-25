@@ -106,6 +106,26 @@ pub struct RenderJobSpec {
     /// Video output path. If None and output_video is true, defaults to {output_dir}/render.mp4.
     #[serde(default)]
     pub video_path: Option<PathBuf>,
+
+    /// Optional declarative `scene_rig.v1` / `scene_rig.v2` JSON path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rig_path: Option<PathBuf>,
+
+    /// Optional sanitized `.glb` mesh override for the rig hero slot.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rig_glb_path: Option<PathBuf>,
+
+    /// Optional output channel override (`beauty`, `depth`, `normal`, `wireframe`, `flat`, `motion`, `quad_conditioning`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rig_output: Option<String>,
+
+    /// Optional starting frame index for O(1) seek rendering (default 0).
+    #[serde(default)]
+    pub start_frame: usize,
+
+    /// Optional explicit frame count override (for O(1) seek single/range frame rendering).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_count: Option<usize>,
 }
 
 impl RenderJobSpec {
@@ -127,6 +147,11 @@ impl RenderJobSpec {
             preset_name: None,
             output_video: false,
             video_path: None,
+            rig_path: None,
+            rig_glb_path: None,
+            rig_output: None,
+            start_frame: 0,
+            frame_count: None,
         }
     }
 
@@ -140,10 +165,10 @@ impl RenderJobSpec {
                         .to_string(),
                 );
             }
-            (None, None) => {
+            (None, None) if self.rig_path.is_none() => {
                 return Err(
-                    "Either an input signal (--input) or an interpretation package (--package) \
-                     is required"
+                    "Either an input signal (--input), an interpretation package (--package), \
+                     or a scene rig (--rig) is required"
                         .to_string(),
                 );
             }
@@ -153,10 +178,10 @@ impl RenderJobSpec {
             if !input_path.exists() {
                 return Err(format!("Input file not found: {:?}", input_path));
             }
-            // The legacy input path has no other script source.
-            if self.script_path.is_none() {
+            // The legacy input path has no other script source unless --rig is given.
+            if self.script_path.is_none() && self.rig_path.is_none() {
                 return Err(
-                    "A script (--script) is required when rendering from a raw input signal"
+                    "A script (--script) or rig (--rig) is required when rendering from a raw input signal"
                         .to_string(),
                 );
             }
@@ -169,6 +194,16 @@ impl RenderJobSpec {
         if let Some(script_path) = &self.script_path {
             if !script_path.exists() {
                 return Err(format!("Script file not found: {:?}", script_path));
+            }
+        }
+        if let Some(rig_path) = &self.rig_path {
+            if !rig_path.exists() {
+                return Err(format!("Rig file not found: {:?}", rig_path));
+            }
+        }
+        if let Some(glb_path) = &self.rig_glb_path {
+            if !glb_path.exists() {
+                return Err(format!("GLB file not found: {:?}", glb_path));
             }
         }
         if self.fps <= 0.0 {
@@ -508,6 +543,11 @@ mod tests {
             preset_name: Some("test".to_string()),
             output_video: false,
             video_path: None,
+            rig_path: None,
+            rig_glb_path: None,
+            rig_output: None,
+            start_frame: 0,
+            frame_count: None,
         };
 
         // Should fail because files don't exist

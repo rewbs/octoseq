@@ -4,3 +4,4 @@ pub mod mesh;
 pub mod pipeline;
 pub mod post_processor;
 pub mod renderer;
+pub mod scene3d_pass;

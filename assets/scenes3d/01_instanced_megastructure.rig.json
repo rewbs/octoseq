@@ -1,0 +1,42 @@
+{
+  "schema_version": "scene_rig.v1",
+  "rig_id": "first_party/01_instanced_megastructure",
+  "simulation_mode": "stateless",
+  "sim_step_hz": 60,
+  "template": "instanced_megastructure",
+  "material_style": "stylized_pbr",
+  "geometry": {
+    "source": "procedural",
+    "primitive": "beveled_monolith",
+    "instance_count": 16000,
+    "glb_asset_ref": ""
+  },
+  "camera": {
+    "rig": "orbital_bar_cuts",
+    "fov_deg": 56.0,
+    "near": 0.25,
+    "far": 120.0,
+    "orbit_speed": 0.28,
+    "cut_every_bars": 4
+  },
+  "palette": {
+    "bg_rgb": [0.025, 0.035, 0.075],
+    "drums_rgb": [1.0, 0.16, 0.52],
+    "bass_rgb": [1.0, 0.62, 0.10],
+    "vocals_rgb": [0.09, 0.88, 1.0],
+    "other_rgb": [0.54, 0.31, 1.0]
+  },
+  "reactivity": {
+    "kick_punch": 1.0,
+    "fill_turbulence": 1.0,
+    "stem_spotlight": 1.0,
+    "bar_wave_amp": 1.0,
+    "wireframe_glow": 0.35
+  },
+  "conditioning": {
+    "mrt_enabled": true,
+    "depth_near": 0.5,
+    "depth_far": 65.0,
+    "wireframe_thickness": 1.25
+  }
+}

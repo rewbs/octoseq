@@ -42,7 +42,9 @@ pub mod show;
 
 // Mesh asset modules
 pub mod deformation;
+pub mod glb_loader;
 pub mod mesh_asset;
+pub mod rig_loader;
 
 // Material system
 pub mod material;

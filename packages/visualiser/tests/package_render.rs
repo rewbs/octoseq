@@ -70,6 +70,11 @@ fn renders_frames_from_golden_package() {
         preset_name: None,
         output_video: false,
         video_path: None,
+        rig_path: None,
+        rig_glb_path: None,
+        rig_output: None,
+        start_frame: 0,
+        frame_count: None,
     };
 
     // Same render path the CLI `render --package` command uses.

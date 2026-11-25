@@ -6,15 +6,25 @@
 //! - Frame updates
 
 use crate::debug_markers::DebugMarkerLayer;
+use crate::event_rhai::snapshot_named_event_streams;
 use crate::feedback::FeedbackConfig;
+use crate::glb_loader::load_safe_glb_bytes;
 use crate::input::{BandSignalMap, SharedSignal, SignalMap};
 use crate::mesh_asset::MeshAssetRegistry;
 use crate::musical_time::MusicalTimeStructure;
+use crate::rig_loader::{
+    evaluate_rig_musical_uniforms, parse_and_validate_rig_json, ActiveSceneRig, RigMaterialStyle,
+    RigMusicalUniforms, RigOutputMode, SceneRigConfig,
+};
 use crate::scene_graph::{EntityId, SceneGraph};
 use crate::script_diagnostics::ScriptDiagnostic;
-use crate::scripting::{get_script_debug_options, reset_script_debug_options, ScriptEngine};
+use crate::scripting::{
+    clear_pending_rig_commands, get_script_debug_options, reset_script_debug_options,
+    take_pending_rig_commands, PendingRigCommand, ScriptEngine,
+};
 use crate::signal_explorer::{ScriptSignalInfo, SignalChainAnalysis};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// Frame budget for limiting processing time in web preview.
 ///
@@ -105,6 +115,10 @@ pub struct VisualiserState {
     stem_signals: BandSignalMap,
     /// Composed signals (name -> Rc<InputSignal>)
     composed_signals: SignalMap,
+    /// Optional active declarative 3D scene rig (`scene_rig.v1` / `scene_rig.v2`)
+    active_scene_rig: Option<ActiveSceneRig>,
+    /// Generation counter incremented whenever rig config or GLB asset changes
+    rig_generation: u64,
 }
 
 impl VisualiserState {
@@ -120,6 +134,8 @@ impl VisualiserState {
             global_seed: 0,
             stem_signals: HashMap::new(),
             composed_signals: HashMap::new(),
+            active_scene_rig: None,
+            rig_generation: 0,
         }
     }
 
@@ -155,8 +171,184 @@ impl VisualiserState {
     /// Load a Rhai script. Returns true if successful.
     pub fn load_script(&mut self, script: &str) -> bool {
         reset_script_debug_options();
+        clear_pending_rig_commands();
         self.debug_options = DebugOptions::default();
+        self.active_scene_rig = None;
         self.script_engine.load_script(script)
+    }
+
+    // === Declarative Scene Rig v1/v2 Management ===
+
+    /// Load a validated `SceneRigConfig` directly.
+    pub fn load_rig_config(&mut self, cfg: SceneRigConfig) {
+        self.rig_generation = self.rig_generation.wrapping_add(1);
+        let musical = RigMusicalUniforms::synthetic(0.0, &cfg.reactivity);
+        self.active_scene_rig = Some(ActiveSceneRig {
+            config: cfg,
+            glb_asset: None,
+            generation: self.rig_generation,
+            musical,
+            time_sec: 0.0,
+            frame_dt: 1.0 / 60.0,
+            seed: self.global_seed,
+        });
+    }
+
+    /// Parse, validate, and activate a `scene_rig.v1` / `scene_rig.v2` JSON string.
+    pub fn load_rig_json(&mut self, json: &str) -> Result<(), String> {
+        let cfg = parse_and_validate_rig_json(json)?;
+        self.load_rig_config(cfg);
+        Ok(())
+    }
+
+    /// Load a sanitized `.glb` mesh + optional embedded albedo onto the active rig.
+    pub fn load_rig_glb_bytes(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let asset = load_safe_glb_bytes(bytes)?;
+        let Some(ref mut rig) = self.active_scene_rig else {
+            return Err("No active scene rig loaded to attach GLB mesh to".to_string());
+        };
+        self.rig_generation = self.rig_generation.wrapping_add(1);
+        rig.glb_asset = Some(Arc::new(asset));
+        rig.generation = self.rig_generation;
+        Ok(())
+    }
+
+    /// Load a `.rig.json` file from disk and automatically resolve its relative `glb_asset_ref` (if any).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn load_rig_file(&mut self, path: &std::path::Path) -> Result<(), String> {
+        let cfg = crate::rig_loader::load_rig_file(path)?;
+        let glb_ref = cfg.geometry.glb_asset_ref.clone();
+        self.load_rig_config(cfg);
+        if !glb_ref.is_empty() {
+            let glb_path = path
+                .parent()
+                .map(|p| p.join(&glb_ref))
+                .unwrap_or_else(|| std::path::PathBuf::from(&glb_ref));
+            let asset = crate::glb_loader::load_safe_glb_file(&glb_path)?;
+            if let Some(ref mut rig) = self.active_scene_rig {
+                self.rig_generation = self.rig_generation.wrapping_add(1);
+                rig.glb_asset = Some(Arc::new(asset));
+                rig.generation = self.rig_generation;
+            }
+        }
+        Ok(())
+    }
+
+    /// Override the active rig's output channel (`beauty`, `depth`, `normal`, `wireframe`, `flat`, `motion`, `quad_conditioning`).
+    pub fn set_rig_output_mode(&mut self, mode: RigOutputMode) {
+        if let Some(ref mut rig) = self.active_scene_rig {
+            rig.config.output_mode = mode;
+            if mode.needs_mrt() {
+                rig.config.render_mrt = true;
+            }
+        }
+    }
+
+    /// Explicitly gate the optional 5-target AI conditioning MRT pass.
+    pub fn set_rig_mrt_enabled(&mut self, enabled: bool) {
+        if let Some(ref mut rig) = self.active_scene_rig {
+            rig.config.render_mrt = enabled;
+        }
+    }
+
+    /// Clear any active declarative 3D rig.
+    pub fn clear_rig(&mut self) {
+        self.active_scene_rig = None;
+    }
+
+    /// Read the currently active declarative 3D rig (if any).
+    pub fn active_scene_rig(&self) -> Option<&ActiveSceneRig> {
+        self.active_scene_rig.as_ref()
+    }
+
+    /// Apply any pending `rig.*` commands queued by Rhai scripts.
+    fn apply_pending_rig_commands(&mut self) {
+        let cmds = take_pending_rig_commands();
+        for cmd in cmds {
+            match cmd {
+                PendingRigCommand::LoadJson { json, .. } => {
+                    if let Err(e) = self.load_rig_json(&json) {
+                        log::error!("rig.load_json failed: {}", e);
+                    }
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                PendingRigCommand::LoadFile(path_str) => {
+                    if let Err(e) = self.load_rig_file(std::path::Path::new(&path_str)) {
+                        log::error!("rig.load('{}') failed: {}", path_str, e);
+                    }
+                }
+                PendingRigCommand::SetGain { name, value } => {
+                    if let Some(ref mut rig) = self.active_scene_rig {
+                        match name.as_str() {
+                            "kick_punch" => rig.config.reactivity.kick_punch = value,
+                            "fill_turbulence" => rig.config.reactivity.fill_turbulence = value,
+                            "stem_spotlight" => rig.config.reactivity.stem_spotlight = value,
+                            "bar_wave_amp" => rig.config.reactivity.bar_wave_amp = value,
+                            "wireframe_glow" => rig.config.reactivity.wireframe_glow = value,
+                            "hit_gather_gain" => rig.config.reactivity.hit_gather_gain = value,
+                            "staying_step_gain" => rig.config.reactivity.staying_step_gain = value,
+                            "tonal_shift_gain" => rig.config.reactivity.tonal_shift_gain = value,
+                            _ => log::warn!("Unknown rig gain '{}'", name),
+                        }
+                    }
+                }
+                PendingRigCommand::SetOutput(mode_str) => {
+                    if let Some(mode) = RigOutputMode::parse(&mode_str) {
+                        self.set_rig_output_mode(mode);
+                    } else {
+                        log::warn!("Unknown rig output mode '{}'", mode_str);
+                    }
+                }
+                PendingRigCommand::SetMaterial(style_str) => {
+                    if let Some(style) = RigMaterialStyle::parse(&style_str) {
+                        if let Some(ref mut rig) = self.active_scene_rig {
+                            rig.config.material_style = style;
+                        }
+                    } else {
+                        log::warn!("Unknown rig material style '{}'", style_str);
+                    }
+                }
+                PendingRigCommand::SetMrt(enabled) => {
+                    self.set_rig_mrt_enabled(enabled);
+                }
+                PendingRigCommand::Clear => {
+                    self.clear_rig();
+                }
+            }
+        }
+    }
+
+    /// Evaluate the active rig's stateless musical uniforms at exact timestamp `time_sec`.
+    /// O(1)-seekable: calling this for frame K directly matches continuous playback at frame K.
+    pub fn update_rig_at_time(
+        &mut self,
+        time_sec: f32,
+        frame_dt: f32,
+        named_signals: &SignalMap,
+        band_signals: &BandSignalMap,
+        custom_signals: &SignalMap,
+        musical_time: Option<&MusicalTimeStructure>,
+    ) {
+        self.apply_pending_rig_commands();
+        let Some(ref mut rig) = self.active_scene_rig else {
+            return;
+        };
+        let events = snapshot_named_event_streams();
+        rig.musical = evaluate_rig_musical_uniforms(
+            time_sec,
+            frame_dt,
+            self.current_bpm,
+            &rig.config.reactivity,
+            named_signals,
+            band_signals,
+            &self.stem_signals,
+            custom_signals,
+            musical_time,
+            &events,
+        );
+        rig.time_sec = time_sec;
+        rig.frame_dt = frame_dt;
+        rig.seed = self.global_seed;
     }
 
     /// Configure which input signal names should be available in the global `inputs` Signal namespace.
@@ -324,6 +516,8 @@ impl VisualiserState {
         reset_script_debug_options();
         // Preserve global_seed across reset - if user set it, they want it to persist
         self.script_engine.set_global_seed(self.global_seed);
+        self.active_scene_rig = None;
+        clear_pending_rig_commands();
     }
 
     pub fn set_time(&mut self, time: f32) {
@@ -432,6 +626,16 @@ impl VisualiserState {
         let current_beat = self.time * self.current_bpm / 60.0;
         self.debug_marker_layer
             .update(current_beat, self.current_bpm);
+
+        // Sync any declarative 3D rig (loaded via Rhai `rig.load` or host API)
+        self.update_rig_at_time(
+            self.time,
+            dt,
+            named_signals,
+            band_signals,
+            custom_signals,
+            musical_time,
+        );
     }
 
     /// Update the visualiser state with a frame budget.
@@ -538,6 +742,16 @@ impl VisualiserState {
         let current_beat = self.time * self.current_bpm / 60.0;
         self.debug_marker_layer
             .update(current_beat, self.current_bpm);
+
+        // Sync any declarative 3D rig (loaded via Rhai `rig.load` or host API)
+        self.update_rig_at_time(
+            self.time,
+            dt,
+            named_signals,
+            band_signals,
+            custom_signals,
+            musical_time,
+        );
 
         FrameResult::Completed
     }

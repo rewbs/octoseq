@@ -1344,6 +1344,48 @@ impl WasmVisualiser {
             }
         }
     }
+
+    // === Declarative Scene Rig v1/v2 API (WebGPU/WASM parity) ===
+
+    /// Load and validate a declarative `scene_rig.v1` / `scene_rig.v2` JSON string.
+    pub fn load_rig_json(&self, json: &str) -> Result<(), JsValue> {
+        let mut inner = self.inner.borrow_mut();
+        inner
+            .state
+            .load_rig_json(json)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// Load a sanitized binary glTF 2.0 (`.glb`) hero mesh + embedded albedo for the active rig.
+    pub fn load_rig_glb(&self, bytes: &[u8]) -> Result<(), JsValue> {
+        let mut inner = self.inner.borrow_mut();
+        inner
+            .state
+            .load_rig_glb_bytes(bytes)
+            .map_err(|e| JsValue::from_str(&e))
+    }
+
+    /// Set the active rig's output channel (`beauty`, `depth`, `normal`, `wireframe`, `flat`, `motion`, `quad_conditioning`).
+    pub fn set_rig_output_mode(&self, mode: &str) -> bool {
+        let Some(parsed) = crate::rig_loader::RigOutputMode::parse(mode) else {
+            return false;
+        };
+        let mut inner = self.inner.borrow_mut();
+        inner.state.set_rig_output_mode(parsed);
+        true
+    }
+
+    /// Enable or disable the optional 5-target AI conditioning MRT pass.
+    pub fn set_rig_mrt_enabled(&self, enabled: bool) {
+        let mut inner = self.inner.borrow_mut();
+        inner.state.set_rig_mrt_enabled(enabled);
+    }
+
+    /// Clear any active declarative 3D rig.
+    pub fn clear_rig(&self) {
+        let mut inner = self.inner.borrow_mut();
+        inner.state.clear_rig();
+    }
 }
 
 /// A debug signal serialized for JavaScript.

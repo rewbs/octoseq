@@ -97,9 +97,10 @@ def render_frames(package: Path, scene: Path, out: Path, seconds: float, args) -
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
+    flag = "--show" if scene.name == "show.json" else ("--rig" if scene.name.endswith(".rig.json") else "--script")
     cmd = [
         str(ENGINE), "render", "--package", engine_path(package),
-        "--show" if scene.name == "show.json" else "--script", engine_path(scene),
+        flag, engine_path(scene),
         "--out", engine_path(out), "--fps", str(args.fps), "--width", str(args.width),
         "--height", str(args.height), "--duration", f"{seconds:.3f}", "--quiet",
     ]  # fmt: skip

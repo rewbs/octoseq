@@ -126,6 +126,36 @@ fn bounded_script_u32(value: Option<i64>, default: u32, min: u32, max: u32) -> u
 // the script engine runs on a single thread.
 thread_local! {
     static PENDING_FEEDBACK_CONFIG: std::cell::RefCell<Option<crate::feedback::FeedbackConfig>> = const { std::cell::RefCell::new(None) };
+    static PENDING_RIG_COMMANDS: std::cell::RefCell<Vec<PendingRigCommand>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Commands queued from Rhai `rig.*` API calls and applied by `VisualiserState`.
+#[derive(Debug, Clone)]
+pub enum PendingRigCommand {
+    LoadJson {
+        json: String,
+        base_dir: Option<String>,
+    },
+    #[cfg(not(target_arch = "wasm32"))]
+    LoadFile(String),
+    SetGain {
+        name: String,
+        value: f32,
+    },
+    SetOutput(String),
+    SetMaterial(String),
+    SetMrt(bool),
+    Clear,
+}
+
+/// Drain pending rig commands queued by Rhai script execution.
+pub fn take_pending_rig_commands() -> Vec<PendingRigCommand> {
+    PENDING_RIG_COMMANDS.with(|cell| std::mem::take(&mut *cell.borrow_mut()))
+}
+
+/// Clear any pending rig commands.
+pub fn clear_pending_rig_commands() {
+    PENDING_RIG_COMMANDS.with(|cell| cell.borrow_mut().clear());
 }
 
 /// Debug options requested by the script.
@@ -281,6 +311,82 @@ impl ScriptEngine {
         // Register debug visualization control functions
         engine.register_fn("__debug_wireframe", |enabled: bool| {
             DEBUG_WIREFRAME.store(enabled, Ordering::Relaxed);
+        });
+
+        // Register declarative scene_rig.v1/v2 (`rig.*`) native bridge functions
+        engine.register_fn("__rig_load", |path_or_json: rhai::ImmutableString| -> Result<(), Box<EvalAltResult>> {
+            let trimmed = path_or_json.trim();
+            if trimmed.starts_with('{') {
+                // Validate immediately so Rhai scripts see errors at init() time.
+                crate::rig_loader::parse_and_validate_rig_json(trimmed)
+                    .map_err(|e| Box::new(EvalAltResult::ErrorRuntime(Dynamic::from(e), rhai::Position::NONE)))?;
+                PENDING_RIG_COMMANDS.with(|cell| {
+                    cell.borrow_mut().push(PendingRigCommand::LoadJson {
+                        json: trimmed.to_string(),
+                        base_dir: None,
+                    });
+                });
+                Ok(())
+            } else {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    let p = std::path::Path::new(trimmed);
+                    crate::rig_loader::load_rig_file(p).map_err(|e| {
+                        Box::new(EvalAltResult::ErrorRuntime(Dynamic::from(e), rhai::Position::NONE))
+                    })?;
+                    PENDING_RIG_COMMANDS.with(|cell| {
+                        cell.borrow_mut().push(PendingRigCommand::LoadFile(trimmed.to_string()));
+                    });
+                    Ok(())
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    Err(Box::new(EvalAltResult::ErrorRuntime(
+                        Dynamic::from("On WASM, pass inline JSON to rig.load(...) or call wasm load_rig_json(...)"),
+                        rhai::Position::NONE,
+                    )))
+                }
+            }
+        });
+        engine.register_fn("__rig_load_json", |json: rhai::ImmutableString| -> Result<(), Box<EvalAltResult>> {
+            crate::rig_loader::parse_and_validate_rig_json(&json).map_err(|e| {
+                Box::new(EvalAltResult::ErrorRuntime(Dynamic::from(e), rhai::Position::NONE))
+            })?;
+            PENDING_RIG_COMMANDS.with(|cell| {
+                cell.borrow_mut().push(PendingRigCommand::LoadJson {
+                    json: json.to_string(),
+                    base_dir: None,
+                });
+            });
+            Ok(())
+        });
+        engine.register_fn("__rig_set_gain", |name: rhai::ImmutableString, value: f32| {
+            PENDING_RIG_COMMANDS.with(|cell| {
+                cell.borrow_mut().push(PendingRigCommand::SetGain {
+                    name: name.to_string(),
+                    value,
+                });
+            });
+        });
+        engine.register_fn("__rig_set_output", |mode: rhai::ImmutableString| {
+            PENDING_RIG_COMMANDS.with(|cell| {
+                cell.borrow_mut().push(PendingRigCommand::SetOutput(mode.to_string()));
+            });
+        });
+        engine.register_fn("__rig_set_material", |style: rhai::ImmutableString| {
+            PENDING_RIG_COMMANDS.with(|cell| {
+                cell.borrow_mut().push(PendingRigCommand::SetMaterial(style.to_string()));
+            });
+        });
+        engine.register_fn("__rig_set_mrt", |enabled: bool| {
+            PENDING_RIG_COMMANDS.with(|cell| {
+                cell.borrow_mut().push(PendingRigCommand::SetMrt(enabled));
+            });
+        });
+        engine.register_fn("__rig_clear", || {
+            PENDING_RIG_COMMANDS.with(|cell| {
+                cell.borrow_mut().push(PendingRigCommand::Clear);
+            });
         });
 
         engine.register_fn("__debug_bounding_boxes", |enabled: bool| {
@@ -2414,6 +2520,17 @@ feedback.is_enabled = || {{
 
 // === Lighting Namespace ===
 {lighting_namespace}
+
+// === Declarative 3D Rig Namespace (scene_rig.v1 / scene_rig.v2) ===
+let rig = #{{}};
+rig.__type = "rig_namespace";
+rig.load = |path_or_json| {{ __rig_load(path_or_json); }};
+rig.load_json = |json_str| {{ __rig_load_json(json_str); }};
+rig.set_gain = |name, value| {{ __rig_set_gain(name, value); }};
+rig.set_output = |mode| {{ __rig_set_output(mode); }};
+rig.set_material = |style| {{ __rig_set_material(style); }};
+rig.set_mrt = |enabled| {{ __rig_set_mrt(enabled); }};
+rig.clear = || {{ __rig_clear(); }};
 
 // === User Script ===
 "#

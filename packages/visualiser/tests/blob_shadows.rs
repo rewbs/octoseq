@@ -59,6 +59,11 @@ fn render_fixture(script: &str) -> image::RgbImage {
         preset_name: None,
         output_video: false,
         video_path: None,
+        rig_path: None,
+        rig_glb_path: None,
+        rig_output: None,
+        start_frame: 0,
+        frame_count: None,
     };
     pollster::block_on(execute_render_job(&job, false, true)).expect("render job succeeds");
 

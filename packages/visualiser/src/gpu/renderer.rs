@@ -414,6 +414,9 @@ pub struct Renderer {
     post_processor: PostProcessor,
     post_effect_registry: PostEffectRegistry,
 
+    // Declarative 3D rig engine (scene_rig.v1 / scene_rig.v2), lazily initialized on first use
+    scene3d_pass: Option<crate::gpu::scene3d_pass::Scene3DPass>,
+
     // Transitions between scenes
     /// Set while drawing the outgoing scene of a transition: its content goes
     /// to the transition texture, and nothing is composited.
@@ -1036,9 +1039,14 @@ impl Renderer {
             shadow_bind_group_layout,
             post_processor,
             post_effect_registry,
+            scene3d_pass: None,
             drawing_outgoing: false,
             transition_uniforms: None,
         }
+    }
+
+    pub fn scene3d_pass(&self) -> Option<&crate::gpu::scene3d_pass::Scene3DPass> {
+        self.scene3d_pass.as_ref()
     }
 
     pub fn device(&self) -> &wgpu::Device {
@@ -1101,6 +1109,9 @@ impl Renderer {
             self.uniforms
                 .update_view_proj(self.size, state.camera_uniforms());
             self.post_processor.resize(&self.device, width, height);
+            if let Some(ref mut s3d) = self.scene3d_pass {
+                s3d.resize(&self.device, width, height);
+            }
         }
     }
 
@@ -1548,8 +1559,44 @@ impl Renderer {
             shadow_count += 1;
         }
 
-        // Render scene to post-processor's scene texture
-        {
+        // If a declarative 3D scene rig (`scene_rig.v1` / `scene_rig.v2`) is active,
+        // render it first into the scene target with its own depth buffer & optional MRTs.
+        let rig_rendered = if let Some(active_rig) = state.active_scene_rig() {
+            if self.scene3d_pass.is_none() {
+                self.scene3d_pass = Some(crate::gpu::scene3d_pass::Scene3DPass::new(
+                    &self.device,
+                    &self.queue,
+                    crate::gpu::post_processor::HDR_FORMAT,
+                    self.size.width,
+                    self.size.height,
+                ));
+            }
+            if let Some(ref mut s3d) = self.scene3d_pass {
+                s3d.resize(&self.device, self.size.width, self.size.height);
+                s3d.render(
+                    &self.device,
+                    &self.queue,
+                    &mut encoder,
+                    self.post_processor.scene_target_view(self.drawing_outgoing),
+                    active_rig,
+                    true,
+                );
+            }
+            true
+        } else {
+            false
+        };
+
+        // Render scene to post-processor's scene texture.
+        // If a 3D rig already drew the frame and there are no legacy scene-graph primitives to overlay,
+        // skip the legacy pass completely so we don't clear or waste bandwidth.
+        let has_legacy_primitives = !meshes_to_render.is_empty()
+            || !lines_to_render.is_empty()
+            || !point_clouds_to_render.is_empty()
+            || !radial_waves_to_render.is_empty()
+            || !ribbons_to_render.is_empty()
+            || shadow_count > 0;
+        if !rig_rendered || has_legacy_primitives {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Scene Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1559,16 +1606,20 @@ impl Renderer {
                         // With feedback in `Over` mode the previous frame is the
                         // background: clear to transparent so the scene's alpha
                         // says where this frame drew something.
-                        load: wgpu::LoadOp::Clear(if state.feedback_config().wants_transparent_scene() {
-                            wgpu::Color::TRANSPARENT
+                        load: if rig_rendered {
+                            wgpu::LoadOp::Load
                         } else {
-                            wgpu::Color {
-                                r: 0.1,
-                                g: 0.1,
-                                b: 0.1,
-                                a: 1.0,
-                            }
-                        }),
+                            wgpu::LoadOp::Clear(if state.feedback_config().wants_transparent_scene() {
+                                wgpu::Color::TRANSPARENT
+                            } else {
+                                wgpu::Color {
+                                    r: 0.1,
+                                    g: 0.1,
+                                    b: 0.1,
+                                    a: 1.0,
+                                }
+                            })
+                        },
                         store: wgpu::StoreOp::Store,
                     },
                 })],

@@ -1,0 +1,45 @@
+{
+  "schema_version": "scene_rig.v2",
+  "rig_id": "first_party/07_sacred_polyhedra_cathedral",
+  "simulation_mode": "stateless",
+  "sim_step_hz": 60,
+  "template": "sacred_polyhedra_cathedral",
+  "material_style": "stylized_pbr",
+  "geometry": {
+    "source": "procedural",
+    "primitive": "instanced_sacred_cathedral",
+    "instance_count": 720,
+    "glb_asset_ref": ""
+  },
+  "camera": {
+    "rig": "sanctuary_staying",
+    "fov_deg": 54.0,
+    "near": 0.25,
+    "far": 120.0,
+    "orbit_speed": 0.08,
+    "cut_every_bars": 8
+  },
+  "palette": {
+    "bg_rgb": [0.012, 0.014, 0.032],
+    "drums_rgb": [1.0, 0.24, 0.42],
+    "bass_rgb": [0.95, 0.68, 0.14],
+    "vocals_rgb": [0.14, 0.90, 1.0],
+    "other_rgb": [0.64, 0.32, 1.0]
+  },
+  "reactivity": {
+    "kick_punch": 1.15,
+    "fill_turbulence": 1.1,
+    "stem_spotlight": 1.2,
+    "bar_wave_amp": 0.75,
+    "wireframe_glow": 0.65,
+    "hit_gather_gain": 1.0,
+    "staying_step_gain": 1.0,
+    "tonal_shift_gain": 1.0
+  },
+  "conditioning": {
+    "mrt_enabled": true,
+    "depth_near": 0.5,
+    "depth_far": 55.0,
+    "wireframe_thickness": 1.25
+  }
+}

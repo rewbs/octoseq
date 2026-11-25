@@ -1,0 +1,42 @@
+{
+  "schema_version": "scene_rig.v1",
+  "rig_id": "first_party/04_volumetric_concert_stage",
+  "simulation_mode": "stateless",
+  "sim_step_hz": 60,
+  "template": "volumetric_concert_stage",
+  "material_style": "stylized_pbr",
+  "geometry": {
+    "source": "procedural",
+    "primitive": "concert_truss_and_volumetric_cones",
+    "instance_count": 2048,
+    "glb_asset_ref": ""
+  },
+  "camera": {
+    "rig": "orbital_bar_cuts",
+    "fov_deg": 54.0,
+    "near": 0.25,
+    "far": 110.0,
+    "orbit_speed": 0.26,
+    "cut_every_bars": 4
+  },
+  "palette": {
+    "bg_rgb": [0.012, 0.015, 0.032],
+    "drums_rgb": [1.0, 0.14, 0.48],
+    "bass_rgb": [1.0, 0.62, 0.08],
+    "vocals_rgb": [0.10, 0.92, 1.0],
+    "other_rgb": [0.56, 0.26, 1.0]
+  },
+  "reactivity": {
+    "kick_punch": 1.15,
+    "fill_turbulence": 1.1,
+    "stem_spotlight": 1.35,
+    "bar_wave_amp": 1.0,
+    "wireframe_glow": 0.35
+  },
+  "conditioning": {
+    "mrt_enabled": true,
+    "depth_near": 0.5,
+    "depth_far": 55.0,
+    "wireframe_thickness": 1.2
+  }
+}

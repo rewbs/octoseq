@@ -643,6 +643,11 @@ pub fn get_named_event_stream_names() -> Vec<String> {
     NAMED_EVENT_STREAMS.with(|s| s.borrow().keys().cloned().collect())
 }
 
+/// Snapshot all named event streams (cheap `Arc` clones).
+pub fn snapshot_named_event_streams() -> HashMap<String, EventStream> {
+    NAMED_EVENT_STREAMS.with(|s| s.borrow().clone())
+}
+
 /// Clear all named event streams.
 pub fn clear_named_event_streams() {
     NAMED_EVENT_STREAMS.with(|s| s.borrow_mut().clear());

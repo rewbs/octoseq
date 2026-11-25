@@ -35,7 +35,7 @@ enum Commands {
     /// Render frames to disk (single job)
     Render {
         /// Input JSON file (array of floats) based input signal (legacy single-signal path)
-        #[arg(long, conflicts_with = "package", required_unless_present = "package")]
+        #[arg(long, conflicts_with = "package", required_unless_present_any = ["package", "rig"])]
         input: Option<PathBuf>,
 
         /// Interpretation Package v1 JSON file, supplying the script, duration,
@@ -48,9 +48,29 @@ enum Commands {
         out: PathBuf,
 
         /// Rhai script file for controlling the visualiser
-        /// (optional with --package: overrides the package's embedded script)
-        #[arg(long, required_unless_present = "package")]
+        /// (optional with --package or --rig)
+        #[arg(long, required_unless_present_any = ["package", "rig"])]
         script: Option<PathBuf>,
+
+        /// Declarative scene_rig.v1 / scene_rig.v2 JSON file for the 3D engine
+        #[arg(long)]
+        rig: Option<PathBuf>,
+
+        /// Optional sanitized .glb mesh override for the active --rig hero slot
+        #[arg(long)]
+        rig_glb: Option<PathBuf>,
+
+        /// Output channel when rendering a --rig: beauty | depth | normal | wireframe | flat | motion | quad_conditioning
+        #[arg(long)]
+        rig_output: Option<String>,
+
+        /// Starting frame index for stateless O(1) seek rendering (default 0)
+        #[arg(long, default_value_t = 0)]
+        start_frame: usize,
+
+        /// Explicit number of frames to render (overrides --duration when set)
+        #[arg(long)]
+        frames: Option<usize>,
 
         /// Show file: a list of scene scripts and the second each takes over.
         /// The show's first scene replaces --script.
@@ -150,6 +170,11 @@ pub fn run() -> Result<()> {
             package,
             out,
             script,
+            rig,
+            rig_glb,
+            rig_output,
+            start_frame,
+            frames,
             show,
             fps,
             step_rate,
@@ -181,6 +206,11 @@ pub fn run() -> Result<()> {
                 preset_name: preset,
                 output_video,
                 video_path,
+                rig_path: rig,
+                rig_glb_path: rig_glb,
+                rig_output,
+                start_frame,
+                frame_count: frames,
             };
 
             let show = show
@@ -267,7 +297,7 @@ pub async fn execute_render_job_with_show(
     };
 
     // Load script: a show's first scene wins, then an explicit --script;
-    // otherwise the package supplies it.
+    // otherwise the package supplies it (or empty when rendering a standalone --rig).
     let script_content = if let Some(show) = show {
         show.segments[0].source.clone()
     } else if let Some(script_path) = &job.script_path {
@@ -290,9 +320,11 @@ pub async fn execute_render_job_with_show(
         content
     } else if let Some(script) = package.as_ref().and_then(|pkg| pkg.script.clone()) {
         script
+    } else if job.rig_path.is_some() {
+        String::new()
     } else {
         return Err(anyhow::anyhow!(
-            "[{}] No script: the package does not embed one; pass --script",
+            "[{}] No script: the package does not embed one; pass --script or --rig",
             RenderPhase::ScriptLoading
         ));
     };
@@ -339,19 +371,25 @@ pub async fn execute_render_job_with_show(
         None => None,
     };
 
-    // Calculate frame count: explicit --duration wins, then the package's
-    // durationSec, then the legacy input signal duration.
-    let render_duration = job
-        .duration
-        .or_else(|| package.as_ref().map(|pkg| pkg.duration_sec))
-        .or_else(|| legacy_signal.as_ref().map(|sig| sig.get_duration()))
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "[{}] No duration available from --duration, package, or input signal",
-                RenderPhase::Initialization
-            )
-        })?;
-    let total_frames = (render_duration * job.fps).ceil() as usize;
+    // Calculate frame count: explicit --frames wins, else --duration, else package/input duration (or 10s for standalone --rig).
+    let total_frames = if let Some(fc) = job.frame_count {
+        fc
+    } else {
+        let render_duration = job
+            .duration
+            .or_else(|| package.as_ref().map(|pkg| pkg.duration_sec))
+            .or_else(|| legacy_signal.as_ref().map(|sig| sig.get_duration()))
+            .or_else(|| job.rig_path.as_ref().map(|_| 10.0))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "[{}] No duration available from --frames, --duration, package, or input signal",
+                    RenderPhase::Initialization
+                )
+            })?;
+        (render_duration * job.fps).ceil() as usize
+    };
+    let start_frame = job.start_frame;
+    let end_frame = start_frame + total_frames;
     let dt = 1.0 / job.fps;
     // The engine can step more often than it saves a frame. Everything that moves
     // with time, the feedback loop above all, is then stepped at the step rate,
@@ -442,8 +480,9 @@ pub async fn execute_render_job_with_show(
         apply_to_state(pkg, &mut state);
     }
 
-    // Load script
-    if !state.load_script(&script_content) {
+    // Load script (if any)
+    let has_script_content = !script_content.trim().is_empty();
+    if has_script_content && !state.load_script(&script_content) {
         let error_msg = state
             .get_script_error()
             .unwrap_or("Unknown script error")
@@ -453,6 +492,46 @@ pub async fn execute_render_job_with_show(
             RenderPhase::ScriptLoading,
             error_msg
         ));
+    }
+
+    // Load declarative 3D scene rig if --rig was passed
+    if let Some(ref rig_path) = job.rig_path {
+        state.load_rig_file(rig_path).map_err(|e| {
+            anyhow::anyhow!(
+                "[{}] Failed to load rig {:?}: {}",
+                RenderPhase::ScriptLoading,
+                rig_path,
+                e
+            )
+        })?;
+        if let Some(ref glb_path) = job.rig_glb_path {
+            let glb_bytes = std::fs::read(glb_path).map_err(|e| {
+                anyhow::anyhow!(
+                    "[{}] Failed to read --rig-glb {:?}: {}",
+                    RenderPhase::ScriptLoading,
+                    glb_path,
+                    e
+                )
+            })?;
+            state.load_rig_glb_bytes(&glb_bytes).map_err(|e| {
+                anyhow::anyhow!(
+                    "[{}] Invalid --rig-glb {:?}: {}",
+                    RenderPhase::ScriptLoading,
+                    glb_path,
+                    e
+                )
+            })?;
+        }
+        if let Some(ref out_str) = job.rig_output {
+            let mode = crate::rig_loader::RigOutputMode::parse(out_str).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "[{}] Unknown --rig-output '{}' (expected beauty|depth|normal|wireframe|flat|motion|quad_conditioning)",
+                    RenderPhase::Initialization,
+                    out_str
+                )
+            })?;
+            state.set_rig_output_mode(mode);
+        }
     }
 
     if !quiet {
@@ -524,9 +603,12 @@ pub async fn execute_render_job_with_show(
     let mut playing = 0usize;
     // The scene on its way out, while the next one blends in over it.
     let mut outgoing: Option<VisualiserState> = None;
-    for step in 0..total_frames * steps_per_frame {
+    let start_step = start_frame * steps_per_frame;
+    let end_step = end_frame * steps_per_frame;
+    for step in start_step..end_step {
         let i = step / steps_per_frame;
-        let now = step as f32 * step_dt;
+        let out_frame_idx = i - start_frame;
+        let now = (step as f64 / (job.fps as f64 * steps_per_frame as f64)) as f32;
         // A show changes scene at set times: load the next script and carry on.
         if let Some(show) = show {
             let due = show.segment_at(now);
@@ -583,16 +665,32 @@ pub async fn execute_render_job_with_show(
             diagnostics.extend(old.take_script_diagnostics());
         }
 
-        state.update(
-            step_dt,
-            rotation_signal.as_ref(),
-            None,
-            named_signals,
-            band_signals,
-            custom_signals,
-            musical_time,
-        );
-        diagnostics.extend(state.take_script_diagnostics());
+        if has_script_content || show.is_some() {
+            if start_frame > 0 && step == start_step {
+                state.set_time(now);
+            }
+            state.update(
+                step_dt,
+                rotation_signal.as_ref(),
+                None,
+                named_signals,
+                band_signals,
+                custom_signals,
+                musical_time,
+            );
+            diagnostics.extend(state.take_script_diagnostics());
+        }
+        // Apply exact closed-form O(1)-seekable timestamp to any active 3D rig (whether loaded via --rig or Rhai `rig.load`).
+        if state.active_scene_rig().is_some() {
+            state.update_rig_at_time(
+                now,
+                step_dt,
+                named_signals,
+                band_signals,
+                custom_signals,
+                musical_time,
+            );
+        }
 
         // A script error must stop the render. Without this, a scene whose init()
         // fails partway is rendered with whatever it had set up by then, which
@@ -694,7 +792,7 @@ pub async fn execute_render_job_with_show(
         }
 
         // Save frame
-        let frame_path = job.output_dir.join(format!("frame_{:05}.png", i));
+        let frame_path = job.output_dir.join(format!("frame_{:05}.png", out_frame_idx));
         image::save_buffer(
             &frame_path,
             &unpadded_data,
@@ -706,7 +804,7 @@ pub async fn execute_render_job_with_show(
             anyhow::anyhow!(
                 "[{}] Failed to save frame {}: {}",
                 RenderPhase::FrameSave,
-                i,
+                out_frame_idx,
                 e
             )
         })?;
@@ -715,19 +813,19 @@ pub async fn execute_render_job_with_show(
         output_buffer.unmap();
 
         // Progress reporting
-        if !quiet && i % 60 == 0 {
+        if !quiet && out_frame_idx % 60 == 0 {
             let elapsed = render_start.elapsed().as_secs_f64();
-            let fps_actual = (i + 1) as f64 / elapsed;
-            let eta = if i > 0 {
-                (total_frames - i) as f64 / fps_actual
+            let fps_actual = (out_frame_idx + 1) as f64 / elapsed;
+            let eta = if out_frame_idx > 0 {
+                (total_frames - out_frame_idx) as f64 / fps_actual
             } else {
                 0.0
             };
             print!(
                 "\r  Frame {}/{} ({:.1}%) - {:.1} fps - ETA: {:.0}s  ",
-                i + 1,
+                out_frame_idx + 1,
                 total_frames,
-                (i + 1) as f64 / total_frames as f64 * 100.0,
+                (out_frame_idx + 1) as f64 / total_frames as f64 * 100.0,
                 fps_actual,
                 eta
             );
