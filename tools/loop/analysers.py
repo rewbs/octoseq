@@ -450,6 +450,10 @@ if stem_sources.demucs_installed() and importlib.util.find_spec("adtof_pytorch")
 # other, but the worker does not pick one for a bundle unless the environment says
 # that is acceptable (OCTOSEQ_NONCOMMERCIAL=1): whether it is, is the owner's call.
 NONCOMMERCIAL = {"adtof_stem": "its weights are licensed CC BY-NC-SA 4.0, for non-commercial use only"}
+# The owner was told of that licence with round 4 of review 3 and answered "Yes, keep
+# the model" (24 November 2026). Set this to False to go back to asking the
+# environment (OCTOSEQ_NONCOMMERCIAL=1) each time.
+NONCOMMERCIAL_ACCEPTED = True
 # How many worker processes each model gets when it runs on a GPU. Every worker keeps
 # its own copy of the model there, so the number is what fits, not what is fastest:
 # Beat This is small and spends most of its time on the CPU preparing audio, so it

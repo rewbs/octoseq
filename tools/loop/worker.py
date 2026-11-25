@@ -96,6 +96,14 @@ COST = {
 }  # fmt: skip
 SIGNAL_PROCESSING = {name for name, cost in COST.items() if cost == 0}
 MODEL_BACKED = {"beat_this", "drumbands_stem", "adtof_stem", "demucs", "demucs_ft"}
+# A model that an older model environment may not have: it is passed over there, not failed on.
+NEEDS_PACKAGE = {"adtof_stem": "adtof_pytorch"}
+# What a person preferred on real music, where the modules cannot say. It breaks a
+# tie and nothing more: an analyser that scores clearly better still wins.
+# Drums: the owner watched the same nine tracks with each detector's hits (review 3,
+# rounds 3 and 4) and said of the network's, "Yes, keep the model". On the held-out
+# modules the two tie (0.728 and 0.727).
+PREFERRED = {"drums": "adtof_stem"}
 # How a role's `signal` binding names the mix signals (see roles.bind).
 SCRIPT_SIGNALS = {"amplitude": "amplitude", "energy": "energy", "centroid": "spectralCentroid", "flux": "spectralFlux", "onset": "onsetEnvelope"}
 
@@ -115,8 +123,10 @@ def runnable(name: str) -> tuple[bool, str]:
         return False, "a hosted service, which costs money for every new file: used only when asked for"
     if name in analysers.REFERENCE_FED:
         return False, "needs stem files of your own: used only when asked for"
-    if name in analysers.NONCOMMERCIAL and os.environ.get("OCTOSEQ_NONCOMMERCIAL") != "1":
+    if name in analysers.NONCOMMERCIAL and not analysers.NONCOMMERCIAL_ACCEPTED and os.environ.get("OCTOSEQ_NONCOMMERCIAL") != "1":
         return False, f"{analysers.NONCOMMERCIAL[name]}: used only where OCTOSEQ_NONCOMMERCIAL=1 says that is acceptable"
+    if name in NEEDS_PACKAGE and name not in analysers.MODELS and not any((ROOT / ".loop" / "venv").glob(f"lib/python*/site-packages/{NEEDS_PACKAGE[name]}")):
+        return False, f"needs {NEEDS_PACKAGE[name]} in the model environment (tools/loop/models/setup.sh)"
     if name in MODEL_BACKED:
         here = name in analysers.MODELS or (name in ("demucs", "demucs_ft") and stem_sources.demucs_installed())
         if here or roles.MODEL_PYTHON.exists():
@@ -161,11 +171,14 @@ def choose(stems: str | None = None, chosen: dict | None = None, can_run=runnabl
         best = max(eligible, key=lambda n: (eligible[n], n))
         near = [n for n in eligible if eligible[best] - eligible[n] <= TIE[part]]
         pick = min(near, key=lambda n: (COST.get(n, 1), -eligible[n], n))
+        liked = PREFERRED.get(part) in near
+        if liked:
+            pick = PREFERRED[part]
         for name, score in eligible.items():
             if name == pick:
                 continue
-            passed[name] = f"scores {score:g}, a tie, and costs more to run" if name in near else f"scores {score:g}"
-        why = "scores highest of those that can run here" if pick == best else f"ties with {best} ({eligible[best]:g}) and is cheaper to run"
+            passed[name] = f"scores {score:g}, a tie, and " + (f"the owner preferred {pick} on real music" if liked else "costs more to run") if name in near else f"scores {score:g}"
+        why = "scores highest of those that can run here" if pick == best else f"ties with {best} ({eligible[best]:g}) and " + ("was preferred by the owner on real music" if liked else "is cheaper to run")
         entry = dict(analyser=pick, score=eligible[pick], why=why, passed_over=passed)
         if part == "stems":
             entry["source"] = pick
