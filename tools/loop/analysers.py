@@ -276,6 +276,37 @@ def drumbands_stem(audio: Path, params: dict | None = None) -> dict:
     return dict(drums=drum_hits(drum_envelopes(decode(stems.files["drums"])), drum_params("stem")))
 
 
+ADTOF_LABELS = {"kick": 35, "snare": 38, "hat": 42}  # of its five classes; toms and cymbals are not used
+# Its hits come 5 to 7 ms before the modules' own (twelve training modules), so this is added.
+ADTOF_OFFSET_S = 0.006
+
+
+def adtof_stem(audio: Path, params: dict | None = None) -> dict:
+    """Kick, snare and hat hits from ADTOF, listening to the drum stem that local Demucs separates.
+
+    ADTOF is a network trained to transcribe drums (Zehren, Alunno and Bientinesi,
+    2021 and 2023), here in Xavier Riley's PyTorch port with the published
+    weights and its own thresholds. Where the band detector asks whether a band
+    got louder, this has learned what a kick and a snare sound like, so it keeps
+    finding them when they come fast: on twelve training modules it found 0.73 of
+    the blows inside rolls where the bands found 0.42, with more of what it
+    reported real (0.82 against 0.74).
+
+    Two cautions. Its weights are licensed CC BY-NC-SA 4.0, non-commercial (see
+    NONCOMMERCIAL). And it is slow without a graphics card: about the length of
+    the track.
+    """
+    import tempfile
+
+    from adtof_pytorch import FRAME_RNN_THRESHOLDS, LABELS_5, PeakPicker, transcribe_to_midi
+
+    stems = stem_sources.separate("demucs", audio)
+    unused = Path(tempfile.gettempdir()) / "octoseq-adtof-unused.mid"  # asked for activations, it writes no file
+    act = transcribe_to_midi(str(stems.files["drums"]), str(unused), device=model_device(), return_activations=True)
+    peaks = PeakPicker(thresholds=FRAME_RNN_THRESHOLDS, fps=100).pick(act, labels=LABELS_5, label_offset=0)[0]
+    return dict(drums={kind: sorted(float(t) + ADTOF_OFFSET_S for t in peaks.get(label, [])) for kind, label in ADTOF_LABELS.items()})
+
+
 def _istft(spec: np.ndarray, n_fft: int, hop: int, length: int) -> np.ndarray:
     window = np.hanning(n_fft).astype(np.float32)
     out = np.zeros(hop * (len(spec) - 1) + n_fft, dtype=np.float32)
@@ -412,11 +443,18 @@ if importlib.util.find_spec("beat_this") and importlib.util.find_spec("torch"):
 if stem_sources.demucs_installed():
     ANALYSERS["drumbands_stem"] = drumbands_stem
     MODELS.add("drumbands_stem")
+if stem_sources.demucs_installed() and importlib.util.find_spec("adtof_pytorch"):
+    ANALYSERS["adtof_stem"] = adtof_stem
+    MODELS.add("adtof_stem")
+# Analysers whose licence does not allow commercial use. They are scored like any
+# other, but the worker does not pick one for a bundle unless the environment says
+# that is acceptable (OCTOSEQ_NONCOMMERCIAL=1): whether it is, is the owner's call.
+NONCOMMERCIAL = {"adtof_stem": "its weights are licensed CC BY-NC-SA 4.0, for non-commercial use only"}
 # How many worker processes each model gets when it runs on a GPU. Every worker keeps
 # its own copy of the model there, so the number is what fits, not what is fastest:
 # Beat This is small and spends most of its time on the CPU preparing audio, so it
 # takes many; Demucs fills a couple of gigabytes each.
-GPU_WORKERS = {"beat_this": 8, "drumbands_stem": 2}
+GPU_WORKERS = {"beat_this": 8, "drumbands_stem": 2, "adtof_stem": 2}
 
 
 def result_version(name: str) -> str:
@@ -430,12 +468,14 @@ def result_version(name: str) -> str:
         return "beat_this-1.1.0-final0-nodbn"
     if name == "drumbands_stem":
         return "htdemucs-shifts1-" + analyse.params_key(drum_params("stem")) + f"-{DRUM_FFT}-{DRUM_HOP}"
+    if name == "adtof_stem":
+        return f"htdemucs-shifts1-adtof-frame-rnn-own-thresholds-offset{ADTOF_OFFSET_S * 1000:g}ms"
     return "1"
 
 
 # Too slow to run on everything (Demucs separates a module at about seven times real
 # time on a laptop GPU): scored on the clean audio of every third held-out module.
-SAMPLED = {"drumbands_stem"}
+SAMPLED = {"drumbands_stem", "adtof_stem"}
 SAMPLE_EVERY = 3
 
 # Which analysers accept the tunable parameter set of analyse.py.

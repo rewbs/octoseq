@@ -48,6 +48,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import math
 import shutil
 import subprocess
@@ -90,11 +91,11 @@ TIE = {"onsets": 0.01, "beats": 0.01, "sections": 0.01, "drums": 0.01, "stems": 
 # model, 4 the four-model Demucs, 10 a hosted service. Unlisted analysers cost 1.
 COST = {
     "standin": 0, "energy": 0, "novelty": 0, "change": 0, "novelty_grid": 0, "drumbands": 0, "bandsplit": 0,
-    "beat_this": 1, "drumbands_stem": 1, "demucs": 1, "demucs_ft": 4,
+    "beat_this": 1, "drumbands_stem": 1, "adtof_stem": 2, "demucs": 1, "demucs_ft": 4,
     "fal_demucs": 10, "lalal": 10, "musicai": 10,
 }  # fmt: skip
 SIGNAL_PROCESSING = {name for name, cost in COST.items() if cost == 0}
-MODEL_BACKED = {"beat_this", "drumbands_stem", "demucs", "demucs_ft"}
+MODEL_BACKED = {"beat_this", "drumbands_stem", "adtof_stem", "demucs", "demucs_ft"}
 # How a role's `signal` binding names the mix signals (see roles.bind).
 SCRIPT_SIGNALS = {"amplitude": "amplitude", "energy": "energy", "centroid": "spectralCentroid", "flux": "spectralFlux", "onset": "onsetEnvelope"}
 
@@ -114,6 +115,8 @@ def runnable(name: str) -> tuple[bool, str]:
         return False, "a hosted service, which costs money for every new file: used only when asked for"
     if name in analysers.REFERENCE_FED:
         return False, "needs stem files of your own: used only when asked for"
+    if name in analysers.NONCOMMERCIAL and os.environ.get("OCTOSEQ_NONCOMMERCIAL") != "1":
+        return False, f"{analysers.NONCOMMERCIAL[name]}: used only where OCTOSEQ_NONCOMMERCIAL=1 says that is acceptable"
     if name in MODEL_BACKED:
         here = name in analysers.MODELS or (name in ("demucs", "demucs_ft") and stem_sources.demucs_installed())
         if here or roles.MODEL_PYTHON.exists():
@@ -277,7 +280,7 @@ def analyse_track(audio: Path, choices: dict, stem_options: dict | None = None) 
 
     name = choices["drums"]["analyser"]
     hits, stand_ins = None, None
-    if name == "drumbands_stem":
+    if name in ("drumbands_stem", "adtof_stem"):
         # As scored: the drum stem local Demucs separates. Where that stem is all but
         # silent there are no drums, and the mix's low, middle and high bands stand in
         # for kick, snare and hat, so scenes built on drums still move. That is
@@ -291,7 +294,9 @@ def analyse_track(audio: Path, choices: dict, stem_options: dict | None = None) 
         if level < roles.DRUMLESS_DB:
             hits, heard_in = analysers.drum_hits(analysers.drum_envelopes(mix), analysers.drum_params("mix")), "mix (no drums in the track)"
         else:
-            hits, heard_in = analysers.drum_hits(analysers.drum_envelopes(stem), analysers.drum_params("stem")), "stem"
+            # The band detector listens to the stem here; the network is asked for its own answer.
+            hits = _run(name, audio)["drums"] if name == "adtof_stem" else analysers.drum_hits(analysers.drum_envelopes(stem), analysers.drum_params("stem"))
+            heard_in = "stem"
             if stand_ins:
                 standing_in = lambda t: any(start <= t < end for start, end in stand_ins)  # noqa: E731
                 from_mix = analysers.drum_hits(analysers.drum_envelopes(mix), analysers.drum_params("mix"))

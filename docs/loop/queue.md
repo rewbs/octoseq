@@ -191,6 +191,20 @@ What I can see is still short, before you look:
   (it greyed the blacks); it is at 0.08 where it was 0.14, and the nine were
   rendered again.
 
+### Review 3, round 4 (24 November 2026): the same nine tracks, drums from a transcription model
+
+Sent after you rated round 3 "better, keep going" and said to try the drum
+transcription model. **Waiting for your rating.** Three things differ from round 3
+at once, so it is not a like-for-like test of any one of them: the drum hits come
+from ADTOF (D142, D143); there are four more scenes and twelve more palettes (D140,
+D141), which changes the scenes each seed draws.
+
+Every show passes every hard gate. Medians, round 3 to round 4: blows answered
+0.96 to 0.98, in rolls 0.95 to 0.97, frame moved at a blow 0.33 to 0.38, taken back
+two frames later 0.08 to 0.10, music unanswered 0.04 to 0.02. These say the picture
+answers the hits it is given; they cannot say whether the hits are the right ones.
+That is the question for your eyes: does the picture now land where the drums are?
+
 ## Decisions taken by default
 
 Say so to reverse any of these.
@@ -396,6 +410,8 @@ aren't just energy/amplitude bands, 3d integration, show editing."
 | D139 | A RunPod machine (RTX 4090, 18 cores, $0.34 an hour) was used for the comparisons behind D131, D132 and D135: about 1,400 clips in batches of 60 to 240. It takes the code from GitHub; nothing is copied to it from this machine. [setup.md](setup.md) says how it was set up | You offered it. My first attempt to copy the working tree up was stopped, rightly: the tree holds `.env`. The nine fun-check tracks are yours, so I have not sent them: round 3 was rendered here. **If you are content for those nine tracks to be uploaded to the pod, say so** and whole-track shows can be rendered there several at a time | – |
 | D140 | A new effect, `fx.ground`, makes a picture from arithmetic alone and lays it under a scene where the scene is dark: a Julia set, marble, cells, or a tunnel. Four scenes stand on one each (julia, marble, honeycomb, wormhole), which makes 62. In each, every blow leaves the ground somewhere new and it stays there: the Julia set jumps to its next shape, the marble leaps on, the cells re-seat, the tunnel's twist reverses | Review 3: "some fractals and other procedural generator coolness". The engine draws shapes; it had no way to draw a picture that is all formula, and a post effect was the smallest way to add one. The grounds are not in the feedback loop, so they leave no trails of their own | Delete the four scenes; the effect is then unused |
 | D141 | Seventeen palettes where there were five (sunset, forest, candy, rust, ultra, citrus, ocean, blood, vapor, earth, toxic, pastel are new), drawn from a stream of their own. Every show changes: the same seed no longer gives the scenes it gave in rounds 1 to 3 (four more scenes in the pool would have changed them anyway) | Review 3: "more variety in the colour palette would be good too". Each new one is three colours well apart round the wheel, like the first five, because a picture close to one hue is what review 1 called ugly | `PALETTES` in `director.py`; a brief's `palettes` narrows it |
+| D142 | A drum-transcription network, ADTOF (in a PyTorch port), is registered as an analyser, `adtof_stem`: it listens to the Demucs drum stem. It is scored like any other and is **not used for bundles by default**, for two reasons. Its weights are licensed CC BY-NC-SA 4.0, non-commercial, and whether that suits Octoseq is yours to say (`OCTOSEQ_NONCOMMERCIAL=1` allows it). And on the held-out modules it ties with the band detector on the measure the worker chooses by (mean F 0.728 against 0.727), and a tie goes to the cheaper. It was installed by hand into the model environment after you said to try it; `tools/loop/models/requirements.txt` says how | You asked for it to be tried. On twelve training modules it looked like the answer: 0.73 of the blows inside rolls found where the bands find 0.42. On the 39 held-out modules the gain is real but small: blows found 0.720 (bands 0.705), in rolls 0.596 (0.558), of its blows real 0.834 (0.788), false blows in breaks 0.44 a second (0.53); kick F 0.851 (0.738), snare F 0.580 (0.592), hat F 0.753 (0.851). So: every row about blows improves a little, kicks improve a lot, hats get clearly worse. Taking its kicks and snares with the bands' hats would probably score best, but I saw that only in the held-out figures, and choosing it from them would be tuning on them: it should be chosen on the training split | Set `OCTOSEQ_NONCOMMERCIAL=1` to let the worker consider it; uninstall `adtof_pytorch` to remove it |
+| D143 | The nine review tracks' stored bundles are the ones made with ADTOF's drums, for round 4. The bundles they replaced are in each track's `history/` | Round 4 was the way to let you judge its hits on real music, where there is no reference to score against. It hears your tracks very differently from the band detector: on track 07, 1,069 kicks where the bands found 269; on track 02, 656 where they found 186 | `python3 tools/loop/worker.py analyse --reanalyse TRACK` makes a bundle with the default analysers again |
 
 ## Answered
 

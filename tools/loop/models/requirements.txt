@@ -2,3 +2,9 @@
 # .loop/venv, never into the system Python and never as a dependency of Octoseq.
 beat_this==1.1.0
 demucs==4.0.1
+# Not installed by setup.sh, because it is a choice: ADTOF's PyTorch port, which the
+# `adtof_stem` analyser needs. The port has no licence file of its own, and the
+# weights it carries are licensed CC BY-NC-SA 4.0 (non-commercial, share-alike).
+#   .loop/venv/bin/pip install git+https://github.com/xavriley/ADTOF-pytorch@85c192e
+# Once installed it is scored like any analyser; the worker uses it for bundles only
+# where OCTOSEQ_NONCOMMERCIAL=1 is set.

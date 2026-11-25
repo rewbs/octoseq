@@ -26,11 +26,12 @@
       }
     },
     "drums": {
-      "analyser": "drumbands_stem",
-      "score": 0.727,
+      "analyser": "adtof_stem",
+      "score": 0.728,
       "candidates": {
         "drumbands": 0.5741,
-        "drumbands_stem": 0.727
+        "drumbands_stem": 0.727,
+        "adtof_stem": 0.728
       }
     },
     "stems": {

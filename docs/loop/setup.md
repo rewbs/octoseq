@@ -28,6 +28,9 @@ python3 tools/loop/corpus.py restore
 
 # Optional: model-based analysers, into .loop/venv
 tools/loop/models/setup.sh
+# Optional, and a choice (non-commercial weights; see tools/loop/models/requirements.txt):
+# the drum-transcription model behind the `adtof_stem` analyser
+.loop/venv/bin/pip install git+https://github.com/xavriley/ADTOF-pytorch@85c192e
 ```
 
 Check it:
