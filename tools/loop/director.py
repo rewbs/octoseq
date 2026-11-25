@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 ROOT = Path(__file__).resolve().parents[2]
 SCENES = ROOT / "scenes"
 SHOWS = ROOT / ".loop" / "shows"
-DIRECTOR_VERSION = "director-9"
+DIRECTOR_VERSION = "director-10"
 
 MAX_HOLD_S = 9.0  # the longest any one look is held (review 1: boring in under ten seconds)
 MIN_HOLD_S = 3.0  # section starts closer together than this are treated as one
@@ -431,7 +431,7 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
             at=list(place),
             mist=mist,
             answer=answer,
-            kick=round(0.85 + 0.4 * float(middle), 2),
+            kick=round(1.06 + 0.5 * float(middle), 2),
             finish=finish,
             transition=0.0 if new_section else round(min(TRANSITION_BEATS * beat_s, (end - start) * TRANSITION_MAX_SHARE), 3),
         ))  # fmt: skip
