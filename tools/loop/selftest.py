@@ -182,6 +182,27 @@ def test_metrics() -> None:
     unsynced = metrics.compute(frames_from_luma(0.5 + 0.35 * np.sin(phase)), FPS, synced_pkg)
     check("unrelated motion is not in sync", unsynced["audio_sync"] < 0.3, f"-> {unsynced['audio_sync']:.2f}")
 
+    # Intensity fit: calm picture in quiet section + busy picture in loud section scores high; reversed scores negative.
+    sec_vals = [0.2] * (n // 2) + [1.0] * (n - n // 2)
+    sec_pkg = {"signals": [], "customSignals": [{"name": "section_intensity", "rate": FPS, "values": sec_vals}]}
+    rng_m = np.random.default_rng(7)
+    calm_half = np.repeat((0.4 + 0.05 * np.sin(xx / 9.0))[None], n // 2, axis=0)
+    busy_half = 0.2 + 0.6 * rng_m.random((n - n // 2, H, W))
+    matched_fit = metrics.compute(frames_from_luma(np.concatenate([calm_half, busy_half])), FPS, sec_pkg)
+    flipped_fit = metrics.compute(frames_from_luma(np.concatenate([busy_half, calm_half])), FPS, sec_pkg)
+    flat_pkg = {"signals": [], "customSignals": [{"name": "section_intensity", "rate": FPS, "values": [0.9] * n}]}
+    flat_fit = metrics.compute(frames_from_luma(np.concatenate([calm_half, busy_half])), FPS, flat_pkg)
+    check("intensity_fit: calm on quiet and busy on loud scores high", matched_fit.get("intensity_fit", 0) > 0.8, f"-> {matched_fit.get('intensity_fit')}")
+    check("intensity_fit: reversed scores negative", flipped_fit.get("intensity_fit", 0) < -0.8, f"-> {flipped_fit.get('intensity_fit')}")
+    check("intensity_fit: flat track returns None", "intensity_fit" not in flat_fit)
+
+    # Lead sync: picture following the `lead` custom signal scores high; unrelated motion scores low.
+    lead_pkg = {"signals": [], "customSignals": [{"name": "lead", "rate": FPS, "values": envelope.tolist()}]}
+    lead_synced = metrics.compute(frames_from_luma(pulse), FPS, lead_pkg)
+    lead_unsynced = metrics.compute(frames_from_luma(0.5 + 0.35 * np.sin(phase)), FPS, lead_pkg)
+    check("lead_sync: brightness following lead is in sync", lead_synced.get("lead_sync", 0) > 0.9, f"-> {lead_synced.get('lead_sync')}")
+    check("lead_sync: unrelated motion is not in sync", lead_unsynced.get("lead_sync", 1) < 0.3, f"-> {lead_unsynced.get('lead_sync')}")
+
     # A clip whose second half looks different should show variety.
     two_looks = 0.5 + 0.35 * np.sin(phase)
     two_looks[n // 2 :] = 0.15 + 0.1 * np.sin(phase[n // 2 :] * 3)
@@ -276,6 +297,9 @@ def test_director() -> None:
     mists = [s["mist"] for s in show["segments"]]
     check("director: a crisp look follows a misty one, and a misty one a crisp", all((a < 0.5) != (b < 0.5) for a, b in zip(mists, mists[1:])), f"-> {mists[:6]}")
     check("director: louder sections run faster", show["segments"][-1]["speed"] > show["segments"][0]["speed"])
+    calm_b = [director.scene_busyness(director.SCENES / s["scene"]) for s in show["segments"] if s["start"] < 20.0]
+    loud_b = [director.scene_busyness(director.SCENES / s["scene"]) for s in show["segments"] if s["start"] >= 20.0]
+    check("director: calm sections get calmer scenes than loud drops", np.mean(loud_b) > np.mean(calm_b) + 0.3, f"-> calm {np.mean(calm_b):.2f}, loud {np.mean(loud_b):.2f}")
     answers = [s["answer"] for s in show["segments"]]
     check("director: each look answers a blow in a different way from the last, easing back and staying by turns", all((a in director.STAYING) != (b in director.STAYING) for a, b in zip(answers, answers[1:])) and set(answers) <= set(director.ANSWERS), f"-> {answers[:8]}")
     laid = [s["finish"] for s in show["segments"] if s["finish"]]

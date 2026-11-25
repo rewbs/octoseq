@@ -75,7 +75,7 @@ fn init(ctx) {
     feedback.enable(fb);
 
     post.add(fx.bloom(#{ threshold: misted(0.48, style.mist, 0.65, 0.38), intensity: misted(0.75, style.mist, 0.4, 1.0), radius: misted(8.0, style.mist, 4.0, 11.0) }));
-    post.add(fx.ground(#{ kind: 8, zoom: 1.2, angle: clock.scale(0.1), phase: clock.scale(1.1).add(count.scale(0.32)), p1: lead.scale(1.6).add(0.5), p2: way.scale(1.4), amount: 0.9, a: style.a, b: style.b, c: style.c, at: style.at }));
+    post.add(fx.ground(#{ kind: 8, zoom: 1.2, angle: clock.scale(0.1), phase: clock.scale(0.35).add(count.scale(0.55)), p1: lead.scale(1.6).add(0.5), p2: way.scale(1.4), amount: 0.9, a: style.a, b: style.b, c: style.c, at: style.at }));
     // The whole frame answers every blow as well, in the way the show asks for
     // (`style.answer`: see post.answer in scripting.md), so the link is never in doubt.
     post.answer(style.answer, style.kick, roles.hit, style.at);

@@ -47,7 +47,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 ROOT = Path(__file__).resolve().parents[2]
 SCENES = ROOT / "scenes"
 SHOWS = ROOT / ".loop" / "shows"
-DIRECTOR_VERSION = "director-8"
+DIRECTOR_VERSION = "director-9"
 
 MAX_HOLD_S = 9.0  # the longest any one look is held (review 1: boring in under ten seconds)
 MIN_HOLD_S = 3.0  # section starts closer together than this are treated as one
@@ -229,6 +229,100 @@ def _signal(package: dict, role: str) -> tuple[list[float], float]:
     return [], 1.0
 
 
+BASELINE = Path(__file__).parent / "baseline.json"
+_SCENE_ENERGY_CACHE: dict[str, float] | None = None
+
+
+def _scene_energies() -> dict[str, float]:
+    """Intrinsic visual busyness of each scene, 0 (calmest) to 1 (busiest), from baseline motion."""
+    global _SCENE_ENERGY_CACHE
+    if _SCENE_ENERGY_CACHE is not None:
+        return _SCENE_ENERGY_CACHE
+    if not BASELINE.exists():
+        _SCENE_ENERGY_CACHE = {}
+        return _SCENE_ENERGY_CACHE
+    data = json.loads(BASELINE.read_text())
+    by_scene: dict[str, list[float]] = {}
+    for key, vals in data.items():
+        if "__" not in key:
+            continue
+        name = key.split("__", 1)[1]
+        if name != "director" and isinstance(vals.get("motion"), (int, float)):
+            by_scene.setdefault(name, []).append(float(vals["motion"]))
+    medians = {name: sorted(vs)[len(vs) // 2] for name, vs in by_scene.items() if vs}
+    ordered = sorted(medians, key=lambda n: (medians[n], n))
+    denom = max(len(ordered) - 1, 1)
+    _SCENE_ENERGY_CACHE = {name: i / denom for i, name in enumerate(ordered)}
+    return _SCENE_ENERGY_CACHE
+
+
+def scene_busyness(scene: Path, roles: set[str] | None = None) -> float:
+    """Visual busyness of one scene, 0 (calm) to 1 (busy). Uses baseline motion rank, else role heuristic."""
+    known = _scene_energies()
+    if scene.stem in known:
+        return known[scene.stem]
+    roles = scene_roles(scene) if roles is None else roles
+    if roles & {"drums", "kick", "snare"} and not (roles & {"melody", "brightness"}):
+        return 0.65
+    if roles & {"melody", "brightness", "lead"} and not (roles & {"kick", "snare"}):
+        return 0.3
+    return 0.5
+
+
+def _window_mean(values: list[float], rate: float, start: float, end: float, default: float = 0.5) -> float:
+    if not values:
+        return default
+    lo = max(0, min(int(start * rate), len(values) - 1))
+    hi = max(lo + 1, min(int(end * rate), len(values)))
+    chunk = values[lo:hi]
+    return sum(chunk) / len(chunk) if chunk else default
+
+
+def _dominant_part(package: dict, start: float, end: float) -> tuple[str | None, bool]:
+    """Which musical part leads during [start, end] ('drums', 'bass', 'melody', or None) and whether drums are weak."""
+    energies: dict[str, float] = {}
+    for sig in package.get("stemSignals", []):
+        if sig.get("feature") == "energy" and sig.get("label") in ("Drums", "Bass", "Other", "Vocals") and sig.get("values"):
+            energies[sig["label"]] = _window_mean(sig["values"], float(sig["rate"]), start, end, 0.0)
+    total = sum(energies.values())
+    if total <= 1e-6:
+        return None, False
+    drums_share = energies.get("Drums", 0.0) / total
+    drums_weak = drums_share < 0.12
+    top = max(energies, key=lambda k: energies[k])
+    part = {"Drums": "drums", "Bass": "bass", "Other": "melody", "Vocals": "melody"}[top]
+    return part, drums_weak
+
+
+def _fit_score(scene: Path, roles: set[str], target_energy: float, dominant: str | None, drums_weak: bool) -> float:
+    """How well a scene fits a segment's intensity and dominant musical part (higher is better)."""
+    busy = scene_busyness(scene, roles)
+    # Sharp intensity fit so calm sections stay calm and drops stay busy.
+    intensity_match = 1.0 - 1.6 * abs(busy - target_energy)
+    role_bonus = 0.0
+    if drums_weak:
+        # Where drums drop out (or on a drumless track), favour scenes driven by lead/dominant stem
+        # and avoid purely drum-driven scenes.
+        if "lead" in roles:
+            role_bonus += 0.30
+        if dominant == "bass" and "bass" in roles:
+            role_bonus += 0.22
+        elif dominant == "melody" and (roles & {"melody", "brightness", "flux"}):
+            role_bonus += 0.24
+        if not (roles & {"lead", "melody", "bass", "brightness"}):
+            role_bonus -= 0.50
+    else:
+        if "lead" in roles:
+            role_bonus += 0.14 if dominant in ("melody", "bass") else 0.08
+        if dominant == "drums" and (roles & {"drums", "kick", "snare", "hat"}):
+            role_bonus += 0.08
+        elif dominant == "bass" and "bass" in roles:
+            role_bonus += 0.12
+        elif dominant == "melody" and (roles & {"melody", "brightness", "flux"}):
+            role_bonus += 0.14
+    return intensity_match + role_bonus
+
+
 def cut_points(package: dict, max_hold: float = MAX_HOLD_S) -> list[tuple[float, bool]]:
     """When the look changes: (time, whether a new section starts there)."""
     duration = float(package["durationSec"])
@@ -290,13 +384,34 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
     finishes = [FINISHES[name] for name in FINISHES if name in asked.get("finishes", FINISHES)]
     last_finish = None
     intensity, rate = _signal(package, "section_intensity")
+    lead_sig, lead_rate = _signal(package, "lead")
+    roles_by_scene = {s: scene_roles(s) for s in scenes}
     cuts = cut_points(package, max_hold)
+    seg_ends = [cuts[i + 1][0] if i + 1 < len(cuts) else float(package["durationSec"]) for i in range(len(cuts))]
+    seg_ints = [_window_mean(intensity, rate, s, e, 0.5) for (s, _), e in zip(cuts, seg_ends)]
+    # Normalize section intensity against the track's 10th-90th percentile of segments
+    # so a single silent outro does not compress the rest of the track into one band.
+    ordered_ints = sorted(seg_ints) if seg_ints else [0.5]
+    int_lo = ordered_ints[max(0, int(0.10 * (len(ordered_ints) - 1)))]
+    int_hi = ordered_ints[min(len(ordered_ints) - 1, int(0.90 * (len(ordered_ints) - 1)))]
+    int_span = int_hi - int_lo
+    lead_top = max(lead_sig) if lead_sig else 1.0
     beats = [e["time"] for e in _stream(package, "beat")]
     beat_s = sorted(b - a for a, b in zip(beats, beats[1:]))[len(beats) // 2 - 1] if len(beats) > 2 else 0.5
     segments = []
     scene, palette, order, place, mist, answer = None, None, [0, 1, 2], None, None, None
     for index, (start, new_section) in enumerate(cuts):
-        scene = rng.choice([s for s in scenes if s != scene] or scenes)
+        end = seg_ends[index]
+        middle = seg_ints[index]
+        norm_int = max(0.0, min(1.0, (middle - int_lo) / int_span)) if int_span >= 0.08 else middle
+        seg_lead = _window_mean(lead_sig, lead_rate, start, end, 0.5) / max(lead_top, 1e-6) if lead_sig else norm_int
+        raw_energy = max(0.0, min(1.0, 0.85 * norm_int + 0.15 * seg_lead))
+        target_energy = 0.05 + 0.85 * raw_energy
+        dominant, drums_weak = _dominant_part(package, start, end)
+        candidates = [s for s in scenes if s != scene] or scenes
+        ranked = sorted(candidates, key=lambda s: (-_fit_score(s, roles_by_scene[s], target_energy, dominant, drums_weak), s.stem))
+        band = ranked[: max(5, min(12, len(ranked) // 8))]
+        scene = rng.choice(band)
         if new_section or palette is None:
             palette = paint.choice([p for p in palettes if p != palette] or palettes)
             order = paint.sample([0, 1, 2], 3)
@@ -308,8 +423,6 @@ def direct(package: dict, seed: int | None = None, scenes_dir: Path = SCENES, vi
         finish = 0
         if finishes and surface.random() < FINISH_SHARE:
             finish = last_finish = surface.choice([f for f in finishes if f != last_finish] or finishes)
-        end = cuts[index + 1][0] if index + 1 < len(cuts) else float(package["durationSec"])
-        middle = intensity[min(int((start + end) / 2 * rate), len(intensity) - 1)] if intensity else 0.5
         colours = [tuple(c**SCREEN_GAMMA if vivid else c for c in PALETTES[palette][i]) for i in order]
         segments.append(dict(
             start=round(start, 3), scene=scene.name, new_section=new_section, palette=palette,

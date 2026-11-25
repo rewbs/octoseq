@@ -285,12 +285,47 @@ def _best_correlation(a: np.ndarray, b: np.ndarray, fps: float, max_lag_s: float
 
 
 def _package_signal(package: dict, name: str, fps: float, n: int) -> np.ndarray | None:
-    for sig in package.get("signals", []):
-        if sig["name"] == name:
-            values = np.asarray(sig["values"], dtype=np.float32)
-            times = np.arange(n) / fps
-            return np.interp(times, np.arange(len(values)) / sig["rate"], values)
+    for group in ("signals", "customSignals"):
+        for sig in package.get(group, []):
+            if sig["name"] == name and len(sig.get("values") or []) > 1:
+                values = np.asarray(sig["values"], dtype=np.float32)
+                times = np.arange(n) / fps
+                return np.interp(times, np.arange(len(values)) / float(sig["rate"]), values)
     return None
+
+
+def _intensity_fit(motion: np.ndarray, fps: float, package: dict, window_s: float = 2.0) -> float | None:
+    """Whether busier visual stretches land on louder sections and calmer ones on quieter sections.
+
+    Compares window-averaged visual motion against the bundle's `section_intensity`
+    over two-second windows (Pearson correlation, -1 to +1). Returns None when the
+    clip is too short or the music's section intensity barely varies across it.
+    """
+    sec = _package_signal(package, "section_intensity", fps, len(motion))
+    if sec is None:
+        return None
+    step = max(1, int(round(window_s * fps)))
+    n_win = len(motion) // step
+    if n_win < 4:
+        return None
+    vis = motion[: n_win * step].reshape(n_win, step).mean(axis=1)
+    mus = sec[: n_win * step].reshape(n_win, step).mean(axis=1)
+    if float(mus.std()) < 0.03 or float(vis.std()) < 1e-6:
+        return None
+    return float(np.corrcoef(vis, mus)[0, 1])
+
+
+def _lead_sync(motion: np.ndarray, frame_luma: np.ndarray, fps: float, package: dict) -> float | None:
+    """How closely the picture (motion or brightness) tracks the dominant stem (`lead` role)."""
+    lead = _package_signal(package, "lead", fps, len(motion))
+    if lead is None or float(lead.std()) < 1e-6:
+        return None
+    best = 0.0
+    for visual in (motion, frame_luma):
+        corr, _ = _best_correlation(visual, lead, fps)
+        if corr > best:
+            best = corr
+    return float(best)
 
 
 def compute(frames: np.ndarray, fps: float, package: dict) -> dict:
@@ -357,6 +392,12 @@ def compute(frames: np.ndarray, fps: float, package: dict) -> dict:
         out["punch"] = punch
     if look_change is not None:
         out["look_change"] = look_change
+    intensity_fit = _intensity_fit(motion, fps, package)
+    if intensity_fit is not None:
+        out["intensity_fit"] = intensity_fit
+    lead_sync = _lead_sync(motion, frame_luma, fps, package)
+    if lead_sync is not None:
+        out["lead_sync"] = lead_sync
     # Whether the picture answers the music: see response.py.
     out.update(response.compute(luma, fps, package))
     return out
